@@ -1,3 +1,5 @@
+import type { AnnotationNode, DesignDiff, ExportedDesignAsset } from "@xenonbyte/forma-core";
+
 export type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export type Platform = "mobile" | "desktop" | "tablet" | "web";
@@ -98,11 +100,52 @@ export interface StylePreviewPayload {
   preview_path?: string;
 }
 
+export interface DesignHistoryVersion {
+  created_at: string;
+  current: boolean;
+  file: string;
+  image_url: string;
+  preview_file?: string;
+  version: number;
+}
+
+export interface DesignHistoryPayload {
+  current_version: number;
+  design_id: string;
+  page_id: string;
+  product_id: string;
+  requirement_id: string;
+  versions: DesignHistoryVersion[];
+}
+
+export interface DesignImageMetadata {
+  design_id: string;
+  image_url: string;
+  preview_path: string;
+  version: number;
+}
+
+export interface DesignDiffPayload extends DesignDiff {
+  visual: {
+    from_image_url: string;
+    to_image_url: string;
+  };
+}
+
+export type DesignExportFormat = ExportedDesignAsset["format"];
+export type DesignExportPayload = ExportedDesignAsset;
+export type { AnnotationNode, DesignDiff };
+
 export interface FormaApiClient {
   archiveRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
   createProduct(input: Pick<ProductIndexEntry, "description" | "name">): Promise<Product>;
   createRequirement(productId: string, input: CreateRequirementInput): Promise<RequirementWithDocument>;
+  exportDesignAsset(designId: string, nodeId: string, format: DesignExportFormat): Promise<DesignExportPayload>;
   getBaseline(productId: string): Promise<ProductBaseline>;
+  getDesignAnnotations(designId: string): Promise<AnnotationNode[]>;
+  getDesignDiff(designId: string, fromVersion: number, toVersion: number): Promise<DesignDiffPayload>;
+  getDesignHistory(designId: string): Promise<DesignHistoryPayload>;
+  getDesignImage(designId: string, version?: number): Promise<DesignImageMetadata>;
   getProduct(productId: string): Promise<Product>;
   getRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
   getStyle(name: string): Promise<StyleDetailPayload>;
@@ -182,7 +225,27 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
         body: input,
         method: "POST"
       }),
+    exportDesignAsset: (designId, nodeId, format) =>
+      apiRecord<DesignExportPayload>(
+        `/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: nodeId, format }).toString()}`,
+        requestOptions(fetcher)
+      ),
     getBaseline: (productId) => apiRecord<ProductBaseline>(`/api/products/${encodeURIComponent(productId)}/baseline`, requestOptions(fetcher)),
+    getDesignAnnotations: (designId) =>
+      apiArray<AnnotationNode>(`/api/designs/${encodeURIComponent(designId)}/annotations`, requestOptions(fetcher)),
+    getDesignDiff: (designId, fromVersion, toVersion) =>
+      apiRecord<DesignDiffPayload>(
+        `/api/designs/${encodeURIComponent(designId)}/diff?${new URLSearchParams({
+          v1: String(fromVersion),
+          v2: String(toVersion)
+        }).toString()}`,
+        requestOptions(fetcher)
+      ),
+    getDesignHistory: (designId) => apiRecord<DesignHistoryPayload>(`/api/designs/${encodeURIComponent(designId)}/history`, requestOptions(fetcher)),
+    getDesignImage: (designId, version) => {
+      const query = version === undefined ? "" : `?${new URLSearchParams({ version: String(version) }).toString()}`;
+      return apiRecord<DesignImageMetadata>(`/api/designs/${encodeURIComponent(designId)}/image${query}`, requestOptions(fetcher));
+    },
     getProduct: (productId) => apiRecord<Product>(`/api/products/${encodeURIComponent(productId)}`, requestOptions(fetcher)),
     getRequirement: (productId, requirementId) =>
       apiRecord<RequirementWithDocument>(

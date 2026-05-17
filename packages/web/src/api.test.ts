@@ -114,4 +114,82 @@ describe("apiRequest", () => {
       ["/api/products/P-123abc/requirements/R-12345678/archive", "PUT"]
     ]);
   });
+
+  it("builds typed design API routes", async () => {
+    const requests: Array<[RequestInfo | URL, string | undefined]> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push([input, init?.method]);
+      const path = input.toString();
+      if (path.endsWith("/annotations")) {
+        return jsonResponse([{ id: "root", name: "Root", type: "frame", x: 0, y: 0, width: 100, height: 100 }]);
+      }
+      if (path.endsWith("/history")) {
+        return jsonResponse({
+          design_id: "D 123",
+          product_id: "P-123abc",
+          requirement_id: "R-12345678",
+          page_id: "checkout",
+          current_version: 2,
+          versions: [
+            {
+              version: 1,
+              file: "design.v1.pen",
+              preview_file: "preview.v1@2x.png",
+              created_at: "2026-05-17T01:00:00.000Z",
+              current: false,
+              image_url: "/api/designs/D%20123/image/file?version=1"
+            }
+          ]
+        });
+      }
+      if (path.includes("/diff?")) {
+        return jsonResponse({
+          added: [],
+          removed: [],
+          modified: [],
+          visual: {
+            from_image_url: "/api/designs/D%20123/image/file?version=1",
+            to_image_url: "/api/designs/D%20123/image/file?version=2"
+          }
+        });
+      }
+      if (path.includes("/image?")) {
+        return jsonResponse({
+          design_id: "D 123",
+          version: 2,
+          image_url: "/api/designs/D%20123/image/file?version=2",
+          preview_path: "/tmp/preview@2x.png"
+        });
+      }
+      if (path.includes("/export?")) {
+        return jsonResponse({
+          design_id: "D 123",
+          node_id: "node 1",
+          format: "svg",
+          path: "/tmp/node.svg",
+          source: "preview"
+        });
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+
+    await expect(client.getDesignAnnotations("D 123")).resolves.toHaveLength(1);
+    await expect(client.getDesignHistory("D 123")).resolves.toMatchObject({ current_version: 2 });
+    await expect(client.getDesignDiff("D 123", 1, 2)).resolves.toMatchObject({
+      visual: {
+        from_image_url: "/api/designs/D%20123/image/file?version=1",
+        to_image_url: "/api/designs/D%20123/image/file?version=2"
+      }
+    });
+    await expect(client.getDesignImage("D 123", 2)).resolves.toMatchObject({ version: 2 });
+    await expect(client.exportDesignAsset("D 123", "node 1", "svg")).resolves.toMatchObject({ format: "svg", node_id: "node 1" });
+
+    expect(requests).toEqual([
+      ["/api/designs/D%20123/annotations", undefined],
+      ["/api/designs/D%20123/history", undefined],
+      ["/api/designs/D%20123/diff?v1=1&v2=2", undefined],
+      ["/api/designs/D%20123/image?version=2", undefined],
+      ["/api/designs/D%20123/export?node_id=node+1&format=svg", undefined]
+    ]);
+  });
 });

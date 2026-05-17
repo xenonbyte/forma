@@ -193,8 +193,8 @@ describe("Fastify API routes", () => {
       removed: [],
       modified: [],
       visual: {
-        from_image_url: "/api/designs/D-12345678/image?version=1",
-        to_image_url: "/api/designs/D-12345678/image?version=2"
+        from_image_url: "/api/designs/D-12345678/image/file?version=1",
+        to_image_url: "/api/designs/D-12345678/image/file?version=2"
       }
     });
     expect(store.products.createProduct).toHaveBeenCalledWith({ name: "App", description: "Demo" });
@@ -218,6 +218,7 @@ describe("Fastify API routes", () => {
       app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/image" }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/annotations" }),
       app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=1" }),
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/image/file?version=1" }),
       app.inject({ method: "GET", url: "/api/designs/D-12345678/history" }),
       app.inject({ method: "GET", url: "/api/designs/D-12345678/export?node_id=root&format=png" }),
       app.inject({ method: "GET", url: "/api/styles" }),
@@ -440,6 +441,7 @@ describe("Fastify API routes", () => {
 
     const history = await app.inject({ method: "GET", url: "/api/designs/D-12345678/history" });
     const currentImage = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=2" });
+    const currentImageFile = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image/file?version=2" });
     const diff = await app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1&v2=2" });
     const diffBody = diff.json();
     const fromImage = await app.inject({ method: "GET", url: diffBody.visual.from_image_url });
@@ -449,19 +451,27 @@ describe("Fastify API routes", () => {
     expect(history.json()).toMatchObject({
       design_id: "D-12345678",
       versions: [
-        { version: 1, image_url: "/api/designs/D-12345678/image?version=1", current: false },
-        { version: 2, image_url: "/api/designs/D-12345678/image?version=2", current: true }
+        { version: 1, image_url: "/api/designs/D-12345678/image/file?version=1", current: false },
+        { version: 2, image_url: "/api/designs/D-12345678/image/file?version=2", current: true }
       ]
     });
     expect(currentImage.statusCode).toBe(200);
     expect(currentImage.json()).toMatchObject({
       design_id: "D-12345678",
       version: 2,
+      image_url: "/api/designs/D-12345678/image/file?version=2",
       preview_path: join(home, "data", "P-123abc", "R-12345678", "D-12345678", "preview@2x.png")
     });
+    expect(currentImageFile.statusCode).toBe(200);
+    expect(currentImageFile.headers["content-type"]).toContain("image/png");
+    expect(currentImageFile.body).toBe("current preview");
     expect(diff.statusCode).toBe(200);
     expect(fromImage.statusCode).toBe(200);
+    expect(fromImage.headers["content-type"]).toContain("image/png");
+    expect(fromImage.body).toBe("old preview");
     expect(toImage.statusCode).toBe(200);
+    expect(toImage.headers["content-type"]).toContain("image/png");
+    expect(toImage.body).toBe("current preview");
   });
 
   it("exposes style preview metadata and image through separate endpoints", async () => {

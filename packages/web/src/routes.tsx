@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { PrimaryActionLink, StatePanel, WorkSurface } from "./components/Layout.js";
+import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
 import { BaselineView } from "./pages/BaselineView.js";
+import { DesignView } from "./pages/DesignView.js";
 import { ProductDetail } from "./pages/ProductDetail.js";
 import { ProductList } from "./pages/ProductList.js";
 import { ProductNew } from "./pages/ProductNew.js";
@@ -70,7 +71,7 @@ export const routeTable: RouteDefinition[] = [
     title: ({ reqId }) => reqId
   },
   {
-    component: DesignPage,
+    component: DesignView,
     context: "Design",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/designs/:designId",
@@ -177,21 +178,6 @@ function StyleLibraryRoute() {
   return <StyleLibrary />;
 }
 
-function DesignPage({ params }: RoutePageProps) {
-  return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <WorkSurface title="Annotation canvas">
-        <div className="flex aspect-[16/9] items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-sm font-medium text-zinc-500">
-          {params.designId}
-        </div>
-      </WorkSurface>
-      <WorkSurface title="Properties">
-        <PlaceholderRows labels={["Selected node", "Dimensions", "Spacing", "Asset export"]} />
-      </WorkSurface>
-    </div>
-  );
-}
-
 function NotFoundPage() {
   return (
     <StatePanel
@@ -201,19 +187,6 @@ function NotFoundPage() {
     >
       Route is outside the Forma admin table.
     </StatePanel>
-  );
-}
-
-function PlaceholderRows({ labels }: { labels: string[] }) {
-  return (
-    <div className="divide-y divide-zinc-200">
-      {labels.map((label) => (
-        <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm" key={label}>
-          <span className="font-medium text-zinc-700">{label}</span>
-          <span className="text-zinc-500">Empty</span>
-        </div>
-      ))}
-    </div>
   );
 }
 

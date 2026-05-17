@@ -103,6 +103,11 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
     store.designs.getDesignAnnotations(request.params.designId)
   );
 
+  app.get<{ Params: { designId: string }; Querystring: { version?: string } }>("/api/designs/:designId/image/file", async (request, reply) => {
+    const image = await resolveDesignImage(store, request.params.designId, request.query.version);
+    reply.type("image/png").send(await readFile(image.previewPath));
+  });
+
   app.get<{ Params: { designId: string }; Querystring: { version?: string } }>("/api/designs/:designId/image", async (request) =>
     getDesignImageMetadata(store, request.params.designId, request.query.version)
   );
@@ -118,8 +123,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
     return {
       ...diff,
       visual: {
-        from_image_url: `/api/designs/${request.params.designId}/image?version=${v1}`,
-        to_image_url: `/api/designs/${request.params.designId}/image?version=${v2}`
+        from_image_url: designImageFileUrl(request.params.designId, v1),
+        to_image_url: designImageFileUrl(request.params.designId, v2)
       }
     };
   });
@@ -258,7 +263,7 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
       requirement_id: requirement.id,
       requirement_page_id: requirementPage.page_id,
       design_id: requirementPage.design_id,
-      image_url: `/api/designs/${requirementPage.design_id}/image`,
+      image_url: designImageFileUrl(requirementPage.design_id),
       preview_path: previewPath
     };
   }
@@ -271,6 +276,17 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
 }
 
 async function getDesignImageMetadata(store: FormaStore, designId: string, versionQuery: string | undefined) {
+  const resolvedImage = await resolveDesignImage(store, designId, versionQuery);
+
+  return {
+    design_id: designId,
+    version: resolvedImage.version,
+    image_url: designImageFileUrl(designId, resolvedImage.version),
+    preview_path: resolvedImage.previewPath
+  };
+}
+
+async function resolveDesignImage(store: FormaStore, designId: string, versionQuery: string | undefined) {
   const requestedVersion = optionalPositiveIntegerQuery(versionQuery, "version");
   const { design, reference } = await readDesignMetadata(store, designId);
   const resolvedImage = resolveDesignPreview(design, requestedVersion);
@@ -284,10 +300,8 @@ async function getDesignImageMetadata(store: FormaStore, designId: string, versi
   }
 
   return {
-    design_id: designId,
-    version: resolvedImage.version,
-    image_url: `/api/designs/${designId}/image?version=${resolvedImage.version}`,
-    preview_path: previewPath
+    previewPath,
+    version: resolvedImage.version
   };
 }
 
@@ -302,7 +316,7 @@ async function getDesignHistoryMetadata(store: FormaStore, designId: string) {
         preview_file: entry.preview_file,
         created_at: entry.created_at,
         current: false,
-        image_url: `/api/designs/${designId}/image?version=${entry.version}`
+        image_url: designImageFileUrl(designId, entry.version)
       })),
     {
       version: design.version,
@@ -310,7 +324,7 @@ async function getDesignHistoryMetadata(store: FormaStore, designId: string) {
       preview_file: "preview@2x.png",
       created_at: design.updated_at,
       current: true,
-      image_url: `/api/designs/${designId}/image?version=${design.version}`
+      image_url: designImageFileUrl(designId, design.version)
     }
   ];
   return {
@@ -406,6 +420,11 @@ function timestampForRequirement(requirement: { created_at?: string; updated_at?
   }
   const createdAt = requirement.created_at ? Date.parse(requirement.created_at) : Number.NaN;
   return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function designImageFileUrl(designId: string, version?: number): string {
+  const versionQuery = version === undefined ? "" : `?version=${version}`;
+  return `/api/designs/${encodeURIComponent(designId)}/image/file${versionQuery}`;
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
