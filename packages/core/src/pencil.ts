@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -17,11 +17,13 @@ export interface PencilLockContext {
 export interface PencilLock extends PencilLockContext {
   pid: number;
   acquired_at: string;
+  owner_id: string;
 }
 
 export type PencilLockSeed = PencilLockContext & {
   pid: number;
   acquired_at?: string;
+  owner_id?: string;
 };
 
 export interface GeneratePageDesignInput {
@@ -37,14 +39,20 @@ export interface GenerateComponentsInput {
 }
 
 export interface GeneratedDesign {
+  /**
+   * Temporary directory ownership is transferred to the caller on success.
+   */
+  tempDir: string;
   penPath: string;
   previewPath: string;
-  tempDir: string;
 }
 
 export interface GeneratedComponents {
-  penPath: string;
+  /**
+   * Temporary directory ownership is transferred to the caller on success.
+   */
   tempDir: string;
+  penPath: string;
 }
 
 export interface PencilServiceOptions {
@@ -99,27 +107,27 @@ export class PencilService {
     try {
       await this.runner.run("pencil", ["version"]);
     } catch (error) {
-      throw new FormaError("PENCIL_CLI_NOT_FOUND", "Pencil CLI not found", { cause: errorMessage(error) });
+      throw new FormaError("PENCIL_CLI_NOT_FOUND", "Pencil CLI not found", availabilityErrorDetails("version", error));
     }
 
     let status: { stdout: string; stderr: string };
     try {
       status = await this.runner.run("pencil", ["status"]);
     } catch (error) {
-      throw new FormaError("PENCIL_NOT_AUTHENTICATED", "Pencil is not authenticated", { cause: errorMessage(error) });
+      throw new FormaError("PENCIL_NOT_AUTHENTICATED", "Pencil is not authenticated", availabilityErrorDetails("status", error));
     }
 
     if (!/\bactive\b/i.test(status.stdout)) {
-      throw new FormaError("PENCIL_NOT_AUTHENTICATED", "Pencil is not authenticated", { status: status.stdout.trim() });
+      throw new FormaError("PENCIL_NOT_AUTHENTICATED", "Pencil is not authenticated", { command: "status" });
     }
   }
 
   async withLock<T>(context: PencilLockContext, fn: () => Promise<T>): Promise<T> {
-    await this.acquireLock(context);
+    const lock = await this.acquireLock(context);
     try {
       return await fn();
     } finally {
-      await rm(this.lockFile, { force: true });
+      await this.releaseLock(lock.owner_id);
     }
   }
 
@@ -140,12 +148,17 @@ export class PencilService {
     await this.checkAvailability();
     return await this.withLock({ operation: "design", product_id: input.product_id }, async () => {
       const tempDir = await this.createTempDir();
-      const penPath = join(tempDir, "page.pen");
-      const previewPath = join(tempDir, "preview.png");
-      await this.runner.run("pencil", ["--out", penPath, "--workspace", input.workspace, "--prompt", input.prompt]);
-      await this.validatePenFile(penPath);
-      await this.exportPreview(penPath, previewPath);
-      return { penPath, previewPath, tempDir };
+      try {
+        const penPath = join(tempDir, "page.pen");
+        const previewPath = join(tempDir, "preview.png");
+        await this.runner.run("pencil", ["--out", penPath, "--workspace", input.workspace, "--prompt", input.prompt]);
+        await this.validatePenFile(penPath);
+        await this.exportPreview(penPath, previewPath);
+        return { penPath, previewPath, tempDir };
+      } catch (error) {
+        await rm(tempDir, { recursive: true, force: true });
+        throw error;
+      }
     });
   }
 
@@ -153,19 +166,24 @@ export class PencilService {
     await this.checkAvailability();
     return await this.withLock({ operation: "components", product_id: input.product_id }, async () => {
       const tempDir = await this.createTempDir();
-      const penPath = join(tempDir, "components.lib.pen");
-      await this.runner.run("pencil", ["--out", penPath, "--prompt", input.prompt]);
-      await this.validatePenFile(penPath);
-      return { penPath, tempDir };
+      try {
+        const penPath = join(tempDir, "components.lib.pen");
+        await this.runner.run("pencil", ["--out", penPath, "--prompt", input.prompt]);
+        await this.validatePenFile(penPath);
+        return { penPath, tempDir };
+      } catch (error) {
+        await rm(tempDir, { recursive: true, force: true });
+        throw error;
+      }
     });
   }
 
   async exportPreview(inputPen: string, outputPng: string): Promise<void> {
     await this.runner.run("pencil", ["--in", inputPen, "--export", outputPng, "--export-scale", "2"]);
-    const output = await stat(outputPng).catch((error: unknown) => {
+    const output = await readFile(outputPng).catch((error: unknown) => {
       throw new FormaError("PEN_FILE_INVALID", "Preview export is invalid", { file: outputPng, cause: errorMessage(error) });
     });
-    if (output.size <= 0) {
+    if (!hasPngSignature(output)) {
       throw new FormaError("PEN_FILE_INVALID", "Preview export is invalid", { file: outputPng });
     }
   }
@@ -181,12 +199,12 @@ export class PencilService {
     await mkdir(this.home, { recursive: true });
     await writeFile(
       this.lockFile,
-      JSON.stringify({ ...lock, acquired_at: lock.acquired_at ?? new Date().toISOString() }, null, 2),
+      JSON.stringify({ ...lock, acquired_at: lock.acquired_at ?? new Date().toISOString(), owner_id: lock.owner_id ?? createOwnerId() }, null, 2),
       { encoding: "utf8", flag: exclusive ? "wx" : "w" }
     );
   }
 
-  private async acquireLock(context: PencilLockContext): Promise<void> {
+  private async acquireLock(context: PencilLockContext): Promise<PencilLock> {
     await mkdir(this.home, { recursive: true });
 
     while (true) {
@@ -195,12 +213,13 @@ export class PencilService {
         if (this.shouldHoldLock(existing)) {
           throw new FormaError("PENCIL_LOCK_HELD", "Pencil lock is held", { ...existing });
         }
-        await rm(this.lockFile, { force: true });
+        await this.removeLockIfMatches(existing);
       }
 
       try {
-        await this.writeLockFile({ ...context, pid: process.pid, acquired_at: new Date().toISOString() }, true);
-        return;
+        const lock = { ...context, pid: process.pid, acquired_at: new Date().toISOString(), owner_id: createOwnerId() };
+        await this.writeLockFile(lock, true);
+        return lock;
       } catch (error) {
         if (!isNodeError(error) || error.code !== "EEXIST") {
           throw error;
@@ -219,7 +238,8 @@ export class PencilService {
         pid: parsed.pid,
         acquired_at: typeof parsed.acquired_at === "string" ? parsed.acquired_at : new Date(0).toISOString(),
         operation: typeof parsed.operation === "string" ? parsed.operation : "unknown",
-        product_id: typeof parsed.product_id === "string" ? parsed.product_id : "unknown"
+        product_id: typeof parsed.product_id === "string" ? parsed.product_id : "unknown",
+        owner_id: typeof parsed.owner_id === "string" ? parsed.owner_id : "legacy"
       };
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
@@ -234,6 +254,20 @@ export class PencilService {
       return false;
     }
     return Date.now() - Date.parse(lock.acquired_at) <= lockTimeoutMs;
+  }
+
+  private async releaseLock(ownerId: string): Promise<void> {
+    const current = await this.readLock();
+    if (current?.owner_id === ownerId) {
+      await rm(this.lockFile, { force: true });
+    }
+  }
+
+  private async removeLockIfMatches(lock: PencilLock): Promise<void> {
+    const current = await this.readLock();
+    if (current && locksMatch(current, lock)) {
+      await rm(this.lockFile, { force: true });
+    }
   }
 
   private async createTempDir(): Promise<string> {
@@ -275,4 +309,40 @@ function errorMessage(error: unknown): string {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function createOwnerId(): string {
+  return randomBytes(16).toString("hex");
+}
+
+function locksMatch(a: PencilLock, b: PencilLock): boolean {
+  return (
+    a.owner_id === b.owner_id &&
+    a.pid === b.pid &&
+    a.acquired_at === b.acquired_at &&
+    a.operation === b.operation &&
+    a.product_id === b.product_id
+  );
+}
+
+function availabilityErrorDetails(command: "version" | "status", error: unknown): Record<string, unknown> {
+  const details: Record<string, unknown> = { command };
+  if (isRecord(error) && typeof error.exitCode === "number") {
+    details.exitCode = error.exitCode;
+  }
+  return details;
+}
+
+function hasPngSignature(value: Buffer): boolean {
+  return (
+    value.length >= 8 &&
+    value[0] === 0x89 &&
+    value[1] === 0x50 &&
+    value[2] === 0x4e &&
+    value[3] === 0x47 &&
+    value[4] === 0x0d &&
+    value[5] === 0x0a &&
+    value[6] === 0x1a &&
+    value[7] === 0x0a
+  );
 }

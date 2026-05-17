@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PencilService, type PencilRunner } from "../src/index.js";
+
+const minimalPng = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
+  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00,
+  0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+  0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+]);
 
 function createFakeRunner(
   handler: (command: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }> = async () => ({
@@ -112,6 +119,60 @@ describe("PencilService", () => {
     await expect(access(join(home, "pencil.lock"))).rejects.toThrow();
   });
 
+  it("does not release a fresh lock acquired after the original owner exits", async () => {
+    const home = await createHome("owner-release");
+    const service = new PencilService({ home, runner: createFakeRunner(), isPidAlive: () => true });
+    const lockFile = join(home, "pencil.lock");
+
+    await service.withLock({ operation: "design", product_id: "P-old" }, async () => {
+      await service.writeLock({ pid: process.pid, operation: "design", product_id: "P-new", owner_id: "fresh-owner" });
+    });
+
+    const lock = JSON.parse(await readFile(lockFile, "utf8")) as { owner_id?: string; product_id?: string };
+    expect(lock).toMatchObject({ owner_id: "fresh-owner", product_id: "P-new" });
+  });
+
+  it("keeps a race-losing stale reclaimer from deleting the winner lock", async () => {
+    const home = await createHome("stale-race");
+    const service = new PencilService({
+      home,
+      runner: createFakeRunner(),
+      isPidAlive: (pid) => pid === process.pid
+    });
+    await service.writeLock({
+      pid: 999999,
+      operation: "design",
+      product_id: "P-stale",
+      acquired_at: new Date(Date.now() - 301_000).toISOString(),
+      owner_id: "stale-owner"
+    });
+
+    let release!: () => void;
+    let acquired!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const winnerAcquired = new Promise<void>((resolve) => {
+      acquired = resolve;
+    });
+    const winner = service.withLock({ operation: "design", product_id: "P-winner" }, async () => {
+      acquired();
+      await held;
+      return "winner";
+    });
+
+    await winnerAcquired;
+    await expect(service.withLock({ operation: "design", product_id: "P-loser" }, async () => "loser")).rejects.toMatchObject({
+      code: "PENCIL_LOCK_HELD"
+    });
+    const heldLock = JSON.parse(await readFile(join(home, "pencil.lock"), "utf8")) as { product_id?: string; owner_id?: string };
+    expect(heldLock.product_id).toBe("P-winner");
+    expect(typeof heldLock.owner_id).toBe("string");
+
+    release();
+    await expect(winner).resolves.toBe("winner");
+  });
+
   it("maps availability failures to Pencil error codes", async () => {
     const home = await createHome("availability");
     const missing = new PencilService({
@@ -145,7 +206,38 @@ describe("PencilService", () => {
     await expect(service.checkAvailability()).rejects.toMatchObject({ code: "PENCIL_NOT_AUTHENTICATED" });
   });
 
-  it("exportPreview validates PNG size", async () => {
+  it("sanitizes availability error details", async () => {
+    const home = await createHome("availability-secrets");
+    const token = "token-SECRET-123";
+    const versionError = new Error(`failed with ${token}`);
+    Object.assign(versionError, { stdout: token, stderr: token, exitCode: 127 });
+    const missing = new PencilService({
+      home,
+      runner: createFakeRunner(async () => {
+        throw versionError;
+      })
+    });
+    await expect(missing.checkAvailability()).rejects.toSatisfy((error) => {
+      expect(JSON.stringify(error.toJSON())).not.toContain(token);
+      expect(error.toJSON().details).toMatchObject({ command: "version", exitCode: 127 });
+      return true;
+    });
+
+    const inactive = new PencilService({
+      home,
+      runner: createFakeRunner(async (_command, args) => {
+        if (args[0] === "version") return { stdout: "1.0.0", stderr: "" };
+        return { stdout: `inactive ${token}`, stderr: token };
+      })
+    });
+    await expect(inactive.checkAvailability()).rejects.toSatisfy((error) => {
+      expect(JSON.stringify(error.toJSON())).not.toContain(token);
+      expect(error.toJSON().details).toMatchObject({ command: "status" });
+      return true;
+    });
+  });
+
+  it("exportPreview validates PNG signature", async () => {
     const home = await createHome("export");
     const inputPen = join(home, "input.pen");
     const outputPng = join(home, "output.png");
@@ -159,8 +251,16 @@ describe("PencilService", () => {
       code: "PEN_FILE_INVALID"
     });
 
-    const validRunner = createFakeRunner(async () => {
+    const invalidRunner = createFakeRunner(async () => {
       await writeFile(outputPng, "png");
+      return { stdout: "", stderr: "" };
+    });
+    await expect(new PencilService({ home, runner: invalidRunner }).exportPreview(inputPen, outputPng)).rejects.toMatchObject({
+      code: "PEN_FILE_INVALID"
+    });
+
+    const validRunner = createFakeRunner(async () => {
+      await writeFile(outputPng, minimalPng);
       return { stdout: "", stderr: "" };
     });
     await expect(new PencilService({ home, runner: validRunner }).exportPreview(inputPen, outputPng)).resolves.toBeUndefined();
@@ -177,7 +277,7 @@ describe("PencilService", () => {
       }
       if (args.includes("--export")) {
         const output = args[args.indexOf("--export") + 1];
-        await writeFile(output, "png");
+        await writeFile(output, minimalPng);
       }
       return { stdout: "ok", stderr: "" };
     });
@@ -227,10 +327,12 @@ describe("PencilService", () => {
 
   it("rejects invalid generated pen files and releases the lock", async () => {
     const home = await createHome("invalid-generated");
+    let outputPen = "";
     const fakeRunner = createFakeRunner(async (_command, args) => {
       if (args[0] === "status") return { stdout: "active", stderr: "" };
       if (args.includes("--out")) {
         const out = args[args.indexOf("--out") + 1];
+        outputPen = out;
         await writeFile(out, JSON.stringify({ children: [] }));
       }
       return { stdout: "ok", stderr: "" };
@@ -245,5 +347,33 @@ describe("PencilService", () => {
       })
     ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
     await expect(access(join(home, "pencil.lock"))).rejects.toThrow();
+    await expect(access(dirname(outputPen))).rejects.toThrow();
+  });
+
+  it("cleans up page design temp dir after failed preview export", async () => {
+    const home = await createHome("preview-cleanup");
+    let outputPen = "";
+    const fakeRunner = createFakeRunner(async (_command, args) => {
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args.includes("--out")) {
+        outputPen = args[args.indexOf("--out") + 1];
+        await writeFile(outputPen, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+      }
+      if (args.includes("--export")) {
+        const output = args[args.indexOf("--export") + 1];
+        await writeFile(output, "not a png");
+      }
+      return { stdout: "ok", stderr: "" };
+    });
+    const service = new PencilService({ home, runner: fakeRunner });
+
+    await expect(
+      service.generatePageDesign({
+        product_id: "P-preview",
+        prompt: "Create preview",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(access(dirname(outputPen))).rejects.toThrow();
   });
 });
