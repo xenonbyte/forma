@@ -36,6 +36,12 @@ importers:
       '@xenonbyte/forma-core':
         specifier: workspace:*
         version: link:../core
+      '@xenonbyte/forma-mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@xenonbyte/forma-server':
+        specifier: workspace:*
+        version: link:../server
 
   packages/core:
     dependencies:

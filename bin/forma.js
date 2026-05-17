@@ -1,7 +1,7 @@
 #!/usr/bin/env node
+import { main } from "@xenonbyte/forma-cli";
 
-import { tsImport } from "tsx/esm/api";
-
-const { runCli } = await tsImport("../packages/cli/src/index.ts", import.meta.url);
-
-runCli(process.argv.slice(2));
+main(process.argv.slice(2)).catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
