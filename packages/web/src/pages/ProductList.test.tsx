@@ -40,4 +40,20 @@ describe("ProductListContent", () => {
     expect(html).toContain("No products");
     expect(html).toContain('href="/products/new"');
   });
+
+  it("renders a requirement creation entry when a product has no latest requirement", () => {
+    const html = renderToStaticMarkup(
+      <ProductListContent
+        products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
+        requirementSummaries={{
+          "P-123abc": {
+            count: 0
+          }
+        }}
+      />
+    );
+
+    expect(html).toContain("Create requirement");
+    expect(html).toContain('href="/products/P-123abc#new-requirement"');
+  });
 });

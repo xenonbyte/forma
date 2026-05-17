@@ -9,6 +9,7 @@ export interface StyleLibraryProps {
 }
 
 type StyleLibraryState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { status: "ready"; styles: StyleMetadata[] };
+type CategoryFilter = "all" | string;
 type VariableFilter = "all" | "complete" | "missing";
 type ViewMode = "grid" | "list";
 
@@ -23,6 +24,7 @@ const requiredVariables: Array<keyof StyleVariables> = [
 ];
 
 export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
+  const [category, setCategory] = useState<CategoryFilter>("all");
   const [filter, setFilter] = useState<VariableFilter>("all");
   const [query, setQuery] = useState("");
   const [state, setState] = useState<StyleLibraryState>({ status: "loading" });
@@ -50,22 +52,11 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
     };
   }, [client]);
 
-  const filteredStyles = useMemo(() => {
-    if (state.status !== "ready") {
-      return [];
-    }
-
-    const normalizedQuery = query.trim().toLowerCase();
-    return state.styles.filter((style) => {
-      const matchesQuery =
-        normalizedQuery.length === 0 ||
-        style.name.toLowerCase().includes(normalizedQuery) ||
-        style.description.toLowerCase().includes(normalizedQuery);
-      const complete = hasCompleteVariables(style);
-      const matchesFilter = filter === "all" || (filter === "complete" && complete) || (filter === "missing" && !complete);
-      return matchesQuery && matchesFilter;
-    });
-  }, [filter, query, state]);
+  const categories = useMemo(() => (state.status === "ready" ? getStyleCategories(state.styles) : ["all"]), [state]);
+  const filteredStyles = useMemo(
+    () => (state.status === "ready" ? filterStylesByControls(state.styles, { category, query, variableFilter: filter }) : []),
+    [category, filter, query, state]
+  );
 
   if (state.status === "loading") {
     return (
@@ -93,10 +84,20 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_10rem]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_10rem]">
         <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Search
           <input className={inputClasses} onChange={(event) => setQuery(event.target.value)} placeholder="Name or description" value={query} />
+        </label>
+        <label className="grid gap-1 text-sm font-medium text-zinc-700">
+          Category
+          <select className={inputClasses} onChange={(event) => setCategory(event.target.value)} value={category}>
+            {categories.map((item) => (
+              <option key={item} value={item}>
+                {item === "all" ? "All categories" : item}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Variables
@@ -132,6 +133,33 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
       )}
     </div>
   );
+}
+
+export function getStyleCategories(styles: StyleMetadata[]): string[] {
+  return ["all", ...Array.from(new Set(styles.map((style) => styleCategory(style)).filter(Boolean))).sort((left, right) => left.localeCompare(right))];
+}
+
+export function filterStylesByControls(
+  styles: StyleMetadata[],
+  controls: { category: string; query: string; variableFilter: string }
+): StyleMetadata[] {
+  const normalizedQuery = controls.query.trim().toLowerCase();
+  return styles.filter((style) => {
+    const matchesQuery =
+      normalizedQuery.length === 0 || style.name.toLowerCase().includes(normalizedQuery) || style.description.toLowerCase().includes(normalizedQuery);
+    const complete = hasCompleteVariables(style);
+    const matchesFilter =
+      controls.variableFilter === "all" ||
+      (controls.variableFilter === "complete" && complete) ||
+      (controls.variableFilter === "missing" && !complete);
+    const matchesCategory = controls.category === "all" || styleCategory(style) === controls.category;
+    return matchesQuery && matchesFilter && matchesCategory;
+  });
+}
+
+function styleCategory(style: StyleMetadata): string {
+  const [, category] = style.design_md_path.split("/");
+  return category || style.name.split(/\s+/)[0]?.toLowerCase() || style.name.toLowerCase();
 }
 
 function hasCompleteVariables(style: StyleMetadata): boolean {

@@ -183,8 +183,8 @@ function ProductCard({
         <a className={secondaryLinkClasses} href={`/products/${product.id}`}>
           Open
         </a>
-        <a className={secondaryLinkClasses} href={`/products/${product.id}/baseline`}>
-          Baseline
+        <a className={secondaryLinkClasses} href={latest ? `/products/${product.id}/baseline` : `/products/${product.id}#new-requirement`}>
+          {latest ? "Baseline" : "Create requirement"}
         </a>
       </div>
     </article>
