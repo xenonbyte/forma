@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { FormaError } from "./errors.js";
 
 export interface AnnotationNode {
   id: string;
@@ -19,7 +20,14 @@ export interface AnnotationNode {
 type PenRecord = Record<string, unknown>;
 
 export async function getPenAnnotations(penPath: string): Promise<AnnotationNode[]> {
-  return flattenPen(JSON.parse(await readFile(penPath, "utf8")));
+  try {
+    return flattenPen(JSON.parse(await readFile(penPath, "utf8")));
+  } catch (error) {
+    throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", {
+      file: penPath,
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
 }
 
 export function flattenPen(pen: unknown): AnnotationNode[] {

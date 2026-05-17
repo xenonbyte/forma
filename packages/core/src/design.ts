@@ -19,6 +19,7 @@ const exportNodeIdSchema = z.string().min(1).regex(/^(?!\.{1,2}$)(?!.*[\\/])[\w.
 const designHistoryEntrySchema = z.object({
   version: z.number().int().positive(),
   file: z.string().regex(/^design\.v[1-9]\d*\.pen$/),
+  preview_file: z.string().regex(/^preview\.v[1-9]\d*@2x\.png$/).optional(),
   created_at: z.string().datetime()
 }).strict();
 
@@ -66,6 +67,18 @@ export interface DesignServiceOptions {
   exporter?: DesignExporter;
 }
 
+interface StagedDesignSave {
+  design: Design;
+  page: RequirementPage;
+  stageDir: string;
+  isNew: boolean;
+}
+
+interface CommittedDesignSave {
+  plan: StagedDesignSave;
+  backupDir?: string;
+}
+
 export class DesignService {
   private readonly dataDir: string;
   private readonly products: ProductService;
@@ -82,36 +95,40 @@ export class DesignService {
   async saveDesigns(requirementId: string, inputs: SaveDesignInput[]): Promise<Design[]> {
     const requirement = await this.readRequirementById(requirementId);
     const pagesById = new Map(requirement.pages.map((page) => [page.page_id, page]));
-    const saved: Design[] = [];
+    const stageRoot = join(this.requirementDir(requirement), `.design-stage-${randomBytes(8).toString("hex")}`);
+    let staged: StagedDesignSave[] = [];
+    const committed: CommittedDesignSave[] = [];
 
-    for (const input of inputs) {
-      const page = pagesById.get(input.page_id);
-      if (!page) {
-        throw new FormaError("PAGE_NOT_OWNED", "Page is not owned by requirement", {
-          requirement_id: requirement.id,
-          page_id: input.page_id
-        });
+    try {
+      staged = await this.stageDesignSaves(requirement, inputs, stageRoot);
+      for (const plan of staged) {
+        const targetDir = this.designDir(plan.design);
+        if (plan.isNew) {
+          await rename(plan.stageDir, targetDir);
+          committed.push({ plan });
+        } else {
+          const backupDir = join(stageRoot, `backup-${plan.design.id}-${randomBytes(4).toString("hex")}`);
+          await this.backupCurrentDesign(targetDir, backupDir);
+          await this.commitExistingDesignStage(plan.stageDir, targetDir, plan.design);
+          committed.push({ plan, backupDir });
+        }
+        pagesById.set(plan.page.page_id, { ...plan.page, design_status: "done", design_id: plan.design.id });
       }
-      await this.validator.validatePenFile(input.penPath);
 
-      if (input.mode === "refine" && page.design_status !== "done") {
-        throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
-      }
+      await this.writeRequirement({
+        ...requirement,
+        status: [...pagesById.values()].every((page) => page.design_status === "done") ? "active" : requirement.status,
+        updated_at: new Date().toISOString(),
+        pages: requirement.pages.map((page) => pagesById.get(page.page_id) ?? page)
+      });
 
-      const next = page.design_id
-        ? await this.replaceExistingDesign(requirement, page, input)
-        : await this.createDesign(requirement, page, input);
-      saved.push(next);
-      pagesById.set(page.page_id, { ...page, design_status: "done", design_id: next.id });
+      await rm(stageRoot, { recursive: true, force: true });
+      return staged.map((plan) => plan.design);
+    } catch (error) {
+      await this.rollbackCommittedSaves(committed);
+      await rm(stageRoot, { recursive: true, force: true });
+      throw error;
     }
-
-    await this.writeRequirement({
-      ...requirement,
-      status: [...pagesById.values()].every((page) => page.design_status === "done") ? "active" : requirement.status,
-      updated_at: new Date().toISOString(),
-      pages: requirement.pages.map((page) => pagesById.get(page.page_id) ?? page)
-    });
-    return saved;
   }
 
   async rollbackDesign(designId: string): Promise<Design> {
@@ -122,7 +139,10 @@ export class DesignService {
 
     const previousVersion = current.version - 1;
     const designDir = this.designDir(current);
+    const historyEntry = current.history.find((entry) => entry.version === previousVersion);
     const previousPen = join(designDir, `design.v${previousVersion}.pen`);
+    const previousPreviewFile = historyEntry?.preview_file ?? `preview.v${previousVersion}@2x.png`;
+    const previousPreview = join(designDir, previousPreviewFile);
     if (!(await fileExists(previousPen))) {
       throw new FormaError("HISTORY_FILE_MISSING", "Design history file is missing", {
         design_id: current.id,
@@ -130,11 +150,16 @@ export class DesignService {
         file: `design.v${previousVersion}.pen`
       });
     }
+    if (!(await fileExists(previousPreview))) {
+      throw new FormaError("HISTORY_FILE_MISSING", "Design history file is missing", {
+        design_id: current.id,
+        version: previousVersion,
+        file: previousPreviewFile
+      });
+    }
 
     await copyFileAtomic(previousPen, join(designDir, "design.pen"));
-    if (this.exporter?.exportPreview) {
-      await this.exporter.exportPreview(join(designDir, "design.pen"), join(designDir, "preview@2x.png"));
-    }
+    await copyFileAtomic(previousPreview, join(designDir, "preview@2x.png"));
 
     const next = designSchema.parse({
       ...current,
@@ -179,7 +204,41 @@ export class DesignService {
     return { design_id: design.id, node_id: safeNodeId, format: safeFormat, path: output, source: "preview" };
   }
 
-  private async createDesign(requirement: Requirement, page: RequirementPage, input: SaveDesignInput): Promise<Design> {
+  private async stageDesignSaves(requirement: Requirement, inputs: SaveDesignInput[], stageRoot: string): Promise<StagedDesignSave[]> {
+    const pagesById = new Map(requirement.pages.map((page) => [page.page_id, page]));
+    const staged: StagedDesignSave[] = [];
+    await mkdir(stageRoot, { recursive: true });
+
+    for (const input of inputs) {
+      const page = pagesById.get(input.page_id);
+      if (!page) {
+        throw new FormaError("PAGE_NOT_OWNED", "Page is not owned by requirement", {
+          requirement_id: requirement.id,
+          page_id: input.page_id
+        });
+      }
+      await this.validator.validatePenFile(input.penPath);
+      if (input.mode === "refine" && page.design_status !== "done") {
+        throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
+      }
+
+      const stageDir = join(stageRoot, `${staged.length}-${randomBytes(4).toString("hex")}`);
+      const stagedSave = page.design_id
+        ? await this.stageExistingDesign(requirement, page, input, stageDir)
+        : await this.stageNewDesign(requirement, page, input, stageDir);
+      staged.push(stagedSave);
+      pagesById.set(page.page_id, { ...page, design_status: "done", design_id: stagedSave.design.id });
+    }
+
+    return staged;
+  }
+
+  private async stageNewDesign(
+    requirement: Requirement,
+    page: RequirementPage,
+    input: SaveDesignInput,
+    stageDir: string
+  ): Promise<StagedDesignSave> {
     const now = new Date().toISOString();
     const design = designSchema.parse({
       id: createId("design"),
@@ -191,12 +250,17 @@ export class DesignService {
       updated_at: now,
       history: []
     });
-    await this.copyOutput(input, design);
-    await writeYamlAtomic(this.designFile(design), design);
-    return design;
+    await this.stageOutput(input, stageDir);
+    await writeYamlAtomic(join(stageDir, "design.yaml"), design);
+    return { design, page, stageDir, isNew: true };
   }
 
-  private async replaceExistingDesign(requirement: Requirement, page: RequirementPage, input: SaveDesignInput): Promise<Design> {
+  private async stageExistingDesign(
+    requirement: Requirement,
+    page: RequirementPage,
+    input: SaveDesignInput,
+    stageDir: string
+  ): Promise<StagedDesignSave> {
     if (page.design_status !== "done") {
       throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
     }
@@ -210,25 +274,86 @@ export class DesignService {
     }
     const designDir = this.designDir(current);
     const historyFile = `design.v${current.version}.pen`;
-    await copyFileAtomic(join(designDir, "design.pen"), join(designDir, historyFile));
-    await this.copyOutput(input, current);
+    const historyPreviewFile = `preview.v${current.version}@2x.png`;
+    if (!(await fileExists(join(designDir, "design.pen")))) {
+      throw new FormaError("HISTORY_FILE_MISSING", "Design history file is missing", {
+        design_id: current.id,
+        version: current.version,
+        file: "design.pen"
+      });
+    }
+    if (!(await fileExists(join(designDir, "preview@2x.png")))) {
+      throw new FormaError("HISTORY_FILE_MISSING", "Design history file is missing", {
+        design_id: current.id,
+        version: current.version,
+        file: "preview@2x.png"
+      });
+    }
+
+    await mkdir(stageDir, { recursive: true });
+    await copyFileAtomic(join(designDir, "design.pen"), join(stageDir, historyFile));
+    await copyFileAtomic(join(designDir, "preview@2x.png"), join(stageDir, historyPreviewFile));
+    await this.stageOutput(input, stageDir);
 
     const now = new Date().toISOString();
     const next = designSchema.parse({
       ...current,
       version: current.version + 1,
       updated_at: now,
-      history: [...current.history, { version: current.version, file: historyFile, created_at: now }]
+      history: [
+        ...current.history,
+        { version: current.version, file: historyFile, preview_file: historyPreviewFile, created_at: now }
+      ]
     });
-    await writeYamlAtomic(this.designFile(next), next);
-    return next;
+    await writeYamlAtomic(join(stageDir, "design.yaml"), next);
+    return { design: next, page, stageDir, isNew: false };
   }
 
-  private async copyOutput(input: SaveDesignInput, design: Design): Promise<void> {
-    const designDir = this.designDir(design);
-    await mkdir(designDir, { recursive: true });
-    await copyFileAtomic(input.penPath, join(designDir, "design.pen"));
-    await copyFileAtomic(input.previewPath, join(designDir, "preview@2x.png"));
+  private async stageOutput(input: SaveDesignInput, stageDir: string): Promise<void> {
+    await mkdir(stageDir, { recursive: true });
+    await copyFileAtomic(input.penPath, join(stageDir, "design.pen"));
+    await copyFileAtomic(input.previewPath, join(stageDir, "preview@2x.png"));
+  }
+
+  private async commitExistingDesignStage(stageDir: string, targetDir: string, design: Design): Promise<void> {
+    await mkdir(targetDir, { recursive: true });
+    for (const entry of design.history) {
+      if (await fileExists(join(stageDir, entry.file))) {
+        await copyFileAtomic(join(stageDir, entry.file), join(targetDir, entry.file));
+      }
+      if (entry.preview_file && (await fileExists(join(stageDir, entry.preview_file)))) {
+        await copyFileAtomic(join(stageDir, entry.preview_file), join(targetDir, entry.preview_file));
+      }
+    }
+    await copyFileAtomic(join(stageDir, "design.pen"), join(targetDir, "design.pen"));
+    await copyFileAtomic(join(stageDir, "preview@2x.png"), join(targetDir, "preview@2x.png"));
+    await copyFileAtomic(join(stageDir, "design.yaml"), join(targetDir, "design.yaml"));
+  }
+
+  private async backupCurrentDesign(targetDir: string, backupDir: string): Promise<void> {
+    await mkdir(backupDir, { recursive: true });
+    await copyFileAtomic(join(targetDir, "design.pen"), join(backupDir, "design.pen"));
+    await copyFileAtomic(join(targetDir, "preview@2x.png"), join(backupDir, "preview@2x.png"));
+    await copyFileAtomic(join(targetDir, "design.yaml"), join(backupDir, "design.yaml"));
+  }
+
+  private async rollbackCommittedSaves(committed: CommittedDesignSave[]): Promise<void> {
+    for (const item of [...committed].reverse()) {
+      const targetDir = this.designDir(item.plan.design);
+      if (item.plan.isNew) {
+        await rm(targetDir, { recursive: true, force: true });
+        continue;
+      }
+
+      const restoredVersion = item.plan.design.version - 1;
+      await rm(join(targetDir, `design.v${restoredVersion}.pen`), { force: true });
+      await rm(join(targetDir, `preview.v${restoredVersion}@2x.png`), { force: true });
+      if (item.backupDir) {
+        await copyFileAtomic(join(item.backupDir, "design.pen"), join(targetDir, "design.pen"));
+        await copyFileAtomic(join(item.backupDir, "preview@2x.png"), join(targetDir, "preview@2x.png"));
+        await copyFileAtomic(join(item.backupDir, "design.yaml"), join(targetDir, "design.yaml"));
+      }
+    }
   }
 
   private async annotationsForVersion(design: Design, version: number): Promise<AnnotationNode[]> {
@@ -245,7 +370,7 @@ export class DesignService {
         file: penFile
       });
     }
-    return flattenPen(JSON.parse(await readFile(penPath, "utf8")));
+    return this.readPenAnnotations(penPath);
   }
 
   private async readDesignById(designId: string | undefined): Promise<Design> {
@@ -288,7 +413,22 @@ export class DesignService {
   }
 
   private async writeRequirement(requirement: Requirement): Promise<void> {
-    await writeYamlAtomic(join(this.dataDir, requirement.product_id, requirement.id, "requirement.yaml"), requirementSchema.parse(requirement));
+    await writeYamlAtomic(join(this.requirementDir(requirement), "requirement.yaml"), requirementSchema.parse(requirement));
+  }
+
+  private async readPenAnnotations(penPath: string): Promise<AnnotationNode[]> {
+    try {
+      return flattenPen(JSON.parse(await readFile(penPath, "utf8")));
+    } catch (error) {
+      throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", {
+        file: penPath,
+        cause: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  private requirementDir(requirement: Requirement): string {
+    return join(this.dataDir, requirement.product_id, requirement.id);
   }
 
   private designDir(design: Design): string {
