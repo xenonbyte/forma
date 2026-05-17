@@ -1,0 +1,399 @@
+import { constants } from "node:fs";
+import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readYaml, writeYamlAtomic } from "./yaml.js";
+
+export type AgentInstallPlatform = "claude" | "codex" | "gemini";
+
+export const formaInstallCommands = [
+  "fm-list-product",
+  "fm-status",
+  "fm-upload-requirement",
+  "fm-update-requirement",
+  "fm-design",
+  "fm-refine-design",
+  "fm-refine-components",
+  "fm-change-style",
+  "fm-rollback-design"
+] as const;
+
+export type FormaInstallCommand = (typeof formaInstallCommands)[number];
+
+export interface InstallServiceOptions {
+  formaHome?: string;
+  userHome?: string;
+  templatesDir?: string;
+}
+
+export interface InstallBackupRecord {
+  target: string;
+  backup: string;
+}
+
+export interface InstallManifest {
+  schema_version: 1;
+  platform: AgentInstallPlatform;
+  installed_paths: string[];
+  backups: InstallBackupRecord[];
+  config_paths: string[];
+  installed_at: string;
+}
+
+interface InstallRecord {
+  installedPaths: string[];
+  backups: InstallBackupRecord[];
+  configPaths: string[];
+}
+
+const codexMcpStart = "# BEGIN Forma managed mcp server";
+const codexMcpEnd = "# END Forma managed mcp server";
+const formaMcpConfig = { command: "forma", args: ["mcp"] };
+
+export class InstallService {
+  readonly formaHome: string;
+  readonly userHome: string;
+  readonly templatesDir: string;
+
+  constructor(options: InstallServiceOptions = {}) {
+    this.userHome = resolve(options.userHome ?? homedir());
+    this.formaHome = resolve(options.formaHome ?? join(this.userHome, ".forma"));
+    this.templatesDir = resolve(options.templatesDir ?? defaultTemplatesDir());
+  }
+
+  async installPlatforms(platforms: AgentInstallPlatform[]): Promise<void> {
+    for (const platform of platforms) {
+      await this.installPlatform(platform);
+    }
+  }
+
+  async uninstallPlatforms(platforms: AgentInstallPlatform[]): Promise<void> {
+    const selectedManifests = new Map<AgentInstallPlatform, InstallManifest>();
+    for (const platform of platforms) {
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      if (manifest) {
+        selectedManifests.set(platform, manifest);
+      }
+    }
+
+    if (selectedManifests.size === 0) {
+      return;
+    }
+
+    for (const [platform, manifest] of selectedManifests) {
+      await this.uninstallMcpConfig(platform, manifest.config_paths);
+    }
+
+    const protectedPaths = await this.installedPathsOwnedByOtherPlatforms(Array.from(selectedManifests.keys()));
+    const backupByTarget = new Map<string, string>();
+    for (const manifest of selectedManifests.values()) {
+      for (const backup of manifest.backups) {
+        if (!backupByTarget.has(backup.target)) {
+          backupByTarget.set(backup.target, backup.backup);
+        }
+      }
+    }
+
+    const installedPaths = unique(Array.from(selectedManifests.values()).flatMap((manifest) => manifest.installed_paths));
+    for (const target of installedPaths.reverse()) {
+      if (protectedPaths.has(target)) {
+        continue;
+      }
+      const backup = backupByTarget.get(target);
+      if (backup && (await pathExists(backup))) {
+        await mkdir(dirname(target), { recursive: true });
+        await copyFile(backup, target);
+      } else {
+        await rm(target, { force: true });
+      }
+    }
+
+    for (const platform of selectedManifests.keys()) {
+      await rm(this.manifestFile(platform), { force: true });
+    }
+  }
+
+  private async installPlatform(platform: AgentInstallPlatform): Promise<void> {
+    const record: InstallRecord = { installedPaths: [], backups: [], configPaths: [] };
+
+    await this.installSharedSkill(platform, record);
+    await this.installCommandTemplates(platform, record);
+    await this.installMcpConfig(platform, record);
+    await this.writeManifest(platform, record);
+  }
+
+  private async installSharedSkill(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
+    await this.writeManagedFile({
+      platform,
+      source: join(this.templatesDir, "shared", "SKILL.md"),
+      target: join(this.formaHome, "skills", "forma", "SKILL.md"),
+      record
+    });
+  }
+
+  private async installCommandTemplates(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
+    for (const command of formaInstallCommands) {
+      await this.writeManagedFile({
+        platform,
+        source: this.templatePath(platform, command),
+        target: this.commandTargetPath(platform, command),
+        record
+      });
+    }
+  }
+
+  private async installMcpConfig(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
+    if (platform === "claude") {
+      await this.writeJsonConfig(platform, join(this.userHome, ".claude", "mcp.json"), (config) => ({
+        ...config,
+        forma: formaMcpConfig
+      }), record);
+      return;
+    }
+
+    if (platform === "gemini") {
+      await this.writeJsonConfig(platform, join(this.userHome, ".gemini", "settings.json"), (config) => ({
+        ...config,
+        mcpServers: {
+          ...asRecord(config.mcpServers),
+          forma: formaMcpConfig
+        }
+      }), record);
+      return;
+    }
+
+    await this.writeCodexConfig(platform, join(this.userHome, ".codex", "config.toml"), record);
+  }
+
+  private async uninstallMcpConfig(platform: AgentInstallPlatform, configPaths: string[]): Promise<void> {
+    const configPath = configPaths[0];
+    if (!configPath || !(await pathExists(configPath))) {
+      return;
+    }
+
+    if (platform === "claude") {
+      const config = await readJsonObject(configPath);
+      delete config.forma;
+      await writeJsonObject(configPath, config);
+      return;
+    }
+
+    if (platform === "gemini") {
+      const config = await readJsonObject(configPath);
+      const mcpServers = asRecord(config.mcpServers);
+      delete mcpServers.forma;
+      if (Object.keys(mcpServers).length > 0) {
+        config.mcpServers = mcpServers;
+      } else {
+        delete config.mcpServers;
+      }
+      await writeJsonObject(configPath, config);
+      return;
+    }
+
+    const content = await readFile(configPath, "utf8");
+    await writeFile(configPath, removeCodexManagedSection(content), "utf8");
+  }
+
+  private async writeJsonConfig(
+    platform: AgentInstallPlatform,
+    configPath: string,
+    update: (config: Record<string, unknown>) => Record<string, unknown>,
+    record: InstallRecord
+  ): Promise<void> {
+    const existingContent = await readOptionalText(configPath);
+    const existingConfig = existingContent ? parseJsonObject(existingContent, configPath) : {};
+    const nextContent = `${JSON.stringify(update(existingConfig), null, 2)}\n`;
+
+    await this.writeTextTarget(platform, configPath, nextContent, record.backups);
+    record.configPaths.push(configPath);
+  }
+
+  private async writeCodexConfig(
+    platform: AgentInstallPlatform,
+    configPath: string,
+    record: InstallRecord
+  ): Promise<void> {
+    const existing = await readOptionalText(configPath);
+    const next = appendCodexManagedSection(removeCodexManagedSection(existing ?? ""));
+    await this.writeTextTarget(platform, configPath, next, record.backups);
+    record.configPaths.push(configPath);
+  }
+
+  private async writeManagedFile(args: {
+    platform: AgentInstallPlatform;
+    source: string;
+    target: string;
+    record: InstallRecord;
+  }): Promise<void> {
+    const content = await readFile(args.source, "utf8");
+    await this.writeTextTarget(args.platform, args.target, content, args.record.backups);
+    args.record.installedPaths.push(args.target);
+  }
+
+  private async writeTextTarget(
+    platform: AgentInstallPlatform,
+    target: string,
+    content: string,
+    backups: InstallBackupRecord[]
+  ): Promise<void> {
+    const existing = await readOptionalText(target);
+    if (existing === content) {
+      return;
+    }
+
+    if (existing !== undefined) {
+      const backup = this.backupPath(platform, target);
+      await mkdir(dirname(backup), { recursive: true });
+      await writeFile(backup, existing, "utf8");
+      backups.push({ target, backup });
+    }
+
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, content, "utf8");
+  }
+
+  private templatePath(platform: AgentInstallPlatform, command: FormaInstallCommand): string {
+    if (platform === "claude") {
+      return join(this.templatesDir, "claude", `${command}.md`);
+    }
+    if (platform === "gemini") {
+      return join(this.templatesDir, "gemini", `${command}.toml`);
+    }
+    return join(this.templatesDir, "codex", command, "SKILL.md");
+  }
+
+  private commandTargetPath(platform: AgentInstallPlatform, command: FormaInstallCommand): string {
+    if (platform === "claude") {
+      return join(this.userHome, ".claude", "commands", `${command}.md`);
+    }
+    if (platform === "gemini") {
+      return join(this.userHome, ".gemini", "commands", `${command}.toml`);
+    }
+    return join(this.userHome, ".codex", "prompts", "skills", command, "SKILL.md");
+  }
+
+  private async writeManifest(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
+    const manifest: InstallManifest = {
+      schema_version: 1,
+      platform,
+      installed_paths: unique(record.installedPaths),
+      backups: record.backups,
+      config_paths: unique(record.configPaths),
+      installed_at: new Date().toISOString()
+    };
+    await writeYamlAtomic(this.manifestFile(platform), manifest);
+  }
+
+  private manifestFile(platform: AgentInstallPlatform): string {
+    return join(this.formaHome, "manifests", `${platform}.manifest`);
+  }
+
+  private backupPath(platform: AgentInstallPlatform, target: string): string {
+    const relativeTarget = relative(this.userHome, target);
+    const safeName = relativeTarget.startsWith("..") ? encodeURIComponent(target) : relativeTarget;
+    return join(this.formaHome, "backups", platform, safeName);
+  }
+
+  private async installedPathsOwnedByOtherPlatforms(selectedPlatforms: AgentInstallPlatform[]): Promise<Set<string>> {
+    const selected = new Set(selectedPlatforms);
+    const paths = new Set<string>();
+    for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      if (selected.has(platform)) {
+        continue;
+      }
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      for (const installedPath of manifest?.installed_paths ?? []) {
+        paths.add(installedPath);
+      }
+    }
+    return paths;
+  }
+}
+
+function defaultTemplatesDir(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../agent/templates");
+}
+
+async function readOptionalManifest(file: string): Promise<InstallManifest | undefined> {
+  if (!(await pathExists(file))) {
+    return undefined;
+  }
+  return readYaml<InstallManifest>(file);
+}
+
+async function readOptionalText(file: string): Promise<string | undefined> {
+  try {
+    return await readFile(file, "utf8");
+  } catch (error) {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await access(file, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseJsonObject(content: string, file: string): Record<string, unknown> {
+  const value = JSON.parse(content) as unknown;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Expected JSON object in ${file}`);
+  }
+  return value as Record<string, unknown>;
+}
+
+async function readJsonObject(file: string): Promise<Record<string, unknown>> {
+  return parseJsonObject(await readFile(file, "utf8"), file);
+}
+
+async function writeJsonObject(file: string, value: Record<string, unknown>): Promise<void> {
+  await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as Record<string, unknown>;
+}
+
+function appendCodexManagedSection(content: string): string {
+  const trimmed = content.trimEnd();
+  const section = `${codexMcpStart}
+[mcp_servers.forma]
+command = "forma"
+args = ["mcp"]
+${codexMcpEnd}
+`;
+  return trimmed ? `${trimmed}\n\n${section}` : section;
+}
+
+function removeCodexManagedSection(content: string): string {
+  const escapedStart = escapeRegExp(codexMcpStart);
+  const escapedEnd = escapeRegExp(codexMcpEnd);
+  const next = content
+    .replace(new RegExp(`\\n*${escapedStart}[\\s\\S]*?${escapedEnd}\\n*`, "g"), "\n")
+    .replace(/\n{3,}/g, "\n\n");
+  return next.trim() ? next.replace(/\n{2}$/g, "\n") : "";
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function unique<T>(values: T[]): T[] {
+  return Array.from(new Set(values));
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
+}

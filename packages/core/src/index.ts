@@ -14,3 +14,4 @@ export * from "./pencil.js";
 export * from "./annotate.js";
 export * from "./diff.js";
 export * from "./design.js";
+export * from "./install.js";
