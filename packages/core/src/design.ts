@@ -143,6 +143,7 @@ export class DesignService {
     if (current.version <= 1) {
       throw new FormaError("VERSION_TOO_LOW", "Design version is too low", { design_id: current.id, version: current.version });
     }
+    await this.assertRollbackOwnership(current);
 
     const previousVersion = current.version - 1;
     const designDir = this.designDir(current);
@@ -441,6 +442,45 @@ export class DesignService {
     throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found", { requirement_id: parsedRequirementId });
   }
 
+  private async assertRollbackOwnership(design: Design): Promise<void> {
+    const requirements = await this.readProductRequirements(design.product_id);
+    const latest = requirements.sort(compareRequirementCreatedAtDesc)[0];
+    const page = latest?.pages.find((item) => item.page_id === design.page_id);
+    if (
+      !latest ||
+      latest.id !== design.requirement_id ||
+      !page ||
+      page.design_status !== "done" ||
+      page.design_id !== design.id
+    ) {
+      throw new FormaError("PAGE_NOT_OWNED", "Page is not owned by current requirement", {
+        design_id: design.id,
+        requirement_id: design.requirement_id,
+        page_id: design.page_id,
+        current_requirement_id: latest?.id
+      });
+    }
+  }
+
+  private async readProductRequirements(productId: string): Promise<Requirement[]> {
+    const productDir = join(this.dataDir, productId);
+    if (!(await fileExists(productDir))) {
+      return [];
+    }
+
+    const entries = await readdir(productDir, { withFileTypes: true });
+    const requirements = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && /^R-[a-f0-9]{8}$/.test(entry.name))
+        .map(async (entry) => {
+          const requirement = await readYamlAs(join(productDir, entry.name, "requirement.yaml"), requirementSchema);
+          return requirement.id === entry.name && requirement.product_id === productId ? requirement : null;
+        })
+    );
+
+    return requirements.filter((requirement): requirement is Requirement => requirement !== null);
+  }
+
   private async writeRequirement(requirement: Requirement): Promise<void> {
     await writeYamlAtomic(join(this.requirementDir(requirement), "requirement.yaml"), requirementSchema.parse(requirement));
   }
@@ -540,4 +580,8 @@ async function fileExists(file: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+function compareRequirementCreatedAtDesc(a: Requirement, b: Requirement): number {
+  return b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
 }

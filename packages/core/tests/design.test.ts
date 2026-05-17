@@ -341,6 +341,58 @@ describe("DesignService", () => {
     });
   });
 
+  it("rollback rejects when a newer requirement supersedes the design requirement without mutating files", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "rollback-current-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
+    const refined = await writeDesignOutput(home, "rollback-current-refined", refinedPen);
+    await writeFile(refined.previewPath, alternatePng);
+    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+    const newerEmpty = await store.requirements.createEmptyRequirement(requirement.product_id, "Newer checkout");
+    const newer = await store.requirements.submitRequirement({
+      requirement_id: newerEmpty.id,
+      document_md: "# Newer\nSupersedes old design",
+      pages: [{ page_id: `${newerEmpty.id}-page-1`, name: "Newer Page", baseline_page: "newer-page" }],
+      navigation: []
+    });
+    await writeYamlAtomic(join(home, "data", requirement.product_id, newer.id, "requirement.yaml"), {
+      ...newer,
+      created_at: "2999-01-01T00:00:00.000Z",
+      updated_at: "2999-01-01T00:00:00.000Z"
+    });
+
+    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "PAGE_NOT_OWNED" });
+
+    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
+    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
+    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
+    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({ id: saved.id, version: 2, history: updated.history });
+  });
+
+  it("rollback rejects when current requirement page no longer points at the design without mutating files", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "rollback-page-current-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
+    const refined = await writeDesignOutput(home, "rollback-page-current-refined", refinedPen);
+    await writeFile(refined.previewPath, alternatePng);
+    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
+    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
+    await writeYamlAtomic(requirementFile, {
+      ...storedRequirement,
+      pages: [{ ...requirement.pages[0], design_status: "expired", design_id: saved.id }]
+    });
+
+    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "PAGE_NOT_OWNED" });
+
+    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
+    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
+    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
+    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({ id: saved.id, version: 2, history: updated.history });
+  });
+
   it("rollback fails when the previous history file is missing", async () => {
     const { home, requirement, store } = await createDesignStore();
     const initial = await writeDesignOutput(home, "history-initial");
