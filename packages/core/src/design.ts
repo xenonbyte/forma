@@ -67,6 +67,11 @@ export interface DesignServiceOptions {
   exporter?: DesignExporter;
 }
 
+interface DesignServiceTestHooks {
+  afterCommitExistingHistoryFiles?(): Promise<void> | void;
+  afterRollbackPenWrite?(): Promise<void> | void;
+}
+
 interface StagedDesignSave {
   design: Design;
   page: RequirementPage;
@@ -84,12 +89,14 @@ export class DesignService {
   private readonly products: ProductService;
   private readonly validator: DesignValidator;
   private readonly exporter?: DesignExporter;
+  private testHooks: DesignServiceTestHooks;
 
   constructor(options: DesignServiceOptions) {
     this.dataDir = join(options.home, "data");
     this.products = options.products;
     this.validator = options.validator ?? new PencilService({ home: options.home });
     this.exporter = options.exporter;
+    this.testHooks = {};
   }
 
   async saveDesigns(requirementId: string, inputs: SaveDesignInput[]): Promise<Design[]> {
@@ -109,8 +116,8 @@ export class DesignService {
         } else {
           const backupDir = join(stageRoot, `backup-${plan.design.id}-${randomBytes(4).toString("hex")}`);
           await this.backupCurrentDesign(targetDir, backupDir);
-          await this.commitExistingDesignStage(plan.stageDir, targetDir, plan.design);
           committed.push({ plan, backupDir });
+          await this.commitExistingDesignStage(plan.stageDir, targetDir, plan.design);
         }
         pagesById.set(plan.page.page_id, { ...plan.page, design_status: "done", design_id: plan.design.id });
       }
@@ -139,6 +146,9 @@ export class DesignService {
 
     const previousVersion = current.version - 1;
     const designDir = this.designDir(current);
+    const stageRoot = join(designDir, `.rollback-stage-${randomBytes(8).toString("hex")}`);
+    const backupDir = join(stageRoot, "backup");
+    const nextDir = join(stageRoot, "next");
     const historyEntry = current.history.find((entry) => entry.version === previousVersion);
     const previousPen = join(designDir, `design.v${previousVersion}.pen`);
     const previousPreviewFile = historyEntry?.preview_file ?? `preview.v${previousVersion}@2x.png`;
@@ -158,16 +168,30 @@ export class DesignService {
       });
     }
 
-    await copyFileAtomic(previousPen, join(designDir, "design.pen"));
-    await copyFileAtomic(previousPreview, join(designDir, "preview@2x.png"));
-
     const next = designSchema.parse({
       ...current,
       version: previousVersion,
       updated_at: new Date().toISOString(),
       history: current.history.filter((entry) => entry.version < previousVersion)
     });
-    await writeYamlAtomic(this.designFile(next), next);
+
+    await mkdir(nextDir, { recursive: true });
+    await copyFileAtomic(previousPen, join(nextDir, "design.pen"));
+    await copyFileAtomic(previousPreview, join(nextDir, "preview@2x.png"));
+    await writeYamlAtomic(join(nextDir, "design.yaml"), next);
+    await this.backupCurrentDesign(designDir, backupDir);
+
+    try {
+      await copyFileAtomic(join(nextDir, "design.pen"), join(designDir, "design.pen"));
+      await this.testHooks.afterRollbackPenWrite?.();
+      await copyFileAtomic(join(nextDir, "preview@2x.png"), join(designDir, "preview@2x.png"));
+      await copyFileAtomic(join(nextDir, "design.yaml"), join(designDir, "design.yaml"));
+      await rm(stageRoot, { recursive: true, force: true });
+    } catch (error) {
+      await this.restoreDesignBackup(designDir, backupDir);
+      await rm(stageRoot, { recursive: true, force: true });
+      throw error;
+    }
     return next;
   }
 
@@ -325,6 +349,7 @@ export class DesignService {
         await copyFileAtomic(join(stageDir, entry.preview_file), join(targetDir, entry.preview_file));
       }
     }
+    await this.testHooks.afterCommitExistingHistoryFiles?.();
     await copyFileAtomic(join(stageDir, "design.pen"), join(targetDir, "design.pen"));
     await copyFileAtomic(join(stageDir, "preview@2x.png"), join(targetDir, "preview@2x.png"));
     await copyFileAtomic(join(stageDir, "design.yaml"), join(targetDir, "design.yaml"));
@@ -349,11 +374,15 @@ export class DesignService {
       await rm(join(targetDir, `design.v${restoredVersion}.pen`), { force: true });
       await rm(join(targetDir, `preview.v${restoredVersion}@2x.png`), { force: true });
       if (item.backupDir) {
-        await copyFileAtomic(join(item.backupDir, "design.pen"), join(targetDir, "design.pen"));
-        await copyFileAtomic(join(item.backupDir, "preview@2x.png"), join(targetDir, "preview@2x.png"));
-        await copyFileAtomic(join(item.backupDir, "design.yaml"), join(targetDir, "design.yaml"));
+        await this.restoreDesignBackup(targetDir, item.backupDir);
       }
     }
+  }
+
+  private async restoreDesignBackup(targetDir: string, backupDir: string): Promise<void> {
+    await copyFileAtomic(join(backupDir, "design.pen"), join(targetDir, "design.pen"));
+    await copyFileAtomic(join(backupDir, "preview@2x.png"), join(targetDir, "preview@2x.png"));
+    await copyFileAtomic(join(backupDir, "design.yaml"), join(targetDir, "design.yaml"));
   }
 
   private async annotationsForVersion(design: Design, version: number): Promise<AnnotationNode[]> {

@@ -195,6 +195,31 @@ describe("DesignService", () => {
     await expect(store.designs.getDesignAnnotations(saved.id)).resolves.toContainEqual(expect.objectContaining({ id: "button", width: 327 }));
   });
 
+  it("restores an existing design when commit fails after writing history files", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "mid-commit-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const updatedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
+    const updated = await writeDesignOutput(home, "mid-commit-updated", updatedPen);
+    await writeFile(updated.previewPath, alternatePng);
+    (store.designs as unknown as { testHooks?: { afterCommitExistingHistoryFiles?: () => Promise<void> } }).testHooks = {
+      async afterCommitExistingHistoryFiles() {
+        throw new Error("mid-commit failure");
+      }
+    };
+
+    await expect(
+      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }])
+    ).rejects.toThrow("mid-commit failure");
+
+    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
+    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(samplePen);
+    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(minimalPng);
+    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({ id: saved.id, version: 1, history: [] });
+    await expect(access(join(designDir, "design.v1.pen"))).rejects.toThrow();
+    await expect(access(join(designDir, "preview.v1@2x.png"))).rejects.toThrow();
+  });
+
   it("refine replaces the preview", async () => {
     const { home, requirement, store } = await createDesignStore();
     const initial = await writeDesignOutput(home, "preview-initial");
@@ -286,6 +311,34 @@ describe("DesignService", () => {
     await store.designs.rollbackDesign(saved.id);
 
     expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(minimalPng);
+  });
+
+  it("restores current files and metadata when rollback fails after writing pen", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "rollback-partial-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
+    const refined = await writeDesignOutput(home, "rollback-partial-refined", refinedPen);
+    await writeFile(refined.previewPath, alternatePng);
+    const [updated] = await store.designs.saveDesigns(requirement.id, [
+      { page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }
+    ]);
+    (store.designs as unknown as { testHooks?: { afterRollbackPenWrite?: () => Promise<void> } }).testHooks = {
+      async afterRollbackPenWrite() {
+        throw new Error("rollback partial failure");
+      }
+    };
+
+    await expect(store.designs.rollbackDesign(saved.id)).rejects.toThrow("rollback partial failure");
+
+    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
+    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
+    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
+    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({
+      id: saved.id,
+      version: 2,
+      history: updated.history
+    });
   });
 
   it("rollback fails when the previous history file is missing", async () => {
