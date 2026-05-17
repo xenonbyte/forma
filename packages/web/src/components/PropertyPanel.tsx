@@ -1,11 +1,15 @@
 import { useState } from "react";
 
 import type { AnnotationNode } from "../api.js";
+import type { NodeSpacingMeasurement, SpacingAxisMeasurement } from "./AnnotationCanvas.js";
 
 export interface PropertyPanelProps {
   designId?: string;
   hoveredNode?: AnnotationNode | null;
+  nodes?: AnnotationNode[];
   selectedNode?: AnnotationNode | null;
+  selectedNodes?: AnnotationNode[];
+  spacing?: NodeSpacingMeasurement | null;
 }
 
 type CopyState = { label: string; status: "copied" | "error" } | null;
@@ -15,9 +19,10 @@ const copyButtonClasses =
   "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 " +
   focusClasses;
 
-export function PropertyPanel({ designId, hoveredNode, selectedNode }: PropertyPanelProps) {
+export function PropertyPanel({ designId, hoveredNode, nodes = [], selectedNode, selectedNodes, spacing }: PropertyPanelProps) {
   const [copyState, setCopyState] = useState<CopyState>(null);
-  const activeNode = selectedNode ?? hoveredNode ?? null;
+  const selectedList = selectedNodes ?? (selectedNode ? [selectedNode] : []);
+  const activeNode = selectedList[0] ?? hoveredNode ?? null;
 
   if (!activeNode) {
     return (
@@ -28,13 +33,13 @@ export function PropertyPanel({ designId, hoveredNode, selectedNode }: PropertyP
     );
   }
 
-  const rows = propertyRows(activeNode);
+  const rows = propertyRows(activeNode, nodes);
   const copyAvailable = canUseClipboard();
 
   return (
     <div className="space-y-4">
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{selectedNode ? "Selected node" : "Hovered node"}</p>
+        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{selectedList.length > 0 ? "Selected node" : "Hovered node"}</p>
         <h2 className="mt-1 truncate text-base font-semibold text-zinc-950">{activeNode.name}</h2>
         <p className="mt-1 truncate font-mono text-xs text-zinc-500">{activeNode.id}</p>
       </div>
@@ -63,14 +68,27 @@ export function PropertyPanel({ designId, hoveredNode, selectedNode }: PropertyP
         </p>
       ) : null}
 
-      {designId && selectedNode ? (
+      {spacing && selectedList.length === 2 ? (
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Spacing</p>
+          <p className="mt-1 truncate text-zinc-700">
+            {selectedList[0].name} to {selectedList[1].name}
+          </p>
+          <dl className="mt-3 grid gap-2">
+            <SpacingFact label="Horizontal" measurement={spacing.horizontal} />
+            <SpacingFact label="Vertical" measurement={spacing.vertical} />
+          </dl>
+        </div>
+      ) : null}
+
+      {designId && activeNode && selectedList.length > 0 ? (
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Export metadata</p>
           <div className="flex flex-wrap gap-2">
             {(["png", "svg"] as const).map((format) => (
               <a
                 className={`inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium uppercase text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 ${focusClasses}`}
-                href={`/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: selectedNode.id, format }).toString()}`}
+                href={`/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: activeNode.id, format }).toString()}`}
                 key={format}
               >
                 {format}
@@ -83,9 +101,10 @@ export function PropertyPanel({ designId, hoveredNode, selectedNode }: PropertyP
   );
 }
 
-function propertyRows(node: AnnotationNode): Array<{ label: string; value: string }> {
+function propertyRows(node: AnnotationNode, nodes: AnnotationNode[]): Array<{ label: string; value: string }> {
   return [
     { label: "ID", value: node.id },
+    { label: "Path", value: buildNodePath(node, nodes) },
     { label: "Type", value: node.type },
     { label: "Parent", value: node.parent_id ?? "None" },
     { label: "Position", value: `${node.x}, ${node.y}` },
@@ -95,6 +114,37 @@ function propertyRows(node: AnnotationNode): Array<{ label: string; value: strin
     { label: "Font", value: [node.fontFamily, node.fontSize ? `${node.fontSize}px` : undefined].filter(Boolean).join(" ") || "None" },
     { label: "Content", value: node.content ?? "None" }
   ];
+}
+
+export function buildNodePath(node: AnnotationNode, nodes: AnnotationNode[]): string {
+  const byId = new Map(nodes.map((item) => [item.id, item]));
+  const chain: AnnotationNode[] = [];
+  const seen = new Set<string>();
+  let current: AnnotationNode | undefined = node;
+
+  while (current && !seen.has(current.id)) {
+    chain.push(current);
+    seen.add(current.id);
+    current = current.parent_id ? byId.get(current.parent_id) : undefined;
+  }
+
+  return chain
+    .reverse()
+    .map((item) => item.name || item.id)
+    .join(" / ");
+}
+
+function SpacingFact({ label, measurement }: { label: string; measurement: SpacingAxisMeasurement }) {
+  return (
+    <div className="grid grid-cols-[6rem_minmax(0,1fr)] gap-2">
+      <dt className="text-zinc-500">{label}</dt>
+      <dd className="font-mono text-xs text-zinc-800">{formatSpacing(measurement)}</dd>
+    </div>
+  );
+}
+
+function formatSpacing(measurement: SpacingAxisMeasurement): string {
+  return `${measurement.value}px ${measurement.mode === "edge-gap" ? "edge gap" : "center delta"}`;
 }
 
 async function copyValue(label: string, value: string, setCopyState: (state: CopyState) => void): Promise<void> {

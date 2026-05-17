@@ -9,7 +9,7 @@ import {
   type DesignHistoryVersion,
   type FormaApiClient
 } from "../api.js";
-import { AnnotationCanvas } from "../components/AnnotationCanvas.js";
+import { AnnotationCanvas, calculateNodeSpacing } from "../components/AnnotationCanvas.js";
 import { DiffViewer } from "../components/DiffViewer.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { PropertyPanel } from "../components/PropertyPanel.js";
@@ -40,13 +40,13 @@ export function DesignView({ client = apiClient, params }: DesignViewProps) {
   const designId = params.designId ?? "";
   const [state, setState] = useState<DesignState>({ status: "loading" });
   const [hoveredNode, setHoveredNode] = useState<AnnotationNode | null>(null);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | undefined>(undefined);
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [selection, setSelection] = useState<VersionSelection | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    setSelectedNodeId(undefined);
+    setSelectedNodeIds([]);
     setHoveredNode(null);
     setSelection(null);
 
@@ -69,7 +69,7 @@ export function DesignView({ client = apiClient, params }: DesignViewProps) {
   }, [client, designId]);
 
   const handleHoverNode = useCallback((node: AnnotationNode | null) => setHoveredNode(node), []);
-  const handleSelectNode = useCallback((node: AnnotationNode) => setSelectedNodeId(node.id), []);
+  const handleSelectNode = useCallback((node: AnnotationNode) => setSelectedNodeIds((current) => selectAnnotationNode(current, node.id)), []);
 
   if (state.status === "loading") {
     return (
@@ -102,7 +102,7 @@ export function DesignView({ client = apiClient, params }: DesignViewProps) {
       onVersionSelectionChange={setSelection}
       productId={productId}
       requirementId={requirementId}
-      selectedNodeId={selectedNodeId}
+      selectedNodeIds={selectedNodeIds}
       versionSelection={selection}
     />
   );
@@ -118,7 +118,7 @@ export function DesignContent({
   onVersionSelectionChange,
   productId,
   requirementId,
-  selectedNodeId,
+  selectedNodeIds = [],
   versionSelection
 }: {
   annotations: AnnotationNode[];
@@ -130,12 +130,17 @@ export function DesignContent({
   onVersionSelectionChange: (selection: VersionSelection) => void;
   productId: string;
   requirementId: string;
-  selectedNodeId?: string;
+  selectedNodeIds?: string[];
   versionSelection: VersionSelection | null;
 }) {
   const sortedVersions = useMemo(() => [...history.versions].sort((left, right) => left.version - right.version), [history.versions]);
   const currentVersion = sortedVersions.find((version) => version.current) ?? sortedVersions.at(-1);
-  const selectedNode = selectedNodeId ? annotations.find((node) => node.id === selectedNodeId) : null;
+  const selectedIdsKey = selectedNodeIds.join("\u0000");
+  const selectedNodes = useMemo(
+    () => selectedNodeIds.map((id) => annotations.find((node) => node.id === id)).filter((node): node is AnnotationNode => Boolean(node)),
+    [annotations, selectedIdsKey]
+  );
+  const spacing = useMemo(() => (selectedNodes.length === 2 ? calculateNodeSpacing(selectedNodes[0], selectedNodes[1]) : null), [selectedNodes]);
   const activeSelection = versionSelection ?? defaultVersionSelection(sortedVersions);
 
   return (
@@ -161,11 +166,12 @@ export function DesignContent({
             nodes={annotations}
             onHoverNode={onHoverNode}
             onSelectNode={onSelectNode}
-            selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
+            spacing={spacing}
           />
         </WorkSurface>
         <WorkSurface title="Properties">
-          <PropertyPanel designId={designId} hoveredNode={hoveredNode} selectedNode={selectedNode} />
+          <PropertyPanel designId={designId} hoveredNode={hoveredNode} nodes={annotations} selectedNodes={selectedNodes} spacing={spacing} />
         </WorkSurface>
       </div>
 
@@ -183,6 +189,13 @@ export function DesignContent({
       </WorkSurface>
     </div>
   );
+}
+
+export function selectAnnotationNode(current: string[], nodeId: string): string[] {
+  if (current.includes(nodeId)) {
+    return current.filter((id) => id !== nodeId);
+  }
+  return [...current, nodeId].slice(-2);
 }
 
 function VersionControls({
