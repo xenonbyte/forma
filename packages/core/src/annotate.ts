@@ -21,13 +21,28 @@ type PenRecord = Record<string, unknown>;
 
 export async function getPenAnnotations(penPath: string): Promise<AnnotationNode[]> {
   try {
-    return flattenPen(JSON.parse(await readFile(penPath, "utf8")));
+    return flattenStoredPen(JSON.parse(await readFile(penPath, "utf8")));
   } catch (error) {
+    if (error instanceof FormaError) {
+      throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", { file: penPath, cause: error.message });
+    }
     throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", {
       file: penPath,
       cause: error instanceof Error ? error.message : String(error)
     });
   }
+}
+
+export function flattenStoredPen(pen: unknown): AnnotationNode[] {
+  if (!isRecord(pen) || !Array.isArray(pen.children) || pen.children.length === 0) {
+    throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid");
+  }
+
+  const nodes = flattenPen(pen);
+  if (nodes.length === 0 || nodes.every((node) => node.parent_id)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid");
+  }
+  return nodes;
 }
 
 export function flattenPen(pen: unknown): AnnotationNode[] {

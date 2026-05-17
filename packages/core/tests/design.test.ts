@@ -331,6 +331,20 @@ describe("DesignService", () => {
     await expect(store.designs.exportDesignAsset(design.id, "button", "png")).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
+  it("annotation maps structurally invalid current pen to PEN_FILE_INVALID", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "invalid-current-structure");
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+    await writeFile(
+      join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"),
+      JSON.stringify({ children: [] }),
+      "utf8"
+    );
+
+    await expect(store.designs.getDesignAnnotations(design.id)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(store.designs.exportDesignAsset(design.id, "button", "png")).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+  });
+
   it("diff reports added, removed, and modified nodes", async () => {
     const { home, requirement, store } = await createDesignStore();
     const initial = await writeDesignOutput(home, "diff-initial");
@@ -360,6 +374,20 @@ describe("DesignService", () => {
     });
     await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
     await writeFile(join(home, "data", requirement.product_id, requirement.id, design.id, "design.v1.pen"), "{", "utf8");
+
+    await expect(store.designs.diffDesigns(design.id, 1, 2)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+  });
+
+  it("diff maps structurally invalid history pen to PEN_FILE_INVALID", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "invalid-history-structure-initial");
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refined = await writeDesignOutput(home, "invalid-history-structure-refined", {
+      ...samplePen,
+      children: [{ ...samplePen.children[0], width: 390 }]
+    });
+    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+    await writeFile(join(home, "data", requirement.product_id, requirement.id, design.id, "design.v1.pen"), JSON.stringify({}), "utf8");
 
     await expect(store.designs.diffDesigns(design.id, 1, 2)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });

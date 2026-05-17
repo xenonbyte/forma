@@ -2,7 +2,7 @@ import { access, copyFile, mkdir, readdir, readFile, rename, rm, writeFile } fro
 import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
-import { flattenPen, getPenAnnotations, type AnnotationNode } from "./annotate.js";
+import { flattenStoredPen, getPenAnnotations, type AnnotationNode } from "./annotate.js";
 import { diffAnnotations, type DesignDiff } from "./diff.js";
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
@@ -418,8 +418,11 @@ export class DesignService {
 
   private async readPenAnnotations(penPath: string): Promise<AnnotationNode[]> {
     try {
-      return flattenPen(JSON.parse(await readFile(penPath, "utf8")));
+      return flattenStoredPen(JSON.parse(await readFile(penPath, "utf8")));
     } catch (error) {
+      if (error instanceof FormaError) {
+        throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", { file: penPath, cause: error.message });
+      }
       throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", {
         file: penPath,
         cause: error instanceof Error ? error.message : String(error)
