@@ -37,6 +37,32 @@ describe("requirement and baseline services", () => {
     expect(baseline.pages[0].id).toBe("login");
   });
 
+  it("forces submitted page design statuses to pending", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Login");
+
+    const submitted = await store.requirements.submitRequirement({
+      requirement_id: req.id,
+      document_md: "# Login\nEmail password login",
+      pages: [
+        { page_id: `${req.id}-login`, name: "登录页", baseline_page: "login", design_status: "done" },
+        { page_id: `${req.id}-signup`, name: "注册页", baseline_page: "signup", design_status: "expired" }
+      ],
+      navigation: []
+    });
+
+    expect(submitted.pages).toEqual([
+      expect.objectContaining({ page_id: `${req.id}-login`, design_status: "pending" }),
+      expect.objectContaining({ page_id: `${req.id}-signup`, design_status: "pending" })
+    ]);
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).resolves.toMatchObject({
+      pages: [
+        expect.objectContaining({ page_id: `${req.id}-login`, design_status: "pending" }),
+        expect.objectContaining({ page_id: `${req.id}-signup`, design_status: "pending" })
+      ]
+    });
+  });
+
   it("blocks submit when requirement is not empty", async () => {
     const { store, product } = await createConfiguredStore();
     const req = await store.requirements.createEmptyRequirement(product.id, "Login");
@@ -64,6 +90,75 @@ describe("requirement and baseline services", () => {
     await expect(store.requirements.getRequirement({ requirement_id: "R-00000000" })).rejects.toMatchObject({
       code: "REQUIREMENT_NOT_FOUND"
     });
+  });
+
+  it("validates update document and pages", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Login");
+    await store.requirements.submitRequirement(validSubmit(req.id));
+
+    await expect(
+      store.requirements.updateRequirement({
+        requirement_id: req.id,
+        document_md: "   ",
+        pages: [{ page_id: `${req.id}-login`, name: "登录页", baseline_page: "login" }],
+        expired_pages: [],
+        navigation: []
+      })
+    ).rejects.toMatchObject({ code: "DOCUMENT_EMPTY" });
+    await expect(
+      store.requirements.updateRequirement({
+        requirement_id: req.id,
+        document_md: "# Login\nUpdated",
+        pages: [],
+        expired_pages: [],
+        navigation: []
+      })
+    ).rejects.toMatchObject({ code: "PAGES_EMPTY" });
+  });
+
+  it("normalizes update page statuses from current state and expired pages", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Profile");
+    await store.requirements.submitRequirement({
+      requirement_id: req.id,
+      document_md: "# Profile\nEdit profile",
+      pages: [
+        { page_id: `${req.id}-profile`, name: "资料页", baseline_page: "profile" },
+        { page_id: `${req.id}-avatar`, name: "头像页", baseline_page: "avatar" }
+      ],
+      navigation: []
+    });
+    const saved = await readYaml<Record<string, unknown>>(
+      join(store.home, "data", product.id, req.id, "requirement.yaml")
+    );
+    await writeYamlAtomic(join(store.home, "data", product.id, req.id, "requirement.yaml"), {
+      ...saved,
+      pages: [
+        { page_id: `${req.id}-profile`, name: "资料页", baseline_page: "profile", design_status: "done" },
+        { page_id: `${req.id}-avatar`, name: "头像页", baseline_page: "avatar", design_status: "done" }
+      ]
+    });
+
+    const updated = await store.requirements.updateRequirement({
+      requirement_id: req.id,
+      document_md: "# Profile\nUpdated profile",
+      pages: [
+        { page_id: `${req.id}-profile`, name: "资料页", baseline_page: "profile", design_status: "expired" },
+        { page_id: `${req.id}-avatar`, name: "头像页", baseline_page: "avatar", design_status: "done" },
+        { page_id: `${req.id}-security`, name: "安全页", baseline_page: "security", design_status: "done" },
+        { page_id: `${req.id}-audit`, name: "审计页", baseline_page: "audit", design_status: "expired" }
+      ],
+      expired_pages: [`${req.id}-avatar`],
+      navigation: []
+    });
+
+    expect(updated.pages).toEqual([
+      expect.objectContaining({ page_id: `${req.id}-profile`, design_status: "done" }),
+      expect.objectContaining({ page_id: `${req.id}-avatar`, design_status: "expired" }),
+      expect.objectContaining({ page_id: `${req.id}-security`, design_status: "pending" }),
+      expect.objectContaining({ page_id: `${req.id}-audit`, design_status: "pending" })
+    ]);
   });
 
   it("updates requirements, marks expired pages, and cleans up removed baseline pages", async () => {
@@ -160,6 +255,10 @@ describe("requirement and baseline services", () => {
     });
 
     await store.requirements.submitRequirement(validSubmit(req.id));
+    await expect(store.requirements.archiveRequirement(req.id)).rejects.toMatchObject({
+      code: "REQUIREMENT_STATUS_INVALID"
+    });
+
     const saved = await readYaml<Record<string, unknown>>(
       join(store.home, "data", product.id, req.id, "requirement.yaml")
     );

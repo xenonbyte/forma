@@ -94,7 +94,7 @@ export class RequirementService {
       });
     }
 
-    const pages = input.pages.map((page) => requirementPageSchema.parse({ ...page, design_status: page.design_status ?? "pending" }));
+    const pages = input.pages.map((page) => requirementPageSchema.parse({ ...page, design_status: "pending" }));
     const next = requirementSchema.parse({
       ...current,
       status: "submitted",
@@ -127,11 +127,14 @@ export class RequirementService {
       });
     }
 
-    const nextActivePages = input.pages.map((page) =>
-      requirementPageSchema.parse({ ...page, design_status: page.design_status ?? "pending" })
-    );
-    const nextActiveIds = new Set(nextActivePages.map((page) => page.page_id));
+    const currentPagesById = new Map(current.pages.map((page) => [page.page_id, page]));
     const expiredIds = new Set(input.expired_pages);
+    const nextActivePages = input.pages.map((page) => {
+      const currentPage = currentPagesById.get(page.page_id);
+      const designStatus = expiredIds.has(page.page_id) ? "expired" : (currentPage?.design_status ?? "pending");
+      return requirementPageSchema.parse({ ...page, design_status: designStatus });
+    });
+    const nextActiveIds = new Set(nextActivePages.map((page) => page.page_id));
     const expiredPages = current.pages
       .filter((page) => expiredIds.has(page.page_id) && !nextActiveIds.has(page.page_id))
       .map((page) => requirementPageSchema.parse({ ...page, design_status: "expired" }));
