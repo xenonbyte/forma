@@ -125,10 +125,6 @@ const productConfigSchema = z.object({
   platform: z.enum(["mobile", "desktop", "tablet", "web"]),
   style: styleMetadataSchema
 }).strict();
-const createProductSchema = z.object({
-  name: z.string().min(1),
-  description: z.string()
-}).strict();
 const pencilGenerationSchema = z.object({
   product_id: z.string().min(1),
   prompt: z.string().min(1),
@@ -172,7 +168,7 @@ export const formaToolInputSchemas = {
   get_requirement: getRequirementSchema,
   get_current_session: emptySchema,
   set_current_session: productIdSchema,
-  init_product_config: createProductSchema,
+  init_product_config: productConfigSchema,
   complete_product_init: productIdSchema,
   update_product_config: productConfigSchema,
   list_styles: emptySchema,
@@ -199,7 +195,7 @@ const descriptions = {
   get_requirement: "Read a requirement by id or latest product requirement.",
   get_current_session: "Read the current product session.",
   set_current_session: "Set the current product session.",
-  init_product_config: "Create a product record before configuration.",
+  init_product_config: "Write platform and style configuration for an existing product.",
   complete_product_init: "Mark product components as initialized.",
   update_product_config: "Update platform and style configuration for a product.",
   list_styles: "List installed styles.",
@@ -228,7 +224,10 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
     get_requirement: tool("get_requirement", async (input) => store.requirements.getRequirement(input)),
     get_current_session: tool("get_current_session", async () => store.sessions.getCurrentSession()),
     set_current_session: tool("set_current_session", async (input) => store.sessions.setCurrentProduct(input.product_id)),
-    init_product_config: tool("init_product_config", async (input) => store.products.createProduct(input)),
+    init_product_config: tool("init_product_config", async (input) => {
+      const { product_id: productId, ...config } = input;
+      return store.products.initProductConfig(productId, config);
+    }),
     complete_product_init: tool("complete_product_init", async (input) => store.products.markComponentsInitialized(input.product_id)),
     update_product_config: tool("update_product_config", async (input) => {
       const { product_id: productId, ...config } = input;

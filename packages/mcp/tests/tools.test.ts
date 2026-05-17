@@ -152,4 +152,43 @@ describe("MCP forma tools", () => {
     });
     expect(store.designs.getDesignAnnotations).toHaveBeenCalledWith("D-12345678");
   });
+
+  it("init_product_config updates config for an existing product and does not create products", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+    const style = {
+      name: "linear",
+      description: "Focused tool UI",
+      design_md_path: "styles/linear/DESIGN.md",
+      variables: {
+        primary: "#5E6AD2",
+        background: "#FFFFFF",
+        "text-primary": "#111827",
+        "font-heading": "Inter",
+        "font-body": "Inter",
+        "border-radius": "8px",
+        "spacing-unit": "8px"
+      }
+    };
+
+    await tools.init_product_config({ product_id: "P-123abc", platform: "web", style });
+
+    expect(store.products.initProductConfig).toHaveBeenCalledWith("P-123abc", { platform: "web", style });
+    expect(store.products.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("init_product_config rejects product creation input shape as structured validation error", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.init_product_config({ name: "App", description: "Demo" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "VALIDATION_ERROR",
+      message: "Invalid tool input",
+      details: { issues: expect.any(Array) }
+    });
+    expect(store.products.createProduct).not.toHaveBeenCalled();
+  });
 });
