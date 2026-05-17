@@ -12,6 +12,9 @@ import { requirementSchema, type Requirement, type RequirementPage } from "./req
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const designIdSchema = z.string().regex(/^D-[a-f0-9]{8}$/);
+const exportFormats = ["png", "svg", "pdf"] as const;
+const exportFormatSchema = z.enum(exportFormats);
+const exportNodeIdSchema = z.string().min(1).regex(/^(?!\.{1,2}$)(?!.*[\\/])[\w.-]+$/);
 
 const designHistoryEntrySchema = z.object({
   version: z.number().int().positive(),
@@ -43,7 +46,7 @@ export interface SaveDesignInput {
 export interface ExportedDesignAsset {
   design_id: string;
   node_id: string;
-  format: "png" | "svg" | "pdf";
+  format: (typeof exportFormats)[number];
   path: string;
   source: string;
 }
@@ -157,21 +160,23 @@ export class DesignService {
 
   async exportDesignAsset(designId: string, nodeId: string, format: ExportedDesignAsset["format"]): Promise<ExportedDesignAsset> {
     const design = await this.readDesignById(designId);
-    const node = (await this.getDesignAnnotations(design.id)).find((item) => item.id === nodeId);
+    const safeNodeId = this.parseExportNodeId(nodeId, design.id);
+    const safeFormat = this.parseExportFormat(format);
+    const node = (await this.getDesignAnnotations(design.id)).find((item) => item.id === safeNodeId);
     if (!node) {
-      throw new FormaError("NODE_NOT_FOUND", "Node not found", { design_id: design.id, node_id: nodeId });
+      throw new FormaError("NODE_NOT_FOUND", "Node not found", { design_id: design.id, node_id: safeNodeId });
     }
 
     const exportsDir = join(this.designDir(design), "exports");
-    const output = join(exportsDir, `${safeNodeFileName(nodeId)}.${format}`);
+    const output = join(exportsDir, `${safeNodeId}.${safeFormat}`);
     await mkdir(exportsDir, { recursive: true });
-    if (format === "png") {
+    if (safeFormat === "png") {
       await copyFileAtomic(join(this.designDir(design), "preview@2x.png"), output);
     } else {
-      await writePlaceholderAtomic(output, `${format} export placeholder for ${design.id}/${nodeId}\n`);
+      await writePlaceholderAtomic(output, `${safeFormat} export placeholder for ${design.id}/${safeNodeId}\n`);
     }
 
-    return { design_id: design.id, node_id: nodeId, format, path: output, source: "preview" };
+    return { design_id: design.id, node_id: safeNodeId, format: safeFormat, path: output, source: "preview" };
   }
 
   private async createDesign(requirement: Requirement, page: RequirementPage, input: SaveDesignInput): Promise<Design> {
@@ -196,6 +201,13 @@ export class DesignService {
       throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
     }
     const current = await this.readDesignById(page.design_id);
+    if (current.product_id !== requirement.product_id || current.requirement_id !== requirement.id || current.page_id !== page.page_id) {
+      throw new FormaError("PAGE_NOT_OWNED", "Page design is not owned by requirement", {
+        requirement_id: requirement.id,
+        page_id: page.page_id,
+        design_id: current.id
+      });
+    }
     const designDir = this.designDir(current);
     const historyFile = `design.v${current.version}.pen`;
     await copyFileAtomic(join(designDir, "design.pen"), join(designDir, historyFile));
@@ -302,6 +314,22 @@ export class DesignService {
     }
     return parsed.data;
   }
+
+  private parseExportNodeId(nodeId: string, designId: string): string {
+    const parsed = exportNodeIdSchema.safeParse(nodeId);
+    if (!parsed.success) {
+      throw new FormaError("NODE_NOT_FOUND", "Node not found", { design_id: designId, node_id: nodeId });
+    }
+    return parsed.data;
+  }
+
+  private parseExportFormat(format: unknown): ExportedDesignAsset["format"] {
+    const parsed = exportFormatSchema.safeParse(format);
+    if (!parsed.success) {
+      throw new FormaError("EXPORT_FORMAT_UNSUPPORTED", "Export format is unsupported", { format });
+    }
+    return parsed.data;
+  }
 }
 
 async function copyFileAtomic(source: string, destination: string): Promise<void> {
@@ -340,8 +368,4 @@ async function fileExists(file: string): Promise<boolean> {
     }
     throw error;
   }
-}
-
-function safeNodeFileName(nodeId: string): string {
-  return nodeId.replace(/[^a-zA-Z0-9._-]/g, "_");
 }

@@ -1,14 +1,18 @@
-import { access, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFormaStore } from "../src/index.js";
+import { createFormaStore, readYaml, writeYamlAtomic } from "../src/index.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
   0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00,
   0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
   0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+]);
+
+const alternatePng = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x61, 0x6c, 0x74, 0x2d, 0x70, 0x6e, 0x67
 ]);
 
 const samplePen = {
@@ -78,6 +82,7 @@ describe("DesignService", () => {
     });
     await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"))).resolves.toBeUndefined();
     await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "preview@2x.png"))).resolves.toBeUndefined();
+    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.yaml"))).resolves.toBeUndefined();
   });
 
   it("saving all pages done changes the requirement status to active", async () => {
@@ -129,6 +134,77 @@ describe("DesignService", () => {
     await expect(access(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.v1.pen"))).resolves.toBeUndefined();
   });
 
+  it("update mode increments version and replaces the preview", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "update-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const updated = await writeDesignOutput(home, "updated");
+    await writeFile(updated.previewPath, alternatePng);
+
+    const [next] = await store.designs.saveDesigns(requirement.id, [
+      { page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }
+    ]);
+
+    expect(next).toMatchObject({ id: saved.id, version: 2 });
+    expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(alternatePng);
+  });
+
+  it("refine replaces the preview", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "preview-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refined = await writeDesignOutput(home, "preview-refined");
+    await writeFile(refined.previewPath, alternatePng);
+
+    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+
+    expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(alternatePng);
+  });
+
+  it("saveDesigns rejects invalid pen files", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "invalid-pen");
+    await writeFile(output.penPath, "{", "utf8");
+
+    await expect(store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }])).rejects.toMatchObject({
+      code: "PEN_FILE_INVALID"
+    });
+  });
+
+  it("saveDesigns rejects missing requirements", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "missing-requirement");
+
+    await expect(store.designs.saveDesigns("R-00000000", [{ page_id: requirement.pages[0]!.page_id, ...output }])).rejects.toMatchObject({
+      code: "REQUIREMENT_NOT_FOUND"
+    });
+  });
+
+  it("rejects corrupt page metadata that points at another requirement design", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const otherEmpty = await store.requirements.createEmptyRequirement(requirement.product_id, "Profile");
+    const otherRequirement = await store.requirements.submitRequirement({
+      requirement_id: otherEmpty.id,
+      document_md: "# Profile\nEdit profile",
+      pages: [{ page_id: `${otherEmpty.id}-page-1`, name: "Profile", baseline_page: "profile" }],
+      navigation: []
+    });
+    const original = await writeDesignOutput(home, "owner-original");
+    const [otherDesign] = await store.designs.saveDesigns(otherRequirement.id, [{ page_id: otherRequirement.pages[0]!.page_id, ...original }]);
+    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
+    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
+    await writeYamlAtomic(requirementFile, {
+      ...storedRequirement,
+      pages: [{ ...requirement.pages[0], design_status: "done", design_id: otherDesign.id }]
+    });
+    const output = await writeDesignOutput(home, "owner-invalid");
+
+    await expect(
+      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...output }])
+    ).rejects.toMatchObject({ code: "PAGE_NOT_OWNED" });
+    await expect(access(join(home, "data", otherRequirement.product_id, otherRequirement.id, otherDesign.id, "design.v1.pen"))).rejects.toThrow();
+  });
+
   it("rollback fails on version 1", async () => {
     const { home, requirement, store } = await createDesignStore();
     const output = await writeDesignOutput(home, "version-one");
@@ -151,6 +227,17 @@ describe("DesignService", () => {
     expect(JSON.parse(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.pen"), "utf8"))).toEqual(
       samplePen
     );
+  });
+
+  it("rollback fails when the previous history file is missing", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "history-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refined = await writeDesignOutput(home, "history-refined");
+    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+    await rm(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.v1.pen"));
+
+    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
   });
 
   it("annotation flattens nested coordinates and resolves variables", async () => {
@@ -195,5 +282,33 @@ describe("DesignService", () => {
       path: join(home, "data", requirement.product_id, requirement.id, design.id, "exports", "button.png")
     });
     await expect(store.designs.exportDesignAsset(design.id, "missing", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
+  });
+
+  it("exportDesignAsset rejects missing designs", async () => {
+    const { store } = await createDesignStore();
+
+    await expect(store.designs.exportDesignAsset("D-00000000", "button", "png")).rejects.toMatchObject({ code: "DESIGN_NOT_FOUND" });
+  });
+
+  it("exportDesignAsset validates runtime id, node, and format inputs", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "export-validation");
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+
+    await expect(store.designs.exportDesignAsset("../../outside", "button", "png")).rejects.toMatchObject({ code: "DESIGN_NOT_FOUND" });
+    await expect(store.designs.exportDesignAsset(design.id, "../button", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
+    await expect(store.designs.exportDesignAsset(design.id, "button", "png/../../escape" as "png")).rejects.toMatchObject({
+      code: "EXPORT_FORMAT_UNSUPPORTED"
+    });
+  });
+
+  it("exportDesignAsset rejects unsafe node ids even when the node exists", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "unsafe-node", {
+      children: [{ id: "../button", name: "Button", type: "rectangle", x: 0, y: 0, width: 1, height: 1 }]
+    });
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+
+    await expect(store.designs.exportDesignAsset(design.id, "../button", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
   });
 });
