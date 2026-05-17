@@ -76,7 +76,7 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
     );
   }
 
-  const imageUrl = state.preview?.image_url;
+  const imageUrl = isStylePreviewImageUrl(state.preview?.image_url) ? state.preview?.image_url : undefined;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -126,6 +126,10 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
       </WorkSurface>
     </div>
   );
+}
+
+export function isStylePreviewImageUrl(imageUrl: string | undefined): imageUrl is string {
+  return typeof imageUrl === "string" && /^\/api\/styles\/[^/]+\/preview\/image(?:[?#].*)?$/.test(imageUrl);
 }
 
 const secondaryLinkClasses =

@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
 import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput } from "@xenonbyte/forma-core";
@@ -135,14 +135,23 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
   app.get<{ Params: { name: string } }>("/api/styles/:name", async (request) => store.styles.getStyle(request.params.name));
 
   app.get<{ Params: { name: string } }>("/api/styles/:name/preview", async (request) => {
-    const style = await store.styles.getStyle(request.params.name);
-    const styleDir = dirname(style.metadata.design_md_path);
+    const { previewPath, style } = await getStylePreview(store, request.params.name);
+    const hasPreview = await fileExists(previewPath);
     return {
       name: request.params.name,
-      preview_path: join(store.home, styleDir, "preview@2x.png"),
-      image_url: `/api/styles/${encodeURIComponent(request.params.name)}/preview`,
+      preview_path: previewPath,
+      ...(hasPreview ? { image_url: `/api/styles/${encodeURIComponent(request.params.name)}/preview/image` } : {}),
       metadata: style.metadata
     };
+  });
+
+  app.get<{ Params: { name: string } }>("/api/styles/:name/preview/image", async (request, reply) => {
+    const { previewPath } = await getStylePreview(store, request.params.name);
+    if (!(await fileExists(previewPath))) {
+      throw new RouteNotFoundError("STYLE_PREVIEW_NOT_FOUND", "Style preview not found", { style: request.params.name });
+    }
+
+    reply.type("image/png").send(await readFile(previewPath));
   });
 }
 
@@ -212,6 +221,15 @@ async function getOwnedRequirement(store: FormaStore, productId: string, require
     });
   }
   return requirement;
+}
+
+async function getStylePreview(store: FormaStore, name: string) {
+  const style = await store.styles.getStyle(name);
+  const styleDir = dirname(style.metadata.design_md_path);
+  return {
+    previewPath: safeStorePath(store, styleDir, "preview@2x.png"),
+    style
+  };
 }
 
 async function getBaselineImageMetadata(store: FormaStore, productId: string, pageId: string) {

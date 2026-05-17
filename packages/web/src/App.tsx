@@ -25,7 +25,7 @@ export function App() {
       routeContext={match.route.context}
       title={match.route.title(match.params)}
     >
-      <Page params={match.params} route={match.route} />
+      <Page hash={match.hash} params={match.params} route={match.route} />
     </Layout>
   );
 }

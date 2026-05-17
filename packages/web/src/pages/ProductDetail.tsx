@@ -16,6 +16,7 @@ import { StatusBadge, type ConfigStatus } from "../components/StatusBadge.js";
 
 export interface ProductDetailProps {
   client?: Pick<FormaApiClient, "archiveRequirement" | "createRequirement" | "getBaseline" | "getProduct" | "listRequirements">;
+  hash?: string;
   params: Record<string, string>;
 }
 
@@ -32,7 +33,7 @@ type ProductDetailState =
   | { status: "loading" }
   | { baselineState: BaselineSummaryState; product: Product; requirementState: RequirementListState; status: "ready" };
 
-export function ProductDetail({ client = apiClient, params }: ProductDetailProps) {
+export function ProductDetail({ client = apiClient, hash = "", params }: ProductDetailProps) {
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
@@ -66,6 +67,17 @@ export function ProductDetail({ client = apiClient, params }: ProductDetailProps
       cancelled = true;
     };
   }, [client, productId, reloadKey]);
+
+  useEffect(() => {
+    if (state.status !== "ready" || hash.length === 0 || !canUseDom()) {
+      return undefined;
+    }
+
+    window.setTimeout(() => {
+      focusHashTarget(hash);
+    }, 0);
+    return undefined;
+  }, [hash, state.status]);
 
   const parsedPages = parseJsonArray(pagesJson);
   const parsedNavigation = parseJsonArray(navigationJson);
@@ -189,7 +201,11 @@ export function ProductDetail({ client = apiClient, params }: ProductDetailProps
         </WorkSurface>
       )}
 
-      <div id="new-requirement">
+      <div
+        className="rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-500"
+        id="new-requirement"
+        tabIndex={-1}
+      >
         <WorkSurface title="New requirement">
           <form className="grid gap-4" onSubmit={handleCreateRequirement}>
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
@@ -227,6 +243,25 @@ export function ProductDetail({ client = apiClient, params }: ProductDetailProps
       </div>
     </div>
   );
+}
+
+export function focusHashTarget(
+  hash: string,
+  root: Pick<Document, "getElementById"> = document
+): boolean {
+  const id = decodeHashId(hash);
+  if (!id) {
+    return false;
+  }
+
+  const target = root.getElementById(id);
+  if (!target) {
+    return false;
+  }
+
+  target.scrollIntoView({ block: "start" });
+  target.focus({ preventScroll: true });
+  return true;
 }
 
 export function ProductDetailSummaryPanels({
@@ -338,6 +373,22 @@ function parseJsonArray(value: string): { ok: false; value: [] } | { ok: true; v
   } catch {
     return { ok: false, value: [] };
   }
+}
+
+function decodeHashId(hash: string): string {
+  if (!hash.startsWith("#") || hash.length === 1) {
+    return "";
+  }
+
+  try {
+    return decodeURIComponent(hash.slice(1));
+  } catch {
+    return hash.slice(1);
+  }
+}
+
+function canUseDom(): boolean {
+  return typeof window !== "undefined" && typeof document !== "undefined";
 }
 
 const inputClasses =

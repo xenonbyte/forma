@@ -10,6 +10,7 @@ import { StyleDetail } from "./pages/StyleDetail.js";
 import { StyleLibrary } from "./pages/StyleLibrary.js";
 
 export interface RoutePageProps {
+  hash: string;
   params: Record<string, string>;
   route: RouteDefinition;
 }
@@ -24,6 +25,7 @@ export interface RouteDefinition {
 
 export interface RouteMatch {
   found: boolean;
+  hash: string;
   params: Record<string, string>;
   pathname: string;
   route: RouteDefinition;
@@ -99,14 +101,14 @@ export const notFoundRoute: RouteDefinition = {
 };
 
 export function useCurrentRoute(): RouteMatch {
-  const [pathname, setPathname] = useState(() => readCurrentPathname());
+  const [location, setLocation] = useState(() => readCurrentLocation());
 
   useEffect(() => {
     if (!canUseDom()) {
       return undefined;
     }
 
-    const updatePathname = () => setPathname(readCurrentPathname());
+    const updateLocation = () => setLocation(readCurrentLocation());
     const handleAnchorClick = (event: MouseEvent) => {
       if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
         return;
@@ -125,21 +127,21 @@ export function useCurrentRoute(): RouteMatch {
 
       event.preventDefault();
       window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
-      updatePathname();
+      updateLocation();
     };
 
-    window.addEventListener("popstate", updatePathname);
-    window.addEventListener(navigationEvent, updatePathname);
+    window.addEventListener("popstate", updateLocation);
+    window.addEventListener(navigationEvent, updateLocation);
     document.addEventListener("click", handleAnchorClick);
 
     return () => {
-      window.removeEventListener("popstate", updatePathname);
-      window.removeEventListener(navigationEvent, updatePathname);
+      window.removeEventListener("popstate", updateLocation);
+      window.removeEventListener(navigationEvent, updateLocation);
       document.removeEventListener("click", handleAnchorClick);
     };
   }, []);
 
-  return useMemo(() => matchRoute(pathname), [pathname]);
+  return useMemo(() => matchRoute(location), [location]);
 }
 
 export function navigateTo(pathname: string) {
@@ -153,17 +155,18 @@ export function navigateTo(pathname: string) {
 }
 
 export function matchRoute(rawPathname: string, routes: RouteDefinition[] = routeTable): RouteMatch {
+  const hash = extractHash(rawPathname);
   const pathname = normalizePathname(rawPathname);
   const pathnameToMatch = pathname === "/" ? "/products" : pathname;
 
   for (const route of routes) {
     const params = matchPath(route.path, pathnameToMatch);
     if (params) {
-      return { found: true, params, pathname: pathnameToMatch, route };
+      return { found: true, hash, params, pathname: pathnameToMatch, route };
     }
   }
 
-  return { found: false, params: {}, pathname, route: notFoundRoute };
+  return { found: false, hash, params: {}, pathname, route: notFoundRoute };
 }
 
 function ProductNewRoute() {
@@ -241,8 +244,8 @@ function normalizePathname(rawPathname: string): string {
   return withLeadingSlash.length > 1 ? withLeadingSlash.replace(/\/+$/, "") : withLeadingSlash;
 }
 
-function readCurrentPathname(): string {
-  return canUseDom() ? window.location.pathname : "/products";
+function readCurrentLocation(): string {
+  return canUseDom() ? `${window.location.pathname}${window.location.search}${window.location.hash}` : "/products";
 }
 
 function canUseDom(): boolean {
@@ -255,4 +258,9 @@ function safeDecode(value: string): string {
   } catch {
     return value;
   }
+}
+
+function extractHash(rawPathname: string): string {
+  const hashIndex = rawPathname.indexOf("#");
+  return hashIndex >= 0 ? rawPathname.slice(hashIndex) : "";
 }

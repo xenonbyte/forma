@@ -118,6 +118,14 @@ async function homeWithPreview(files: string[] = ["preview@2x.png", "preview.v1@
   return home;
 }
 
+async function homeWithStylePreview() {
+  const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
+  const previewPath = join(home, "styles", "linear", "preview@2x.png");
+  await mkdir(dirname(previewPath), { recursive: true });
+  await writeFile(previewPath, "style preview");
+  return home;
+}
+
 async function homeWithTwoVersionDesign() {
   const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
   await writeDesignYaml(home, {
@@ -385,5 +393,32 @@ describe("Fastify API routes", () => {
     expect(diff.statusCode).toBe(200);
     expect(fromImage.statusCode).toBe(200);
     expect(toImage.statusCode).toBe(200);
+  });
+
+  it("exposes style preview metadata and image through separate endpoints", async () => {
+    const home = await homeWithStylePreview();
+    const app = await appWith(fakeStore({ home }));
+
+    const metadata = await app.inject({ method: "GET", url: "/api/styles/linear/preview" });
+    const image = await app.inject({ method: "GET", url: "/api/styles/linear/preview/image" });
+
+    expect(metadata.statusCode).toBe(200);
+    expect(metadata.json()).toMatchObject({
+      name: "linear",
+      image_url: "/api/styles/linear/preview/image",
+      preview_path: join(home, "styles", "linear", "preview@2x.png")
+    });
+    expect(image.statusCode).toBe(200);
+    expect(image.headers["content-type"]).toContain("image/png");
+    expect(image.body).toBe("style preview");
+  });
+
+  it("returns 404 when a style preview image file is missing", async () => {
+    const app = await appWith(fakeStore({ home: await mkdtemp(join(tmpdir(), "forma-server-routes-")) }));
+
+    const image = await app.inject({ method: "GET", url: "/api/styles/linear/preview/image" });
+
+    expect(image.statusCode).toBe(404);
+    expect(image.json()).toMatchObject({ error_code: "STYLE_PREVIEW_NOT_FOUND" });
   });
 });

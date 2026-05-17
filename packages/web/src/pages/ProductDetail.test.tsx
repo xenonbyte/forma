@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactNode } from "react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import * as productDetail from "./ProductDetail.js";
 import type { ProductBaseline } from "../api.js";
@@ -45,5 +45,29 @@ describe("ProductDetailSummaryPanels", () => {
     expect(html).toContain("2 pages");
     expect(html).toContain("1 navigation");
     expect(html).toContain('href="/products/P-123abc/baseline"');
+  });
+
+  it("scrolls and focuses a matching hash target", () => {
+    const focusHashTarget = (
+      productDetail as {
+        focusHashTarget?: (
+          hash: string,
+          root: { getElementById: (id: string) => Pick<HTMLElement, "focus" | "scrollIntoView"> | null }
+        ) => boolean;
+      }
+    ).focusHashTarget;
+    const target = {
+      focus: vi.fn(),
+      scrollIntoView: vi.fn()
+    };
+    const root = {
+      getElementById: vi.fn(() => target)
+    };
+
+    expect(focusHashTarget).toBeTypeOf("function");
+    expect(focusHashTarget?.("#new-requirement", root)).toBe(true);
+    expect(root.getElementById).toHaveBeenCalledWith("new-requirement");
+    expect(target.scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 });
