@@ -174,12 +174,21 @@ export class InstallService {
     backupByTarget: Map<string, string>
   ): Promise<void> {
     const configPath = configPaths[0];
-    if (!configPath || !(await pathExists(configPath))) {
+    if (!configPath) {
       return;
     }
 
     const backup = backupByTarget.get(configPath);
-    if (backup && (await pathExists(backup))) {
+    const hasBackup = Boolean(backup && (await pathExists(backup)));
+    if (!(await pathExists(configPath))) {
+      if (backup && hasBackup) {
+        await mkdir(dirname(configPath), { recursive: true });
+        await copyFile(backup, configPath);
+      }
+      return;
+    }
+
+    if (backup && hasBackup) {
       await this.restoreConfigBackup(platform, configPath, backup);
       return;
     }
@@ -515,23 +524,48 @@ function mergeCodexConfigBackup(currentContent: string, backupContent: string): 
 }
 
 function extractCodexManagedSection(content: string): string | undefined {
-  const escapedStart = escapeRegExp(codexMcpStart);
-  const escapedEnd = escapeRegExp(codexMcpEnd);
-  const match = content.match(new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}\\n?`));
-  return match?.[0];
+  const range = findCodexFormaSectionRange(content);
+  return range ? content.slice(range.start, range.end) : undefined;
 }
 
 function removeCodexManagedSection(content: string): string {
-  const escapedStart = escapeRegExp(codexMcpStart);
-  const escapedEnd = escapeRegExp(codexMcpEnd);
-  const next = content
-    .replace(new RegExp(`\\n*${escapedStart}[\\s\\S]*?${escapedEnd}\\n*`, "g"), "\n")
-    .replace(/\n{3,}/g, "\n\n");
+  let next = content;
+  let range = findCodexFormaSectionRange(next);
+  while (range) {
+    next = `${next.slice(0, range.start)}${next.slice(range.end)}`;
+    range = findCodexFormaSectionRange(next);
+  }
+  next = next.replace(/\n{3,}/g, "\n\n");
   return next.trim() ? next.replace(/\n{2}$/g, "\n") : "";
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function findCodexFormaSectionRange(content: string): { start: number; end: number } | undefined {
+  const markerStart = content.indexOf(codexMcpStart);
+  if (markerStart >= 0) {
+    const markerEnd = content.indexOf(codexMcpEnd, markerStart);
+    if (markerEnd >= 0) {
+      let end = markerEnd + codexMcpEnd.length;
+      if (content.slice(end, end + 2) === "\r\n") {
+        end += 2;
+      } else if (content[end] === "\n") {
+        end += 1;
+      }
+      return { start: markerStart, end };
+    }
+  }
+
+  const tableMatch = /^\[mcp_servers\.forma\]\s*$/m.exec(content);
+  if (!tableMatch) {
+    return undefined;
+  }
+
+  const start = tableMatch.index;
+  const afterHeader = start + tableMatch[0].length;
+  const nextTable = /\n\[[^\]\n]+\]\s*(?:\r?\n|$)/.exec(content.slice(afterHeader));
+  return {
+    start,
+    end: nextTable ? afterHeader + nextTable.index + 1 : content.length
+  };
 }
 
 function unique<T>(values: T[]): T[] {

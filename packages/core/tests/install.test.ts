@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -401,5 +401,77 @@ post_install = true
     expect(codex).toContain("post_install = true");
     expect(codex).toContain('command = "user-forma"');
     expect(codex).not.toContain('command = "forma"');
+  });
+
+  it("restores config backups when current config files are missing at uninstall", async () => {
+    const { userHome, service } = await createService();
+    const claudeConfig = join(userHome, ".claude", "mcp.json");
+    const geminiConfig = join(userHome, ".gemini", "settings.json");
+    const codexConfig = join(userHome, ".codex", "config.toml");
+    const originalClaudeConfig = `${JSON.stringify({ forma: { command: "user-forma" }, keep: true }, null, 2)}\n`;
+    const originalGeminiConfig = `${JSON.stringify(
+      { mcpServers: { forma: { command: "user-forma" } }, keep: true },
+      null,
+      2
+    )}\n`;
+    const originalCodexConfig = `theme = "dark"
+
+[mcp_servers.forma]
+command = "user-forma"
+args = ["mcp"]
+`;
+    await mkdir(join(userHome, ".claude"), { recursive: true });
+    await mkdir(join(userHome, ".gemini"), { recursive: true });
+    await mkdir(join(userHome, ".codex"), { recursive: true });
+    await writeFile(claudeConfig, originalClaudeConfig, "utf8");
+    await writeFile(geminiConfig, originalGeminiConfig, "utf8");
+    await writeFile(codexConfig, originalCodexConfig, "utf8");
+
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+    await rm(claudeConfig);
+    await rm(geminiConfig);
+    await rm(codexConfig);
+
+    await service.uninstallPlatforms(["claude", "codex", "gemini"]);
+
+    await expect(readFile(claudeConfig, "utf8")).resolves.toBe(originalClaudeConfig);
+    await expect(readFile(geminiConfig, "utf8")).resolves.toBe(originalGeminiConfig);
+    await expect(readFile(codexConfig, "utf8")).resolves.toBe(originalCodexConfig);
+  });
+
+  it("handles unmarked Codex Forma tables without duplicating or losing user config", async () => {
+    const { userHome, service } = await createService();
+    const codexConfig = join(userHome, ".codex", "config.toml");
+    await mkdir(join(userHome, ".codex"), { recursive: true });
+    await writeFile(
+      codexConfig,
+      `theme = "dark"
+
+[mcp_servers.forma]
+command = "user-forma"
+args = ["mcp"]
+
+[mcp_servers.keep]
+command = "keep"
+`,
+      "utf8"
+    );
+
+    await service.installPlatforms(["codex"]);
+
+    const installed = await readFile(codexConfig, "utf8");
+    expect(installed.match(/^\[mcp_servers\.forma\]$/gm)).toHaveLength(1);
+    expect(installed).toContain('command = "forma"');
+    expect(installed).toContain('[mcp_servers.keep]');
+
+    await writeFile(codexConfig, `${installed}\npost_install = true\n`, "utf8");
+    await service.uninstallPlatforms(["codex"]);
+
+    const uninstalled = await readFile(codexConfig, "utf8");
+    expect(uninstalled.match(/^\[mcp_servers\.forma\]$/gm)).toHaveLength(1);
+    expect(uninstalled).toContain('command = "user-forma"');
+    expect(uninstalled).toContain('[mcp_servers.keep]');
+    expect(uninstalled).toContain("post_install = true");
+    expect(uninstalled).not.toContain('command = "forma"');
   });
 });
