@@ -70,6 +70,7 @@ export interface DesignServiceOptions {
 interface DesignServiceTestHooks {
   afterCommitExistingHistoryFiles?(): Promise<void> | void;
   afterRollbackPenWrite?(): Promise<void> | void;
+  beforePostCommitStageCleanup?(): Promise<void> | void;
 }
 
 interface StagedDesignSave {
@@ -129,7 +130,7 @@ export class DesignService {
         pages: requirement.pages.map((page) => pagesById.get(page.page_id) ?? page)
       });
 
-      await rm(stageRoot, { recursive: true, force: true });
+      await this.cleanupStageAfterCommit(stageRoot);
       return staged.map((plan) => plan.design);
     } catch (error) {
       await this.rollbackCommittedSaves(committed);
@@ -377,6 +378,15 @@ export class DesignService {
       if (item.backupDir) {
         await this.restoreDesignBackup(targetDir, item.backupDir);
       }
+    }
+  }
+
+  private async cleanupStageAfterCommit(stageRoot: string): Promise<void> {
+    try {
+      await this.testHooks.beforePostCommitStageCleanup?.();
+      await rm(stageRoot, { recursive: true, force: true });
+    } catch {
+      // Staging cleanup happens after the save transaction is committed. It must not roll back persisted design state.
     }
   }
 

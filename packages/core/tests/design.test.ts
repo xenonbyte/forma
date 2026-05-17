@@ -98,6 +98,28 @@ describe("DesignService", () => {
     await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({ status: "active" });
   });
 
+  it("ignores stage cleanup failure after requirement metadata is committed", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "cleanup-after-commit");
+    let cleanupHookCalled = false;
+    (store.designs as unknown as { testHooks?: { beforePostCommitStageCleanup?: () => Promise<void> } }).testHooks = {
+      async beforePostCommitStageCleanup() {
+        cleanupHookCalled = true;
+        throw new Error("cleanup failed");
+      }
+    };
+
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+
+    expect(cleanupHookCalled).toBe(true);
+    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
+      pages: [expect.objectContaining({ page_id: requirement.pages[0]!.page_id, design_status: "done", design_id: design.id })]
+    });
+    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"))).resolves.toBeUndefined();
+    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "preview@2x.png"))).resolves.toBeUndefined();
+    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.yaml"))).resolves.toBeUndefined();
+  });
+
   it("does not leave orphan designs when a later batch input fails", async () => {
     const { home, requirement, store } = await createDesignStore(2);
     const first = await writeDesignOutput(home, "batch-first");
