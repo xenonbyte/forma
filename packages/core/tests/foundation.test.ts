@@ -33,8 +33,15 @@ describe("core foundation", () => {
   it("uses injected forma home", async () => {
     const root = await mkdtemp(join(tmpdir(), "forma-test-"));
     const paths = getFormaPaths(root);
+    expect(paths.configFile).toBe(join(root, "config.yaml"));
+    expect(paths.lockFile).toBe(join(root, "pencil.lock"));
     expect(paths.dataDir).toBe(join(root, "data"));
     expect(paths.sessionFile).toBe(join(root, "session.yaml"));
+    expect(paths.manifestsDir).toBe(join(root, "manifests"));
+    expect(paths.skillsDir).toBe(join(root, "skills"));
+    expect(paths.commandsDir).toBe(join(root, "commands"));
+    expect(paths.libraryDir).toBe(join(root, "library"));
+    expect(paths.stylesDir).toBe(join(root, "styles"));
   });
 
   it("writes yaml atomically", async () => {

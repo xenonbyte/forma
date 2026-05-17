@@ -21,7 +21,7 @@ export function getFormaPaths(rootDir = join(process.cwd(), ".forma")): FormaPat
   return {
     rootDir,
     configFile: join(rootDir, "config.yaml"),
-    lockFile: join(rootDir, "forma.lock"),
+    lockFile: join(rootDir, "pencil.lock"),
     dataDir,
     sessionFile: join(rootDir, "session.yaml"),
     manifestsDir: join(rootDir, "manifests"),
