@@ -231,6 +231,21 @@ describe("InstallService", () => {
     await expect(readFile(sharedSkill, "utf8")).resolves.toBe("# Local Shared Skill\n");
   });
 
+  it("does not reuse stale backup files across completed install cycles", async () => {
+    const { userHome, service } = await createService();
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
+    await writeFile(claudeCommand, "# Original A\n", "utf8");
+
+    await service.installPlatforms(["claude"]);
+    await service.uninstallPlatforms(["claude"]);
+    await writeFile(claudeCommand, "# Current B\n", "utf8");
+    await service.installPlatforms(["claude"]);
+    await service.uninstallPlatforms(["claude"]);
+
+    await expect(readFile(claudeCommand, "utf8")).resolves.toBe("# Current B\n");
+  });
+
   it("injects and removes MCP config entries without deleting unrelated user config", async () => {
     const { userHome, service } = await createService();
     await mkdir(join(userHome, ".claude"), { recursive: true });
@@ -472,6 +487,48 @@ command = "keep"
     expect(uninstalled).toContain('command = "user-forma"');
     expect(uninstalled).toContain('[mcp_servers.keep]');
     expect(uninstalled).toContain("post_install = true");
+    expect(uninstalled).not.toContain('command = "forma"');
+  });
+
+  it("preserves Codex TOML after unmarked Forma table with array and indented table headers", async () => {
+    const { userHome, service } = await createService();
+    const codexConfig = join(userHome, ".codex", "config.toml");
+    const originalConfig = [
+      'theme = "dark"',
+      "",
+      "  [mcp_servers.forma]",
+      'command = "user-forma"',
+      'args = ["mcp"]',
+      "",
+      "[[profiles]]",
+      'name = "default"',
+      "",
+      "  [mcp_servers.keep]",
+      'command = "keep"',
+      ""
+    ].join("\r\n");
+    await mkdir(join(userHome, ".codex"), { recursive: true });
+    await writeFile(codexConfig, originalConfig, "utf8");
+
+    await service.installPlatforms(["codex"]);
+
+    const installed = await readFile(codexConfig, "utf8");
+    expect(installed.match(/^\s*\[mcp_servers\.forma\]\s*$/gm)).toHaveLength(1);
+    expect(installed).toContain('command = "forma"');
+    expect(installed).toContain("[[profiles]]");
+    expect(installed).toContain('name = "default"');
+    expect(installed).toContain("[mcp_servers.keep]");
+
+    await writeFile(codexConfig, `${installed}\r\n[[post_install]]\r\nname = "later"\r\n`, "utf8");
+    await service.uninstallPlatforms(["codex"]);
+
+    const uninstalled = await readFile(codexConfig, "utf8");
+    expect(uninstalled.match(/^\s*\[mcp_servers\.forma\]\s*$/gm)).toHaveLength(1);
+    expect(uninstalled).toContain('command = "user-forma"');
+    expect(uninstalled).toContain("[[profiles]]");
+    expect(uninstalled).toContain('name = "default"');
+    expect(uninstalled).toContain("[mcp_servers.keep]");
+    expect(uninstalled).toContain("[[post_install]]");
     expect(uninstalled).not.toContain('command = "forma"');
   });
 });

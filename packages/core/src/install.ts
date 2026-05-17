@@ -114,6 +114,7 @@ export class InstallService {
     for (const platform of selectedManifests.keys()) {
       await rm(this.manifestFile(platform), { force: true });
     }
+    await this.removeUnreferencedBackups(Array.from(backupByTarget.values()));
   }
 
   private async installPlatform(platform: AgentInstallPlatform): Promise<void> {
@@ -357,6 +358,22 @@ export class InstallService {
     return paths;
   }
 
+  private async removeUnreferencedBackups(backupPaths: string[]): Promise<void> {
+    const referencedBackups = new Set<string>();
+    for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      for (const backup of manifest?.backups ?? []) {
+        referencedBackups.add(backup.backup);
+      }
+    }
+
+    for (const backupPath of unique(backupPaths)) {
+      if (!referencedBackups.has(backupPath)) {
+        await rm(backupPath, { force: true });
+      }
+    }
+  }
+
   private async backupsForInstalledPathsFromOtherManifests(
     platform: AgentInstallPlatform,
     installedPaths: string[]
@@ -540,32 +557,47 @@ function removeCodexManagedSection(content: string): string {
 }
 
 function findCodexFormaSectionRange(content: string): { start: number; end: number } | undefined {
-  const markerStart = content.indexOf(codexMcpStart);
-  if (markerStart >= 0) {
-    const markerEnd = content.indexOf(codexMcpEnd, markerStart);
-    if (markerEnd >= 0) {
-      let end = markerEnd + codexMcpEnd.length;
-      if (content.slice(end, end + 2) === "\r\n") {
-        end += 2;
-      } else if (content[end] === "\n") {
-        end += 1;
+  const lines = splitLinesWithEndings(content);
+  let offset = 0;
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index] ?? "";
+    const trimmedLine = line.trim();
+    if (trimmedLine === codexMcpStart) {
+      const start = offset;
+      let end = offset + line.length;
+      for (let endIndex = index + 1; endIndex < lines.length; endIndex++) {
+        end += lines[endIndex]?.length ?? 0;
+        if ((lines[endIndex] ?? "").trim() === codexMcpEnd) {
+          return { start, end };
+        }
       }
-      return { start: markerStart, end };
     }
+
+    if (trimmedLine === "[mcp_servers.forma]") {
+      const start = offset;
+      let end = offset + line.length;
+      for (let endIndex = index + 1; endIndex < lines.length; endIndex++) {
+        const nextLine = lines[endIndex] ?? "";
+        if (isTomlTableHeader(nextLine)) {
+          return { start, end };
+        }
+        end += nextLine.length;
+      }
+      return { start, end };
+    }
+
+    offset += line.length;
   }
 
-  const tableMatch = /^\[mcp_servers\.forma\]\s*$/m.exec(content);
-  if (!tableMatch) {
-    return undefined;
-  }
+  return undefined;
+}
 
-  const start = tableMatch.index;
-  const afterHeader = start + tableMatch[0].length;
-  const nextTable = /\n\[[^\]\n]+\]\s*(?:\r?\n|$)/.exec(content.slice(afterHeader));
-  return {
-    start,
-    end: nextTable ? afterHeader + nextTable.index + 1 : content.length
-  };
+function splitLinesWithEndings(content: string): string[] {
+  return content.match(/[^\r\n]*(?:\r\n|\n|\r|$)/g)?.filter((line) => line.length > 0) ?? [];
+}
+
+function isTomlTableHeader(line: string): boolean {
+  return /^\s*\[{1,2}[^\]\r\n]+\]{1,2}\s*(?:#.*)?(?:\r?\n|\r)?$/.test(line);
 }
 
 function unique<T>(values: T[]): T[] {
