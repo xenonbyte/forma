@@ -12,19 +12,19 @@ export const baselinePageSchema = z.object({
   fields: z.string(),
   interactions: z.string(),
   source_requirements: z.array(z.string().min(1))
-});
+}).strict();
 
 export const baselineNavigationSchema = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
   label: z.string().optional()
-});
+}).strict();
 
 export const baselineSchema = z.object({
   product_id: z.string().min(1),
   pages: z.array(baselinePageSchema),
   navigation: z.array(baselineNavigationSchema)
-});
+}).strict();
 
 export type BaselinePage = z.infer<typeof baselinePageSchema>;
 export type BaselineNavigation = z.infer<typeof baselineNavigationSchema>;

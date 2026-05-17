@@ -1,8 +1,8 @@
-import { mkdtemp } from "node:fs/promises";
+import { readFile, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFormaStore, readYaml, writeYamlAtomic } from "../src/index.js";
+import { BaselineService, RequirementService, createFormaStore, readYaml, writeYamlAtomic } from "../src/index.js";
 
 async function createConfiguredStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-requirement-"));
@@ -88,6 +88,75 @@ describe("requirement and baseline services", () => {
       code: "PAGES_EMPTY"
     });
     await expect(store.requirements.getRequirement({ requirement_id: "R-00000000" })).rejects.toMatchObject({
+      code: "REQUIREMENT_NOT_FOUND"
+    });
+  });
+
+  it("rejects invalid requirement ids without reading outside requirement paths", async () => {
+    const { store, product } = await createConfiguredStore();
+    await writeYamlAtomic(join(store.home, "outside", "requirement.yaml"), {
+      id: "R-aaaaaaaa",
+      product_id: product.id,
+      title: "Outside",
+      status: "submitted",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      pages: [],
+      navigation: []
+    });
+
+    await expect(store.requirements.getRequirement({ requirement_id: "../../outside" })).rejects.toMatchObject({
+      code: "REQUIREMENT_NOT_FOUND"
+    });
+    await expect(
+      store.requirements.submitRequirement({
+        requirement_id: "../../outside",
+        document_md: "",
+        pages: [],
+        navigation: []
+      })
+    ).rejects.toMatchObject({ code: "REQUIREMENT_NOT_FOUND" });
+    await expect(
+      store.requirements.updateRequirement({
+        requirement_id: "../../outside",
+        document_md: "",
+        pages: [],
+        expired_pages: [],
+        navigation: []
+      })
+    ).rejects.toMatchObject({ code: "REQUIREMENT_NOT_FOUND" });
+  });
+
+  it("rejects requirement files whose id or product do not match the requested path", async () => {
+    const { store, product } = await createConfiguredStore();
+    const otherProduct = await store.products.createProduct({ name: "Other App", description: "Other mobile shop" });
+    await writeYamlAtomic(join(store.home, "data", product.id, "R-11111111", "requirement.yaml"), {
+      id: "R-22222222",
+      product_id: product.id,
+      title: "Wrong ID",
+      status: "empty",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      pages: [],
+      navigation: []
+    });
+
+    await expect(store.requirements.getRequirement({ requirement_id: "R-11111111" })).rejects.toMatchObject({
+      code: "REQUIREMENT_NOT_FOUND"
+    });
+
+    await writeYamlAtomic(join(store.home, "data", product.id, "R-33333333", "requirement.yaml"), {
+      id: "R-33333333",
+      product_id: otherProduct.id,
+      title: "Wrong Product",
+      status: "empty",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+      pages: [],
+      navigation: []
+    });
+
+    await expect(store.requirements.getRequirement({ requirement_id: "R-33333333" })).rejects.toMatchObject({
       code: "REQUIREMENT_NOT_FOUND"
     });
   });
@@ -230,6 +299,59 @@ describe("requirement and baseline services", () => {
     expect(baseline.navigation).toEqual([{ from: "cart", to: "success", label: "Success" }]);
   });
 
+  it("drops baseline navigation edges that do not resolve to active pages", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Checkout");
+    await store.requirements.submitRequirement({
+      requirement_id: req.id,
+      document_md: "# Checkout\nCart checkout",
+      pages: [
+        { page_id: `${req.id}-cart`, name: "购物车", baseline_page: "cart" },
+        { page_id: `${req.id}-pay`, name: "支付页", baseline_page: "pay" }
+      ],
+      navigation: [{ from: `${req.id}-cart`, to: `${req.id}-pay`, label: "Pay" }]
+    });
+
+    await store.requirements.updateRequirement({
+      requirement_id: req.id,
+      document_md: "# Checkout\nCart only",
+      pages: [{ page_id: `${req.id}-cart`, name: "购物车", baseline_page: "cart" }],
+      expired_pages: [`${req.id}-pay`],
+      navigation: [
+        { from: `${req.id}-cart`, to: `${req.id}-pay`, label: "Stale Pay" },
+        { from: `${req.id}-missing`, to: `${req.id}-cart`, label: "Missing Cart" },
+        { from: `${req.id}-cart`, to: `${req.id}-cart`, label: "Stay" }
+      ]
+    });
+
+    const baseline = await store.baseline.getProductBaseline(product.id);
+    expect(baseline.navigation).toEqual([{ from: "cart", to: "cart", label: "Stay" }]);
+  });
+
+  it("does not advance requirement or document writes when baseline update fails", async () => {
+    const { store, product } = await createConfiguredStore();
+    const requirements = new RequirementService({
+      home: store.home,
+      products: store.products,
+      baseline: {
+        updateFromRequirement: async () => {
+          throw new Error("baseline failed");
+        }
+      } as BaselineService
+    });
+    const req = await requirements.createEmptyRequirement(product.id, "Login");
+
+    await expect(requirements.submitRequirement(validSubmit(req.id))).rejects.toThrow("baseline failed");
+
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).resolves.toMatchObject({
+      status: "empty",
+      document_md: ""
+    });
+    await expect(readFile(join(store.home, "data", product.id, req.id, "document.md"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+  });
+
   it("deduplicates baseline source requirements when the same requirement updates a page", async () => {
     const { store, product } = await createConfiguredStore();
     const req = await store.requirements.createEmptyRequirement(product.id, "Login");
@@ -307,5 +429,25 @@ describe("requirement and baseline services", () => {
       expect.objectContaining({ id: first.id, document_md: "" }),
       expect.objectContaining({ id: second.id, document_md: "# Second\nLatest document" })
     ]);
+  });
+
+  it("rejects persisted requirement and baseline YAML with unknown keys", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Login");
+    await store.requirements.submitRequirement(validSubmit(req.id));
+
+    const requirementFile = join(store.home, "data", product.id, req.id, "requirement.yaml");
+    await writeYamlAtomic(requirementFile, {
+      ...(await readYaml<Record<string, unknown>>(requirementFile)),
+      unexpected: true
+    });
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).rejects.toThrow();
+
+    const baselineFile = join(store.home, "data", product.id, "baseline", "baseline.yaml");
+    await writeYamlAtomic(baselineFile, {
+      ...(await readYaml<Record<string, unknown>>(baselineFile)),
+      unexpected: true
+    });
+    await expect(store.baseline.getProductBaseline(product.id)).rejects.toThrow();
   });
 });

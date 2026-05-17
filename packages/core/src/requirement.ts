@@ -9,6 +9,8 @@ import type { ProductService } from "./product.js";
 import { requirementStatuses, designStatuses } from "./schemas.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
+export const requirementIdSchema = z.string().regex(/^R-[a-f0-9]{8}$/);
+
 export const requirementPageSchema = z.object({
   page_id: z.string().min(1),
   name: z.string().min(1),
@@ -18,10 +20,10 @@ export const requirementPageSchema = z.object({
   copy: z.string().optional(),
   fields: z.string().optional(),
   interactions: z.string().optional()
-});
+}).strict();
 
 export const requirementSchema = z.object({
-  id: z.string().regex(/^R-[a-f0-9]{8}$/),
+  id: requirementIdSchema,
   product_id: z.string().regex(/^P-[a-f0-9]{6}$/),
   title: z.string().min(1),
   status: z.enum(requirementStatuses),
@@ -29,7 +31,7 @@ export const requirementSchema = z.object({
   updated_at: z.string().datetime(),
   pages: z.array(requirementPageSchema),
   navigation: z.array(baselineNavigationSchema)
-});
+}).strict();
 
 export type RequirementPage = z.infer<typeof requirementPageSchema>;
 export type Requirement = z.infer<typeof requirementSchema>;
@@ -83,9 +85,6 @@ export class RequirementService {
   }
 
   async submitRequirement(input: SubmitRequirementInput): Promise<Requirement> {
-    assertDocument(input.document_md);
-    assertPages(input.pages);
-
     const current = await this.readRequirementById(input.requirement_id);
     if (current.status !== "empty") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
@@ -93,6 +92,8 @@ export class RequirementService {
         status: current.status
       });
     }
+    assertDocument(input.document_md);
+    assertPages(input.pages);
 
     const pages = input.pages.map((page) => requirementPageSchema.parse({ ...page, design_status: "pending" }));
     const next = requirementSchema.parse({
@@ -103,22 +104,19 @@ export class RequirementService {
       navigation: input.navigation
     });
 
-    await writeDocumentAtomic(this.documentFile(next.product_id, next.id), input.document_md);
-    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
     await this.baseline.updateFromRequirement({
       productId: next.product_id,
       requirementId: next.id,
       pages: next.pages,
       navigation: mapNavigationToBaseline(next.pages, next.navigation)
     });
+    await writeDocumentAtomic(this.documentFile(next.product_id, next.id), input.document_md);
+    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
 
     return next;
   }
 
   async updateRequirement(input: UpdateRequirementInput): Promise<Requirement> {
-    assertDocument(input.document_md);
-    assertPages(input.pages);
-
     const current = await this.readRequirementById(input.requirement_id);
     if (current.status !== "submitted" && current.status !== "active") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
@@ -126,6 +124,8 @@ export class RequirementService {
         status: current.status
       });
     }
+    assertDocument(input.document_md);
+    assertPages(input.pages);
 
     const currentPagesById = new Map(current.pages.map((page) => [page.page_id, page]));
     const expiredIds = new Set(input.expired_pages);
@@ -146,14 +146,14 @@ export class RequirementService {
       navigation: input.navigation
     });
 
-    await writeDocumentAtomic(this.documentFile(next.product_id, next.id), input.document_md);
-    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
     await this.baseline.updateFromRequirement({
       productId: next.product_id,
       requirementId: next.id,
       pages: next.pages,
       navigation: mapNavigationToBaseline(next.pages, next.navigation)
     });
+    await writeDocumentAtomic(this.documentFile(next.product_id, next.id), input.document_md);
+    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
 
     return next;
   }
@@ -204,15 +204,19 @@ export class RequirementService {
   }
 
   private async readRequirementById(requirementId: string): Promise<Requirement> {
+    const parsedRequirementId = this.parseRequirementId(requirementId);
     const products = await this.products.listProducts();
     for (const product of products) {
-      const file = this.requirementFile(product.id, requirementId);
+      const file = this.requirementFile(product.id, parsedRequirementId);
       if (await fileExists(file)) {
-        return readYamlAs(file, requirementSchema);
+        const requirement = await readYamlAs(file, requirementSchema);
+        if (requirement.id === parsedRequirementId && requirement.product_id === product.id) {
+          return requirement;
+        }
       }
     }
 
-    throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found", { requirement_id: requirementId });
+    throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found", { requirement_id: parsedRequirementId });
   }
 
   private async readProductRequirements(productId: string): Promise<Requirement[]> {
@@ -247,6 +251,15 @@ export class RequirementService {
   private documentFile(productId: string, requirementId: string): string {
     return join(this.dataDir, productId, requirementId, "document.md");
   }
+
+  private parseRequirementId(requirementId: string): string {
+    const parsed = requirementIdSchema.safeParse(requirementId);
+    if (!parsed.success) {
+      throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found", { requirement_id: requirementId });
+    }
+
+    return parsed.data;
+  }
 }
 
 function assertDocument(documentMd: string): void {
@@ -265,12 +278,19 @@ function mapNavigationToBaseline(
   pages: RequirementPage[],
   navigation: z.infer<typeof baselineNavigationSchema>[]
 ): z.infer<typeof baselineNavigationSchema>[] {
-  const pageToBaseline = new Map(pages.map((page) => [page.page_id, page.baseline_page]));
-  return navigation.map((item) => ({
-    ...item,
-    from: pageToBaseline.get(item.from) ?? item.from,
-    to: pageToBaseline.get(item.to) ?? item.to
-  }));
+  const activePages = pages.filter((page) => page.design_status !== "expired");
+  const pageToBaseline = new Map(
+    activePages.flatMap((page) => [
+      [page.page_id, page.baseline_page],
+      [page.baseline_page, page.baseline_page]
+    ])
+  );
+
+  return navigation.flatMap((item) => {
+    const from = pageToBaseline.get(item.from);
+    const to = pageToBaseline.get(item.to);
+    return from && to ? [{ ...item, from, to }] : [];
+  });
 }
 
 function compareCreatedAtAsc(a: Requirement, b: Requirement): number {
