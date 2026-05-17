@@ -12,6 +12,8 @@ import { requirementSchema, type Requirement, type RequirementPage } from "./req
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const designIdSchema = z.string().regex(/^D-[a-f0-9]{8}$/);
+const saveDesignModes = ["generate", "update", "refine"] as const;
+const saveDesignModeSchema = z.enum(saveDesignModes);
 const exportFormats = ["png", "svg", "pdf"] as const;
 const exportFormatSchema = z.enum(exportFormats);
 const exportNodeIdSchema = z.string().min(1).regex(/^(?!\.{1,2}$)(?!.*[\\/])[\w.-]+$/);
@@ -35,7 +37,7 @@ export const designSchema = z.object({
 }).strict();
 
 export type Design = z.infer<typeof designSchema>;
-export type SaveDesignMode = "generate" | "update" | "refine";
+export type SaveDesignMode = (typeof saveDesignModes)[number];
 
 export interface SaveDesignInput {
   page_id: string;
@@ -153,7 +155,15 @@ export class DesignService {
     const nextDir = join(stageRoot, "next");
     const historyEntry = current.history.find((entry) => entry.version === previousVersion);
     const previousPen = join(designDir, `design.v${previousVersion}.pen`);
-    const previousPreviewFile = historyEntry?.preview_file ?? `preview.v${previousVersion}@2x.png`;
+    const expectedPreviewFile = `preview.v${previousVersion}@2x.png`;
+    if (!historyEntry || historyEntry.file !== `design.v${previousVersion}.pen` || historyEntry.preview_file !== expectedPreviewFile) {
+      throw new FormaError("HISTORY_FILE_MISSING", "Design history file is missing", {
+        design_id: current.id,
+        version: previousVersion,
+        file: `design.v${previousVersion}.pen`
+      });
+    }
+    const previousPreviewFile = historyEntry.preview_file;
     const previousPreview = join(designDir, previousPreviewFile);
     if (!(await fileExists(previousPen))) {
       throw new FormaError("HISTORY_FILE_MISSING", "Design history file is missing", {
@@ -244,12 +254,11 @@ export class DesignService {
         });
       }
       await this.validator.validatePenFile(input.penPath);
-      if (input.mode === "refine" && page.design_status !== "done") {
-        throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
-      }
+      const mode = this.parseSaveDesignMode(input.mode);
+      this.assertSaveModeAllowed(mode, requirement, page);
 
       const stageDir = join(stageRoot, `${staged.length}-${randomBytes(4).toString("hex")}`);
-      const stagedSave = page.design_id
+      const stagedSave = mode === "update" || mode === "refine"
         ? await this.stageExistingDesign(requirement, page, input, stageDir)
         : await this.stageNewDesign(requirement, page, input, stageDir);
       staged.push(stagedSave);
@@ -535,6 +544,47 @@ export class DesignService {
       throw new FormaError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
     }
     return parsed.data;
+  }
+
+  private parseSaveDesignMode(mode: unknown): SaveDesignMode {
+    const parsed = saveDesignModeSchema.safeParse(mode ?? "generate");
+    if (!parsed.success) {
+      throw new FormaError("DESIGN_MODE_INVALID", "Design mode is invalid", { mode });
+    }
+    return parsed.data;
+  }
+
+  private assertSaveModeAllowed(mode: SaveDesignMode, requirement: Requirement, page: RequirementPage): void {
+    const hasExistingDesign = typeof page.design_id === "string";
+    if (mode === "generate") {
+      if (hasExistingDesign) {
+        throw new FormaError("DESIGN_MODE_INVALID", "Design mode is invalid", {
+          requirement_id: requirement.id,
+          page_id: page.page_id,
+          mode
+        });
+      }
+      return;
+    }
+
+    if (page.design_status !== "done") {
+      if (mode === "refine") {
+        throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
+      }
+      throw new FormaError("DESIGN_MODE_INVALID", "Design mode is invalid", {
+        requirement_id: requirement.id,
+        page_id: page.page_id,
+        mode
+      });
+    }
+
+    if (!hasExistingDesign) {
+      throw new FormaError("DESIGN_MODE_INVALID", "Design mode is invalid", {
+        requirement_id: requirement.id,
+        page_id: page.page_id,
+        mode
+      });
+    }
   }
 
   private parseExportNodeId(nodeId: string, designId: string): string {

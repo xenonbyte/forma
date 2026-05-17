@@ -165,6 +165,54 @@ describe("DesignService", () => {
     ).rejects.toMatchObject({ code: "PAGE_NOT_DONE" });
   });
 
+  it("update mode rejects a pending page without an existing design", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "update-pending");
+
+    await expect(
+      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...output }])
+    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
+  });
+
+  it("generate mode rejects an existing done design page", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "generate-existing-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const output = await writeDesignOutput(home, "generate-existing-next");
+
+    await expect(
+      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "generate", ...output }])
+    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
+    await expect(readYaml(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.yaml"))).resolves.toMatchObject({
+      id: saved.id,
+      version: 1
+    });
+  });
+
+  it("saveDesigns rejects invalid runtime modes as structured errors", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "invalid-mode");
+
+    await expect(
+      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "overwrite" as "generate", ...output }])
+    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
+  });
+
+  it("refine rejects done page metadata without an existing design id", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
+    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
+    await writeYamlAtomic(requirementFile, {
+      ...storedRequirement,
+      pages: [{ ...requirement.pages[0], design_status: "done" }]
+    });
+    const output = await writeDesignOutput(home, "refine-missing-design-id");
+
+    await expect(
+      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...output }])
+    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
+  });
+
   it("refine increments version and preserves design.v1.pen", async () => {
     const { home, requirement, store } = await createDesignStore();
     const initial = await writeDesignOutput(home, "initial");
@@ -424,6 +472,47 @@ describe("DesignService", () => {
     await rm(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.v1.pen"));
 
     await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
+  });
+
+  it("rollback fails when previous history metadata is missing while files exist", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "history-metadata-missing-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
+    const refined = await writeDesignOutput(home, "history-metadata-missing-refined", refinedPen);
+    await writeFile(refined.previewPath, alternatePng);
+    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+    const designFile = join(home, "data", requirement.product_id, requirement.id, saved.id, "design.yaml");
+    await writeYamlAtomic(designFile, { ...updated, history: [] });
+
+    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
+
+    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
+    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
+    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
+    await expect(readYaml(designFile)).resolves.toMatchObject({ id: saved.id, version: 2, history: [] });
+  });
+
+  it("rollback fails when previous history metadata is inconsistent while files exist", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "history-metadata-bad-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
+    const refined = await writeDesignOutput(home, "history-metadata-bad-refined", refinedPen);
+    await writeFile(refined.previewPath, alternatePng);
+    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
+    const designFile = join(home, "data", requirement.product_id, requirement.id, saved.id, "design.yaml");
+    await writeYamlAtomic(designFile, {
+      ...updated,
+      history: [{ ...updated.history[0], file: "design.v2.pen", preview_file: "preview.v2@2x.png" }]
+    });
+
+    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
+
+    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
+    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
+    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
+    await expect(readYaml(designFile)).resolves.toMatchObject({ id: saved.id, version: 2 });
   });
 
   it("rollback fails when the previous preview history file is missing", async () => {
