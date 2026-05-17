@@ -133,6 +133,7 @@ describe("runCli", () => {
     expect(first.exitCode).toBe(0);
     expect(env.state.spawnedServers).toHaveLength(1);
     expect(env.state.spawnedServers[0]).toMatchObject({
+      entrypoint: expect.stringMatching(/packages\/cli\/bin\/forma\.js$/),
       formaHome: env.state.formaHome,
       logFile: join(env.state.formaHome, "serve.log"),
       runtimeFile: join(env.state.formaHome, "serve.state.json"),
@@ -145,6 +146,21 @@ describe("runCli", () => {
     expect(second.exitCode).toBe(1);
     expect(second.stderr).toContain("Forma server is already running");
     expect(env.state.spawnedServers).toHaveLength(1);
+  });
+
+  it("foreground internal default server receives the resolved Forma home", async () => {
+    const webStarts: unknown[] = [];
+    const env = await testEnv({
+      startWebServer: async (options) => {
+        webStarts.push(options);
+      },
+      useDefaultStartServer: true
+    });
+
+    const result = await runCli(["serve", "--foreground-internal"], env);
+
+    expect(result.exitCode).toBe(0);
+    expect(webStarts).toEqual([{ home: env.state.formaHome }]);
   });
 
   it("serve start fails without a pidfile when detached spawn fails before ready", async () => {
@@ -188,6 +204,27 @@ describe("runCli", () => {
     await expect(access(join(env.state.formaHome, "serve.pid"))).rejects.toThrow();
     await expect(access(join(env.state.formaHome, "serve.state.json"))).rejects.toThrow();
     expect(result.stdout).toContain("Stopped Forma server");
+  });
+
+  it("serve stop preserves state files when signalling the process fails", async () => {
+    const env = await testEnv({
+      isPidAlive: (pid) => pid === 9876,
+      killProcess: async (pid) => {
+        env.state.killed.push(pid);
+        throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+      }
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ pid: 9876 })), "utf8");
+    await writeFile(join(env.state.formaHome, "serve.state.json"), JSON.stringify(serveMetadata({ pid: 9876 })), "utf8");
+
+    const result = await runCli(["serve", "stop"], env);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("permission denied");
+    expect(env.state.killed).toEqual([9876]);
+    await expect(access(join(env.state.formaHome, "serve.pid"))).resolves.toBeUndefined();
+    await expect(access(join(env.state.formaHome, "serve.state.json"))).resolves.toBeUndefined();
   });
 
   it("does not report or kill a naked pid file", async () => {
@@ -353,6 +390,7 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
     createServeToken: overrides.createServeToken,
     isPidAlive: overrides.isPidAlive,
     spawnDetachedServer: overrides.spawnDetachedServer,
+    startWebServer: overrides.startWebServer,
     startMcp: async () => {
       state.startedMcp += 1;
       if (overrides.startMcp) {

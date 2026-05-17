@@ -4,6 +4,7 @@ import { closeSync, constants, openSync, readFileSync, rmSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   InstallService,
   PencilService,
@@ -23,6 +24,7 @@ export interface CliResult {
 
 export interface CliServeOptions {
   detached?: boolean;
+  entrypoint?: string;
   formaHome?: string;
   logFile?: string;
   runtimeFile?: string;
@@ -33,6 +35,7 @@ export interface CliServeOptions {
 export type CliServerStartResult = string | void | { pid?: number; message?: string };
 
 export interface CliSpawnDetachedServerOptions {
+  entrypoint: string;
   formaHome: string;
   logFile: string;
   runtimeFile: string;
@@ -61,6 +64,7 @@ export interface CliEnv {
   now?: () => Date;
   startMcp?: () => Promise<string | void>;
   startServer?: (options?: CliServeOptions) => Promise<CliServerStartResult>;
+  startWebServer?: (options: { home: string }) => Promise<void>;
   createInstallService?: () => CliInstallService;
   checkPencil?: () => Promise<CliPencilStatus>;
   installedPlatforms?: () => Promise<AgentInstallPlatform[]>;
@@ -302,20 +306,19 @@ async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliRes
     return output.result(0);
   }
 
-  let stopped = true;
   try {
     await env.killProcess(pid);
-  } catch (error) {
-    if (!isMissingProcessError(error)) {
-      throw error;
-    }
-    stopped = false;
-  } finally {
     await removeServeStateFiles(env);
+    output.stdout(`Stopped Forma server (${pid})\n`);
+    return output.result(0);
+  } catch (error) {
+    if (isMissingProcessError(error)) {
+      await removeServeStateFiles(env);
+      output.stdout(`Removed stale Forma server pid (${pid})\n`);
+      return output.result(0);
+    }
+    throw error;
   }
-
-  output.stdout(stopped ? `Stopped Forma server (${pid})\n` : `Removed stale Forma server pid (${pid})\n`);
-  return output.result(0);
 }
 
 async function writeCommandReturn(output: CliOutput, value: Promise<CliServerStartResult>): Promise<number> {
@@ -421,6 +424,7 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
   const pathExists = env.pathExists ?? defaultPathExists;
   const isPidAlive = env.isPidAlive ?? defaultIsPidAlive;
   const spawnDetachedServer = env.spawnDetachedServer ?? defaultSpawnDetachedServer;
+  const launchWebServer = env.startWebServer ?? ((options: { home: string }) => startWebServer(options));
   const runtimeEnv: RuntimeCliEnv = {
     formaHome,
     currentPid,
@@ -431,6 +435,7 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
       (async (options) => {
         if (options?.detached) {
           return await spawnDetachedServer({
+            entrypoint: options.entrypoint ?? packageCliEntrypoint(),
             formaHome: options.formaHome ?? formaHome,
             logFile: options.logFile ?? serveLogFile(formaHome),
             runtimeFile: options.runtimeFile ?? serveRuntimeFile(formaHome),
@@ -438,7 +443,7 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
             token: options.token ?? randomUUID()
           });
         }
-        await startWebServer();
+        await launchWebServer({ home: formaHome });
         return undefined;
       }),
     createInstallService: env.createInstallService ?? (() => new InstallService({ formaHome })),
@@ -702,17 +707,16 @@ function defaultFormaHome(): string {
   return process.env.FORMA_HOME ?? join(homedir(), ".forma");
 }
 
-async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions): Promise<CliSpawnDetachedServerResult> {
-  const entrypoint = process.argv[1];
-  if (!entrypoint) {
-    throw new Error("Cannot determine Forma CLI entrypoint for background server");
-  }
+function packageCliEntrypoint(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "forma.js");
+}
 
+async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions): Promise<CliSpawnDetachedServerResult> {
   await mkdir(dirname(options.logFile), { recursive: true });
   const logFd = openSync(options.logFile, "a");
   let childPid: number | undefined;
   try {
-    const child = spawn(process.execPath, [entrypoint, "serve", "--foreground-internal"], {
+    const child = spawn(process.execPath, [options.entrypoint, "serve", "--foreground-internal"], {
       cwd: process.cwd(),
       detached: true,
       env: {
