@@ -59,10 +59,25 @@ describe("runCli", () => {
   });
 
   it("serve start writes metadata and log files under the Forma home", async () => {
-    const env = await testEnv({
+    let env: CliEnv & { state: TestState };
+    env = await testEnv({
       now: () => new Date("2026-05-17T12:00:00.000Z"),
       createServeToken: () => "test-token",
-      startServer: async () => ({ pid: 4242, message: "server started" })
+      startServer: async (options) => {
+        await writeFile(
+          join(env.state.formaHome, "serve.state.json"),
+          JSON.stringify(
+            serveMetadata({
+              pid: 4242,
+              token: options?.token,
+              started_at: "2026-05-17T12:00:00.000Z",
+              log: options?.logFile
+            })
+          ),
+          "utf8"
+        );
+        return { pid: 4242, message: "server started" };
+      }
     });
 
     const result = await runCli(["serve", "start"], env);
@@ -77,6 +92,11 @@ describe("runCli", () => {
       started_at: "2026-05-17T12:00:00.000Z",
       log: join(env.state.formaHome, "serve.log")
     });
+    await expect(readFile(join(env.state.formaHome, "serve.state.json"), "utf8").then(JSON.parse)).resolves.toMatchObject({
+      marker: "xenonbyte.forma.serve",
+      pid: 4242,
+      token: "test-token"
+    });
     await expect(readFile(join(env.state.formaHome, "serve.log"), "utf8")).resolves.toContain(
       "2026-05-17T12:00:00.000Z forma serve start pid=4242"
     );
@@ -90,6 +110,18 @@ describe("runCli", () => {
       isPidAlive: (pid) => pid === 2222,
       spawnDetachedServer: async (options) => {
         env.state.spawnedServers.push(options);
+        await writeFile(
+          join(env.state.formaHome, "serve.state.json"),
+          JSON.stringify(
+            serveMetadata({
+              pid: 2222,
+              token: "spawn-token",
+              started_at: "2026-05-17T00:00:00.000Z",
+              log: join(env.state.formaHome, "serve.log")
+            })
+          ),
+          "utf8"
+        );
         return { pid: 2222 };
       },
       useDefaultStartServer: true
@@ -100,6 +132,12 @@ describe("runCli", () => {
 
     expect(first.exitCode).toBe(0);
     expect(env.state.spawnedServers).toHaveLength(1);
+    expect(env.state.spawnedServers[0]).toMatchObject({
+      formaHome: env.state.formaHome,
+      logFile: join(env.state.formaHome, "serve.log"),
+      runtimeFile: join(env.state.formaHome, "serve.state.json"),
+      token: "spawn-token"
+    });
     await expect(readFile(join(env.state.formaHome, "serve.pid"), "utf8").then(JSON.parse)).resolves.toMatchObject({
       pid: 2222,
       token: "spawn-token"
@@ -109,15 +147,46 @@ describe("runCli", () => {
     expect(env.state.spawnedServers).toHaveLength(1);
   });
 
+  it("serve start fails without a pidfile when detached spawn fails before ready", async () => {
+    const env = await testEnv({
+      spawnDetachedServer: async () => {
+        throw new Error("listen failed");
+      },
+      useDefaultStartServer: true
+    });
+
+    const result = await runCli(["serve", "start"], env);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("listen failed");
+    await expect(access(join(env.state.formaHome, "serve.pid"))).rejects.toThrow();
+    await expect(access(join(env.state.formaHome, "serve.state.json"))).rejects.toThrow();
+  });
+
+  it("serve start fails if detached spawn returns before runtime ready state exists", async () => {
+    const env = await testEnv({
+      spawnDetachedServer: async () => ({ pid: 3333 }),
+      useDefaultStartServer: true
+    });
+
+    const result = await runCli(["serve", "start"], env);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("runtime state");
+    await expect(access(join(env.state.formaHome, "serve.pid"))).rejects.toThrow();
+  });
+
   it("serve stop kills only a valid Forma metadata pid and removes it", async () => {
     const env = await testEnv({ isPidAlive: (pid) => pid === 9876 });
     await mkdir(env.state.formaHome, { recursive: true });
     await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ pid: 9876 })), "utf8");
+    await writeFile(join(env.state.formaHome, "serve.state.json"), JSON.stringify(serveMetadata({ pid: 9876 })), "utf8");
 
     const result = await runCli(["serve", "stop"], env);
 
     expect(env.state.killed).toEqual([9876]);
     await expect(access(join(env.state.formaHome, "serve.pid"))).rejects.toThrow();
+    await expect(access(join(env.state.formaHome, "serve.state.json"))).rejects.toThrow();
     expect(result.stdout).toContain("Stopped Forma server");
   });
 
@@ -138,6 +207,48 @@ describe("runCli", () => {
     expect(stop.stderr).toContain("Invalid Forma server state");
     expect(env.state.killed).toEqual([]);
     await expect(access(join(env.state.formaHome, "serve.pid"))).rejects.toThrow();
+  });
+
+  it("does not report or kill a valid-looking pidfile without runtime state", async () => {
+    const env = await testEnv({
+      useDefaultServerStatus: true,
+      isPidAlive: () => true
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ pid: 7654 })), "utf8");
+
+    const status = await runCli(["status"], env);
+    const stop = await runCli(["serve", "stop"], env);
+
+    expect(status.stdout).toContain("Web server: stopped");
+    expect(status.stderr).toContain("runtime state");
+    expect(stop.exitCode).toBe(1);
+    expect(stop.stderr).toContain("runtime state");
+    expect(env.state.killed).toEqual([]);
+    await expect(access(join(env.state.formaHome, "serve.pid"))).rejects.toThrow();
+  });
+
+  it("does not report or kill when pidfile and runtime state tokens differ", async () => {
+    const env = await testEnv({
+      useDefaultServerStatus: true,
+      isPidAlive: () => true
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ pid: 4567, token: "pid-token" })), "utf8");
+    await writeFile(
+      join(env.state.formaHome, "serve.state.json"),
+      JSON.stringify(serveMetadata({ pid: 4567, token: "runtime-token" })),
+      "utf8"
+    );
+
+    const status = await runCli(["status"], env);
+    const stop = await runCli(["serve", "stop"], env);
+
+    expect(status.stdout).toContain("Web server: stopped");
+    expect(status.stderr).toContain("does not match");
+    expect(stop.exitCode).toBe(1);
+    expect(stop.stderr).toContain("does not match");
+    expect(env.state.killed).toEqual([]);
   });
 
   it("dispatches install and uninstall to selected platforms", async () => {

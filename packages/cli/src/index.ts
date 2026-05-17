@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, openSync } from "node:fs";
+import { closeSync, constants, openSync, readFileSync, rmSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,15 +23,22 @@ export interface CliResult {
 
 export interface CliServeOptions {
   detached?: boolean;
+  formaHome?: string;
   logFile?: string;
+  runtimeFile?: string;
+  startedAt?: string;
   token?: string;
 }
 
 export type CliServerStartResult = string | void | { pid?: number; message?: string };
 
 export interface CliSpawnDetachedServerOptions {
+  formaHome: string;
   logFile: string;
+  runtimeFile: string;
+  startedAt: string;
   token: string;
+  readyTimeoutMs?: number;
 }
 
 export interface CliSpawnDetachedServerResult {
@@ -185,34 +192,42 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
 
   if (subcommand === "--foreground-internal") {
     assertNoExtraArgs(rest);
-    return output.result(await writeCommandReturn(output, env.startServer({})));
+    return await runForegroundServeChild(env, output);
   }
 
   if (subcommand === "start") {
     assertNoExtraArgs(rest);
     await ensureFormaHome(env);
 
-    const existing = await readServeState(env);
+    const existing = await readOwnedServeState(env);
     if (existing.kind === "valid" && env.isPidAlive(existing.metadata.pid)) {
       output.stderr(`Forma server is already running (${existing.metadata.pid})\n`);
       return output.result(1);
     }
     if (existing.kind !== "missing") {
-      await env.removeFile(servePidFile(env.formaHome));
+      await removeServeStateFiles(env);
       if (existing.kind === "invalid") {
         output.stderr(`Invalid Forma server state removed: ${existing.reason}\n`);
       }
     }
 
-    const startedAt = env.now();
+    const startedAt = env.now().toISOString();
     const token = env.createServeToken();
     const logFile = serveLogFile(env.formaHome);
-    const started = await env.startServer({ detached: true, logFile, token });
+    const runtimeFile = serveRuntimeFile(env.formaHome);
+    const started = await env.startServer({ detached: true, formaHome: env.formaHome, logFile, runtimeFile, startedAt, token });
     const pid = startedPid(started);
     if (!pid) {
       throw new Error("Detached Forma server start did not return a pid");
     }
-    await writeServeState(env, { pid, token, startedAt, logFile });
+    const metadata = createServeMetadata({ pid, token, startedAt, logFile });
+    const readyState = await readOwnedServeState(env, metadata);
+    if (readyState.kind !== "valid") {
+      await removeServeStateFiles(env);
+      throw new Error(`Detached Forma server did not publish matching runtime state: ${readyState.kind === "invalid" ? readyState.reason : "runtime state missing"}`);
+    }
+    await writeServePidState(env, metadata);
+    await env.appendText(logFile, `${startedAt} forma serve start pid=${pid}\n`);
     const message = startedMessage(started);
     if (message) {
       output.stdout(`${message}\n`);
@@ -269,20 +284,20 @@ async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput):
 }
 
 async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
-  const state = await readServeState(env);
+  const state = await readOwnedServeState(env);
   if (state.kind === "missing") {
     output.stdout("Forma server is not running\n");
     return output.result(0);
   }
   if (state.kind === "invalid") {
-    await env.removeFile(servePidFile(env.formaHome));
+    await removeServeStateFiles(env);
     output.stderr(`Invalid Forma server state removed: ${state.reason}\n`);
     return output.result(1);
   }
 
   const { pid } = state.metadata;
   if (!env.isPidAlive(pid)) {
-    await env.removeFile(servePidFile(env.formaHome));
+    await removeServeStateFiles(env);
     output.stdout(`Removed stale Forma server pid (${pid})\n`);
     return output.result(0);
   }
@@ -296,7 +311,7 @@ async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliRes
     }
     stopped = false;
   } finally {
-    await env.removeFile(servePidFile(env.formaHome));
+    await removeServeStateFiles(env);
   }
 
   output.stdout(stopped ? `Stopped Forma server (${pid})\n` : `Removed stale Forma server pid (${pid})\n`);
@@ -312,20 +327,43 @@ async function writeCommandReturn(output: CliOutput, value: Promise<CliServerSta
   return 0;
 }
 
-async function writeServeState(
-  env: RuntimeCliEnv,
-  state: { pid: number; token: string; startedAt: Date; logFile: string }
-): Promise<void> {
-  const metadata: ServeMetadata = {
+async function runForegroundServeChild(env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  const token = process.env.FORMA_SERVE_TOKEN;
+  const runtimeFile = process.env.FORMA_SERVE_READY_FILE;
+  const startedAt = process.env.FORMA_SERVE_STARTED_AT ?? env.now().toISOString();
+  const logFile = process.env.FORMA_SERVE_LOG_FILE ?? serveLogFile(env.formaHome);
+
+  await writeCommandReturn(output, env.startServer({}));
+
+  if (token && runtimeFile) {
+    const metadata = createServeMetadata({ pid: env.currentPid, token, startedAt, logFile });
+    await env.writeText(runtimeFile, `${JSON.stringify(metadata, null, 2)}\n`);
+    installServeCleanupHandlers(env.formaHome, metadata);
+  }
+
+  return output.result(0);
+}
+
+function createServeMetadata(state: { pid: number; token: string; startedAt: string; logFile: string }): ServeMetadata {
+  return {
     schema_version: 1,
     marker: servePidMarker,
     pid: state.pid,
     token: state.token,
-    started_at: state.startedAt.toISOString(),
+    started_at: state.startedAt,
     log: state.logFile
   };
+}
+
+async function writeServePidState(env: RuntimeCliEnv, metadata: ServeMetadata): Promise<void> {
   await env.writeText(servePidFile(env.formaHome), `${JSON.stringify(metadata, null, 2)}\n`);
-  await env.appendText(state.logFile, `${state.startedAt.toISOString()} forma serve start pid=${state.pid}\n`);
+}
+
+async function removeServeStateFiles(env: RuntimeCliEnv): Promise<void> {
+  await Promise.all([
+    env.removeFile(servePidFile(env.formaHome)),
+    env.removeFile(serveRuntimeFile(env.formaHome))
+  ]);
 }
 
 function parsePlatformArgs(args: string[]): AgentInstallPlatform[] {
@@ -393,7 +431,10 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
       (async (options) => {
         if (options?.detached) {
           return await spawnDetachedServer({
+            formaHome: options.formaHome ?? formaHome,
             logFile: options.logFile ?? serveLogFile(formaHome),
+            runtimeFile: options.runtimeFile ?? serveRuntimeFile(formaHome),
+            startedAt: options.startedAt ?? new Date().toISOString(),
             token: options.token ?? randomUUID()
           });
         }
@@ -479,7 +520,7 @@ async function readServerStatus(
   pathExists: (file: string) => Promise<boolean>,
   isPidAlive: (pid: number) => boolean
 ): Promise<CliServerStatus> {
-  const state = await readServeStateFromPaths(formaHome, readText, pathExists);
+  const state = await readOwnedServeStateFromPaths(formaHome, readText, pathExists);
   if (state.kind === "missing") {
     return { running: false };
   }
@@ -489,26 +530,50 @@ async function readServerStatus(
   return { running: isPidAlive(state.metadata.pid) };
 }
 
-async function readServeState(env: RuntimeCliEnv): Promise<ServeState> {
-  return await readServeStateFromPaths(env.formaHome, env.readText, env.pathExists);
+async function readOwnedServeState(env: RuntimeCliEnv, expected?: ServeMetadata): Promise<ServeState> {
+  return await readOwnedServeStateFromPaths(env.formaHome, env.readText, env.pathExists, expected);
+}
+
+async function readOwnedServeStateFromPaths(
+  formaHome: string,
+  readText: (file: string) => Promise<string>,
+  pathExists: (file: string) => Promise<boolean>,
+  expected?: ServeMetadata
+): Promise<ServeState> {
+  const pidState = expected ? { kind: "valid" as const, metadata: expected } : await readServeStateFromPaths(servePidFile(formaHome), readText, pathExists);
+  if (pidState.kind !== "valid") {
+    return pidState;
+  }
+
+  const runtimeState = await readServeStateFromPaths(serveRuntimeFile(formaHome), readText, pathExists);
+  if (runtimeState.kind === "missing") {
+    return { kind: "invalid", reason: `${serveRuntimeFile(formaHome)} runtime state is missing` };
+  }
+  if (runtimeState.kind === "invalid") {
+    return runtimeState;
+  }
+  if (!serveMetadataMatches(pidState.metadata, runtimeState.metadata)) {
+    return { kind: "invalid", reason: `${serveRuntimeFile(formaHome)} does not match ${servePidFile(formaHome)}` };
+  }
+
+  return pidState;
 }
 
 async function readServeStateFromPaths(
-  formaHome: string,
+  file: string,
   readText: (file: string) => Promise<string>,
   pathExists: (file: string) => Promise<boolean>
 ): Promise<ServeState> {
-  const pidFile = servePidFile(formaHome);
-  if (!(await pathExists(pidFile))) {
+  if (!(await pathExists(file))) {
     return { kind: "missing" };
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(await readText(pidFile));
+    parsed = JSON.parse(await readText(file));
   } catch {
-    return { kind: "invalid", reason: `${pidFile} is not Forma JSON metadata` };
+    return { kind: "invalid", reason: `${file} is not Forma JSON metadata` };
   }
-  return parseServeMetadata(parsed, pidFile);
+  return parseServeMetadata(parsed, file);
 }
 
 function parseServeMetadata(value: unknown, file: string): ServeState {
@@ -558,8 +623,16 @@ function serveLogFile(formaHome: string): string {
   return join(formaHome, "serve.log");
 }
 
+function serveRuntimeFile(formaHome: string): string {
+  return join(formaHome, "serve.state.json");
+}
+
 function formatPlatforms(platforms: AgentInstallPlatform[]): string {
   return platforms.join(", ");
+}
+
+function serveMetadataMatches(left: ServeMetadata, right: ServeMetadata): boolean {
+  return left.pid === right.pid && left.token === right.token && left.started_at === right.started_at && left.log === right.log;
 }
 
 function startedPid(result: CliServerStartResult): number | undefined {
@@ -637,12 +710,17 @@ async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions
 
   await mkdir(dirname(options.logFile), { recursive: true });
   const logFd = openSync(options.logFile, "a");
+  let childPid: number | undefined;
   try {
     const child = spawn(process.execPath, [entrypoint, "serve", "--foreground-internal"], {
       cwd: process.cwd(),
       detached: true,
       env: {
         ...process.env,
+        FORMA_HOME: options.formaHome,
+        FORMA_SERVE_LOG_FILE: options.logFile,
+        FORMA_SERVE_READY_FILE: options.runtimeFile,
+        FORMA_SERVE_STARTED_AT: options.startedAt,
         FORMA_SERVE_TOKEN: options.token
       },
       stdio: ["ignore", logFd, logFd]
@@ -650,11 +728,91 @@ async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions
     if (!child.pid) {
       throw new Error("Background Forma server did not expose a pid");
     }
+    childPid = child.pid;
+    await waitForDetachedServerReady(child, options);
     child.unref();
     return { pid: child.pid };
+  } catch (error) {
+    if (childPid) {
+      try {
+        process.kill(childPid, "SIGTERM");
+      } catch {
+        // The process may already have exited before readiness was observed.
+      }
+    }
+    throw error;
   } finally {
     closeSync(logFd);
   }
+}
+
+async function waitForDetachedServerReady(
+  child: ReturnType<typeof spawn>,
+  options: CliSpawnDetachedServerOptions
+): Promise<void> {
+  const timeoutMs = options.readyTimeoutMs ?? 5000;
+  const expected = createServeMetadata({
+    pid: child.pid ?? -1,
+    token: options.token,
+    startedAt: options.startedAt,
+    logFile: options.logFile
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    let finished = false;
+    let checking = false;
+
+    const finish = (error?: Error): void => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      clearInterval(interval);
+      clearTimeout(timeout);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve();
+    };
+
+    const checkReady = async (): Promise<void> => {
+      if (checking || finished) {
+        return;
+      }
+      checking = true;
+      try {
+        const state = await readServeStateFromPaths(options.runtimeFile, (file) => readFile(file, "utf8"), defaultPathExists);
+        if (state.kind === "valid" && serveMetadataMatches(expected, state.metadata)) {
+          finish();
+        }
+      } catch {
+        // Keep waiting; child exit/error handlers produce actionable failures.
+      } finally {
+        checking = false;
+      }
+    };
+
+    const onError = (error: Error): void => {
+      finish(error);
+    };
+    const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
+      finish(new Error(`Background Forma server exited before ready (${code === null ? `signal ${signal}` : `code ${code}`})`));
+    };
+
+    const interval = setInterval(() => {
+      void checkReady();
+    }, 25);
+    const timeout = setTimeout(() => {
+      finish(new Error(`Timed out waiting for Forma server readiness after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.once("error", onError);
+    child.once("exit", onExit);
+    void checkReady();
+  });
 }
 
 async function defaultPathExists(file: string): Promise<boolean> {
@@ -677,6 +835,40 @@ function defaultIsPidAlive(pid: number): boolean {
 
 function defaultKillProcess(pid: number): void {
   process.kill(pid, "SIGTERM");
+}
+
+function installServeCleanupHandlers(formaHome: string, metadata: ServeMetadata): void {
+  let cleaned = false;
+  const cleanup = (): void => {
+    if (cleaned) {
+      return;
+    }
+    cleaned = true;
+    cleanupServeFileSync(serveRuntimeFile(formaHome), metadata);
+    cleanupServeFileSync(servePidFile(formaHome), metadata);
+  };
+
+  process.once("exit", cleanup);
+  process.once("SIGTERM", () => {
+    cleanup();
+    process.exit(0);
+  });
+  process.once("SIGINT", () => {
+    cleanup();
+    process.exit(130);
+  });
+}
+
+function cleanupServeFileSync(file: string, metadata: ServeMetadata): void {
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown;
+    const state = parseServeMetadata(parsed, file);
+    if (state.kind === "valid" && serveMetadataMatches(metadata, state.metadata)) {
+      rmSync(file, { force: true });
+    }
+  } catch {
+    // Cleanup is best-effort; ownership checks prevent later stop from killing unrelated processes.
+  }
 }
 
 function isMissingProcessError(error: unknown): boolean {
