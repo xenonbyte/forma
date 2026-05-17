@@ -282,17 +282,17 @@ export class InstallService {
     backups: InstallBackupRecord[]
   ): Promise<void> {
     const existing = await readOptionalText(target);
-    if (existing === content) {
-      return;
-    }
-
     if (existing !== undefined) {
       const backup = this.backupPath(platform, target);
       await mkdir(dirname(backup), { recursive: true });
-      if (!(await pathExists(backup))) {
+      if (!(await this.isBackupReferencedByActiveManifest(backup))) {
         await writeFile(backup, existing, "utf8");
       }
       backups.push({ target, backup });
+    }
+
+    if (existing === content) {
+      return;
     }
 
     await mkdir(dirname(target), { recursive: true });
@@ -372,6 +372,16 @@ export class InstallService {
         await rm(backupPath, { force: true });
       }
     }
+  }
+
+  private async isBackupReferencedByActiveManifest(backupPath: string): Promise<boolean> {
+    for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      if (manifest?.backups.some((backup) => backup.backup === backupPath)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async backupsForInstalledPathsFromOtherManifests(
@@ -573,7 +583,7 @@ function findCodexFormaSectionRange(content: string): { start: number; end: numb
       }
     }
 
-    if (trimmedLine === "[mcp_servers.forma]") {
+    if (isCodexFormaTableHeader(line)) {
       const start = offset;
       let end = offset + line.length;
       for (let endIndex = index + 1; endIndex < lines.length; endIndex++) {
@@ -598,6 +608,10 @@ function splitLinesWithEndings(content: string): string[] {
 
 function isTomlTableHeader(line: string): boolean {
   return /^\s*\[{1,2}[^\]\r\n]+\]{1,2}\s*(?:#.*)?(?:\r?\n|\r)?$/.test(line);
+}
+
+function isCodexFormaTableHeader(line: string): boolean {
+  return /^\s*\[mcp_servers\.forma\]\s*(?:#.*)?(?:\r?\n|\r)?$/.test(line);
 }
 
 function unique<T>(values: T[]): T[] {

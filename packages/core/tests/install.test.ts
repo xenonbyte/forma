@@ -246,6 +246,34 @@ describe("InstallService", () => {
     await expect(readFile(claudeCommand, "utf8")).resolves.toBe("# Current B\n");
   });
 
+  it("preserves pre-existing files that already match managed templates", async () => {
+    const { userHome, service } = await createService();
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    const template = await readFile(resolve("packages/agent/templates/claude/fm-design.md"), "utf8");
+    await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
+    await writeFile(claudeCommand, template, "utf8");
+
+    await service.installPlatforms(["claude"]);
+    await service.uninstallPlatforms(["claude"]);
+
+    await expect(readFile(claudeCommand, "utf8")).resolves.toBe(template);
+  });
+
+  it("overwrites orphan backup files before recording a new install lifecycle", async () => {
+    const { formaHome, userHome, service } = await createService();
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    const staleBackup = join(formaHome, "backups", "claude", ".claude", "commands", "fm-design.md");
+    await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
+    await mkdir(join(formaHome, "backups", "claude", ".claude", "commands"), { recursive: true });
+    await writeFile(claudeCommand, "# current B\n", "utf8");
+    await writeFile(staleBackup, "# stale A\n", "utf8");
+
+    await service.installPlatforms(["claude"]);
+    await service.uninstallPlatforms(["claude"]);
+
+    await expect(readFile(claudeCommand, "utf8")).resolves.toBe("# current B\n");
+  });
+
   it("injects and removes MCP config entries without deleting unrelated user config", async () => {
     const { userHome, service } = await createService();
     await mkdir(join(userHome, ".claude"), { recursive: true });
@@ -487,6 +515,42 @@ command = "keep"
     expect(uninstalled).toContain('command = "user-forma"');
     expect(uninstalled).toContain('[mcp_servers.keep]');
     expect(uninstalled).toContain("post_install = true");
+    expect(uninstalled).not.toContain('command = "forma"');
+  });
+
+  it("handles unmarked Codex Forma table headers with inline comments", async () => {
+    const { userHome, service } = await createService();
+    const codexConfig = join(userHome, ".codex", "config.toml");
+    await mkdir(join(userHome, ".codex"), { recursive: true });
+    await writeFile(
+      codexConfig,
+      [
+        'theme = "dark"',
+        "",
+        "  [mcp_servers.forma] # user-owned forma",
+        'command = "user-forma"',
+        'args = ["mcp"]',
+        "",
+        "[mcp_servers.keep]",
+        'command = "keep"',
+        ""
+      ].join("\r\n"),
+      "utf8"
+    );
+
+    await service.installPlatforms(["codex"]);
+
+    const installed = await readFile(codexConfig, "utf8");
+    expect(installed.match(/^\s*\[mcp_servers\.forma\](?:\s+#.*)?$/gm)).toHaveLength(1);
+    expect(installed).toContain('command = "forma"');
+    expect(installed).toContain("[mcp_servers.keep]");
+
+    await service.uninstallPlatforms(["codex"]);
+
+    const uninstalled = await readFile(codexConfig, "utf8");
+    expect(uninstalled.match(/^\s*\[mcp_servers\.forma\](?:\s+#.*)?$/gm)).toHaveLength(1);
+    expect(uninstalled).toContain('command = "user-forma"');
+    expect(uninstalled).toContain("[mcp_servers.keep]");
     expect(uninstalled).not.toContain('command = "forma"');
   });
 
