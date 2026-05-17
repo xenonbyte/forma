@@ -11,7 +11,8 @@ import {
   formaCoreVersion,
   readYaml,
   type AgentInstallPlatform,
-  type InstallManifest
+  type InstallManifest,
+  type InstallServiceOptions
 } from "@xenonbyte/forma-core";
 import { start as startMcpServer } from "@xenonbyte/forma-mcp";
 import { start as startWebServer } from "@xenonbyte/forma-server";
@@ -53,6 +54,8 @@ export interface CliInstallService {
   uninstallPlatforms(platforms: AgentInstallPlatform[]): Promise<void>;
 }
 
+export type CliInstallServiceOptions = Pick<InstallServiceOptions, "formaHome" | "templatesDir">;
+
 export type CliPencilStatus =
   | { available: true; authenticated: true; message?: string }
   | { available: true; authenticated: false; message?: string }
@@ -64,13 +67,14 @@ export interface CliEnv {
   now?: () => Date;
   startMcp?: () => Promise<string | void>;
   startServer?: (options?: CliServeOptions) => Promise<CliServerStartResult>;
-  startWebServer?: (options: { home: string }) => Promise<void>;
-  createInstallService?: () => CliInstallService;
+  startWebServer?: (options: { home: string; bundledStylesDir?: string }) => Promise<void>;
+  createInstallService?: (options: CliInstallServiceOptions) => CliInstallService;
   checkPencil?: () => Promise<CliPencilStatus>;
   installedPlatforms?: () => Promise<AgentInstallPlatform[]>;
   isServerRunning?: () => Promise<boolean>;
   isPidAlive?: (pid: number) => boolean;
   verifyServerProcess?: (metadata: CliServeMetadata) => Promise<boolean> | boolean;
+  readProcessCommand?: (pid: number) => Promise<string>;
   createServeToken?: () => string;
   spawnDetachedServer?: (options: CliSpawnDetachedServerOptions) => Promise<CliSpawnDetachedServerResult>;
   killProcess?: (pid: number) => Promise<void> | void;
@@ -118,6 +122,7 @@ interface RuntimeCliEnv {
 export interface CliServeMetadata {
   schema_version: 1;
   marker: typeof servePidMarker;
+  home: string;
   pid: number;
   token: string;
   started_at: string;
@@ -199,8 +204,7 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
   }
 
   if (subcommand === "--foreground-internal") {
-    assertNoExtraArgs(rest);
-    return await runForegroundServeChild(env, output);
+    return await runForegroundServeChild(rest, env, output);
   }
 
   if (subcommand === "start") {
@@ -228,7 +232,7 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
     if (!pid) {
       throw new Error("Detached Forma server start did not return a pid");
     }
-    const metadata = createServeMetadata({ pid, token, startedAt, logFile });
+    const metadata = createServeMetadata({ home: env.formaHome, pid, token, startedAt, logFile });
     const readyState = await readOwnedServeState(env, metadata);
     if (readyState.kind !== "valid") {
       await removeServeStateFiles(env);
@@ -328,16 +332,21 @@ async function writeCommandReturn(output: CliOutput, value: Promise<CliServerSta
   return 0;
 }
 
-async function runForegroundServeChild(env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
-  const token = process.env.FORMA_SERVE_TOKEN;
+async function runForegroundServeChild(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  const options = parseForegroundServeArgs(args);
+  const token = options.token ?? process.env.FORMA_SERVE_TOKEN;
+  const serveHome = options.home ?? process.env.FORMA_HOME ?? env.formaHome;
+  if (serveHome !== env.formaHome) {
+    throw new Error(`Foreground serve home ${serveHome} does not match resolved Forma home ${env.formaHome}`);
+  }
   const runtimeFile = process.env.FORMA_SERVE_READY_FILE;
-  const startedAt = process.env.FORMA_SERVE_STARTED_AT ?? env.now().toISOString();
+  const startedAt = options.startedAt ?? process.env.FORMA_SERVE_STARTED_AT ?? env.now().toISOString();
   const logFile = process.env.FORMA_SERVE_LOG_FILE ?? serveLogFile(env.formaHome);
 
   await writeCommandReturn(output, env.startServer({}));
 
   if (token && runtimeFile) {
-    const metadata = createServeMetadata({ pid: env.currentPid, token, startedAt, logFile });
+    const metadata = createServeMetadata({ home: env.formaHome, pid: env.currentPid, token, startedAt, logFile });
     await env.writeText(runtimeFile, `${JSON.stringify(metadata, null, 2)}\n`);
     installServeCleanupHandlers(env.formaHome, metadata);
   }
@@ -345,10 +354,11 @@ async function runForegroundServeChild(env: RuntimeCliEnv, output: CliOutput): P
   return output.result(0);
 }
 
-function createServeMetadata(state: { pid: number; token: string; startedAt: string; logFile: string }): ServeMetadata {
+function createServeMetadata(state: { home: string; pid: number; token: string; startedAt: string; logFile: string }): ServeMetadata {
   return {
     schema_version: 1,
     marker: servePidMarker,
+    home: state.home,
     pid: state.pid,
     token: state.token,
     started_at: state.startedAt,
@@ -365,6 +375,41 @@ async function removeServeStateFiles(env: RuntimeCliEnv): Promise<void> {
     env.removeFile(servePidFile(env.formaHome)),
     env.removeFile(serveRuntimeFile(env.formaHome))
   ]);
+}
+
+function parseForegroundServeArgs(args: string[]): { token?: string; home?: string; startedAt?: string } {
+  const options: { token?: string; home?: string; startedAt?: string } = {};
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--serve-token") {
+      options.token = requireOptionValue(args, index, arg);
+      index += 1;
+      continue;
+    }
+    if (arg === "--serve-home") {
+      options.home = requireOptionValue(args, index, arg);
+      index += 1;
+      continue;
+    }
+    if (arg === "--serve-started-at") {
+      options.startedAt = requireOptionValue(args, index, arg);
+      if (!Number.isFinite(Date.parse(options.startedAt))) {
+        throw new Error("Invalid value for --serve-started-at");
+      }
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unexpected argument: ${arg}`);
+  }
+  return options;
+}
+
+function requireOptionValue(args: string[], index: number, option: string): string {
+  const value = args[index + 1];
+  if (!value) {
+    throw new Error(`Missing value for ${option}`);
+  }
+  return value;
 }
 
 function parsePlatformArgs(args: string[]): AgentInstallPlatform[] {
@@ -421,16 +466,19 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
   const readText = env.readText ?? ((file) => readFile(file, "utf8"));
   const pathExists = env.pathExists ?? defaultPathExists;
   const isPidAlive = env.isPidAlive ?? defaultIsPidAlive;
+  const readProcessCommand = env.readProcessCommand ?? defaultReadProcessCommand;
   const verifyServerProcess = async (metadata: ServeMetadata): Promise<boolean> => {
-    return await (env.verifyServerProcess?.(metadata) ?? defaultVerifyServerProcess(metadata));
+    return await (env.verifyServerProcess?.(metadata) ?? defaultVerifyServerProcess(metadata, readProcessCommand));
   };
   const spawnDetachedServer = env.spawnDetachedServer ?? defaultSpawnDetachedServer;
-  const launchWebServer = env.startWebServer ?? ((options: { home: string }) => startWebServer(options));
+  const launchWebServer = env.startWebServer ?? ((options: { home: string; bundledStylesDir?: string }) => startWebServer(options));
+  const bundledStylesDir = packageBundledStylesDir();
+  const installServiceOptions = { formaHome, templatesDir: packageAgentTemplatesDir() };
   const runtimeEnv: RuntimeCliEnv = {
     formaHome,
     currentPid,
     now: env.now ?? (() => new Date()),
-    startMcp: env.startMcp ?? (() => startMcpServer()),
+    startMcp: env.startMcp ?? (() => startMcpServer({ home: formaHome, bundledStylesDir })),
     startServer:
       env.startServer ??
       (async (options) => {
@@ -444,10 +492,10 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
             token: options.token ?? randomUUID()
           });
         }
-        await launchWebServer({ home: formaHome });
+        await launchWebServer({ home: formaHome, bundledStylesDir });
         return undefined;
       }),
-    createInstallService: env.createInstallService ?? (() => new InstallService({ formaHome })),
+    createInstallService: () => (env.createInstallService ? env.createInstallService(installServiceOptions) : new InstallService(installServiceOptions)),
     checkPencil: env.checkPencil ?? (() => checkPencil(formaHome)),
     getInstalledPlatforms: env.installedPlatforms
       ? async () => ({ platforms: await env.installedPlatforms!(), warnings: [] })
@@ -578,8 +626,10 @@ async function readOwnedServeStateFromPaths(
   pathExists: (file: string) => Promise<boolean>,
   expected?: ServeMetadata
 ): Promise<ServeState> {
-  const pidState = expected ? { kind: "valid" as const, metadata: expected } : await readServeStateFromPaths(servePidFile(formaHome), readText, pathExists);
-  const runtimeState = await readServeStateFromPaths(serveRuntimeFile(formaHome), readText, pathExists);
+  const pidState = expected
+    ? { kind: "valid" as const, metadata: expected }
+    : await readServeStateFromPaths(servePidFile(formaHome), readText, pathExists, formaHome);
+  const runtimeState = await readServeStateFromPaths(serveRuntimeFile(formaHome), readText, pathExists, formaHome);
 
   if (!expected && pidState.kind === "missing") {
     if (runtimeState.kind === "missing") {
@@ -608,7 +658,8 @@ async function readOwnedServeStateFromPaths(
 async function readServeStateFromPaths(
   file: string,
   readText: (file: string) => Promise<string>,
-  pathExists: (file: string) => Promise<boolean>
+  pathExists: (file: string) => Promise<boolean>,
+  expectedHome?: string
 ): Promise<ServeState> {
   if (!(await pathExists(file))) {
     return { kind: "missing" };
@@ -619,10 +670,10 @@ async function readServeStateFromPaths(
   } catch {
     return { kind: "invalid", reason: `${file} is not Forma JSON metadata` };
   }
-  return parseServeMetadata(parsed, file);
+  return parseServeMetadata(parsed, file, expectedHome);
 }
 
-function parseServeMetadata(value: unknown, file: string): ServeState {
+function parseServeMetadata(value: unknown, file: string, expectedHome?: string): ServeState {
   if (!isRecord(value)) {
     return { kind: "invalid", reason: `${file} is not an object` };
   }
@@ -634,6 +685,12 @@ function parseServeMetadata(value: unknown, file: string): ServeState {
   }
   if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 0) {
     return { kind: "invalid", reason: `${file} has invalid pid` };
+  }
+  if (typeof value.home !== "string" || value.home.length === 0) {
+    return { kind: "invalid", reason: `${file} has invalid home` };
+  }
+  if (expectedHome && value.home !== expectedHome) {
+    return { kind: "invalid", reason: `${file} belongs to ${value.home}, not ${expectedHome}` };
   }
   if (typeof value.token !== "string" || value.token.length === 0) {
     return { kind: "invalid", reason: `${file} has invalid token` };
@@ -649,6 +706,7 @@ function parseServeMetadata(value: unknown, file: string): ServeState {
     metadata: {
       schema_version: 1,
       marker: servePidMarker,
+      home: value.home,
       pid: value.pid,
       token: value.token,
       started_at: value.started_at,
@@ -678,7 +736,13 @@ function formatPlatforms(platforms: AgentInstallPlatform[]): string {
 }
 
 function serveMetadataMatches(left: ServeMetadata, right: ServeMetadata): boolean {
-  return left.pid === right.pid && left.token === right.token && left.started_at === right.started_at && left.log === right.log;
+  return (
+    left.home === right.home &&
+    left.pid === right.pid &&
+    left.token === right.token &&
+    left.started_at === right.started_at &&
+    left.log === right.log
+  );
 }
 
 function startedPid(result: CliServerStartResult): number | undefined {
@@ -749,7 +813,23 @@ function defaultFormaHome(): string {
 }
 
 function packageCliEntrypoint(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), "..", "bin", "forma.js");
+  return join(packageRoot(), "bin", "forma.js");
+}
+
+function packageRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), "..");
+}
+
+function packageAssetPath(...segments: string[]): string {
+  return join(packageRoot(), "dist", "assets", ...segments);
+}
+
+function packageAgentTemplatesDir(): string {
+  return packageAssetPath("agent", "templates");
+}
+
+function packageBundledStylesDir(): string {
+  return packageAssetPath("styles");
 }
 
 async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions): Promise<CliSpawnDetachedServerResult> {
@@ -757,19 +837,33 @@ async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions
   const logFd = openSync(options.logFile, "a");
   let childPid: number | undefined;
   try {
-    const child = spawn(process.execPath, [options.entrypoint, "serve", "--foreground-internal"], {
-      cwd: process.cwd(),
-      detached: true,
-      env: {
-        ...process.env,
-        FORMA_HOME: options.formaHome,
-        FORMA_SERVE_LOG_FILE: options.logFile,
-        FORMA_SERVE_READY_FILE: options.runtimeFile,
-        FORMA_SERVE_STARTED_AT: options.startedAt,
-        FORMA_SERVE_TOKEN: options.token
-      },
-      stdio: ["ignore", logFd, logFd]
-    });
+    const child = spawn(
+      process.execPath,
+      [
+        options.entrypoint,
+        "serve",
+        "--foreground-internal",
+        "--serve-token",
+        options.token,
+        "--serve-home",
+        options.formaHome,
+        "--serve-started-at",
+        options.startedAt
+      ],
+      {
+        cwd: process.cwd(),
+        detached: true,
+        env: {
+          ...process.env,
+          FORMA_HOME: options.formaHome,
+          FORMA_SERVE_LOG_FILE: options.logFile,
+          FORMA_SERVE_READY_FILE: options.runtimeFile,
+          FORMA_SERVE_STARTED_AT: options.startedAt,
+          FORMA_SERVE_TOKEN: options.token
+        },
+        stdio: ["ignore", logFd, logFd]
+      }
+    );
     if (!child.pid) {
       throw new Error("Background Forma server did not expose a pid");
     }
@@ -798,6 +892,7 @@ async function waitForDetachedServerReady(
   const timeoutMs = options.readyTimeoutMs ?? 5000;
   const expected = createServeMetadata({
     pid: child.pid ?? -1,
+    home: options.formaHome,
     token: options.token,
     startedAt: options.startedAt,
     logFile: options.logFile
@@ -829,7 +924,7 @@ async function waitForDetachedServerReady(
       }
       checking = true;
       try {
-        const state = await readServeStateFromPaths(options.runtimeFile, (file) => readFile(file, "utf8"), defaultPathExists);
+        const state = await readServeStateFromPaths(options.runtimeFile, (file) => readFile(file, "utf8"), defaultPathExists, options.formaHome);
         if (state.kind === "valid" && serveMetadataMatches(expected, state.metadata)) {
           finish();
         }
@@ -878,16 +973,34 @@ function defaultIsPidAlive(pid: number): boolean {
   }
 }
 
-async function defaultVerifyServerProcess(metadata: ServeMetadata): Promise<boolean> {
+async function defaultVerifyServerProcess(metadata: ServeMetadata, readProcessCommand: (pid: number) => Promise<string>): Promise<boolean> {
   try {
     const command = await readProcessCommand(metadata.pid);
-    return command.includes(packageCliEntrypoint()) && command.includes("serve") && command.includes("--foreground-internal");
+    return (
+      commandIncludesArgs(command, [packageCliEntrypoint(), "serve", "--foreground-internal"]) &&
+      commandIncludesArgPair(command, "--serve-token", metadata.token) &&
+      commandIncludesArgPair(command, "--serve-home", metadata.home) &&
+      commandIncludesArgPair(command, "--serve-started-at", metadata.started_at)
+    );
   } catch {
     return false;
   }
 }
 
-async function readProcessCommand(pid: number): Promise<string> {
+function commandIncludesArgPair(command: string, flag: string, value: string): boolean {
+  return commandIncludesArgs(command, [flag, value]);
+}
+
+function commandIncludesArgs(command: string, args: string[]): boolean {
+  const pattern = args.map(escapeRegExp).join("\\s+");
+  return new RegExp(`(?:^|\\s)${pattern}(?:\\s|$)`).test(command);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function defaultReadProcessCommand(pid: number): Promise<string> {
   return await new Promise((resolve, reject) => {
     execFile("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }, (error, stdout) => {
       if (error) {

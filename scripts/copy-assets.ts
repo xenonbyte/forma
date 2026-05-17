@@ -1,6 +1,6 @@
 import { constants } from "node:fs";
 import { access, cp, mkdir, rm } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export interface AssetCopy {
@@ -10,6 +10,7 @@ export interface AssetCopy {
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cliAssetsDir = resolve(repoRoot, "packages/cli/dist/assets");
 const assetCopies: AssetCopy[] = [
   {
     label: "agent templates",
@@ -30,6 +31,7 @@ const assetCopies: AssetCopy[] = [
 
 export async function copyAssets(copies: AssetCopy[] = assetCopies): Promise<void> {
   for (const copy of copies) {
+    assertSafeAssetTarget(copy.target);
     if (!(await pathExists(copy.source))) {
       console.log(`skip ${copy.label}: ${copy.source} does not exist`);
       continue;
@@ -39,6 +41,13 @@ export async function copyAssets(copies: AssetCopy[] = assetCopies): Promise<voi
     await rm(copy.target, { recursive: true, force: true });
     await cp(copy.source, copy.target, { recursive: true });
     console.log(`copied ${copy.label}: ${copy.source} -> ${copy.target}`);
+  }
+}
+
+function assertSafeAssetTarget(target: string): void {
+  const relativeTarget = relative(cliAssetsDir, resolve(target));
+  if (relativeTarget === "" || relativeTarget.startsWith("..") || relativeTarget.startsWith("/")) {
+    throw new Error(`Refusing to copy assets outside ${cliAssetsDir}: ${target}`);
   }
 }
 
