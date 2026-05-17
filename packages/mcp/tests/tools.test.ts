@@ -1,4 +1,7 @@
 import { FormaError } from "@xenonbyte/forma-core";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFormaTools, formaToolNames, registerFormaTools } from "../src/index.js";
 
@@ -190,5 +193,130 @@ describe("MCP forma tools", () => {
       details: { issues: expect.any(Array) }
     });
     expect(store.products.createProduct).not.toHaveBeenCalled();
+  });
+
+  it("get_baseline_image finds a preview from a non-latest source requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
+    const previewPath = join(home, "data", "P-123abc", "R-old1111", "D-old1111", "preview@2x.png");
+    await mkdir(dirname(previewPath), { recursive: true });
+    await writeFile(previewPath, "preview");
+    const store = fakeStore({
+      home,
+      baseline: {
+        getProductBaseline: vi.fn(async () => ({
+          product_id: "P-123abc",
+          pages: [{
+            id: "checkout",
+            name: "Checkout",
+            features: "",
+            copy: "",
+            fields: "",
+            interactions: "",
+            source_requirements: ["R-old1111", "R-new2222"]
+          }],
+          navigation: []
+        }))
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-latest1",
+          created_at: "2026-05-17T03:00:00.000Z",
+          pages: [{ page_id: "latest-page", baseline_page: "profile", design_status: "done", design_id: "D-latest1" }]
+        })),
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-old1111",
+            created_at: "2026-05-17T01:00:00.000Z",
+            updated_at: "2026-05-17T01:00:00.000Z",
+            pages: [{ page_id: "old-page", baseline_page: "checkout", design_status: "done", design_id: "D-old1111" }]
+          },
+          {
+            id: "R-new2222",
+            created_at: "2026-05-17T02:00:00.000Z",
+            updated_at: "2026-05-17T02:00:00.000Z",
+            pages: [{ page_id: "new-page", baseline_page: "checkout", design_status: "pending" }]
+          },
+          {
+            id: "R-latest1",
+            created_at: "2026-05-17T03:00:00.000Z",
+            updated_at: "2026-05-17T03:00:00.000Z",
+            pages: [{ page_id: "latest-page", baseline_page: "profile", design_status: "done", design_id: "D-latest1" }]
+          }
+        ])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc", page_id: "checkout" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({
+      product_id: "P-123abc",
+      baseline_page_id: "checkout",
+      requirement_id: "R-old1111",
+      requirement_page_id: "old-page",
+      design_id: "D-old1111",
+      preview_path: previewPath
+    });
+    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
+  });
+
+  it("get_baseline_image does not use unrelated latest requirement page_id collisions", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
+    const collidingPreviewPath = join(home, "data", "P-123abc", "R-latest1", "D-wrong11", "preview@2x.png");
+    await mkdir(dirname(collidingPreviewPath), { recursive: true });
+    await writeFile(collidingPreviewPath, "preview");
+    const store = fakeStore({
+      home,
+      baseline: {
+        getProductBaseline: vi.fn(async () => ({
+          product_id: "P-123abc",
+          pages: [{
+            id: "checkout",
+            name: "Checkout",
+            features: "",
+            copy: "",
+            fields: "",
+            interactions: "",
+            source_requirements: ["R-old1111"]
+          }],
+          navigation: []
+        }))
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-latest1",
+          created_at: "2026-05-17T03:00:00.000Z",
+          pages: [{ page_id: "checkout", baseline_page: "profile", design_status: "done", design_id: "D-wrong11" }]
+        })),
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-old1111",
+            created_at: "2026-05-17T01:00:00.000Z",
+            updated_at: "2026-05-17T01:00:00.000Z",
+            pages: [{ page_id: "old-page", baseline_page: "checkout", design_status: "pending" }]
+          },
+          {
+            id: "R-latest1",
+            created_at: "2026-05-17T03:00:00.000Z",
+            updated_at: "2026-05-17T03:00:00.000Z",
+            pages: [{ page_id: "checkout", baseline_page: "profile", design_status: "done", design_id: "D-wrong11" }]
+          }
+        ])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc", page_id: "checkout" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "BASELINE_IMAGE_NOT_FOUND",
+      message: "Baseline image not found",
+      details: { product_id: "P-123abc", page_id: "checkout" }
+    });
+    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
   });
 });

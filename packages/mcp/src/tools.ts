@@ -330,31 +330,54 @@ async function getBaselinePage(store: FormaStore, productId: string, pageId: str
 }
 
 async function getBaselineImage(store: FormaStore, productId: string, pageId: string) {
-  await getBaselinePage(store, productId, pageId);
-  const requirement = await store.requirements.getRequirement({ product_id: productId });
-  const page = requirement.pages.find((item) => item.baseline_page === pageId || item.page_id === pageId);
-  if (!page?.design_id || page.design_status !== "done") {
-    throw new ToolError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", { product_id: productId, page_id: pageId });
-  }
+  const baselinePage = await getBaselinePage(store, productId, pageId);
+  const sourceRequirements = new Set(baselinePage.source_requirements);
+  const requirements = (await store.requirements.getRequirementHistory(productId))
+    .filter((requirement) => sourceRequirements.has(requirement.id))
+    .sort(compareRequirementsNewestFirst);
 
-  const previewPath = join(store.home, "data", productId, requirement.id, page.design_id, "preview@2x.png");
-  if (!(await fileExists(previewPath))) {
-    throw new ToolError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
+  for (const requirement of requirements) {
+    const page = requirement.pages.find((item) => item.baseline_page === pageId);
+    if (!page?.design_id || page.design_status !== "done") {
+      continue;
+    }
+
+    const previewPath = join(store.home, "data", productId, requirement.id, page.design_id, "preview@2x.png");
+    if (!(await fileExists(previewPath))) {
+      continue;
+    }
+
+    return {
       product_id: productId,
-      page_id: pageId,
+      baseline_page_id: pageId,
       requirement_id: requirement.id,
-      design_id: page.design_id
-    });
+      requirement_page_id: page.page_id,
+      design_id: page.design_id,
+      preview_path: previewPath
+    };
   }
 
-  return {
+  throw new ToolError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
     product_id: productId,
-    baseline_page_id: pageId,
-    requirement_id: requirement.id,
-    requirement_page_id: page.page_id,
-    design_id: page.design_id,
-    preview_path: previewPath
-  };
+    page_id: pageId,
+    source_requirements: baselinePage.source_requirements
+  });
+}
+
+function compareRequirementsNewestFirst(
+  left: { id: string; created_at?: string; updated_at?: string },
+  right: { id: string; created_at?: string; updated_at?: string }
+): number {
+  return timestampForRequirement(right) - timestampForRequirement(left) || left.id.localeCompare(right.id);
+}
+
+function timestampForRequirement(requirement: { created_at?: string; updated_at?: string }): number {
+  const updatedAt = requirement.updated_at ? Date.parse(requirement.updated_at) : Number.NaN;
+  if (Number.isFinite(updatedAt)) {
+    return updatedAt;
+  }
+  const createdAt = requirement.created_at ? Date.parse(requirement.created_at) : Number.NaN;
+  return Number.isFinite(createdAt) ? createdAt : 0;
 }
 
 async function fileExists(file: string): Promise<boolean> {
