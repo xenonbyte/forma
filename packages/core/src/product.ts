@@ -5,17 +5,13 @@ import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
 import type { Platform } from "./schemas.js";
 import { platforms } from "./schemas.js";
+import { styleMetadataSchema } from "./styles.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
-const styleConfigSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  design_md_path: z.string().min(1),
-  variables: z.record(z.string(), z.string())
-});
+export const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
 
 const productIndexEntrySchema = z.object({
-  id: z.string().min(1),
+  id: productIdSchema,
   name: z.string().min(1),
   description: z.string()
 });
@@ -26,20 +22,20 @@ const productIndexSchema = z.object({
 
 const productSchema = productIndexEntrySchema.extend({
   platform: z.enum(platforms).optional(),
-  style: styleConfigSchema.optional(),
+  style: styleMetadataSchema.optional(),
   components_initialized: z.boolean().optional()
 });
 
 const productConfigSchema = z.object({
   platform: z.enum(platforms),
-  style: styleConfigSchema
+  style: styleMetadataSchema
 });
 
 export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductConfig = {
   platform: Platform;
-  style: z.infer<typeof styleConfigSchema>;
+  style: z.infer<typeof styleMetadataSchema>;
 };
 
 export interface ProductServiceOptions {
@@ -64,10 +60,10 @@ export class ProductService {
     });
     const index = await this.readProductIndex();
 
+    await writeYamlAtomic(this.productFile(product.id), product);
     await writeYamlAtomic(this.indexFile, {
       products: [...index.products, productIndexEntrySchema.parse(product)]
     });
-    await writeYamlAtomic(this.productFile(product.id), product);
 
     return product;
   }
@@ -79,7 +75,7 @@ export class ProductService {
       ...productConfigSchema.parse(config)
     });
 
-    await writeYamlAtomic(this.productFile(productId), next);
+    await writeYamlAtomic(this.productFile(next.id), next);
     return next;
   }
 
@@ -87,14 +83,15 @@ export class ProductService {
     const product = await this.getProduct(productId);
     const next = productSchema.parse({ ...product, components_initialized: true });
 
-    await writeYamlAtomic(this.productFile(productId), next);
+    await writeYamlAtomic(this.productFile(next.id), next);
     return next;
   }
 
   async getProduct(productId: string): Promise<Product> {
-    const file = this.productFile(productId);
+    const parsedProductId = this.parseProductId(productId);
+    const file = this.productFile(parsedProductId);
     if (!(await fileExists(file))) {
-      throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: productId });
+      throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: parsedProductId });
     }
 
     return readYamlAs(file, productSchema);
@@ -114,6 +111,15 @@ export class ProductService {
 
   private productFile(productId: string): string {
     return join(this.dataDir, productId, "product.yaml");
+  }
+
+  private parseProductId(productId: string): string {
+    const parsed = productIdSchema.safeParse(productId);
+    if (!parsed.success) {
+      throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: productId });
+    }
+
+    return parsed.data;
   }
 }
 

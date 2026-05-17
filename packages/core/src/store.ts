@@ -4,10 +4,11 @@ import { StyleService } from "./styles.js";
 
 export interface FormaStoreOptions {
   home: string;
+  bundledStylesDir?: string;
 }
 
 export function createFormaStore(options: FormaStoreOptions) {
-  const styles = new StyleService({ home: options.home });
+  const styles = new StyleService({ home: options.home, bundledStylesDir: options.bundledStylesDir });
   const products = new ProductService({ home: options.home });
   const sessions = new SessionService({ home: options.home, products });
 
