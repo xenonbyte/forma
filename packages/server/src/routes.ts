@@ -53,17 +53,19 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/requirements", async (request) => {
     const body = objectBody(request.body);
     const requirement = await store.requirements.createEmptyRequirement(request.params.id, requiredString(body, "title"));
-    return store.requirements.submitRequirement({
+    const submitted = await store.requirements.submitRequirement({
       requirement_id: requirement.id,
       document_md: requiredString(body, "document_md"),
       pages: requiredArray(body, "pages") as SubmitRequirementInput["pages"],
       navigation: requiredArray(body, "navigation") as SubmitRequirementInput["navigation"]
     });
+    return store.requirements.getRequirement({ requirement_id: submitted.id });
   });
 
   app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request) => {
     await getOwnedRequirement(store, request.params.id, request.params.reqId);
-    return store.requirements.archiveRequirement(request.params.reqId);
+    const archived = await store.requirements.archiveRequirement(request.params.reqId);
+    return store.requirements.getRequirement({ requirement_id: archived.id });
   });
 
   app.get<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId", async (request) =>

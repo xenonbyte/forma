@@ -73,10 +73,10 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
       return undefined;
     }
 
-    window.setTimeout(() => {
+    const timeout = window.setTimeout(() => {
       focusHashTarget(hash);
     }, 0);
-    return undefined;
+    return () => window.clearTimeout(timeout);
   }, [hash, state.status]);
 
   const parsedPages = parseJsonArray(pagesJson);
@@ -202,7 +202,7 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
       )}
 
       <div
-        className="rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-500"
+        className="scroll-mt-24 rounded-lg focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-amber-500"
         id="new-requirement"
         tabIndex={-1}
       >

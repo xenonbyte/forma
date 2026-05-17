@@ -77,4 +77,41 @@ describe("apiRequest", () => {
       message: "Invalid API response"
     });
   });
+
+  it("keeps document payloads on requirement mutations", async () => {
+    const requests: Array<[RequestInfo | URL, string | undefined]> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push([input, init?.method]);
+      return jsonResponse({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: input.toString().endsWith("/archive") ? "archived" : "submitted",
+        created_at: "2026-05-17T00:00:00.000Z",
+        updated_at: "2026-05-17T00:00:00.000Z",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      });
+    });
+
+    await expect(
+      client.createRequirement("P-123abc", {
+        title: "Checkout",
+        document_md: "# Checkout",
+        pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }],
+        navigation: []
+      })
+    ).resolves.toMatchObject({ id: "R-12345678", document_md: "# Checkout" });
+
+    await expect(client.archiveRequirement("P-123abc", "R-12345678")).resolves.toMatchObject({
+      id: "R-12345678",
+      status: "archived",
+      document_md: "# Checkout"
+    });
+    expect(requests).toEqual([
+      ["/api/products/P-123abc/requirements", "POST"],
+      ["/api/products/P-123abc/requirements/R-12345678/archive", "PUT"]
+    ]);
+  });
 });

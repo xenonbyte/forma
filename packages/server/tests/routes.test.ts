@@ -254,6 +254,75 @@ describe("Fastify API routes", () => {
     });
   });
 
+  it("returns submitted requirement with document from create requirement route", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" })),
+      getRequirement: vi.fn(async () => ({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "submitted",
+        created_at: "2026-05-17T00:00:00.000Z",
+        updated_at: "2026-05-17T00:00:00.000Z",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      })),
+      submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements",
+      payload: { title: "Checkout", document_md: "# Checkout", pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }], navigation: [] }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: "R-12345678", status: "submitted", document_md: "# Checkout" });
+    expect(requirements.getRequirement).toHaveBeenCalledWith({ requirement_id: "R-12345678" });
+  });
+
+  it("returns archived requirement with document from archive route", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      archiveRequirement: vi.fn(async () => ({ id: "R-12345678", status: "archived" })),
+      getRequirement: vi
+        .fn()
+        .mockResolvedValueOnce({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          title: "Checkout",
+          status: "active",
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [],
+          navigation: [],
+          document_md: "# Checkout"
+        })
+        .mockResolvedValueOnce({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          title: "Checkout",
+          status: "archived",
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [],
+          navigation: [],
+          document_md: "# Checkout"
+        })
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: "R-12345678", status: "archived", document_md: "# Checkout" });
+    expect(requirements.archiveRequirement).toHaveBeenCalledWith("R-12345678");
+    expect(requirements.getRequirement).toHaveBeenLastCalledWith({ requirement_id: "R-12345678" });
+  });
+
   it("maps not found, invalid input, and Pencil unavailable errors", async () => {
     const store = fakeStore({
       products: {

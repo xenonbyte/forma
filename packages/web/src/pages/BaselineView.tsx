@@ -60,6 +60,10 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
     );
   }
 
+  return <BaselineContent baseline={state.baseline} productId={productId} />;
+}
+
+export function BaselineContent({ baseline, productId }: { baseline: ProductBaseline; productId: string }) {
   return (
     <div className="space-y-5">
       <div className="flex justify-start">
@@ -70,7 +74,7 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 
       <WorkSurface title="Functional pages">
         <div className="divide-y divide-zinc-200">
-          {state.baseline.pages.map((page) => (
+          {baseline.pages.map((page) => (
             <article className="grid gap-3 py-4 lg:grid-cols-[16rem_minmax(0,1fr)_16rem]" key={page.id}>
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold text-zinc-950">{page.name}</h2>
@@ -95,6 +99,15 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
                     <span className="text-sm text-zinc-500">None</span>
                   )}
                 </div>
+                <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">Actions</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/image`}>
+                    Preview
+                  </a>
+                  <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/annotations`}>
+                    Annotations
+                  </a>
+                </div>
               </div>
             </article>
           ))}
@@ -102,11 +115,11 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
       </WorkSurface>
 
       <WorkSurface title="Navigation">
-        {state.baseline.navigation.length === 0 ? (
+        {baseline.navigation.length === 0 ? (
           <p className="text-sm text-zinc-500">No navigation edges are present.</p>
         ) : (
           <div className="divide-y divide-zinc-200">
-            {state.baseline.navigation.map((edge, index) => (
+            {baseline.navigation.map((edge, index) => (
               <div className="grid gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_12rem]" key={`${edge.from}-${edge.to}-${index}`}>
                 <span className="truncate font-mono text-zinc-700">{edge.from}</span>
                 <span className="text-zinc-400">to</span>
@@ -134,3 +147,5 @@ const secondaryLinkClasses =
   "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 const pillLinkClasses =
   "inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-xs font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+const pageActionLinkClasses =
+  "inline-flex items-center rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
