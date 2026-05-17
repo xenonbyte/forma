@@ -229,10 +229,13 @@ export class RequirementService {
     const requirements = await Promise.all(
       entries
         .filter((entry) => entry.isDirectory() && /^R-[a-f0-9]{8}$/.test(entry.name))
-        .map((entry) => readYamlAs(this.requirementFile(productId, entry.name), requirementSchema))
+        .map(async (entry) => {
+          const requirement = await readYamlAs(this.requirementFile(productId, entry.name), requirementSchema);
+          return requirement.id === entry.name && requirement.product_id === productId ? requirement : null;
+        })
     );
 
-    return requirements;
+    return requirements.filter((requirement): requirement is Requirement => requirement !== null);
   }
 
   private async readDocument(productId: string, requirementId: string): Promise<string> {

@@ -1,4 +1,4 @@
-import { readFile, mkdtemp } from "node:fs/promises";
+import { mkdir, readFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -429,6 +429,57 @@ describe("requirement and baseline services", () => {
       expect.objectContaining({ id: first.id, document_md: "" }),
       expect.objectContaining({ id: second.id, document_md: "# Second\nLatest document" })
     ]);
+  });
+
+  it("ignores mismatched requirement records in product latest and history reads", async () => {
+    const { store, product } = await createConfiguredStore();
+    const otherProduct = await store.products.createProduct({ name: "Other App", description: "Other mobile shop" });
+    const valid = await store.requirements.createEmptyRequirement(product.id, "Valid");
+    await store.requirements.submitRequirement({
+      requirement_id: valid.id,
+      document_md: "# Valid\nMatched document",
+      pages: [{ page_id: `${valid.id}-home`, name: "首页", baseline_page: "home" }],
+      navigation: []
+    });
+    const validFile = join(store.home, "data", product.id, valid.id, "requirement.yaml");
+    await writeYamlAtomic(validFile, {
+      ...(await readYaml<Record<string, unknown>>(validFile)),
+      created_at: "2026-01-01T00:00:00.000Z"
+    });
+
+    await writeYamlAtomic(join(store.home, "data", product.id, "R-11111111", "requirement.yaml"), {
+      id: "R-99999999",
+      product_id: product.id,
+      title: "Wrong ID",
+      status: "submitted",
+      created_at: "2026-01-03T00:00:00.000Z",
+      updated_at: "2026-01-03T00:00:00.000Z",
+      pages: [],
+      navigation: []
+    });
+    await writeYamlAtomic(join(store.home, "data", product.id, "R-22222222", "requirement.yaml"), {
+      id: "R-22222222",
+      product_id: otherProduct.id,
+      title: "Wrong Product",
+      status: "submitted",
+      created_at: "2026-01-04T00:00:00.000Z",
+      updated_at: "2026-01-04T00:00:00.000Z",
+      pages: [],
+      navigation: []
+    });
+    await mkdir(join(store.home, "data", otherProduct.id, "R-22222222"), { recursive: true });
+    await writeFile(join(store.home, "data", otherProduct.id, "R-22222222", "document.md"), "# Wrong Product\nPoison\n");
+
+    await expect(store.requirements.getLatestRequirement(product.id)).resolves.toMatchObject({ id: valid.id });
+    await expect(store.requirements.getRequirement({ product_id: product.id })).resolves.toMatchObject({
+      id: valid.id,
+      document_md: "# Valid\nMatched document"
+    });
+
+    const history = await store.requirements.getRequirementHistory(product.id);
+    expect(history).toEqual([expect.objectContaining({ id: valid.id, document_md: "# Valid\nMatched document" })]);
+    expect(history.map((requirement) => requirement.document_md)).not.toContain("# Wrong ID\nPoison\n");
+    expect(history.map((requirement) => requirement.document_md)).not.toContain("# Wrong Product\nPoison\n");
   });
 
   it("rejects persisted requirement and baseline YAML with unknown keys", async () => {
