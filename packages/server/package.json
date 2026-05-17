@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@xenonbyte/forma-core": "workspace:*"
+    "@xenonbyte/forma-core": "workspace:*",
+    "fastify": "^5.8.5"
   }
 }
