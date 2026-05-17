@@ -39,6 +39,27 @@ describe("PencilService", () => {
     await expect(service.validatePenFile(badPen)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
+  it("rejects missing, malformed, empty, and nested-truncated pen files", async () => {
+    const home = await createHome("invalid-pen");
+    const service = new PencilService({ home, runner: createFakeRunner() });
+    const missingPen = join(home, "missing.pen");
+    const invalidJsonPen = join(home, "invalid-json.pen");
+    const emptyChildrenPen = join(home, "empty-children.pen");
+    const nestedTruncatedPen = join(home, "nested-truncated.pen");
+
+    await writeFile(invalidJsonPen, "{");
+    await writeFile(emptyChildrenPen, JSON.stringify({ children: [] }));
+    await writeFile(
+      nestedTruncatedPen,
+      JSON.stringify({ children: [{ id: "root", layers: [{ id: "truncated", value: "..." }] }] })
+    );
+
+    await expect(service.validatePenFile(missingPen)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(service.validatePenFile(invalidJsonPen)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(service.validatePenFile(emptyChildrenPen)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(service.validatePenFile(nestedTruncatedPen)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+  });
+
   it("reclaims stale lock when pid is dead", async () => {
     const home = await createHome("dead-lock");
     const fakeRunner = createFakeRunner();
@@ -109,6 +130,19 @@ describe("PencilService", () => {
       })
     });
     await expect(inactive.checkAvailability()).rejects.toMatchObject({ code: "PENCIL_NOT_AUTHENTICATED" });
+  });
+
+  it("maps status runner throws to not authenticated", async () => {
+    const home = await createHome("status-throw");
+    const service = new PencilService({
+      home,
+      runner: createFakeRunner(async (_command, args) => {
+        if (args[0] === "version") return { stdout: "1.0.0", stderr: "" };
+        throw new Error("status failed");
+      })
+    });
+
+    await expect(service.checkAvailability()).rejects.toMatchObject({ code: "PENCIL_NOT_AUTHENTICATED" });
   });
 
   it("exportPreview validates PNG size", async () => {
@@ -187,5 +221,27 @@ describe("PencilService", () => {
     expect(fakeRunner.calls.find((call) => call.args.includes("--prompt"))?.args).toEqual(
       expect.arrayContaining(["generate-components", "--out", result.penPath, "--workspace", "/tmp/workspace", "--prompt", "Create controls"])
     );
+  });
+
+  it("rejects invalid generated pen files and releases the lock", async () => {
+    const home = await createHome("invalid-generated");
+    const fakeRunner = createFakeRunner(async (_command, args) => {
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args.includes("--out")) {
+        const out = args[args.indexOf("--out") + 1];
+        await writeFile(out, JSON.stringify({ children: [] }));
+      }
+      return { stdout: "ok", stderr: "" };
+    });
+    const service = new PencilService({ home, runner: fakeRunner });
+
+    await expect(
+      service.generateComponents({
+        product_id: "P-invalid",
+        prompt: "Create invalid output",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(access(join(home, "pencil.lock"))).rejects.toThrow();
   });
 });
