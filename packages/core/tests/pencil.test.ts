@@ -193,9 +193,7 @@ describe("PencilService", () => {
     await expect(access(result.previewPath)).resolves.toBeUndefined();
     const generateCall = fakeRunner.calls.find((call) => call.args.includes("--prompt"));
     expect(generateCall?.command).toBe("pencil");
-    expect(generateCall?.args).toEqual(
-      expect.arrayContaining(["generate-page-design", "--out", result.penPath, "--workspace", "/tmp/workspace", "--prompt", "Create checkout"])
-    );
+    expect(generateCall?.args).toEqual(["--out", result.penPath, "--workspace", "/tmp/workspace", "--prompt", "Create checkout"]);
     expect(fakeRunner.calls.some((call) => call.args.includes("--export-scale") && call.args.includes("2"))).toBe(true);
   });
 
@@ -218,9 +216,13 @@ describe("PencilService", () => {
     });
 
     await expect(access(result.penPath)).resolves.toBeUndefined();
-    expect(fakeRunner.calls.find((call) => call.args.includes("--prompt"))?.args).toEqual(
-      expect.arrayContaining(["generate-components", "--out", result.penPath, "--workspace", "/tmp/workspace", "--prompt", "Create controls"])
-    );
+    expect(result.penPath.endsWith("components.lib.pen")).toBe(true);
+    expect(fakeRunner.calls.find((call) => call.args.includes("--prompt"))?.args).toEqual([
+      "--out",
+      result.penPath,
+      "--prompt",
+      "Create controls"
+    ]);
   });
 
   it("rejects invalid generated pen files and releases the lock", async () => {

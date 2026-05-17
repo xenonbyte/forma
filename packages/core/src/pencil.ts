@@ -142,15 +142,7 @@ export class PencilService {
       const tempDir = await this.createTempDir();
       const penPath = join(tempDir, "page.pen");
       const previewPath = join(tempDir, "preview.png");
-      await this.runner.run("pencil", [
-        "generate-page-design",
-        "--out",
-        penPath,
-        "--workspace",
-        input.workspace,
-        "--prompt",
-        input.prompt
-      ]);
+      await this.runner.run("pencil", ["--out", penPath, "--workspace", input.workspace, "--prompt", input.prompt]);
       await this.validatePenFile(penPath);
       await this.exportPreview(penPath, previewPath);
       return { penPath, previewPath, tempDir };
@@ -161,16 +153,8 @@ export class PencilService {
     await this.checkAvailability();
     return await this.withLock({ operation: "components", product_id: input.product_id }, async () => {
       const tempDir = await this.createTempDir();
-      const penPath = join(tempDir, "components.pen");
-      await this.runner.run("pencil", [
-        "generate-components",
-        "--out",
-        penPath,
-        "--workspace",
-        input.workspace,
-        "--prompt",
-        input.prompt
-      ]);
+      const penPath = join(tempDir, "components.lib.pen");
+      await this.runner.run("pencil", ["--out", penPath, "--prompt", input.prompt]);
       await this.validatePenFile(penPath);
       return { penPath, tempDir };
     });
