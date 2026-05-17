@@ -15,7 +15,10 @@ describe("product session and style services", () => {
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
 
     await expect(store.sessions.setCurrentProduct(product.id)).rejects.toMatchObject({
-      code: "PRODUCT_CONFIG_INCOMPLETE"
+      code: "PRODUCT_CONFIG_INCOMPLETE",
+      details: {
+        missing: ["platform", "style", "components_initialized"]
+      }
     });
   });
 
