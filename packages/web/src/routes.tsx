@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { PrimaryActionLink, StatePanel, WorkSurface } from "./components/Layout.js";
+import { BaselineView } from "./pages/BaselineView.js";
+import { ProductDetail } from "./pages/ProductDetail.js";
+import { ProductList } from "./pages/ProductList.js";
+import { ProductNew } from "./pages/ProductNew.js";
+import { RequirementDetail } from "./pages/RequirementDetail.js";
+import { StyleDetail } from "./pages/StyleDetail.js";
+import { StyleLibrary } from "./pages/StyleLibrary.js";
 
 export interface RoutePageProps {
   params: Record<string, string>;
@@ -26,35 +33,35 @@ const navigationEvent = "forma:navigation";
 
 export const routeTable: RouteDefinition[] = [
   {
-    component: ProductsPage,
+    component: ProductList,
     context: "Products",
     navGroup: "products",
     path: "/products",
     title: () => "Products"
   },
   {
-    component: ProductNewPage,
+    component: ProductNewRoute,
     context: "Products",
     navGroup: "products",
     path: "/products/new",
     title: () => "New product"
   },
   {
-    component: ProductDetailPage,
+    component: ProductDetail,
     context: "Product",
     navGroup: "products",
     path: "/products/:productId",
     title: ({ productId }) => productId
   },
   {
-    component: BaselinePage,
+    component: BaselineView,
     context: "Baseline",
     navGroup: "products",
     path: "/products/:productId/baseline",
     title: ({ productId }) => `${productId} baseline`
   },
   {
-    component: RequirementPage,
+    component: RequirementDetail,
     context: "Requirement",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId",
@@ -68,14 +75,14 @@ export const routeTable: RouteDefinition[] = [
     title: ({ designId }) => designId
   },
   {
-    component: StylesPage,
+    component: StyleLibraryRoute,
     context: "Styles",
     navGroup: "styles",
     path: "/styles",
     title: () => "Styles"
   },
   {
-    component: StyleDetailPage,
+    component: StyleDetail,
     context: "Style",
     navGroup: "styles",
     path: "/styles/:name",
@@ -159,103 +166,12 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
   return { found: false, params: {}, pathname, route: notFoundRoute };
 }
 
-function ProductsPage() {
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 lg:grid-cols-3">
-        <StatePanel state="empty" title="Product index">
-          No product records are loaded in this shell yet.
-        </StatePanel>
-        <StatePanel state="loading" title="Requirement status">
-          Product status request is loading.
-        </StatePanel>
-        <StatePanel state="error" title="API response">
-          PRODUCT_NOT_FOUND · Product not found.
-        </StatePanel>
-      </div>
-
-      <WorkSurface title="Product queue">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-sm leading-6 text-zinc-600">Create a product or select one once product data is available.</p>
-          <PrimaryActionLink href="/products/new">New product</PrimaryActionLink>
-        </div>
-      </WorkSurface>
-    </div>
-  );
+function ProductNewRoute() {
+  return <ProductNew navigate={navigateTo} />;
 }
 
-function ProductNewPage() {
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
-      <WorkSurface title="Product details">
-        <div className="grid gap-4">
-          {["Name", "Description", "Platform", "Style"].map((label) => (
-            <label className="grid gap-1 text-sm font-medium text-zinc-700" key={label}>
-              {label}
-              <input
-                className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500"
-                disabled
-                placeholder="Not loaded"
-              />
-            </label>
-          ))}
-        </div>
-      </WorkSurface>
-      <StatePanel state="empty" title="Submission">
-        Required fields are empty. Save remains unavailable.
-      </StatePanel>
-    </div>
-  );
-}
-
-function ProductDetailPage({ params }: RoutePageProps) {
-  return (
-    <div className="space-y-5">
-      <div className="grid gap-3 lg:grid-cols-3">
-        <StatePanel state="empty" title="Baseline">No baseline summary loaded for {params.productId}.</StatePanel>
-        <StatePanel state="empty" title="Requirements">No active requirements loaded.</StatePanel>
-        <StatePanel state="loading" title="Archive state">Archive controls wait for product data.</StatePanel>
-      </div>
-
-      <WorkSurface title="Product workspace">
-        <div className="grid gap-3 md:grid-cols-2">
-          <a className={secondaryLinkClasses} href={`/products/${params.productId}/baseline`}>
-            Baseline
-          </a>
-          <a className={secondaryLinkClasses} href={`/products/${params.productId}/requirements/R-draft`}>
-            Requirement draft
-          </a>
-        </div>
-      </WorkSurface>
-    </div>
-  );
-}
-
-function BaselinePage({ params }: RoutePageProps) {
-  return (
-    <div className="space-y-5">
-      <StatePanel state="loading" title="Functional pages">
-        Baseline pages for {params.productId} are loading.
-      </StatePanel>
-      <WorkSurface title="Navigation list">
-        <PlaceholderRows labels={["Page", "Source requirement", "Last design"]} />
-      </WorkSurface>
-    </div>
-  );
-}
-
-function RequirementPage({ params }: RoutePageProps) {
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <WorkSurface title="Requirement document">
-        <p className="text-sm leading-6 text-zinc-600">Document preview for {params.reqId} is not loaded.</p>
-      </WorkSurface>
-      <div className="space-y-3">
-        <StatePanel state="empty" title="Pages">No generated pages are available.</StatePanel>
-        <StatePanel state="error" title="Design history">No design history response is available.</StatePanel>
-      </div>
-    </div>
-  );
+function StyleLibraryRoute() {
+  return <StyleLibrary />;
 }
 
 function DesignPage({ params }: RoutePageProps) {
@@ -269,38 +185,6 @@ function DesignPage({ params }: RoutePageProps) {
       <WorkSurface title="Properties">
         <PlaceholderRows labels={["Selected node", "Dimensions", "Spacing", "Asset export"]} />
       </WorkSurface>
-    </div>
-  );
-}
-
-function StylesPage() {
-  return (
-    <div className="space-y-5">
-      <StatePanel state="empty" title="Style library">
-        Installed styles will appear as searchable rows.
-      </StatePanel>
-      <WorkSurface title="Style grid">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {["Modern SaaS", "Mobile Retail", "Analytics"].map((name) => (
-            <a className={secondaryLinkClasses} href={`/styles/${encodeURIComponent(name)}`} key={name}>
-              {name}
-            </a>
-          ))}
-        </div>
-      </WorkSurface>
-    </div>
-  );
-}
-
-function StyleDetailPage({ params }: RoutePageProps) {
-  return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
-      <WorkSurface title="Style preview">
-        <div className="aspect-[4/3] rounded-md border border-dashed border-zinc-300 bg-zinc-50" />
-      </WorkSurface>
-      <StatePanel state="loading" title="Variables">
-        Style variables for {params.name} are loading.
-      </StatePanel>
     </div>
   );
 }
@@ -372,6 +256,3 @@ function safeDecode(value: string): string {
     return value;
   }
 }
-
-const secondaryLinkClasses =
-  "rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";

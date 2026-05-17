@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiError, apiRequest, type Fetcher } from "./api.js";
+import { ApiError, apiRequest, createApiClient, type Fetcher } from "./api.js";
 
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
@@ -66,6 +66,15 @@ describe("apiRequest", () => {
       message: "Server Error",
       details: {},
       status: 500
+    });
+  });
+
+  it("rejects invalid typed client success payloads", async () => {
+    const client = createApiClient(async () => new Response("<html>not json</html>", { status: 200 }));
+
+    await expect(client.listStyles()).rejects.toMatchObject({
+      error_code: "INVALID_RESPONSE",
+      message: "Invalid API response"
     });
   });
 });
