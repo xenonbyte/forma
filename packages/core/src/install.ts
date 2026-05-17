@@ -197,7 +197,11 @@ export class InstallService {
     if (platform === "claude") {
       const config = await readJsonObject(configPath);
       delete config.forma;
-      await writeJsonObject(configPath, config);
+      if (Object.keys(config).length > 0) {
+        await writeJsonObject(configPath, config);
+      } else {
+        await rm(configPath, { force: true });
+      }
       return;
     }
 
@@ -210,12 +214,21 @@ export class InstallService {
       } else {
         delete config.mcpServers;
       }
-      await writeJsonObject(configPath, config);
+      if (Object.keys(config).length > 0) {
+        await writeJsonObject(configPath, config);
+      } else {
+        await rm(configPath, { force: true });
+      }
       return;
     }
 
     const content = await readFile(configPath, "utf8");
-    await writeFile(configPath, removeCodexManagedSection(content), "utf8");
+    const next = removeCodexManagedSection(content);
+    if (next.trim()) {
+      await writeFile(configPath, next, "utf8");
+    } else {
+      await rm(configPath, { force: true });
+    }
   }
 
   private async restoreConfigBackup(
@@ -283,12 +296,15 @@ export class InstallService {
   ): Promise<void> {
     const existing = await readOptionalText(target);
     if (existing !== undefined) {
-      const backup = this.backupPath(platform, target);
-      await mkdir(dirname(backup), { recursive: true });
-      if (!(await this.isBackupReferencedByActiveManifest(backup))) {
-        await writeFile(backup, existing, "utf8");
+      const isFormaOwned = await this.isTargetOwnedByActiveManifest(target);
+      if (!isFormaOwned) {
+        const backup = this.backupPath(platform, target);
+        await mkdir(dirname(backup), { recursive: true });
+        if (!(await this.isBackupReferencedByActiveManifest(backup))) {
+          await writeFile(backup, existing, "utf8");
+        }
+        backups.push({ target, backup });
       }
-      backups.push({ target, backup });
     }
 
     if (existing === content) {
@@ -378,6 +394,16 @@ export class InstallService {
     for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
       const manifest = await readOptionalManifest(this.manifestFile(platform));
       if (manifest?.backups.some((backup) => backup.backup === backupPath)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async isTargetOwnedByActiveManifest(target: string): Promise<boolean> {
+    for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      if (manifest?.installed_paths.includes(target) || manifest?.config_paths.includes(target)) {
         return true;
       }
     }

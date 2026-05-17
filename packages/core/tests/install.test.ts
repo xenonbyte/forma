@@ -246,6 +246,29 @@ describe("InstallService", () => {
     await expect(readFile(claudeCommand, "utf8")).resolves.toBe("# Current B\n");
   });
 
+  it("does not back up Forma-owned Claude files on reinstall", async () => {
+    const { userHome, service } = await createService();
+
+    await service.installPlatforms(["claude"]);
+    await service.installPlatforms(["claude"]);
+    await service.uninstallPlatforms(["claude"]);
+
+    for (const command of commands) {
+      await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
+    }
+    await expect(exists(join(userHome, ".claude", "mcp.json"))).resolves.toBe(false);
+  });
+
+  it("does not restore shared skill created by another platform during the same install set", async () => {
+    const { formaHome, service } = await createService();
+    const sharedSkill = join(formaHome, "skills", "forma", "SKILL.md");
+
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+    await service.uninstallPlatforms(["claude", "codex", "gemini"]);
+
+    await expect(exists(sharedSkill)).resolves.toBe(false);
+  });
+
   it("preserves pre-existing files that already match managed templates", async () => {
     const { userHome, service } = await createService();
     const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
