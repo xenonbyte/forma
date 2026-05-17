@@ -180,7 +180,7 @@ export class InstallService {
 
     const backup = backupByTarget.get(configPath);
     if (backup && (await pathExists(backup))) {
-      await copyFile(backup, configPath);
+      await this.restoreConfigBackup(platform, configPath, backup);
       return;
     }
 
@@ -206,6 +206,27 @@ export class InstallService {
 
     const content = await readFile(configPath, "utf8");
     await writeFile(configPath, removeCodexManagedSection(content), "utf8");
+  }
+
+  private async restoreConfigBackup(
+    platform: AgentInstallPlatform,
+    configPath: string,
+    backupPath: string
+  ): Promise<void> {
+    const currentContent = await readFile(configPath, "utf8");
+    const backupContent = await readFile(backupPath, "utf8");
+
+    if (platform === "claude") {
+      await writeFile(configPath, mergeClaudeConfigBackup(currentContent, backupContent, configPath), "utf8");
+      return;
+    }
+
+    if (platform === "gemini") {
+      await writeFile(configPath, mergeGeminiConfigBackup(currentContent, backupContent, configPath), "utf8");
+      return;
+    }
+
+    await writeFile(configPath, mergeCodexConfigBackup(currentContent, backupContent), "utf8");
   }
 
   private async writeJsonConfig(
@@ -432,6 +453,38 @@ async function writeJsonObject(file: string, value: Record<string, unknown>): Pr
   await writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function mergeClaudeConfigBackup(currentContent: string, backupContent: string, file: string): string {
+  const current = parseJsonObject(currentContent, file);
+  const backup = parseJsonObject(backupContent, file);
+  const currentWithoutForma = { ...current };
+  delete currentWithoutForma.forma;
+  return formatJsonLikeBackup({ ...backup, ...currentWithoutForma }, backupContent);
+}
+
+function mergeGeminiConfigBackup(currentContent: string, backupContent: string, file: string): string {
+  const current = parseJsonObject(currentContent, file);
+  const backup = parseJsonObject(backupContent, file);
+  const currentMcpServers = { ...asRecord(current.mcpServers) };
+  const backupMcpServers = asRecord(backup.mcpServers);
+  delete currentMcpServers.forma;
+
+  const currentTopLevel = { ...current };
+  delete currentTopLevel.mcpServers;
+  const merged = { ...backup, ...currentTopLevel };
+  const mergedMcpServers = { ...backupMcpServers, ...currentMcpServers };
+  if (Object.keys(mergedMcpServers).length > 0) {
+    merged.mcpServers = mergedMcpServers;
+  } else {
+    delete merged.mcpServers;
+  }
+
+  return formatJsonLikeBackup(merged, backupContent);
+}
+
+function formatJsonLikeBackup(value: Record<string, unknown>, backupContent: string): string {
+  return `${JSON.stringify(value, null, 2)}${backupContent.endsWith("\n") ? "\n" : ""}`;
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
@@ -448,6 +501,24 @@ args = ["mcp"]
 ${codexMcpEnd}
 `;
   return trimmed ? `${trimmed}\n\n${section}` : section;
+}
+
+function mergeCodexConfigBackup(currentContent: string, backupContent: string): string {
+  const currentWithoutForma = removeCodexManagedSection(currentContent);
+  const backupFormaSection = extractCodexManagedSection(backupContent);
+  if (!backupFormaSection) {
+    return currentWithoutForma;
+  }
+
+  const trimmed = currentWithoutForma.trimEnd();
+  return trimmed ? `${trimmed}\n\n${backupFormaSection}` : backupFormaSection;
+}
+
+function extractCodexManagedSection(content: string): string | undefined {
+  const escapedStart = escapeRegExp(codexMcpStart);
+  const escapedEnd = escapeRegExp(codexMcpEnd);
+  const match = content.match(new RegExp(`${escapedStart}[\\s\\S]*?${escapedEnd}\\n?`));
+  return match?.[0];
 }
 
 function removeCodexManagedSection(content: string): string {

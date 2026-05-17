@@ -295,4 +295,111 @@ args = ["mcp"]
     await expect(readFile(geminiConfig, "utf8")).resolves.toBe(originalGeminiConfig);
     await expect(readFile(codexConfig, "utf8")).resolves.toBe(originalCodexConfig);
   });
+
+  it("merges config backups with unrelated config added after install", async () => {
+    const { userHome, service } = await createService();
+    const claudeConfig = join(userHome, ".claude", "mcp.json");
+    const geminiConfig = join(userHome, ".gemini", "settings.json");
+    const codexConfig = join(userHome, ".codex", "config.toml");
+    await mkdir(join(userHome, ".claude"), { recursive: true });
+    await mkdir(join(userHome, ".gemini"), { recursive: true });
+    await mkdir(join(userHome, ".codex"), { recursive: true });
+    await writeFile(
+      claudeConfig,
+      `${JSON.stringify({ forma: { command: "user-forma" }, keep: true }, null, 2)}\n`,
+      "utf8"
+    );
+    await writeFile(
+      geminiConfig,
+      `${JSON.stringify(
+        {
+          mcpServers: {
+            forma: { command: "user-forma" },
+            existing: { command: "existing" }
+          },
+          keep: true
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      codexConfig,
+      `theme = "dark"
+
+# BEGIN Forma managed mcp server
+[mcp_servers.forma]
+command = "user-forma"
+args = ["mcp"]
+# END Forma managed mcp server
+`,
+      "utf8"
+    );
+
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+
+    await writeFile(
+      claudeConfig,
+      `${JSON.stringify(
+        {
+          ...(JSON.parse(await readFile(claudeConfig, "utf8")) as Record<string, unknown>),
+          postInstall: true
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    const geminiAfterInstall = JSON.parse(await readFile(geminiConfig, "utf8")) as {
+      mcpServers: Record<string, unknown>;
+      keep: boolean;
+    };
+    await writeFile(
+      geminiConfig,
+      `${JSON.stringify(
+        {
+          ...geminiAfterInstall,
+          mcpServers: {
+            ...geminiAfterInstall.mcpServers,
+            postInstallServer: { command: "post-install" }
+          },
+          postInstall: true
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
+    await writeFile(
+      codexConfig,
+      `${await readFile(codexConfig, "utf8")}
+post_install = true
+`,
+      "utf8"
+    );
+
+    await service.uninstallPlatforms(["claude", "codex", "gemini"]);
+
+    expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
+      forma: { command: "user-forma" },
+      keep: true,
+      postInstall: true
+    });
+    expect(JSON.parse(await readFile(geminiConfig, "utf8"))).toEqual({
+      mcpServers: {
+        forma: { command: "user-forma" },
+        existing: { command: "existing" },
+        postInstallServer: { command: "post-install" }
+      },
+      keep: true,
+      postInstall: true
+    });
+    const codex = await readFile(codexConfig, "utf8");
+    expect(codex).toContain('theme = "dark"');
+    expect(codex).toContain("post_install = true");
+    expect(codex).toContain('command = "user-forma"');
+    expect(codex).not.toContain('command = "forma"');
+  });
 });
