@@ -1,4 +1,7 @@
 import { FormaError } from "@xenonbyte/forma-core";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer, type FormaServer } from "../src/app.js";
 
@@ -104,6 +107,16 @@ async function appWith(store = fakeStore()) {
   return app;
 }
 
+async function homeWithPreview(files: string[] = ["preview@2x.png", "preview.v1@2x.png"]) {
+  const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
+  for (const file of files) {
+    const previewPath = join(home, "data", "P-123abc", "R-12345678", "D-12345678", file);
+    await mkdir(dirname(previewPath), { recursive: true });
+    await writeFile(previewPath, "preview");
+  }
+  return home;
+}
+
 describe("Fastify API routes", () => {
   it("registers representative product, style, annotation, and diff routes", async () => {
     const store = fakeStore();
@@ -139,7 +152,8 @@ describe("Fastify API routes", () => {
   });
 
   it("exposes all required route families and keeps style sync absent", async () => {
-    const app = await appWith();
+    const home = await homeWithPreview();
+    const app = await appWith(fakeStore({ home }));
 
     const responses = await Promise.all([
       app.inject({ method: "GET", url: "/api/products/P-123abc" }),
@@ -242,5 +256,62 @@ describe("Fastify API routes", () => {
       message: "Unexpected server error",
       details: {}
     });
+  });
+
+  it("returns 404 for cross-product requirement read and archive routes", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      archiveRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", status: "archived" })),
+      getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [], document_md: "# Other" }))
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const read = await app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678" });
+    const archive = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
+
+    expect(read.statusCode).toBe(404);
+    expect(read.json()).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+    expect(archive.statusCode).toBe(404);
+    expect(archive.json()).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+    expect(requirements.archiveRequirement).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for unknown design image and history routes", async () => {
+    const app = await appWith(
+      fakeStore({
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [])
+        }
+      })
+    );
+
+    const image = await app.inject({ method: "GET", url: "/api/designs/D-missing1/image" });
+    const history = await app.inject({ method: "GET", url: "/api/designs/D-missing1/history" });
+
+    expect(image.statusCode).toBe(404);
+    expect(image.json()).toMatchObject({ error_code: "DESIGN_NOT_FOUND" });
+    expect(history.statusCode).toBe(404);
+    expect(history.json()).toMatchObject({ error_code: "DESIGN_NOT_FOUND" });
+  });
+
+  it("returns 404 when no baseline source design has an existing preview", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/image" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "BASELINE_IMAGE_NOT_FOUND" });
+  });
+
+  it("returns 404 when a requested historical design preview is missing", async () => {
+    const home = await homeWithPreview(["preview@2x.png"]);
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=2" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "HISTORY_FILE_MISSING" });
   });
 });

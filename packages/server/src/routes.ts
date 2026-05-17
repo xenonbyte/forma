@@ -1,4 +1,5 @@
-import { dirname, join } from "node:path";
+import { access } from "node:fs/promises";
+import { dirname, join, resolve, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
 import type { createFormaStore, SubmitRequirementInput } from "@xenonbyte/forma-core";
 
@@ -60,12 +61,13 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
     });
   });
 
-  app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request) =>
-    store.requirements.archiveRequirement(request.params.reqId)
-  );
+  app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request) => {
+    await getOwnedRequirement(store, request.params.id, request.params.reqId);
+    return store.requirements.archiveRequirement(request.params.reqId);
+  });
 
   app.get<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId", async (request) =>
-    store.requirements.getRequirement({ requirement_id: request.params.reqId })
+    getOwnedRequirement(store, request.params.id, request.params.reqId)
   );
 
   app.get<{ Params: { id: string } }>("/api/products/:id/baseline", async (request) =>
@@ -201,6 +203,17 @@ async function getBaselinePage(store: FormaStore, productId: string, pageId: str
   return page;
 }
 
+async function getOwnedRequirement(store: FormaStore, productId: string, requirementId: string) {
+  const requirement = await store.requirements.getRequirement({ requirement_id: requirementId });
+  if (requirement.product_id !== productId) {
+    throw new RouteNotFoundError("REQUIREMENT_NOT_FOUND", "Requirement not found", {
+      product_id: productId,
+      requirement_id: requirementId
+    });
+  }
+  return requirement;
+}
+
 async function getBaselineImageMetadata(store: FormaStore, productId: string, pageId: string) {
   const page = await getBaselinePage(store, productId, pageId);
   const sourceRequirements = new Set(page.source_requirements);
@@ -214,6 +227,11 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
       continue;
     }
 
+    const previewPath = safeStorePath(store, "data", productId, requirement.id, requirementPage.design_id, "preview@2x.png");
+    if (!(await fileExists(previewPath))) {
+      continue;
+    }
+
     return {
       product_id: productId,
       baseline_page_id: pageId,
@@ -221,41 +239,55 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
       requirement_page_id: requirementPage.page_id,
       design_id: requirementPage.design_id,
       image_url: `/api/designs/${requirementPage.design_id}/image`,
-      preview_path: join(store.home, "data", productId, requirement.id, requirementPage.design_id, "preview@2x.png")
+      preview_path: previewPath
     };
   }
 
-  return {
+  throw new RouteNotFoundError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
     product_id: productId,
-    baseline_page_id: pageId,
-    source_requirements: page.source_requirements,
-    image_url: null,
-    preview_path: null
-  };
+    page_id: pageId,
+    source_requirements: page.source_requirements
+  });
 }
 
 async function getDesignImageMetadata(store: FormaStore, designId: string, versionQuery: string | undefined) {
   const version = optionalPositiveIntegerQuery(versionQuery, "version");
-  const reference = await findDesignReference(store, designId);
+  const reference = await getDesignReference(store, designId);
   const previewFile = version === undefined ? "preview@2x.png" : `preview.v${version}@2x.png`;
+  const previewPath = safeStorePath(store, "data", reference.product_id, reference.requirement_id, designId, previewFile);
+  if (!(await fileExists(previewPath))) {
+    throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
+      design_id: designId,
+      version: version ?? "current",
+      file: previewFile
+    });
+  }
 
   return {
     design_id: designId,
     version: version ?? null,
     image_url: version === undefined ? `/api/designs/${designId}/image` : `/api/designs/${designId}/image?version=${version}`,
-    preview_path: reference ? join(store.home, "data", reference.product_id, reference.requirement_id, designId, previewFile) : null
+    preview_path: previewPath
   };
 }
 
 async function getDesignHistoryMetadata(store: FormaStore, designId: string) {
-  const reference = await findDesignReference(store, designId);
+  const reference = await getDesignReference(store, designId);
   return {
     design_id: designId,
-    product_id: reference?.product_id ?? null,
-    requirement_id: reference?.requirement_id ?? null,
-    page_id: reference?.page_id ?? null,
-    versions: reference ? [{ version: 1, image_url: `/api/designs/${designId}/image?version=1` }] : []
+    product_id: reference.product_id,
+    requirement_id: reference.requirement_id,
+    page_id: reference.page_id,
+    versions: [{ version: 1, image_url: `/api/designs/${designId}/image?version=1` }]
   };
+}
+
+async function getDesignReference(store: FormaStore, designId: string) {
+  const reference = await findDesignReference(store, designId);
+  if (!reference) {
+    throw new RouteNotFoundError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
+  }
+  return reference;
 }
 
 async function findDesignReference(store: FormaStore, designId: string) {
@@ -294,4 +326,25 @@ function timestampForRequirement(requirement: { created_at?: string; updated_at?
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeStorePath(store: FormaStore, ...segments: string[]): string {
+  const home = resolve(store.home);
+  const file = resolve(home, ...segments);
+  if (file !== home && !file.startsWith(`${home}${sep}`)) {
+    throw new RouteNotFoundError("FILE_NOT_FOUND", "File not found", { path: segments.join("/") });
+  }
+  return file;
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await access(file);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
