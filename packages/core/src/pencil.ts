@@ -62,6 +62,7 @@ export interface PencilServiceOptions {
 }
 
 const lockTimeoutMs = 5 * 60 * 1000;
+type InvalidLockMode = "throw" | "ignore";
 
 export const defaultPencilRunner: PencilRunner = {
   async run(command, args, options) {
@@ -208,7 +209,7 @@ export class PencilService {
     await mkdir(this.home, { recursive: true });
 
     while (true) {
-      const existing = await this.readLock();
+      const existing = await this.readLock("throw");
       if (existing) {
         if (this.shouldHoldLock(existing)) {
           throw new FormaError("PENCIL_LOCK_HELD", "Pencil lock is held", { ...existing });
@@ -228,24 +229,32 @@ export class PencilService {
     }
   }
 
-  private async readLock(): Promise<PencilLock | undefined> {
+  private async readLock(invalidLockMode: InvalidLockMode = "ignore"): Promise<PencilLock | undefined> {
     try {
       const parsed: unknown = JSON.parse(await readFile(this.lockFile, "utf8"));
-      if (!isRecord(parsed) || typeof parsed.pid !== "number") {
-        return undefined;
+      if (
+        !isRecord(parsed) ||
+        typeof parsed.pid !== "number" ||
+        typeof parsed.acquired_at !== "string" ||
+        !Number.isFinite(Date.parse(parsed.acquired_at)) ||
+        typeof parsed.operation !== "string" ||
+        typeof parsed.product_id !== "string" ||
+        typeof parsed.owner_id !== "string"
+      ) {
+        return handleInvalidLock(invalidLockMode);
       }
       return {
         pid: parsed.pid,
-        acquired_at: typeof parsed.acquired_at === "string" ? parsed.acquired_at : new Date(0).toISOString(),
-        operation: typeof parsed.operation === "string" ? parsed.operation : "unknown",
-        product_id: typeof parsed.product_id === "string" ? parsed.product_id : "unknown",
-        owner_id: typeof parsed.owner_id === "string" ? parsed.owner_id : "legacy"
+        acquired_at: parsed.acquired_at,
+        operation: parsed.operation,
+        product_id: parsed.product_id,
+        owner_id: parsed.owner_id
       };
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
         return undefined;
       }
-      return undefined;
+      return handleInvalidLock(invalidLockMode);
     }
   }
 
@@ -345,4 +354,11 @@ function hasPngSignature(value: Buffer): boolean {
     value[6] === 0x1a &&
     value[7] === 0x0a
   );
+}
+
+function handleInvalidLock(mode: InvalidLockMode): undefined {
+  if (mode === "throw") {
+    throw new FormaError("PENCIL_LOCK_HELD", "Pencil lock is invalid", { reason: "invalid_lock" });
+  }
+  return undefined;
 }

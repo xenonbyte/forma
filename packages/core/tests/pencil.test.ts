@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -30,6 +30,10 @@ function createFakeRunner(
 
 async function createHome(name: string) {
   return await mkdir(join(tmpdir(), `forma-pencil-${name}-${randomUUID()}`), { recursive: true });
+}
+
+async function delay(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe("PencilService", () => {
@@ -171,6 +175,32 @@ describe("PencilService", () => {
 
     release();
     await expect(winner).resolves.toBe("winner");
+  });
+
+  it("rejects malformed lock files without spinning", async () => {
+    const home = await createHome("malformed-lock");
+    const lockFile = join(home, "pencil.lock");
+    const service = new PencilService({ home, runner: createFakeRunner() });
+    await writeFile(lockFile, "{not-json", "utf8");
+
+    const operation = service.withLock({ operation: "design", product_id: "P-bad-lock" }, async () => "acquired");
+    const result = await Promise.race([
+      operation.then(
+        (value) => ({ status: "resolved", value }),
+        (error) => ({ status: "rejected", error })
+      ),
+      delay(50).then(() => ({ status: "timeout" }))
+    ]);
+
+    if (result.status === "timeout") {
+      await rm(lockFile, { force: true });
+      await operation.catch(() => undefined);
+    }
+
+    expect(result.status).toBe("rejected");
+    if (result.status === "rejected") {
+      expect(result.error).toMatchObject({ code: "PENCIL_LOCK_HELD", details: { reason: "invalid_lock" } });
+    }
   });
 
   it("maps availability failures to Pencil error codes", async () => {
