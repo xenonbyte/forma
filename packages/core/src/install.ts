@@ -81,11 +81,6 @@ export class InstallService {
       return;
     }
 
-    for (const [platform, manifest] of selectedManifests) {
-      await this.uninstallMcpConfig(platform, manifest.config_paths);
-    }
-
-    const protectedPaths = await this.installedPathsOwnedByOtherPlatforms(Array.from(selectedManifests.keys()));
     const backupByTarget = new Map<string, string>();
     for (const manifest of selectedManifests.values()) {
       for (const backup of manifest.backups) {
@@ -94,6 +89,12 @@ export class InstallService {
         }
       }
     }
+
+    for (const [platform, manifest] of selectedManifests) {
+      await this.uninstallMcpConfig(platform, manifest.config_paths, backupByTarget);
+    }
+
+    const protectedPaths = await this.installedPathsOwnedByOtherPlatforms(Array.from(selectedManifests.keys()));
     await this.transferBackupsToRemainingOwners(Array.from(selectedManifests.keys()), protectedPaths, backupByTarget);
 
     const installedPaths = unique(Array.from(selectedManifests.values()).flatMap((manifest) => manifest.installed_paths));
@@ -167,9 +168,19 @@ export class InstallService {
     await this.writeCodexConfig(platform, join(this.userHome, ".codex", "config.toml"), record);
   }
 
-  private async uninstallMcpConfig(platform: AgentInstallPlatform, configPaths: string[]): Promise<void> {
+  private async uninstallMcpConfig(
+    platform: AgentInstallPlatform,
+    configPaths: string[],
+    backupByTarget: Map<string, string>
+  ): Promise<void> {
     const configPath = configPaths[0];
     if (!configPath || !(await pathExists(configPath))) {
+      return;
+    }
+
+    const backup = backupByTarget.get(configPath);
+    if (backup && (await pathExists(backup))) {
+      await copyFile(backup, configPath);
       return;
     }
 
