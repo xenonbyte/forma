@@ -16,6 +16,7 @@ export const requirementPageSchema = z.object({
   name: z.string().min(1),
   baseline_page: z.string().min(1),
   design_status: z.enum(designStatuses),
+  design_id: z.string().regex(/^D-[a-f0-9]{8}$/).optional(),
   features: z.string().optional(),
   copy: z.string().optional(),
   fields: z.string().optional(),
