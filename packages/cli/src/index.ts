@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, openSync, readFileSync, rmSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -70,6 +70,7 @@ export interface CliEnv {
   installedPlatforms?: () => Promise<AgentInstallPlatform[]>;
   isServerRunning?: () => Promise<boolean>;
   isPidAlive?: (pid: number) => boolean;
+  verifyServerProcess?: (metadata: CliServeMetadata) => Promise<boolean> | boolean;
   createServeToken?: () => string;
   spawnDetachedServer?: (options: CliSpawnDetachedServerOptions) => Promise<CliSpawnDetachedServerResult>;
   killProcess?: (pid: number) => Promise<void> | void;
@@ -102,6 +103,7 @@ interface RuntimeCliEnv {
   getInstalledPlatforms: () => Promise<CliInstalledPlatformsStatus>;
   getServerStatus: () => Promise<CliServerStatus>;
   isPidAlive: (pid: number) => boolean;
+  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>;
   createServeToken: () => string;
   spawnDetachedServer: (options: CliSpawnDetachedServerOptions) => Promise<CliSpawnDetachedServerResult>;
   killProcess: (pid: number) => Promise<void> | void;
@@ -113,7 +115,7 @@ interface RuntimeCliEnv {
   pathExists: (file: string) => Promise<boolean>;
 }
 
-interface ServeMetadata {
+export interface CliServeMetadata {
   schema_version: 1;
   marker: typeof servePidMarker;
   pid: number;
@@ -121,6 +123,8 @@ interface ServeMetadata {
   started_at: string;
   log: string;
 }
+
+type ServeMetadata = CliServeMetadata;
 
 type ServeState =
   | { kind: "missing" }
@@ -203,8 +207,8 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
     assertNoExtraArgs(rest);
     await ensureFormaHome(env);
 
-    const existing = await readOwnedServeState(env);
-    if (existing.kind === "valid" && env.isPidAlive(existing.metadata.pid)) {
+    const existing = await readVerifiedServeState(env);
+    if (existing.kind === "valid") {
       output.stderr(`Forma server is already running (${existing.metadata.pid})\n`);
       return output.result(1);
     }
@@ -288,7 +292,7 @@ async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput):
 }
 
 async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
-  const state = await readOwnedServeState(env);
+  const state = await readVerifiedServeState(env);
   if (state.kind === "missing") {
     output.stdout("Forma server is not running\n");
     return output.result(0);
@@ -300,12 +304,6 @@ async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliRes
   }
 
   const { pid } = state.metadata;
-  if (!env.isPidAlive(pid)) {
-    await removeServeStateFiles(env);
-    output.stdout(`Removed stale Forma server pid (${pid})\n`);
-    return output.result(0);
-  }
-
   try {
     await env.killProcess(pid);
     await removeServeStateFiles(env);
@@ -423,6 +421,9 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
   const readText = env.readText ?? ((file) => readFile(file, "utf8"));
   const pathExists = env.pathExists ?? defaultPathExists;
   const isPidAlive = env.isPidAlive ?? defaultIsPidAlive;
+  const verifyServerProcess = async (metadata: ServeMetadata): Promise<boolean> => {
+    return await (env.verifyServerProcess?.(metadata) ?? defaultVerifyServerProcess(metadata));
+  };
   const spawnDetachedServer = env.spawnDetachedServer ?? defaultSpawnDetachedServer;
   const launchWebServer = env.startWebServer ?? ((options: { home: string }) => startWebServer(options));
   const runtimeEnv: RuntimeCliEnv = {
@@ -453,8 +454,9 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
       : () => readInstalledPlatforms(formaHome, pathExists),
     getServerStatus: env.isServerRunning
       ? async () => ({ running: await env.isServerRunning!() })
-      : () => readServerStatus(formaHome, readText, pathExists, isPidAlive),
+      : () => readServerStatus(formaHome, readText, pathExists, isPidAlive, verifyServerProcess),
     isPidAlive,
+    verifyServerProcess,
     createServeToken: env.createServeToken ?? randomUUID,
     spawnDetachedServer,
     killProcess: env.killProcess ?? defaultKillProcess,
@@ -523,7 +525,8 @@ async function readServerStatus(
   formaHome: string,
   readText: (file: string) => Promise<string>,
   pathExists: (file: string) => Promise<boolean>,
-  isPidAlive: (pid: number) => boolean
+  isPidAlive: (pid: number) => boolean,
+  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>
 ): Promise<CliServerStatus> {
   const state = await readOwnedServeStateFromPaths(formaHome, readText, pathExists);
   if (state.kind === "missing") {
@@ -532,11 +535,41 @@ async function readServerStatus(
   if (state.kind === "invalid") {
     return { running: false, warning: `Invalid Forma server state: ${state.reason}` };
   }
-  return { running: isPidAlive(state.metadata.pid) };
+  const verified = await verifyServeOwnership(state.metadata, isPidAlive, verifyServerProcess);
+  if (!verified.ok) {
+    return { running: false, warning: verified.reason };
+  }
+  return { running: true };
 }
 
 async function readOwnedServeState(env: RuntimeCliEnv, expected?: ServeMetadata): Promise<ServeState> {
   return await readOwnedServeStateFromPaths(env.formaHome, env.readText, env.pathExists, expected);
+}
+
+async function readVerifiedServeState(env: RuntimeCliEnv): Promise<ServeState> {
+  const state = await readOwnedServeState(env);
+  if (state.kind !== "valid") {
+    return state;
+  }
+  const verified = await verifyServeOwnership(state.metadata, env.isPidAlive, env.verifyServerProcess);
+  if (!verified.ok) {
+    return { kind: "invalid", reason: verified.reason };
+  }
+  return state;
+}
+
+async function verifyServeOwnership(
+  metadata: ServeMetadata,
+  isPidAlive: (pid: number) => boolean,
+  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!isPidAlive(metadata.pid)) {
+    return { ok: false, reason: `Forma server process ${metadata.pid} is not running` };
+  }
+  if (!(await verifyServerProcess(metadata))) {
+    return { ok: false, reason: `Forma server process ${metadata.pid} could not be verified` };
+  }
+  return { ok: true };
 }
 
 async function readOwnedServeStateFromPaths(
@@ -546,11 +579,19 @@ async function readOwnedServeStateFromPaths(
   expected?: ServeMetadata
 ): Promise<ServeState> {
   const pidState = expected ? { kind: "valid" as const, metadata: expected } : await readServeStateFromPaths(servePidFile(formaHome), readText, pathExists);
+  const runtimeState = await readServeStateFromPaths(serveRuntimeFile(formaHome), readText, pathExists);
+
+  if (!expected && pidState.kind === "missing") {
+    if (runtimeState.kind === "missing") {
+      return { kind: "missing" };
+    }
+    return runtimeState;
+  }
+
   if (pidState.kind !== "valid") {
     return pidState;
   }
 
-  const runtimeState = await readServeStateFromPaths(serveRuntimeFile(formaHome), readText, pathExists);
   if (runtimeState.kind === "missing") {
     return { kind: "invalid", reason: `${serveRuntimeFile(formaHome)} runtime state is missing` };
   }
@@ -835,6 +876,27 @@ function defaultIsPidAlive(pid: number): boolean {
   } catch {
     return false;
   }
+}
+
+async function defaultVerifyServerProcess(metadata: ServeMetadata): Promise<boolean> {
+  try {
+    const command = await readProcessCommand(metadata.pid);
+    return command.includes(packageCliEntrypoint()) && command.includes("serve") && command.includes("--foreground-internal");
+  } catch {
+    return false;
+  }
+}
+
+async function readProcessCommand(pid: number): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    execFile("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" }, (error, stdout) => {
+      if (error) {
+        reject(error);
+        return;
+      }
+      resolve(stdout.trim());
+    });
+  });
 }
 
 function defaultKillProcess(pid: number): void {

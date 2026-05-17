@@ -288,6 +288,62 @@ describe("runCli", () => {
     expect(env.state.killed).toEqual([]);
   });
 
+  it("does not report or kill when metadata is valid but process ownership cannot be verified", async () => {
+    const env = await testEnv({
+      useDefaultServerStatus: true,
+      isPidAlive: () => true,
+      verifyServerProcess: async () => false
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ pid: 6789 })), "utf8");
+    await writeFile(join(env.state.formaHome, "serve.state.json"), JSON.stringify(serveMetadata({ pid: 6789 })), "utf8");
+
+    const status = await runCli(["status"], env);
+    const stop = await runCli(["serve", "stop"], env);
+
+    expect(status.stdout).toContain("Web server: stopped");
+    expect(status.stderr).toContain("could not be verified");
+    expect(stop.exitCode).toBe(1);
+    expect(stop.stderr).toContain("could not be verified");
+    expect(env.state.killed).toEqual([]);
+  });
+
+  it("recovers runtime-only state when the process ownership verifies", async () => {
+    const env = await testEnv({
+      useDefaultServerStatus: true,
+      isPidAlive: (pid) => pid === 2468,
+      verifyServerProcess: async () => true
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    await writeFile(join(env.state.formaHome, "serve.state.json"), JSON.stringify(serveMetadata({ pid: 2468 })), "utf8");
+
+    const status = await runCli(["status"], env);
+    const stop = await runCli(["serve", "stop"], env);
+
+    expect(status.stdout).toContain("Web server: running");
+    expect(stop.exitCode).toBe(0);
+    expect(env.state.killed).toEqual([2468]);
+    await expect(access(join(env.state.formaHome, "serve.state.json"))).rejects.toThrow();
+  });
+
+  it("does not kill runtime-only state when process ownership cannot be verified", async () => {
+    const env = await testEnv({
+      useDefaultServerStatus: true,
+      isPidAlive: () => true,
+      verifyServerProcess: async () => false
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    await writeFile(join(env.state.formaHome, "serve.state.json"), JSON.stringify(serveMetadata({ pid: 1357 })), "utf8");
+
+    const status = await runCli(["status"], env);
+    const stop = await runCli(["serve", "stop"], env);
+
+    expect(status.stdout).toContain("Web server: stopped");
+    expect(status.stderr).toContain("could not be verified");
+    expect(stop.exitCode).toBe(1);
+    expect(env.state.killed).toEqual([]);
+  });
+
   it("dispatches install and uninstall to selected platforms", async () => {
     const env = await testEnv();
 
@@ -389,6 +445,7 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
     now: overrides.now ?? (() => new Date("2026-05-17T00:00:00.000Z")),
     createServeToken: overrides.createServeToken,
     isPidAlive: overrides.isPidAlive,
+    verifyServerProcess: overrides.verifyServerProcess ?? (async () => true),
     spawnDetachedServer: overrides.spawnDetachedServer,
     startWebServer: overrides.startWebServer,
     startMcp: async () => {
