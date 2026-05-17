@@ -1,7 +1,7 @@
 import { access } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
-import type { createFormaStore, SubmitRequirementInput } from "@xenonbyte/forma-core";
+import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput } from "@xenonbyte/forma-core";
 
 export type FormaStore = ReturnType<typeof createFormaStore>;
 
@@ -251,35 +251,99 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
 }
 
 async function getDesignImageMetadata(store: FormaStore, designId: string, versionQuery: string | undefined) {
-  const version = optionalPositiveIntegerQuery(versionQuery, "version");
-  const reference = await getDesignReference(store, designId);
-  const previewFile = version === undefined ? "preview@2x.png" : `preview.v${version}@2x.png`;
-  const previewPath = safeStorePath(store, "data", reference.product_id, reference.requirement_id, designId, previewFile);
+  const requestedVersion = optionalPositiveIntegerQuery(versionQuery, "version");
+  const { design, reference } = await readDesignMetadata(store, designId);
+  const resolvedImage = resolveDesignPreview(design, requestedVersion);
+  const previewPath = safeStorePath(store, "data", reference.product_id, reference.requirement_id, designId, resolvedImage.previewFile);
   if (!(await fileExists(previewPath))) {
     throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
       design_id: designId,
-      version: version ?? "current",
-      file: previewFile
+      version: resolvedImage.version,
+      file: resolvedImage.previewFile
     });
   }
 
   return {
     design_id: designId,
-    version: version ?? null,
-    image_url: version === undefined ? `/api/designs/${designId}/image` : `/api/designs/${designId}/image?version=${version}`,
+    version: resolvedImage.version,
+    image_url: `/api/designs/${designId}/image?version=${resolvedImage.version}`,
     preview_path: previewPath
   };
 }
 
 async function getDesignHistoryMetadata(store: FormaStore, designId: string) {
-  const reference = await getDesignReference(store, designId);
+  const { design, reference } = await readDesignMetadata(store, designId);
+  const versions = [
+    ...design.history
+      .sort((left, right) => left.version - right.version)
+      .map((entry) => ({
+        version: entry.version,
+        file: entry.file,
+        preview_file: entry.preview_file,
+        created_at: entry.created_at,
+        current: false,
+        image_url: `/api/designs/${designId}/image?version=${entry.version}`
+      })),
+    {
+      version: design.version,
+      file: "design.pen",
+      preview_file: "preview@2x.png",
+      created_at: design.updated_at,
+      current: true,
+      image_url: `/api/designs/${designId}/image?version=${design.version}`
+    }
+  ];
   return {
     design_id: designId,
     product_id: reference.product_id,
     requirement_id: reference.requirement_id,
     page_id: reference.page_id,
-    versions: [{ version: 1, image_url: `/api/designs/${designId}/image?version=1` }]
+    current_version: design.version,
+    versions
   };
+}
+
+async function readDesignMetadata(store: FormaStore, designId: string) {
+  const reference = await getDesignReference(store, designId);
+  const designFile = safeStorePath(store, "data", reference.product_id, reference.requirement_id, designId, "design.yaml");
+  if (!(await fileExists(designFile))) {
+    throw new RouteNotFoundError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
+  }
+  const design = await readYamlAs(designFile, designSchema);
+  if (
+    design.id !== designId ||
+    design.product_id !== reference.product_id ||
+    design.requirement_id !== reference.requirement_id ||
+    design.page_id !== reference.page_id
+  ) {
+    throw new RouteNotFoundError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
+  }
+  return { design, reference };
+}
+
+function resolveDesignPreview(design: Design, requestedVersion: number | undefined): { version: number; previewFile: string } {
+  const version = requestedVersion ?? design.version;
+  if (version === design.version) {
+    return { version, previewFile: "preview@2x.png" };
+  }
+  if (version > design.version) {
+    throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
+      design_id: design.id,
+      version,
+      file: `preview.v${version}@2x.png`
+    });
+  }
+
+  const historyEntry = design.history.find((entry) => entry.version === version);
+  const expectedPreviewFile = `preview.v${version}@2x.png`;
+  if (!historyEntry || historyEntry.preview_file !== expectedPreviewFile) {
+    throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
+      design_id: design.id,
+      version,
+      file: expectedPreviewFile
+    });
+  }
+  return { version, previewFile: expectedPreviewFile };
 }
 
 async function getDesignReference(store: FormaStore, designId: string) {

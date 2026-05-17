@@ -109,12 +109,54 @@ async function appWith(store = fakeStore()) {
 
 async function homeWithPreview(files: string[] = ["preview@2x.png", "preview.v1@2x.png"]) {
   const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
+  await writeDesignYaml(home, { version: 1, history: [] });
   for (const file of files) {
     const previewPath = join(home, "data", "P-123abc", "R-12345678", "D-12345678", file);
     await mkdir(dirname(previewPath), { recursive: true });
     await writeFile(previewPath, "preview");
   }
   return home;
+}
+
+async function homeWithTwoVersionDesign() {
+  const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
+  await writeDesignYaml(home, {
+    version: 2,
+    history: [
+      {
+        version: 1,
+        file: "design.v1.pen",
+        preview_file: "preview.v1@2x.png",
+        created_at: "2026-05-17T01:00:00.000Z"
+      }
+    ]
+  });
+  await writeDesignFile(home, "preview.v1@2x.png", "old preview");
+  await writeDesignFile(home, "preview@2x.png", "current preview");
+  return home;
+}
+
+async function writeDesignYaml(home: string, input: { version: number; history: unknown[] }) {
+  await writeDesignFile(
+    home,
+    "design.yaml",
+    JSON.stringify({
+      id: "D-12345678",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout-page",
+      version: input.version,
+      created_at: "2026-05-17T00:00:00.000Z",
+      updated_at: "2026-05-17T02:00:00.000Z",
+      history: input.history
+    })
+  );
+}
+
+async function writeDesignFile(home: string, file: string, content: string) {
+  const filePath = join(home, "data", "P-123abc", "R-12345678", "D-12345678", file);
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, content);
 }
 
 describe("Fastify API routes", () => {
@@ -313,5 +355,35 @@ describe("Fastify API routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "HISTORY_FILE_MISSING" });
+  });
+
+  it("uses design metadata for current image, history, and diff visual URLs", async () => {
+    const home = await homeWithTwoVersionDesign();
+    const app = await appWith(fakeStore({ home }));
+
+    const history = await app.inject({ method: "GET", url: "/api/designs/D-12345678/history" });
+    const currentImage = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=2" });
+    const diff = await app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1&v2=2" });
+    const diffBody = diff.json();
+    const fromImage = await app.inject({ method: "GET", url: diffBody.visual.from_image_url });
+    const toImage = await app.inject({ method: "GET", url: diffBody.visual.to_image_url });
+
+    expect(history.statusCode).toBe(200);
+    expect(history.json()).toMatchObject({
+      design_id: "D-12345678",
+      versions: [
+        { version: 1, image_url: "/api/designs/D-12345678/image?version=1", current: false },
+        { version: 2, image_url: "/api/designs/D-12345678/image?version=2", current: true }
+      ]
+    });
+    expect(currentImage.statusCode).toBe(200);
+    expect(currentImage.json()).toMatchObject({
+      design_id: "D-12345678",
+      version: 2,
+      preview_path: join(home, "data", "P-123abc", "R-12345678", "D-12345678", "preview@2x.png")
+    });
+    expect(diff.statusCode).toBe(200);
+    expect(fromImage.statusCode).toBe(200);
+    expect(toImage.statusCode).toBe(200);
   });
 });
