@@ -1,5 +1,7 @@
-import { constants } from "node:fs";
-import { access, appendFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { closeSync, constants, openSync } from "node:fs";
+import { access, appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -21,6 +23,19 @@ export interface CliResult {
 
 export interface CliServeOptions {
   detached?: boolean;
+  logFile?: string;
+  token?: string;
+}
+
+export type CliServerStartResult = string | void | { pid?: number; message?: string };
+
+export interface CliSpawnDetachedServerOptions {
+  logFile: string;
+  token: string;
+}
+
+export interface CliSpawnDetachedServerResult {
+  pid: number;
 }
 
 export interface CliInstallService {
@@ -38,11 +53,14 @@ export interface CliEnv {
   currentPid?: number;
   now?: () => Date;
   startMcp?: () => Promise<string | void>;
-  startServer?: (options?: CliServeOptions) => Promise<string | void>;
+  startServer?: (options?: CliServeOptions) => Promise<CliServerStartResult>;
   createInstallService?: () => CliInstallService;
   checkPencil?: () => Promise<CliPencilStatus>;
   installedPlatforms?: () => Promise<AgentInstallPlatform[]>;
   isServerRunning?: () => Promise<boolean>;
+  isPidAlive?: (pid: number) => boolean;
+  createServeToken?: () => string;
+  spawnDetachedServer?: (options: CliSpawnDetachedServerOptions) => Promise<CliSpawnDetachedServerResult>;
   killProcess?: (pid: number) => Promise<void> | void;
   readText?: (file: string) => Promise<string>;
   writeText?: (file: string, content: string) => Promise<void>;
@@ -52,9 +70,54 @@ export interface CliEnv {
   pathExists?: (file: string) => Promise<boolean>;
 }
 
-type RuntimeCliEnv = Required<CliEnv>;
+interface CliInstalledPlatformsStatus {
+  platforms: AgentInstallPlatform[];
+  warnings: string[];
+}
+
+interface CliServerStatus {
+  running: boolean;
+  warning?: string;
+}
+
+interface RuntimeCliEnv {
+  formaHome: string;
+  currentPid: number;
+  now: () => Date;
+  startMcp: () => Promise<string | void>;
+  startServer: (options?: CliServeOptions) => Promise<CliServerStartResult>;
+  createInstallService: () => CliInstallService;
+  checkPencil: () => Promise<CliPencilStatus>;
+  getInstalledPlatforms: () => Promise<CliInstalledPlatformsStatus>;
+  getServerStatus: () => Promise<CliServerStatus>;
+  isPidAlive: (pid: number) => boolean;
+  createServeToken: () => string;
+  spawnDetachedServer: (options: CliSpawnDetachedServerOptions) => Promise<CliSpawnDetachedServerResult>;
+  killProcess: (pid: number) => Promise<void> | void;
+  readText: (file: string) => Promise<string>;
+  writeText: (file: string, content: string) => Promise<void>;
+  appendText: (file: string, content: string) => Promise<void>;
+  removeFile: (file: string) => Promise<void>;
+  mkdir: (dir: string) => Promise<void>;
+  pathExists: (file: string) => Promise<boolean>;
+}
+
+interface ServeMetadata {
+  schema_version: 1;
+  marker: typeof servePidMarker;
+  pid: number;
+  token: string;
+  started_at: string;
+  log: string;
+}
+
+type ServeState =
+  | { kind: "missing" }
+  | { kind: "invalid"; reason: string }
+  | { kind: "valid"; metadata: ServeMetadata };
 
 const supportedPlatforms = ["claude", "codex", "gemini"] as const satisfies readonly AgentInstallPlatform[];
+const servePidMarker = "xenonbyte.forma.serve";
 
 export async function runCli(argv: string[] = process.argv.slice(2), env: CliEnv = {}): Promise<CliResult> {
   const runtimeEnv = resolveCliEnv(env);
@@ -120,15 +183,41 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
     return output.result(await writeCommandReturn(output, env.startServer({})));
   }
 
+  if (subcommand === "--foreground-internal") {
+    assertNoExtraArgs(rest);
+    return output.result(await writeCommandReturn(output, env.startServer({})));
+  }
+
   if (subcommand === "start") {
     assertNoExtraArgs(rest);
     await ensureFormaHome(env);
-    const started = await env.startServer({ detached: true });
-    await writeServeState(env);
-    if (typeof started === "string" && started.length > 0) {
-      output.stdout(`${started}\n`);
+
+    const existing = await readServeState(env);
+    if (existing.kind === "valid" && env.isPidAlive(existing.metadata.pid)) {
+      output.stderr(`Forma server is already running (${existing.metadata.pid})\n`);
+      return output.result(1);
     }
-    output.stdout(`Forma server started with pid ${env.currentPid}\n`);
+    if (existing.kind !== "missing") {
+      await env.removeFile(servePidFile(env.formaHome));
+      if (existing.kind === "invalid") {
+        output.stderr(`Invalid Forma server state removed: ${existing.reason}\n`);
+      }
+    }
+
+    const startedAt = env.now();
+    const token = env.createServeToken();
+    const logFile = serveLogFile(env.formaHome);
+    const started = await env.startServer({ detached: true, logFile, token });
+    const pid = startedPid(started);
+    if (!pid) {
+      throw new Error("Detached Forma server start did not return a pid");
+    }
+    await writeServeState(env, { pid, token, startedAt, logFile });
+    const message = startedMessage(started);
+    if (message) {
+      output.stdout(`${message}\n`);
+    }
+    output.stdout(`Forma server started with pid ${pid}\n`);
     return output.result(0);
   }
 
@@ -158,33 +247,44 @@ async function runUninstall(args: string[], env: RuntimeCliEnv, output: CliOutpu
 async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
   assertNoExtraArgs(args);
 
-  const [installed, pencil, serverRunning] = await Promise.all([
-    env.installedPlatforms(),
+  const [installed, pencil, serverStatus] = await Promise.all([
+    env.getInstalledPlatforms(),
     env.checkPencil(),
-    env.isServerRunning()
+    env.getServerStatus()
   ]);
 
+  for (const warning of installed.warnings) {
+    output.stderr(`${warning}\n`);
+  }
+  if (serverStatus.warning) {
+    output.stderr(`${serverStatus.warning}\n`);
+  }
+
   output.stdout(`Data directory: ${env.formaHome}\n`);
-  output.stdout(`Installed platforms: ${installed.length > 0 ? formatPlatforms(installed) : "none"}\n`);
+  output.stdout(`Installed platforms: ${installed.platforms.length > 0 ? formatPlatforms(installed.platforms) : "none"}\n`);
   output.stdout(`Pencil CLI: ${pencil.available ? "available" : "not found"}\n`);
   output.stdout(`Pencil authentication: ${pencil.authenticated ? "authenticated" : "not authenticated"}\n`);
-  output.stdout(`Web server: ${serverRunning ? "running" : "stopped"}\n`);
+  output.stdout(`Web server: ${serverStatus.running ? "running" : "stopped"}\n`);
   return output.result(0);
 }
 
 async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
-  const pidFile = servePidFile(env.formaHome);
-  if (!(await env.pathExists(pidFile))) {
+  const state = await readServeState(env);
+  if (state.kind === "missing") {
     output.stdout("Forma server is not running\n");
     return output.result(0);
   }
-
-  const pidText = (await env.readText(pidFile)).trim();
-  const pid = Number(pidText);
-  if (!Number.isInteger(pid) || pid <= 0) {
-    await env.removeFile(pidFile);
-    output.stderr(`Invalid server pid file: ${pidFile}\n`);
+  if (state.kind === "invalid") {
+    await env.removeFile(servePidFile(env.formaHome));
+    output.stderr(`Invalid Forma server state removed: ${state.reason}\n`);
     return output.result(1);
+  }
+
+  const { pid } = state.metadata;
+  if (!env.isPidAlive(pid)) {
+    await env.removeFile(servePidFile(env.formaHome));
+    output.stdout(`Removed stale Forma server pid (${pid})\n`);
+    return output.result(0);
   }
 
   let stopped = true;
@@ -196,24 +296,36 @@ async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliRes
     }
     stopped = false;
   } finally {
-    await env.removeFile(pidFile);
+    await env.removeFile(servePidFile(env.formaHome));
   }
 
   output.stdout(stopped ? `Stopped Forma server (${pid})\n` : `Removed stale Forma server pid (${pid})\n`);
   return output.result(0);
 }
 
-async function writeCommandReturn(output: CliOutput, value: Promise<string | void>): Promise<number> {
+async function writeCommandReturn(output: CliOutput, value: Promise<CliServerStartResult>): Promise<number> {
   const result = await value;
-  if (typeof result === "string" && result.length > 0) {
-    output.stdout(`${result}\n`);
+  const message = startedMessage(result);
+  if (message) {
+    output.stdout(`${message}\n`);
   }
   return 0;
 }
 
-async function writeServeState(env: RuntimeCliEnv): Promise<void> {
-  await env.writeText(servePidFile(env.formaHome), `${env.currentPid}\n`);
-  await env.appendText(serveLogFile(env.formaHome), `${env.now().toISOString()} forma serve start pid=${env.currentPid}\n`);
+async function writeServeState(
+  env: RuntimeCliEnv,
+  state: { pid: number; token: string; startedAt: Date; logFile: string }
+): Promise<void> {
+  const metadata: ServeMetadata = {
+    schema_version: 1,
+    marker: servePidMarker,
+    pid: state.pid,
+    token: state.token,
+    started_at: state.startedAt.toISOString(),
+    log: state.logFile
+  };
+  await env.writeText(servePidFile(env.formaHome), `${JSON.stringify(metadata, null, 2)}\n`);
+  await env.appendText(state.logFile, `${state.startedAt.toISOString()} forma serve start pid=${state.pid}\n`);
 }
 
 function parsePlatformArgs(args: string[]): AgentInstallPlatform[] {
@@ -269,16 +381,36 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
   const currentPid = env.currentPid ?? process.pid;
   const readText = env.readText ?? ((file) => readFile(file, "utf8"));
   const pathExists = env.pathExists ?? defaultPathExists;
+  const isPidAlive = env.isPidAlive ?? defaultIsPidAlive;
+  const spawnDetachedServer = env.spawnDetachedServer ?? defaultSpawnDetachedServer;
   const runtimeEnv: RuntimeCliEnv = {
     formaHome,
     currentPid,
     now: env.now ?? (() => new Date()),
     startMcp: env.startMcp ?? (() => startMcpServer()),
-    startServer: env.startServer ?? (() => startWebServer()),
+    startServer:
+      env.startServer ??
+      (async (options) => {
+        if (options?.detached) {
+          return await spawnDetachedServer({
+            logFile: options.logFile ?? serveLogFile(formaHome),
+            token: options.token ?? randomUUID()
+          });
+        }
+        await startWebServer();
+        return undefined;
+      }),
     createInstallService: env.createInstallService ?? (() => new InstallService({ formaHome })),
     checkPencil: env.checkPencil ?? (() => checkPencil(formaHome)),
-    installedPlatforms: env.installedPlatforms ?? (() => readInstalledPlatforms(formaHome)),
-    isServerRunning: env.isServerRunning ?? (() => isServerRunning(formaHome, readText, pathExists)),
+    getInstalledPlatforms: env.installedPlatforms
+      ? async () => ({ platforms: await env.installedPlatforms!(), warnings: [] })
+      : () => readInstalledPlatforms(formaHome, pathExists),
+    getServerStatus: env.isServerRunning
+      ? async () => ({ running: await env.isServerRunning!() })
+      : () => readServerStatus(formaHome, readText, pathExists, isPidAlive),
+    isPidAlive,
+    createServeToken: env.createServeToken ?? randomUUID,
+    spawnDetachedServer,
     killProcess: env.killProcess ?? defaultKillProcess,
     readText,
     writeText:
@@ -315,50 +447,103 @@ async function checkPencil(formaHome: string): Promise<CliPencilStatus> {
   }
 }
 
-async function readInstalledPlatforms(formaHome: string): Promise<AgentInstallPlatform[]> {
+async function readInstalledPlatforms(
+  formaHome: string,
+  pathExists: (file: string) => Promise<boolean>
+): Promise<CliInstalledPlatformsStatus> {
   const manifestsDir = join(formaHome, "manifests");
-  let entries: string[];
-  try {
-    entries = await readdir(manifestsDir);
-  } catch (error) {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  }
-
   const installed: AgentInstallPlatform[] = [];
+  const warnings: string[] = [];
   for (const platform of supportedPlatforms) {
-    if (!entries.includes(`${platform}.manifest`)) {
+    const manifestFile = join(manifestsDir, `${platform}.manifest`);
+    if (!(await pathExists(manifestFile))) {
       continue;
     }
-    const manifest = await readYaml<InstallManifest>(join(manifestsDir, `${platform}.manifest`));
-    if (manifest.platform === platform) {
-      installed.push(platform);
+    try {
+      const manifest = await readYaml<InstallManifest>(manifestFile);
+      if (manifest.platform === platform) {
+        installed.push(platform);
+      } else {
+        warnings.push(`Invalid manifest for ${platform}: platform is ${String(manifest.platform)}`);
+      }
+    } catch (error) {
+      warnings.push(`Invalid manifest for ${platform}: ${errorMessage(error)}`);
     }
   }
-  return installed;
+  return { platforms: installed, warnings };
 }
 
-async function isServerRunning(
+async function readServerStatus(
+  formaHome: string,
+  readText: (file: string) => Promise<string>,
+  pathExists: (file: string) => Promise<boolean>,
+  isPidAlive: (pid: number) => boolean
+): Promise<CliServerStatus> {
+  const state = await readServeStateFromPaths(formaHome, readText, pathExists);
+  if (state.kind === "missing") {
+    return { running: false };
+  }
+  if (state.kind === "invalid") {
+    return { running: false, warning: `Invalid Forma server state: ${state.reason}` };
+  }
+  return { running: isPidAlive(state.metadata.pid) };
+}
+
+async function readServeState(env: RuntimeCliEnv): Promise<ServeState> {
+  return await readServeStateFromPaths(env.formaHome, env.readText, env.pathExists);
+}
+
+async function readServeStateFromPaths(
   formaHome: string,
   readText: (file: string) => Promise<string>,
   pathExists: (file: string) => Promise<boolean>
-): Promise<boolean> {
+): Promise<ServeState> {
   const pidFile = servePidFile(formaHome);
   if (!(await pathExists(pidFile))) {
-    return false;
+    return { kind: "missing" };
   }
-  const pid = Number((await readText(pidFile)).trim());
-  if (!Number.isInteger(pid) || pid <= 0) {
-    return false;
-  }
+  let parsed: unknown;
   try {
-    process.kill(pid, 0);
-    return true;
+    parsed = JSON.parse(await readText(pidFile));
   } catch {
-    return false;
+    return { kind: "invalid", reason: `${pidFile} is not Forma JSON metadata` };
   }
+  return parseServeMetadata(parsed, pidFile);
+}
+
+function parseServeMetadata(value: unknown, file: string): ServeState {
+  if (!isRecord(value)) {
+    return { kind: "invalid", reason: `${file} is not an object` };
+  }
+  if (value.marker !== servePidMarker) {
+    return { kind: "invalid", reason: `${file} does not contain a Forma marker` };
+  }
+  if (value.schema_version !== 1) {
+    return { kind: "invalid", reason: `${file} has unsupported schema_version` };
+  }
+  if (typeof value.pid !== "number" || !Number.isInteger(value.pid) || value.pid <= 0) {
+    return { kind: "invalid", reason: `${file} has invalid pid` };
+  }
+  if (typeof value.token !== "string" || value.token.length === 0) {
+    return { kind: "invalid", reason: `${file} has invalid token` };
+  }
+  if (typeof value.started_at !== "string" || !Number.isFinite(Date.parse(value.started_at))) {
+    return { kind: "invalid", reason: `${file} has invalid started_at` };
+  }
+  if (typeof value.log !== "string" || value.log.length === 0) {
+    return { kind: "invalid", reason: `${file} has invalid log` };
+  }
+  return {
+    kind: "valid",
+    metadata: {
+      schema_version: 1,
+      marker: servePidMarker,
+      pid: value.pid,
+      token: value.token,
+      started_at: value.started_at,
+      log: value.log
+    }
+  };
 }
 
 async function ensureFormaHome(env: RuntimeCliEnv): Promise<void> {
@@ -375,6 +560,23 @@ function serveLogFile(formaHome: string): string {
 
 function formatPlatforms(platforms: AgentInstallPlatform[]): string {
   return platforms.join(", ");
+}
+
+function startedPid(result: CliServerStartResult): number | undefined {
+  if (result && typeof result === "object" && typeof result.pid === "number" && Number.isInteger(result.pid) && result.pid > 0) {
+    return result.pid;
+  }
+  return undefined;
+}
+
+function startedMessage(result: CliServerStartResult): string | undefined {
+  if (typeof result === "string" && result.length > 0) {
+    return result;
+  }
+  if (result && typeof result === "object" && typeof result.message === "string" && result.message.length > 0) {
+    return result.message;
+  }
+  return undefined;
 }
 
 function isSupportedPlatform(platform: string): platform is AgentInstallPlatform {
@@ -427,9 +629,46 @@ function defaultFormaHome(): string {
   return process.env.FORMA_HOME ?? join(homedir(), ".forma");
 }
 
+async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions): Promise<CliSpawnDetachedServerResult> {
+  const entrypoint = process.argv[1];
+  if (!entrypoint) {
+    throw new Error("Cannot determine Forma CLI entrypoint for background server");
+  }
+
+  await mkdir(dirname(options.logFile), { recursive: true });
+  const logFd = openSync(options.logFile, "a");
+  try {
+    const child = spawn(process.execPath, [entrypoint, "serve", "--foreground-internal"], {
+      cwd: process.cwd(),
+      detached: true,
+      env: {
+        ...process.env,
+        FORMA_SERVE_TOKEN: options.token
+      },
+      stdio: ["ignore", logFd, logFd]
+    });
+    if (!child.pid) {
+      throw new Error("Background Forma server did not expose a pid");
+    }
+    child.unref();
+    return { pid: child.pid };
+  } finally {
+    closeSync(logFd);
+  }
+}
+
 async function defaultPathExists(file: string): Promise<boolean> {
   try {
     await access(file, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function defaultIsPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
     return true;
   } catch {
     return false;
@@ -450,6 +689,10 @@ function isFormaErrorCode(error: unknown, code: string): boolean {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function errorMessage(error: unknown): string {
