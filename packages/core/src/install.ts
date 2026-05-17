@@ -94,6 +94,7 @@ export class InstallService {
         }
       }
     }
+    await this.transferBackupsToRemainingOwners(Array.from(selectedManifests.keys()), protectedPaths, backupByTarget);
 
     const installedPaths = unique(Array.from(selectedManifests.values()).flatMap((manifest) => manifest.installed_paths));
     for (const target of installedPaths.reverse()) {
@@ -246,7 +247,9 @@ export class InstallService {
     if (existing !== undefined) {
       const backup = this.backupPath(platform, target);
       await mkdir(dirname(backup), { recursive: true });
-      await writeFile(backup, existing, "utf8");
+      if (!(await pathExists(backup))) {
+        await writeFile(backup, existing, "utf8");
+      }
       backups.push({ target, backup });
     }
 
@@ -275,11 +278,13 @@ export class InstallService {
   }
 
   private async writeManifest(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
+    const existingManifest = await readOptionalManifest(this.manifestFile(platform));
+    const carriedBackups = await this.backupsForInstalledPathsFromOtherManifests(platform, record.installedPaths);
     const manifest: InstallManifest = {
       schema_version: 1,
       platform,
       installed_paths: unique(record.installedPaths),
-      backups: record.backups,
+      backups: mergeBackupRecords(existingManifest?.backups ?? [], carriedBackups, record.backups),
       config_paths: unique(record.configPaths),
       installed_at: new Date().toISOString()
     };
@@ -309,6 +314,63 @@ export class InstallService {
       }
     }
     return paths;
+  }
+
+  private async backupsForInstalledPathsFromOtherManifests(
+    platform: AgentInstallPlatform,
+    installedPaths: string[]
+  ): Promise<InstallBackupRecord[]> {
+    const installed = new Set(installedPaths);
+    const backups: InstallBackupRecord[] = [];
+    for (const otherPlatform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      if (otherPlatform === platform) {
+        continue;
+      }
+      const manifest = await readOptionalManifest(this.manifestFile(otherPlatform));
+      for (const backup of manifest?.backups ?? []) {
+        if (installed.has(backup.target)) {
+          backups.push(backup);
+        }
+      }
+    }
+    return backups;
+  }
+
+  private async transferBackupsToRemainingOwners(
+    selectedPlatforms: AgentInstallPlatform[],
+    protectedPaths: Set<string>,
+    backupByTarget: Map<string, string>
+  ): Promise<void> {
+    if (protectedPaths.size === 0 || backupByTarget.size === 0) {
+      return;
+    }
+
+    const selected = new Set(selectedPlatforms);
+    for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      if (selected.has(platform)) {
+        continue;
+      }
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      if (!manifest) {
+        continue;
+      }
+
+      const transferred: InstallBackupRecord[] = [];
+      const existingTargets = new Set(manifest.backups.map((backup) => backup.target));
+      for (const installedPath of manifest.installed_paths) {
+        const backup = backupByTarget.get(installedPath);
+        if (protectedPaths.has(installedPath) && backup && !existingTargets.has(installedPath)) {
+          transferred.push({ target: installedPath, backup });
+        }
+      }
+
+      if (transferred.length > 0) {
+        await writeYamlAtomic(this.manifestFile(platform), {
+          ...manifest,
+          backups: mergeBackupRecords(manifest.backups, transferred)
+        });
+      }
+    }
   }
 }
 
@@ -392,6 +454,18 @@ function escapeRegExp(value: string): string {
 
 function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
+}
+
+function mergeBackupRecords(...groups: InstallBackupRecord[][]): InstallBackupRecord[] {
+  const backupsByTarget = new Map<string, InstallBackupRecord>();
+  for (const group of groups) {
+    for (const backup of group) {
+      if (!backupsByTarget.has(backup.target)) {
+        backupsByTarget.set(backup.target, backup);
+      }
+    }
+  }
+  return Array.from(backupsByTarget.values());
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

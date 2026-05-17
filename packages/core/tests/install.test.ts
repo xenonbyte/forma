@@ -183,6 +183,53 @@ describe("InstallService", () => {
     await expect(readFile(sharedSkill, "utf8")).resolves.toBe("# Local Shared Skill\n");
   });
 
+  it("keeps shared skill backup across staged platform uninstall", async () => {
+    const { formaHome, service } = await createService();
+    const sharedSkill = join(formaHome, "skills", "forma", "SKILL.md");
+    await mkdir(join(formaHome, "skills", "forma"), { recursive: true });
+    await writeFile(sharedSkill, "# Local Shared Skill\n", "utf8");
+
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+
+    await service.uninstallPlatforms(["claude"]);
+    await expect(readFile(sharedSkill, "utf8")).resolves.toContain("Forma shared guidance");
+
+    await service.uninstallPlatforms(["codex", "gemini"]);
+
+    await expect(readFile(sharedSkill, "utf8")).resolves.toBe("# Local Shared Skill\n");
+  });
+
+  it("preserves existing backups across reinstall before uninstall", async () => {
+    const { formaHome, userHome, service } = await createService();
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    const claudeConfig = join(userHome, ".claude", "mcp.json");
+    const sharedSkill = join(formaHome, "skills", "forma", "SKILL.md");
+    await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
+    await mkdir(join(userHome, ".claude"), { recursive: true });
+    await mkdir(join(formaHome, "skills", "forma"), { recursive: true });
+    await writeFile(claudeCommand, "# Local Claude Command\n", "utf8");
+    await writeFile(claudeConfig, JSON.stringify({ keep: true }, null, 2), "utf8");
+    await writeFile(sharedSkill, "# Local Shared Skill\n", "utf8");
+
+    await service.installPlatforms(["claude"]);
+    await service.installPlatforms(["claude"]);
+
+    const manifest = await readManifest(formaHome, "claude");
+    expect(manifest.backups).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ target: claudeCommand }),
+        expect.objectContaining({ target: claudeConfig }),
+        expect.objectContaining({ target: sharedSkill })
+      ])
+    );
+
+    await service.uninstallPlatforms(["claude"]);
+
+    await expect(readFile(claudeCommand, "utf8")).resolves.toBe("# Local Claude Command\n");
+    await expect(readFile(claudeConfig, "utf8")).resolves.toBe(`${JSON.stringify({ keep: true }, null, 2)}\n`);
+    await expect(readFile(sharedSkill, "utf8")).resolves.toBe("# Local Shared Skill\n");
+  });
+
   it("injects and removes MCP config entries without deleting unrelated user config", async () => {
     const { userHome, service } = await createService();
     await mkdir(join(userHome, ".claude"), { recursive: true });
