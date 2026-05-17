@@ -1,0 +1,23 @@
+styles:
+  - name: linear
+    description: Focused tool UI
+    design_md_path: styles/linear/DESIGN.md
+    variables:
+      primary: "#5E6AD2"
+      background: "#FFFFFF"
+      text-primary: "#111827"
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: claude
+    description: Warm editorial workspace
+    design_md_path: styles/claude/DESIGN.md
+    variables:
+      primary: "#D97706"
+      background: "#FFFBF5"
+      text-primary: "#1F2937"
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
