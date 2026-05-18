@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildServer } from "@xenonbyte/forma-server";
 import { createFormaStore, FormaError, PencilService, type Design } from "@xenonbyte/forma-core";
+import { formatGenericErrorForLog } from "./smoke-pencil-error.js";
 
 const smokePrompt =
   "Create a simple mobile login page with title, email input, password input, primary login button, and forgot password link. Use the product design style variables.";
@@ -249,55 +250,6 @@ async function cleanupPencilTempDir(tempDir: string | undefined): Promise<void> 
   } catch (error) {
     console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
   }
-}
-
-function formatGenericErrorForLog(error: unknown): string {
-  const exitCode = getExitCode(error);
-  if (typeof exitCode === "number") {
-    return `Unexpected error: command failed (exitCode=${exitCode})`;
-  }
-
-  return `Unexpected error: ${sanitizeGenericErrorForLog(error)}`;
-}
-
-function sanitizeGenericErrorForLog(error: unknown): string {
-  const message = rawErrorMessage(error);
-  const withoutAnsi = message.replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
-  const redacted = redactSensitiveFields(withoutAnsi);
-  const oneLine = redacted.replace(/\s+/g, " ").trim();
-  const fallback = oneLine.length > 0 ? oneLine : "Unknown failure";
-  return fallback.length > 180 ? `${fallback.slice(0, 177)}...` : fallback;
-}
-
-function redactSensitiveFields(value: string): string {
-  return value
-    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer <redacted>")
-    .replace(
-      /\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|secret|password|passwd|authorization|cookie|session|account|email|username|user|login)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi,
-      "$1=<redacted>"
-    )
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<redacted-email>");
-}
-
-function rawErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  if (isRecord(error) && typeof error.message === "string") {
-    return error.message;
-  }
-  return String(error);
-}
-
-function getExitCode(error: unknown): number | undefined {
-  if (isRecord(error) && typeof error.exitCode === "number") {
-    return error.exitCode;
-  }
-  return undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 await main();
