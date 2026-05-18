@@ -10,6 +10,7 @@ export * from "./requirement.js";
 export * from "./session.js";
 export * from "./store.js";
 export * from "./styles.js";
+export * from "./sync.js";
 export * from "./pencil.js";
 export * from "./annotate.js";
 export * from "./diff.js";

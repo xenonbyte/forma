@@ -28,6 +28,7 @@ export const styleMetadataSchema = z.object({
 });
 
 export const stylesIndexSchema = z.object({
+  last_synced: z.string().optional(),
   styles: z.array(styleMetadataSchema)
 });
 
