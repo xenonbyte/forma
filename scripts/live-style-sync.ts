@@ -27,7 +27,7 @@ async function main(): Promise<void> {
     console.error("Live style sync failed");
     console.error(`FORMA_HOME=${home}`);
     printError(error);
-    process.exitCode = 1;
+    process.exit(1);
   }
 }
 

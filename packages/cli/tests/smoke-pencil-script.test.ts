@@ -92,4 +92,11 @@ describe("live style sync script", () => {
     expect(script.toLowerCase()).not.toContain("mock");
     expect(script.toLowerCase()).not.toContain("skip");
   });
+
+  it("terminates explicitly on failure instead of only setting an exit code", async () => {
+    const script = await readLiveSyncScript();
+
+    expect(script).toContain("process.exit(1)");
+    expect(script).not.toContain("process.exitCode = 1");
+  });
 });
