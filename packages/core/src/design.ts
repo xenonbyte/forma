@@ -46,6 +46,15 @@ export interface SaveDesignInput {
   mode?: SaveDesignMode;
 }
 
+export interface DesignMetadata {
+  id: string;
+  pen_path: string;
+  preview_path: string;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExportedDesignAsset {
   design_id: string;
   node_id: string;
@@ -215,6 +224,19 @@ export class DesignService {
     return getPenAnnotations(join(this.designDir(design), "design.pen"));
   }
 
+  async getDesignMetadata(designId: string): Promise<DesignMetadata> {
+    const design = await this.readDesignById(designId);
+    const designDir = this.designDir(design);
+    return {
+      id: design.id,
+      pen_path: join(designDir, "design.pen"),
+      preview_path: join(designDir, "preview@2x.png"),
+      version: design.version,
+      created_at: design.created_at,
+      updated_at: design.updated_at
+    };
+  }
+
   async diffDesigns(designId: string, v1: number, v2: number): Promise<DesignDiff> {
     const design = await this.readDesignById(designId);
     const before = await this.annotationsForVersion(design, v1);
@@ -300,7 +322,7 @@ export class DesignService {
     input: SaveDesignInput,
     stageDir: string
   ): Promise<StagedDesignSave> {
-    if (page.design_status !== "done") {
+    if (page.design_status !== "done" && page.design_status !== "expired") {
       throw new FormaError("PAGE_NOT_DONE", "Page is not done", { requirement_id: requirement.id, page_id: page.page_id });
     }
     const current = await this.readDesignById(page.design_id);
@@ -613,6 +635,13 @@ export class DesignService {
           mode
         });
       }
+      return;
+    }
+
+    if (mode === "refine" && page.design_status === "expired" && page.design_id && page.change_type === "patch") {
+      return;
+    }
+    if (mode === "update" && page.design_status === "expired" && page.design_id && page.change_type === "rebuild") {
       return;
     }
 

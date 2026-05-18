@@ -18,6 +18,7 @@ export const requirementPageSchema = z.object({
   baseline_page: z.string().min(1),
   design_status: z.enum(designStatuses),
   design_id: z.string().regex(/^D-[a-f0-9]{8}$/).optional(),
+  change_type: z.enum(["new", "patch", "rebuild"]).optional(),
   features: z.string().optional(),
   copy: z.array(z.lazy(() => copyItemSchema)).optional(),
   fields: z.string().optional(),
@@ -605,8 +606,8 @@ function assertPages(pages: unknown[]): void {
   }
 }
 
-function stripPageInputMetadata(page: z.infer<typeof requirementPageInputSchema>): Omit<z.infer<typeof requirementPageInputSchema>, "change_type" | "change_summary"> {
-  const { change_type: _changeType, change_summary: _changeSummary, ...requirementPage } = page;
+function stripPageInputMetadata(page: z.infer<typeof requirementPageInputSchema>): Omit<z.infer<typeof requirementPageInputSchema>, "change_summary"> {
+  const { change_summary: _changeSummary, ...requirementPage } = page;
   return requirementPage;
 }
 

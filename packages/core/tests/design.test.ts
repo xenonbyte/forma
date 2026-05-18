@@ -231,6 +231,28 @@ describe("DesignService", () => {
     await expect(access(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.v1.pen"))).resolves.toBeUndefined();
   });
 
+  it("refine accepts an expired patch page and preserves the design id", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "expired-patch-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const existingDesignId = saved.id;
+    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
+    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
+    await writeYamlAtomic(requirementFile, {
+      ...storedRequirement,
+      pages: [{ ...requirement.pages[0], design_status: "expired", design_id: existingDesignId, change_type: "patch" }]
+    });
+    const refined = await writeDesignOutput(home, "expired-patch-refined");
+
+    const savedDesigns = await store.designs.saveDesigns(requirement.id, [
+      { page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }
+    ]);
+
+    expect(savedDesigns[0]).toMatchObject({ id: existingDesignId, version: 2 });
+    const updatedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
+    expect(updatedRequirement.pages[0]).toMatchObject({ design_status: "done", design_id: existingDesignId });
+  });
+
   it("update mode increments version and replaces the preview", async () => {
     const { home, requirement, store } = await createDesignStore();
     const initial = await writeDesignOutput(home, "update-initial");
@@ -244,6 +266,45 @@ describe("DesignService", () => {
 
     expect(next).toMatchObject({ id: saved.id, version: 2 });
     expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(alternatePng);
+  });
+
+  it("update accepts an expired rebuild page and preserves the design id", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const initial = await writeDesignOutput(home, "expired-rebuild-initial");
+    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
+    const existingDesignId = saved.id;
+    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
+    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
+    await writeYamlAtomic(requirementFile, {
+      ...storedRequirement,
+      pages: [{ ...requirement.pages[0], design_status: "expired", design_id: existingDesignId, change_type: "rebuild" }]
+    });
+    const updated = await writeDesignOutput(home, "expired-rebuild-updated");
+
+    const savedDesigns = await store.designs.saveDesigns(requirement.id, [
+      { page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }
+    ]);
+
+    expect(savedDesigns[0]).toMatchObject({ id: existingDesignId, version: 2 });
+    const updatedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
+    expect(updatedRequirement.pages[0]).toMatchObject({ design_status: "done", design_id: existingDesignId });
+  });
+
+  it("getDesignMetadata returns absolute design asset paths and timestamps", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "metadata");
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+
+    const metadata = await store.designs.getDesignMetadata(design.id);
+
+    expect(metadata).toEqual({
+      id: design.id,
+      pen_path: join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"),
+      preview_path: join(home, "data", requirement.product_id, requirement.id, design.id, "preview@2x.png"),
+      version: design.version,
+      created_at: design.created_at,
+      updated_at: design.updated_at
+    });
   });
 
   it("does not half-update an existing design when preview copy fails", async () => {
