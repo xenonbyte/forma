@@ -4,11 +4,13 @@ import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as productDetail from "./ProductDetail.js";
 import { ProductDetail } from "./ProductDetail.js";
 import { ApiError, type FormaApiClient, type Product, type ProductBaseline, type RequirementWithDocument, type StyleMetadata } from "../api.js";
+import { LocaleProvider, useLocale } from "../LocaleContext.js";
+import { localeStorageKey, setLocale as setAppLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -65,6 +67,11 @@ const activeRequirement: RequirementWithDocument = {
 const roots: Root[] = [];
 const containers: HTMLElement[] = [];
 
+beforeEach(() => {
+  window.localStorage.clear();
+  setAppLocale("en");
+});
+
 afterEach(() => {
   for (const root of roots.splice(0)) {
     act(() => {
@@ -75,6 +82,8 @@ afterEach(() => {
     container.remove();
   }
   vi.restoreAllMocks();
+  window.localStorage.clear();
+  setAppLocale("en");
 });
 
 describe("ProductDetailSummaryPanels", () => {
@@ -145,6 +154,35 @@ describe("ProductDetailSummaryPanels", () => {
 });
 
 describe("ProductDetail", () => {
+  it("updates visible static text when the locale switches to Chinese", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <LocaleProvider>
+          <LocaleSwitch />
+          <ProductDetail client={client} params={{ productId: "P-123abc" }} />
+        </LocaleProvider>
+      );
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Product configuration");
+    expect(container.textContent).toContain("New requirement");
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>("[data-locale-zh]"), "Chinese locale button").click();
+      await flushPromises();
+    });
+
+    expect(window.localStorage.getItem(localeStorageKey)).toBe("zh");
+    expect(container.textContent).toContain("产品配置");
+    expect(container.textContent).toContain("新建需求");
+    expect(container.textContent).not.toContain("Product configuration");
+    expect(container.textContent).not.toContain("New requirement");
+  });
+
   it("creates title-only requirements and reloads the requirement list", async () => {
     const client = createClient({ product: configuredProduct, requirements: [] });
     client.listRequirements.mockResolvedValueOnce([]).mockResolvedValueOnce([activeRequirement]);
@@ -280,6 +318,15 @@ function createTestRoot() {
   const root = createRoot(container);
   roots.push(root);
   return { container, root };
+}
+
+function LocaleSwitch() {
+  const { setLocale } = useLocale();
+  return (
+    <button data-locale-zh="" onClick={() => setLocale("zh")} type="button">
+      中
+    </button>
+  );
 }
 
 function required<T extends Element>(element: T | null, label: string): T {
