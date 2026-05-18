@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, cp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,10 +15,13 @@ export interface BuiltInStyleAsset {
   designMdPath: string;
 }
 
+export interface BuiltInStyleCheckOptions {
+  minimumStyleCount?: number;
+}
+
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cliAssetsDir = resolve(repoRoot, "packages/cli/dist/assets");
 const repoStylesDir = resolve(repoRoot, "styles");
-const cliDistDir = resolve(repoRoot, "packages/cli/dist");
 const minimumBuiltInStyleCount = 50;
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const requiredStyleVariableKeys = [
@@ -73,11 +76,16 @@ export async function checkAssets(): Promise<void> {
   await checkCopiedStyleAssets();
 }
 
-export async function assertBuiltInStyles(stylesDir: string): Promise<BuiltInStyleAsset[]> {
+export async function assertBuiltInStyles(
+  stylesDirInput: string | URL,
+  options: BuiltInStyleCheckOptions = {}
+): Promise<BuiltInStyleAsset[]> {
+  const stylesDir = filePath(stylesDirInput);
   const stylesIndex = resolve(stylesDir, "styles.yaml");
   const styles = parseStyleIndex(await readFile(stylesIndex, "utf8"));
-  if (styles.length < minimumBuiltInStyleCount) {
-    throw new Error(`Expected at least 50 built-in styles, found ${styles.length}`);
+  const minimumStyleCount = options.minimumStyleCount ?? minimumBuiltInStyleCount;
+  if (styles.length < minimumStyleCount) {
+    throw new Error(`Expected at least ${minimumStyleCount} built-in styles, found ${styles.length}`);
   }
 
   const seenNames = new Set<string>();
@@ -97,6 +105,18 @@ export async function assertBuiltInStyles(stylesDir: string): Promise<BuiltInSty
   return styles;
 }
 
+export async function assertCopiedBuiltInStyles(
+  sourceStylesDirInput: string | URL,
+  copiedStylesDirInput: string | URL
+): Promise<BuiltInStyleAsset[]> {
+  const sourceStylesDir = filePath(sourceStylesDirInput);
+  const copiedStylesDir = filePath(copiedStylesDirInput);
+  const sourceStyles = await assertBuiltInStyles(sourceStylesDir, { minimumStyleCount: 0 });
+  const copiedStyles = await assertBuiltInStyles(copiedStylesDir, { minimumStyleCount: sourceStyles.length });
+  assertMatchingStyleNames(sourceStyles, copiedStyles);
+  return copiedStyles;
+}
+
 function assertSafeAssetTarget(target: string): void {
   const relativeTarget = relative(cliAssetsDir, resolve(target));
   if (relativeTarget === "" || relativeTarget.startsWith("..") || relativeTarget.startsWith("/")) {
@@ -106,28 +126,30 @@ function assertSafeAssetTarget(target: string): void {
 
 async function checkCopiedStyleAssets(): Promise<void> {
   const copiedStylesDir = resolve(cliAssetsDir, "styles");
-  if (!(await pathExists(cliDistDir))) {
-    console.log(`skip copied styles: ${relative(repoRoot, cliDistDir)} does not exist`);
-    return;
-  }
-
-  const cliWasBuiltAfterSourceStyles = await isNewerThan(resolve(cliDistDir, "index.js"), resolve(repoStylesDir, "styles.yaml"));
   if (!(await pathExists(copiedStylesDir))) {
-    if (cliWasBuiltAfterSourceStyles) {
-      throw new Error(`Expected copied styles at ${copiedStylesDir}; run pnpm build to refresh CLI assets`);
-    }
     console.log(`skip copied styles: ${relative(repoRoot, copiedStylesDir)} does not exist; run pnpm build to create it`);
     return;
   }
 
-  const copiedStylesAreCurrent = await isNewerThan(resolve(copiedStylesDir, "styles.yaml"), resolve(repoStylesDir, "styles.yaml"));
-  if (!copiedStylesAreCurrent && !cliWasBuiltAfterSourceStyles) {
-    console.log(`skip copied styles: ${relative(repoRoot, copiedStylesDir)} is older than source styles; run pnpm build to refresh it`);
-    return;
-  }
-
-  const copiedStyles = await assertBuiltInStyles(copiedStylesDir);
+  const copiedStyles = await assertCopiedBuiltInStyles(repoStylesDir, copiedStylesDir);
   console.log(`validated copied styles: ${copiedStyles.length} built-in styles in ${relative(repoRoot, copiedStylesDir)}`);
+}
+
+function filePath(value: string | URL): string {
+  return value instanceof URL ? fileURLToPath(value) : value;
+}
+
+function assertMatchingStyleNames(sourceStyles: BuiltInStyleAsset[], copiedStyles: BuiltInStyleAsset[]): void {
+  const sourceNames = sourceStyles.map((style) => style.name).sort();
+  const copiedNames = copiedStyles.map((style) => style.name).sort();
+  const missing = sourceNames.filter((name) => !copiedNames.includes(name));
+  const extra = copiedNames.filter((name) => !sourceNames.includes(name));
+
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      `Copied built-in styles do not match source styles: missing [${missing.join(", ")}], extra [${extra.join(", ")}]`
+    );
+  }
 }
 
 function parseStyleIndex(source: string): BuiltInStyleAsset[] {
@@ -230,17 +252,44 @@ async function assertPng(file: string): Promise<void> {
   if (data.length < pngSignature.length || !data.subarray(0, pngSignature.length).equals(pngSignature)) {
     throw new Error(`Expected a valid PNG preview: ${file}`);
   }
-}
 
-async function isNewerThan(file: string, reference: string): Promise<boolean> {
-  try {
-    const [fileStat, referenceStat] = await Promise.all([stat(file), stat(reference)]);
-    return fileStat.mtimeMs + 1000 >= referenceStat.mtimeMs;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
+  if (data.length < 33) {
+    throw new Error(`Expected a complete PNG preview: ${file}`);
+  }
+
+  const ihdrLength = data.readUInt32BE(8);
+  const firstChunkType = data.subarray(12, 16).toString("ascii");
+  const width = data.readUInt32BE(16);
+  const height = data.readUInt32BE(20);
+  if (ihdrLength !== 13 || firstChunkType !== "IHDR" || width === 0 || height === 0) {
+    throw new Error(`Expected a PNG preview with a nonzero IHDR: ${file}`);
+  }
+
+  let offset = 8;
+  let foundIend = false;
+  while (offset + 12 <= data.length) {
+    const chunkLength = data.readUInt32BE(offset);
+    const typeStart = offset + 4;
+    const dataStart = offset + 8;
+    const nextOffset = dataStart + chunkLength + 4;
+    if (nextOffset > data.length) {
+      throw new Error(`Expected a complete PNG chunk stream: ${file}`);
     }
-    throw error;
+
+    const chunkType = data.subarray(typeStart, dataStart).toString("ascii");
+    if (chunkType === "IEND") {
+      if (chunkLength !== 0) {
+        throw new Error(`Expected a valid PNG IEND chunk: ${file}`);
+      }
+      foundIend = true;
+      break;
+    }
+
+    offset = nextOffset;
+  }
+
+  if (!foundIend) {
+    throw new Error(`Expected a PNG IEND chunk: ${file}`);
   }
 }
 
@@ -248,8 +297,11 @@ async function pathExists(file: string): Promise<boolean> {
   try {
     await access(file, constants.F_OK);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+      return false;
+    }
+    throw error;
   }
 }
 

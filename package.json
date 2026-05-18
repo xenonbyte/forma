@@ -10,6 +10,7 @@
     "build": "pnpm -r --if-present build",
     "test": "vitest run",
     "typecheck": "pnpm -r --if-present typecheck",
+    "pack:cli": "pnpm --filter @xenonbyte/forma-cli pack",
     "dev:web": "pnpm --filter @xenonbyte/forma-web dev",
     "smoke:pencil": "tsx scripts/smoke-pencil.ts"
   },
