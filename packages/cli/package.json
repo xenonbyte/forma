@@ -7,6 +7,10 @@
   "exports": {
     ".": "./dist/index.js"
   },
+  "files": [
+    "bin",
+    "dist"
+  ],
   "bin": {
     "forma": "./bin/forma.js"
   },
