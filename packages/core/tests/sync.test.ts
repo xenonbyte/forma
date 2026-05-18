@@ -166,7 +166,7 @@ afterEach(() => {
 });
 
 describe("style sync pure helpers", () => {
-  it("scans only first-level style directories with DESIGN.md", async () => {
+  it("scans root-level style directories with DESIGN.md", async () => {
     const root = await tempDir();
     await mkdir(join(root, "linear"), { recursive: true });
     await mkdir(join(root, "_template"), { recursive: true });
@@ -178,6 +178,18 @@ describe("style sync pure helpers", () => {
     await writeFile(join(root, "nested", "deep", "DESIGN.md"), "# Deep\n");
 
     await expect(scanStyleDirectories(root)).resolves.toEqual([{ name: "linear", designMdPath: join(root, "linear", "DESIGN.md") }]);
+  });
+
+  it("scans the live awesome-design-md collection directory when root has no styles", async () => {
+    const root = await tempDir();
+    await mkdir(join(root, "design-md", "apple"), { recursive: true });
+    await mkdir(join(root, "design-md", "_template"), { recursive: true });
+    await mkdir(join(root, "design-md", "nested", "deep"), { recursive: true });
+    await writeFile(join(root, "design-md", "apple", "DESIGN.md"), "# Apple\n");
+    await writeFile(join(root, "design-md", "_template", "DESIGN.md"), "# Template\n");
+    await writeFile(join(root, "design-md", "nested", "deep", "DESIGN.md"), "# Deep\n");
+
+    await expect(scanStyleDirectories(root)).resolves.toEqual([{ name: "apple", designMdPath: join(root, "design-md", "apple", "DESIGN.md") }]);
   });
 
   it("extracts variables and fills deterministic defaults", () => {

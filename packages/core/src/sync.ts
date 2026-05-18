@@ -537,6 +537,20 @@ async function copyFileAtomic(source: string, destination: string): Promise<void
 type Classification = "AI 产品" | "工具类" | "电商" | "金融" | "社交" | "健康" | "其他";
 
 export async function scanStyleDirectories(root: string): Promise<ScannedStyleDirectory[]> {
+  const rootStyles = await scanFirstLevelStyleDirectories(root);
+  if (rootStyles.length > 0) {
+    return rootStyles;
+  }
+
+  const collectionRoot = join(root, "design-md");
+  if (await directoryExists(collectionRoot)) {
+    return await scanFirstLevelStyleDirectories(collectionRoot);
+  }
+
+  return [];
+}
+
+async function scanFirstLevelStyleDirectories(root: string): Promise<ScannedStyleDirectory[]> {
   const entries = await readdir(root, { withFileTypes: true });
   const directories = entries
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !entry.name.startsWith("_"))
@@ -551,6 +565,18 @@ export async function scanStyleDirectories(root: string): Promise<ScannedStyleDi
   }
 
   return styles;
+}
+
+async function directoryExists(directory: string): Promise<boolean> {
+  try {
+    const metadata = await stat(directory);
+    return metadata.isDirectory();
+  } catch (error) {
+    if (isEnoent(error)) {
+      return false;
+    }
+    throw error;
+  }
 }
 
 export function extractVariablesFromDesignMd(markdown: string): StyleVariables {
