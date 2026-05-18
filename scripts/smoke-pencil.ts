@@ -44,84 +44,90 @@ async function runSmoke(home: string): Promise<{
 }> {
   const store = createFormaStore({ home, bundledStylesDir: resolve("styles") });
   const pencil = new PencilService({ home });
+  let components: Awaited<ReturnType<PencilService["generateComponents"]>> | undefined;
+  let pageDesign: Awaited<ReturnType<PencilService["generatePageDesign"]>> | undefined;
 
-  const styles = await store.styles.installBuiltInStyles();
-  const style = styles.find((item) => item.name === "linear") ?? styles[0];
-  invariant(style, "No built-in styles were installed");
+  try {
+    const styles = await store.styles.installBuiltInStyles();
+    const style = styles.find((item) => item.name === "linear") ?? styles[0];
+    invariant(style, "No built-in styles were installed");
 
-  const createdProduct = await store.products.createProduct({
-    name: "Pencil Smoke Mobile Login",
-    description: "Temporary product for the real Pencil smoke test."
-  });
-  const product = await store.products.initProductConfig(createdProduct.id, {
-    platform: "mobile",
-    style
-  });
+    const createdProduct = await store.products.createProduct({
+      name: "Pencil Smoke Mobile Login",
+      description: "Temporary product for the real Pencil smoke test."
+    });
+    const product = await store.products.initProductConfig(createdProduct.id, {
+      platform: "mobile",
+      style
+    });
 
-  const components = await pencil.generateComponents({
-    product_id: product.id,
-    prompt: componentPrompt,
-    workspace: home
-  });
-  await assertFileExists(components.penPath, "Generated components pen does not exist");
-  await store.products.markComponentsInitialized(product.id);
+    components = await pencil.generateComponents({
+      product_id: product.id,
+      prompt: componentPrompt,
+      workspace: home
+    });
+    await assertFileExists(components.penPath, "Generated components pen does not exist");
+    await store.products.markComponentsInitialized(product.id);
 
-  const emptyRequirement = await store.requirements.createEmptyRequirement(product.id, "Mobile Login");
-  const requirement = await store.requirements.submitRequirement({
-    requirement_id: emptyRequirement.id,
-    document_md: `# Mobile Login\n\n${smokePrompt}\n`,
-    pages: [
+    const emptyRequirement = await store.requirements.createEmptyRequirement(product.id, "Mobile Login");
+    const requirement = await store.requirements.submitRequirement({
+      requirement_id: emptyRequirement.id,
+      document_md: `# Mobile Login\n\n${smokePrompt}\n`,
+      pages: [
+        {
+          page_id: "login",
+          name: "Login",
+          baseline_page: "login",
+          features: "Mobile authentication entry page",
+          copy: "Title, email input, password input, login button, and forgot password link",
+          fields: "email, password",
+          interactions: "Submit credentials and open password recovery"
+        }
+      ],
+      navigation: []
+    });
+    const persistedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
+    invariant(persistedRequirement.document_md.includes(smokePrompt), "Persisted requirement document does not contain the smoke prompt");
+
+    pageDesign = await pencil.generatePageDesign({
+      product_id: product.id,
+      prompt: smokePrompt,
+      workspace: components.tempDir
+    });
+
+    const [design] = await store.designs.saveDesigns(requirement.id, [
       {
         page_id: "login",
-        name: "Login",
-        baseline_page: "login",
-        features: "Mobile authentication entry page",
-        copy: "Title, email input, password input, login button, and forgot password link",
-        fields: "email, password",
-        interactions: "Submit credentials and open password recovery"
+        penPath: pageDesign.penPath,
+        previewPath: pageDesign.previewPath
       }
-    ],
-    navigation: []
-  });
+    ]);
+    invariant(design, "Design persistence did not return a design");
 
-  const pageDesign = await pencil.generatePageDesign({
-    product_id: product.id,
-    prompt: smokePrompt,
-    workspace: components.tempDir
-  });
+    const persistedPenPath = designPath(home, design, "design.pen");
+    const persistedPreviewPath = designPath(home, design, "preview@2x.png");
+    await assertFileExists(persistedPenPath, "Persisted design.pen does not exist");
+    await assertFileExists(persistedPreviewPath, "Persisted preview@2x.png does not exist");
+    await assertPngFile(persistedPreviewPath, "Persisted preview@2x.png is not a PNG");
 
-  const [design] = await store.designs.saveDesigns(requirement.id, [
-    {
-      page_id: "login",
-      penPath: pageDesign.penPath,
-      previewPath: pageDesign.previewPath
-    }
-  ]);
-  invariant(design, "Design persistence did not return a design");
+    const annotations = await store.designs.getDesignAnnotations(design.id);
+    invariant(annotations.length > 0, "Persisted design has no annotations");
 
-  const persistedPenPath = designPath(home, design, "design.pen");
-  const persistedPreviewPath = designPath(home, design, "preview@2x.png");
-  await assertFileExists(persistedPenPath, "Persisted design.pen does not exist");
-  await assertFileExists(persistedPreviewPath, "Persisted preview@2x.png does not exist");
-  await assertPngFile(persistedPreviewPath, "Persisted preview@2x.png is not a PNG");
+    const fetchedPreview = await fetchPreviewThroughServer(store, design.id);
 
-  await rm(components.tempDir, { recursive: true, force: true });
-  await rm(pageDesign.tempDir, { recursive: true, force: true });
-
-  const annotations = await store.designs.getDesignAnnotations(design.id);
-  invariant(annotations.length > 0, "Persisted design has no annotations");
-
-  const fetchedPreview = await fetchPreviewThroughServer(store, design.id);
-
-  return {
-    productId: product.id,
-    requirementId: requirement.id,
-    designId: design.id,
-    persistedPenPath,
-    persistedPreviewPath,
-    annotationCount: annotations.length,
-    fetchedPreviewBytes: fetchedPreview.length
-  };
+    return {
+      productId: product.id,
+      requirementId: requirement.id,
+      designId: design.id,
+      persistedPenPath,
+      persistedPreviewPath,
+      annotationCount: annotations.length,
+      fetchedPreviewBytes: fetchedPreview.length
+    };
+  } finally {
+    await cleanupPencilTempDir(pageDesign?.tempDir);
+    await cleanupPencilTempDir(components?.tempDir);
+  }
 }
 
 async function fetchPreviewThroughServer(store: ReturnType<typeof createFormaStore>, designId: string): Promise<Buffer> {
@@ -189,10 +195,12 @@ function invariant(condition: unknown, message: string): asserts condition {
 }
 
 function ensureHomebrewPencilOnPath(): void {
-  const homebrewBin = "/opt/homebrew/bin";
+  const preferredBins = ["/opt/homebrew/bin", "/usr/local/bin"];
   const currentPath = process.env.PATH ?? "";
-  if (!currentPath.split(":").includes(homebrewBin)) {
-    process.env.PATH = `${homebrewBin}:${currentPath}`;
+  const currentEntries = currentPath.length > 0 ? currentPath.split(":") : [];
+  const missingBins = preferredBins.filter((entry) => !currentEntries.includes(entry));
+  if (missingBins.length > 0) {
+    process.env.PATH = [...missingBins, ...currentEntries].join(":");
   }
 }
 
@@ -206,12 +214,7 @@ function printError(error: unknown): void {
     return;
   }
 
-  if (error instanceof Error) {
-    console.error(error.message);
-    return;
-  }
-
-  console.error(String(error));
+  console.error(formatGenericErrorForLog(error));
 }
 
 function safeFormaDetails(details: Record<string, unknown>): Record<string, string | number | boolean> {
@@ -235,6 +238,66 @@ function safeFormaDetails(details: Record<string, unknown>): Record<string, stri
         safeKeys.has(entry[0]) && ["string", "number", "boolean"].includes(typeof entry[1])
     )
   );
+}
+
+async function cleanupPencilTempDir(tempDir: string | undefined): Promise<void> {
+  if (!tempDir) {
+    return;
+  }
+  try {
+    await rm(tempDir, { recursive: true, force: true });
+  } catch (error) {
+    console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
+  }
+}
+
+function formatGenericErrorForLog(error: unknown): string {
+  const exitCode = getExitCode(error);
+  if (typeof exitCode === "number") {
+    return `Unexpected error: command failed (exitCode=${exitCode})`;
+  }
+
+  return `Unexpected error: ${sanitizeGenericErrorForLog(error)}`;
+}
+
+function sanitizeGenericErrorForLog(error: unknown): string {
+  const message = rawErrorMessage(error);
+  const withoutAnsi = message.replace(/\u001B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g, "");
+  const redacted = redactSensitiveFields(withoutAnsi);
+  const oneLine = redacted.replace(/\s+/g, " ").trim();
+  const fallback = oneLine.length > 0 ? oneLine : "Unknown failure";
+  return fallback.length > 180 ? `${fallback.slice(0, 177)}...` : fallback;
+}
+
+function redactSensitiveFields(value: string): string {
+  return value
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer <redacted>")
+    .replace(
+      /\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|secret|password|passwd|authorization|cookie|session|account|email|username|user|login)\b\s*[:=]\s*("[^"]*"|'[^']*'|[^\s,;]+)/gi,
+      "$1=<redacted>"
+    )
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<redacted-email>");
+}
+
+function rawErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message;
+  }
+  return String(error);
+}
+
+function getExitCode(error: unknown): number | undefined {
+  if (isRecord(error) && typeof error.exitCode === "number") {
+    return error.exitCode;
+  }
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 await main();
