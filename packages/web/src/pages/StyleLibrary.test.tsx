@@ -53,3 +53,43 @@ describe("style category helpers", () => {
     expect(filterStyles?.(styles, { category: "retail", query: "", variableFilter: "all" }).map((style) => style.name)).toEqual(["retail mobile"]);
   });
 });
+
+describe("style sync helpers", () => {
+  it("formats sync button labels by status", () => {
+    expect(styleLibrary.syncButtonLabel(undefined)).toBe("一键同步");
+    expect(styleLibrary.syncButtonLabel({ status: "idle" })).toBe("一键同步");
+    expect(
+      styleLibrary.syncButtonLabel({
+        status: "running",
+        task_id: "sync-123",
+        started_at: "2026-05-18T00:00:00.000Z",
+        progress: { phase: "rendering_previews", current: 3, total: 8 }
+      })
+    ).toBe("同步中... (3/8)");
+    expect(
+      styleLibrary.syncButtonLabel({
+        status: "failed",
+        task_id: "sync-123",
+        error: { phase: "cleanup", message: "Workspace cleanup failed" }
+      })
+    ).toBe("同步失败，重试");
+  });
+
+  it("formats compact completion summaries", () => {
+    expect(styleLibrary.syncSummary(undefined)).toBeUndefined();
+    expect(styleLibrary.syncSummary({ status: "idle" })).toBeUndefined();
+    expect(
+      styleLibrary.syncSummary({
+        status: "idle",
+        last_sync: {
+          completed_at: "2026-05-18T00:00:02.000Z",
+          styles_total: 12,
+          styles_added: 2,
+          styles_updated: 3,
+          styles_failed: 1,
+          duration_ms: 2200
+        }
+      })
+    ).toBe("total 12, added 2, updated 3, failed 1");
+  });
+});
