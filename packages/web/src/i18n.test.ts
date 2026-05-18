@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { getInitialLocale, getLocale, setLocale, t } from "./i18n.js";
+
+afterEach(() => {
+  setLocale("en");
+});
 
 describe("i18n", () => {
   it("falls back to English and stores locale changes", () => {

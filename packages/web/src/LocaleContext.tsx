@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
-import { getLocale, setLocale, type Locale } from "./i18n.js";
+import { getLocale, setLocale, translate, type Locale } from "./i18n.js";
 
 export interface LocaleContextValue {
   locale: Locale;
@@ -27,4 +27,13 @@ export function useLocale() {
   }
 
   return value;
+}
+
+export function useCurrentLocale(): Locale {
+  return useContext(LocaleContext)?.locale ?? "en";
+}
+
+export function useT(): (key: string) => string {
+  const locale = useCurrentLocale();
+  return (key: string) => translate(key, locale);
 }

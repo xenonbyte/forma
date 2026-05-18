@@ -10,6 +10,7 @@ import {
   type Platform,
   type StyleMetadata
 } from "../api.js";
+import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
 
 export interface ProductNewProps {
@@ -18,10 +19,10 @@ export interface ProductNewProps {
 }
 
 const platformOptions: Array<{ label: string; value: Platform }> = [
-  { label: "Web", value: "web" },
-  { label: "Mobile", value: "mobile" },
-  { label: "Desktop", value: "desktop" },
-  { label: "Tablet", value: "tablet" }
+  { label: "platform.web", value: "web" },
+  { label: "platform.mobile", value: "mobile" },
+  { label: "platform.desktop", value: "desktop" },
+  { label: "platform.tablet", value: "tablet" }
 ];
 
 export function deriveDefaultLanguage(selected: Language[], current?: Language): Language | "" {
@@ -31,6 +32,8 @@ export function deriveDefaultLanguage(selected: Language[], current?: Language):
 }
 
 export function ProductNew({ client = apiClient, navigate = browserNavigate }: ProductNewProps) {
+  const t = useT();
+
   const [description, setDescription] = useState("");
   const [error, setError] = useState<ApiErrorInfo | null>(null);
   const [createdProductId, setCreatedProductId] = useState("");
@@ -115,10 +118,10 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
 
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <WorkSurface title="Product details">
+      <WorkSurface title={t("product.details")}>
         <form className="grid gap-4" onSubmit={handleSubmit}>
           <label className="grid gap-1 text-sm font-medium text-zinc-700">
-            Name
+            {t("product.name")}
             <input
               className={inputClasses}
               name="name"
@@ -129,35 +132,35 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
           </label>
 
           <label className="grid gap-1 text-sm font-medium text-zinc-700">
-            Description
+            {t("product.description")}
             <textarea
               className={`${inputClasses} min-h-28 resize-y`}
               name="description"
               onChange={(event) => setDescription(event.target.value)}
-              placeholder="Operational scope and product surface."
+              placeholder={t("product.descriptionPlaceholder")}
               value={description}
             />
           </label>
 
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Platform
+              {t("product.platform")}
               <select
                 className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
                 name="platform"
                 onChange={(event) => setPlatform(event.target.value as Platform | "")}
                 value={platform}
               >
-                <option value="">Select platform</option>
+                <option value="">{t("product.selectPlatform")}</option>
                 {platformOptions.map((option) => (
                   <option key={option.value} value={option.value}>
-                    {option.label}
+                    {t(option.label)}
                   </option>
                 ))}
               </select>
             </label>
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Style
+              {t("product.style")}
               <select
                 className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
                 disabled={stylesLoading || !!styleError}
@@ -165,7 +168,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
                 onChange={(event) => setStyleName(event.target.value)}
                 value={styleName}
               >
-                <option value="">{stylesLoading ? "Loading styles" : "Select style"}</option>
+                <option value="">{stylesLoading ? t("product.stylesLoading") : t("product.selectStyle")}</option>
                 {styles.map((style) => (
                   <option key={style.name} value={style.name}>
                     {style.name}
@@ -176,7 +179,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
           </div>
 
           <fieldset className="grid gap-2">
-            <legend className="text-sm font-medium text-zinc-700">Languages</legend>
+            <legend className="text-sm font-medium text-zinc-700">{t("product.languages")}</legend>
             <div className="grid gap-2 sm:grid-cols-2">
               {languageOptions.map((language) => (
                 <label
@@ -199,7 +202,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
 
           {selectedLanguages.length > 1 ? (
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Default language
+              {t("product.defaultLanguage")}
               <select
                 className={inputClasses}
                 name="default_language"
@@ -217,7 +220,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
 
           <div className="flex justify-end">
             <button className={primaryButtonClasses} disabled={!canSubmit} type="submit">
-              {saving ? "Creating" : "Create product"}
+              {saving ? t("action.creating") : t("action.createProduct")}
             </button>
           </div>
         </form>
@@ -225,27 +228,27 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
 
       <div className="space-y-3">
         {saving ? (
-          <StatePanel state="loading" title="Submission">
-            Creating product record and applying configuration.
+          <StatePanel state="loading" title={t("product.submission")}>
+            {t("product.submissionCreateHelp")}
           </StatePanel>
         ) : error ? (
-          <StatePanel state="error" title="Submission rejected">
+          <StatePanel state="error" title={t("product.submissionRejected")}>
             {error.error_code} - {error.message}
             {createdProductId ? (
-              <span className="mt-2 block">Product {createdProductId} was created. Retry will apply configuration to the existing product.</span>
+              <span className="mt-2 block">{t("product.retryConfiguration").replace("{productId}", createdProductId)}</span>
             ) : null}
           </StatePanel>
         ) : styleError ? (
-          <StatePanel state="error" title="Styles unavailable">
+          <StatePanel state="error" title={t("product.stylesUnavailable")}>
             {styleError.error_code} - {styleError.message}
           </StatePanel>
         ) : canSubmit ? (
-          <StatePanel state="empty" title="Ready to create">
-            Product details and configuration will be sent to the product API.
+          <StatePanel state="empty" title={t("product.readyToCreate")}>
+            {t("product.readyToCreateHelp")}
           </StatePanel>
         ) : (
-          <StatePanel state="empty" title="Required fields">
-            Name, description, platform, style, and language configuration are required before creation.
+          <StatePanel state="empty" title={t("product.requiredFields")}>
+            {t("product.requiredFieldsHelp")}
           </StatePanel>
         )}
       </div>

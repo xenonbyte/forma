@@ -9,6 +9,7 @@ import {
   type PageCopyPayload,
   type ProductBaseline
 } from "../api.js";
+import { useT } from "../LocaleContext.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { NavigationGraph } from "../components/NavigationGraph.js";
 
@@ -27,6 +28,7 @@ type PageCopyState =
   | { status: "loading" };
 
 export function BaselineView({ client = apiClient, params }: BaselineViewProps) {
+  const t = useT();
   const productId = params.productId ?? "";
   const [state, setState] = useState<BaselineState>({ status: "loading" });
 
@@ -54,15 +56,15 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 
   if (state.status === "loading") {
     return (
-      <StatePanel state="loading" title="Baseline">
-        Loading functional pages and navigation.
+      <StatePanel state="loading" title={t("action.baseline")}>
+        {t("baseline.loading")}
       </StatePanel>
     );
   }
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>Product</PrimaryActionLink>} state="error" title="Baseline unavailable">
+      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>{t("action.product")}</PrimaryActionLink>} state="error" title={t("baseline.unavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -70,8 +72,8 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 
   if (state.baseline.pages.length === 0 && state.baseline.navigation.length === 0) {
     return (
-      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>Product</PrimaryActionLink>} state="empty" title="Empty baseline">
-        No functional pages or navigation have been generated for this product.
+      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>{t("action.product")}</PrimaryActionLink>} state="empty" title={t("baseline.emptyBaseline")}>
+        {t("baseline.emptyGenerated")}
       </StatePanel>
     );
   }
@@ -88,6 +90,7 @@ export function BaselineContent({
   client: Pick<FormaApiClient, "getPageCopy">;
   productId: string;
 }) {
+  const t = useT();
   const [activeTab, setActiveTab] = useState<BaselineTab>("list");
   const [pageCopyStates, setPageCopyStates] = useState<Record<string, PageCopyState>>({});
 
@@ -123,11 +126,11 @@ export function BaselineContent({
     <div className="space-y-5">
       <div className="flex justify-start">
         <a className={secondaryLinkClasses} href={`/products/${productId}`}>
-          Back to product
+          {t("action.backToProduct")}
         </a>
       </div>
 
-      <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Baseline view">
+      <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1 shadow-sm" role="tablist" aria-label={t("baseline.view")}>
         {(["list", "graph"] as BaselineTab[]).map((tab) => (
           <button
             aria-selected={activeTab === tab}
@@ -139,14 +142,14 @@ export function BaselineContent({
             role="tab"
             type="button"
           >
-            {tab === "list" ? "List" : "Graph"}
+            {tab === "list" ? t("baseline.list") : t("baseline.graph")}
           </button>
         ))}
       </div>
 
       {activeTab === "list" ? (
         <>
-          <WorkSurface title="Functional pages">
+          <WorkSurface title={t("baseline.functionalPages")}>
             <div className="divide-y divide-zinc-200">
               {baseline.pages.map((page) => (
                 <article className="grid gap-3 py-4 lg:grid-cols-[16rem_minmax(0,1fr)_16rem]" key={page.id}>
@@ -156,14 +159,14 @@ export function BaselineContent({
                   </div>
                   <div data-page-content={page.id}>
                     <dl className="grid gap-2 text-sm text-zinc-700">
-                      <Fact label="Features" value={page.features || "Empty"} />
-                      <Fact label="Fields" value={page.fields || "Empty"} />
-                      <Fact label="Interactions" value={page.interactions || "Empty"} />
+                      <Fact label={t("baseline.features")} value={page.features || t("baseline.empty")} />
+                      <Fact label={t("baseline.fields")} value={page.fields || t("baseline.empty")} />
+                      <Fact label={t("baseline.interactions")} value={page.interactions || t("baseline.empty")} />
                     </dl>
                     <PageCopyTable copyState={pageCopyStates[page.id]} page={page} />
                   </div>
                   <div data-page-rail={page.id}>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Sources</p>
+                    <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("baseline.sources")}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {page.source_requirements.length > 0 ? (
                         page.source_requirements.map((requirementId) => (
@@ -172,16 +175,16 @@ export function BaselineContent({
                           </a>
                         ))
                       ) : (
-                        <span className="text-sm text-zinc-500">None</span>
+                        <span className="text-sm text-zinc-500">{t("baseline.none")}</span>
                       )}
                     </div>
-                    <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">Actions</p>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("baseline.actions")}</p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/image`}>
-                        Preview
+                        {t("action.preview")}
                       </a>
                       <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/annotations`}>
-                        Annotations
+                        {t("action.annotations")}
                       </a>
                     </div>
                   </div>
@@ -190,17 +193,17 @@ export function BaselineContent({
             </div>
           </WorkSurface>
 
-          <WorkSurface title="Navigation">
+          <WorkSurface title={t("requirement.navigation")}>
             {baseline.navigation.length === 0 ? (
-              <p className="text-sm text-zinc-500">No navigation edges are present.</p>
+              <p className="text-sm text-zinc-500">{t("baseline.emptyNavigation")}</p>
             ) : (
               <div className="divide-y divide-zinc-200">
                 {baseline.navigation.map((edge, index) => (
                   <div className="grid gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_12rem]" key={`${edge.from}-${edge.to}-${index}`}>
                     <span className="truncate font-mono text-zinc-700">{edge.from}</span>
-                    <span className="text-zinc-400">to</span>
+                    <span className="text-zinc-400">{t("common.to")}</span>
                     <span className="truncate font-mono text-zinc-700">{edge.to}</span>
-                    <span className="truncate text-zinc-500">{navigationEdgeLabel(edge)}</span>
+                    <span className="truncate text-zinc-500">{navigationEdgeLabel(edge, t)}</span>
                   </div>
                 ))}
               </div>
@@ -208,7 +211,7 @@ export function BaselineContent({
           </WorkSurface>
         </>
       ) : (
-        <WorkSurface title="Navigation graph">
+        <WorkSurface title={t("baseline.navigationGraph")}>
           <NavigationGraph pages={baseline.pages} navigation={baseline.navigation} />
         </WorkSurface>
       )}
@@ -217,6 +220,7 @@ export function BaselineContent({
 }
 
 function PageCopyTable({ copyState, page }: { copyState: PageCopyState | undefined; page: BaselinePage }) {
+  const t = useT();
   const routeCopy = copyState?.status === "ready" ? copyState.copy : undefined;
   const defaultCopy = routeCopy && routeCopy.default_language_copy.length > 0 ? routeCopy.default_language_copy : page.copy;
   const translations = routeCopy?.translations ?? [];
@@ -226,28 +230,28 @@ function PageCopyTable({ copyState, page }: { copyState: PageCopyState | undefin
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Copy</p>
-        {copyState?.status === "loading" ? <span className="text-xs text-zinc-500">Loading copy</span> : null}
+        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("baseline.copy")}</p>
+        {copyState?.status === "loading" ? <span className="text-xs text-zinc-500">{t("baseline.loadingCopy")}</span> : null}
       </div>
       {copyState?.status === "error" ? (
-        <p className="mt-2 text-sm text-red-700">{copyState.error.error_code} - Copy unavailable</p>
+        <p className="mt-2 text-sm text-red-700">{copyState.error.error_code} - {t("baseline.copyUnavailable")}</p>
       ) : null}
 
       {contexts.length === 0 ? (
-        <p className="mt-2 text-sm text-zinc-500">No copy entries are present.</p>
+        <p className="mt-2 text-sm text-zinc-500">{t("baseline.emptyCopyEntries")}</p>
       ) : (
         <div className="mt-2 overflow-x-auto rounded-md border border-zinc-200">
           <table className="min-w-full divide-y divide-zinc-200 text-left text-sm" data-copy-table={page.id}>
             <thead className="bg-zinc-50 text-xs font-semibold uppercase tracking-normal text-zinc-500">
               <tr>
-                <th className={tableHeaderClasses} scope="col">Context</th>
-                <th className={tableHeaderClasses} scope="col">Default copy</th>
+                <th className={tableHeaderClasses} scope="col">{t("baseline.tableContext")}</th>
+                <th className={tableHeaderClasses} scope="col">{t("baseline.defaultCopy")}</th>
                 {languages.map((language) => (
                   <th className={tableHeaderClasses} key={language} scope="col">
                     {language}
                   </th>
                 ))}
-                <th className={tableHeaderClasses} scope="col">Status</th>
+                <th className={tableHeaderClasses} scope="col">{t("baseline.status")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 bg-white">
@@ -266,10 +270,10 @@ function PageCopyTable({ copyState, page }: { copyState: PageCopyState | undefin
                     <td className={tableCellClasses}>
                       {outdated ? (
                         <span className="inline-flex rounded-md border border-amber-200 bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
-                          Outdated
+                          {t("baseline.outdated")}
                         </span>
                       ) : (
-                        <span className="text-xs text-zinc-500">Current</span>
+                        <span className="text-xs text-zinc-500">{t("baseline.current")}</span>
                       )}
                     </td>
                   </tr>
@@ -292,8 +296,8 @@ function Fact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function navigationEdgeLabel(edge: BaselineNavigationDisplayEdge): string {
-  return edge.trigger ?? edge.label ?? "No label";
+function navigationEdgeLabel(edge: BaselineNavigationDisplayEdge, t: (key: string) => string): string {
+  return edge.trigger ?? edge.label ?? t("baseline.noLabel");
 }
 
 function copyTextForContext(copy: CopyItem[], context: string): string {

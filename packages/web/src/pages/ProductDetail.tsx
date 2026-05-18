@@ -13,6 +13,7 @@ import {
   type RequirementWithDocument,
   type StyleMetadata
 } from "../api.js";
+import { useT } from "../LocaleContext.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge, type ConfigStatus } from "../components/StatusBadge.js";
 import { deriveDefaultLanguage } from "./ProductNew.js";
@@ -40,6 +41,7 @@ type ProductDetailState =
   | { baselineState: BaselineSummaryState; product: Product; requirementState: RequirementListState; status: "ready" };
 
 export function ProductDetail({ client = apiClient, hash = "", params }: ProductDetailProps) {
+  const t = useT();
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
@@ -123,15 +125,15 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
 
   if (state.status === "loading") {
     return (
-      <StatePanel state="loading" title="Product workspace">
-        Loading product record and requirement history.
+      <StatePanel state="loading" title={t("product.workspace")}>
+        {t("product.workspaceLoading")}
       </StatePanel>
     );
   }
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href="/products">Products</PrimaryActionLink>} state="error" title="Product unavailable">
+      <StatePanel action={<PrimaryActionLink href="/products">{t("action.products")}</PrimaryActionLink>} state="error" title={t("product.unavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -147,15 +149,15 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
         requirementError={state.requirementState.status === "error" ? state.requirementState.error : undefined}
       />
 
-      <WorkSurface title="Product configuration">
+      <WorkSurface title={t("product.configuration")}>
         <div className="grid gap-4 text-sm md:grid-cols-6">
-          <Fact label="Product ID" value={state.product.id} />
-          <Fact label="Platform" value={state.product.platform ?? "Not configured"} />
-          <Fact label="Style" value={state.product.style?.name ?? "Not configured"} />
-          <Fact label="Languages" value={languageSummary(state.product.languages)} />
-          <Fact label="Default language" value={state.product.default_language ?? "Not configured"} />
+          <Fact label={t("product.id")} value={state.product.id} />
+          <Fact label={t("product.platform")} value={state.product.platform ?? t("common.notConfigured")} />
+          <Fact label={t("product.style")} value={state.product.style?.name ?? t("common.notConfigured")} />
+          <Fact label={t("product.languages")} value={languageSummary(state.product.languages, t)} />
+          <Fact label={t("product.defaultLanguage")} value={state.product.default_language ?? t("common.notConfigured")} />
           <div>
-            <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Config status</p>
+            <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("product.configStatus")}</p>
             <div className="mt-2">
               <StatusBadge status={configStatus(state.product)} />
             </div>
@@ -174,15 +176,15 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
       ) : null}
 
       {state.requirementState.status === "error" ? (
-        <StatePanel state="error" title="Requirement list unavailable">
+        <StatePanel state="error" title={t("requirement.listUnavailable")}>
           {state.requirementState.error.error_code} - {state.requirementState.error.message}
         </StatePanel>
       ) : state.requirementState.requirements.length === 0 ? (
-        <StatePanel state="empty" title="No requirements">
-          Submitted and active requirement records will appear here.
+        <StatePanel state="empty" title={t("requirement.noRequirements")}>
+          {t("requirement.noRequirementsHelp")}
         </StatePanel>
       ) : (
-        <WorkSurface title="Requirement list">
+        <WorkSurface title={t("requirement.list")}>
           <div className="divide-y divide-zinc-200">
             {state.requirementState.requirements.map((requirement) => (
               <div className="grid gap-3 py-3 lg:grid-cols-[minmax(0,1fr)_8rem_9rem_8rem]" key={requirement.id}>
@@ -195,14 +197,16 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
                 <div className="flex items-center">
                   <StatusBadge status={requirement.status} />
                 </div>
-                <p className="self-center text-sm text-zinc-600">{requirement.pages.length} pages</p>
+                <p className="self-center text-sm text-zinc-600">
+                  {requirement.pages.length} {requirement.pages.length === 1 ? t("requirement.pageCountSingular") : t("requirement.pageCount")}
+                </p>
                 <button
                   className={secondaryButtonClasses}
                   disabled={requirement.status !== "active" || archiving === requirement.id}
                   onClick={() => void handleArchive(requirement.id)}
                   type="button"
                 >
-                  {archiving === requirement.id ? "Archiving" : "Archive"}
+                  {archiving === requirement.id ? t("action.archiving") : t("action.archive")}
                 </button>
               </div>
             ))}
@@ -215,22 +219,22 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
         id="new-requirement"
         tabIndex={-1}
       >
-        <WorkSurface title="New requirement">
+        <WorkSurface title={t("requirement.new")}>
           <form className="grid gap-4" onSubmit={handleCreateRequirement}>
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Title
+              {t("requirement.title")}
               <input
                 className={inputClasses}
                 name="requirement_title"
                 onChange={(event) => setTitle(event.target.value)}
-                placeholder="Checkout update"
+                placeholder={t("requirement.titlePlaceholder")}
                 value={title}
               />
             </label>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-zinc-500">{canCreateRequirement ? "Title is ready." : "Submit requires a title."}</p>
+              <p className="text-sm text-zinc-500">{canCreateRequirement ? t("requirement.titleReady") : t("requirement.createNeedsTitle")}</p>
               <button className={primaryButtonClasses} disabled={!canCreateRequirement} type="submit">
-                {creating ? "Creating" : "Create requirement"}
+                {creating ? t("action.creating") : t("action.createRequirement")}
               </button>
             </div>
           </form>
@@ -272,32 +276,35 @@ export function ProductDetailSummaryPanels({
   requirementCount: number;
   requirementError?: ApiErrorInfo;
 }) {
+  const t = useT();
+
   return (
     <div className="grid gap-3 lg:grid-cols-3">
       <section className={summaryPanelClasses}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Baseline</p>
+            <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("requirement.baseline")}</p>
             {baselineState.status === "ready" ? (
               <p className="mt-2 text-sm font-semibold text-zinc-950">
-                {baselineState.baseline.pages.length} {baselineState.baseline.pages.length === 1 ? "page" : "pages"}
+                {baselineState.baseline.pages.length} {baselineState.baseline.pages.length === 1 ? t("requirement.pageCountSingular") : t("requirement.pageCount")}
               </p>
             ) : (
               <p className="mt-2 text-sm font-semibold text-red-700">{baselineState.error.error_code}</p>
             )}
           </div>
-          <PrimaryActionLink href={`/products/${productId}/baseline`}>Baseline</PrimaryActionLink>
+          <PrimaryActionLink href={`/products/${productId}/baseline`}>{t("action.baseline")}</PrimaryActionLink>
         </div>
         {baselineState.status === "ready" ? (
           <p className="mt-2 text-sm text-zinc-600">
-            {baselineState.baseline.navigation.length} {baselineState.baseline.navigation.length === 1 ? "navigation edge" : "navigation edges"}.
+            {baselineState.baseline.navigation.length}{" "}
+            {baselineState.baseline.navigation.length === 1 ? t("product.baselineEdgeSingular") : t("product.baselineEdges")}.
           </p>
         ) : (
           <p className="mt-2 text-sm text-red-700">{baselineState.error.message}</p>
         )}
       </section>
       <section className={summaryPanelClasses}>
-        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Requirements</p>
+        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("requirement.records")}</p>
         {requirementError ? (
           <>
             <p className="mt-2 text-sm font-semibold text-red-700">{requirementError.error_code}</p>
@@ -306,18 +313,18 @@ export function ProductDetailSummaryPanels({
         ) : (
           <>
             <p className="mt-2 text-sm font-semibold text-zinc-950">{requirementCount}</p>
-            <p className="mt-1 text-sm text-zinc-600">Records loaded for this product.</p>
+            <p className="mt-1 text-sm text-zinc-600">{t("requirement.loadedForProduct")}</p>
           </>
         )}
       </section>
       {actionError ? (
-        <StatePanel state="error" title="Action result">
+        <StatePanel state="error" title={t("requirement.actionResult")}>
           {actionError.error_code} - {actionError.message}
         </StatePanel>
       ) : (
         <section className={summaryPanelClasses}>
-          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Archive gate</p>
-          <p className="mt-2 text-sm text-zinc-600">Archive is available only for active requirements.</p>
+          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("product.archiveGate")}</p>
+          <p className="mt-2 text-sm text-zinc-600">{t("product.archiveGateHelp")}</p>
         </section>
       )}
     </div>
@@ -337,6 +344,7 @@ function ProductConfigurationForm({
   product: Product;
   productId: string;
 }) {
+  const t = useT();
   const [defaultLanguage, setDefaultLanguage] = useState<Language | "">(
     deriveDefaultLanguage(product.languages ?? [], product.default_language)
   );
@@ -414,27 +422,27 @@ function ProductConfigurationForm({
   }
 
   return (
-    <WorkSurface title="Complete configuration">
+    <WorkSurface title={t("product.completeConfiguration")}>
       <form className="grid gap-4" data-product-config-form="true" onSubmit={handleSubmit}>
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="grid gap-1 text-sm font-medium text-zinc-700">
-            Platform
+            {t("product.platform")}
             <select
               className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
               name="platform"
               onChange={(event) => setPlatform(event.target.value as Platform | "")}
               value={platform}
             >
-              <option value="">Select platform</option>
+              <option value="">{t("product.selectPlatform")}</option>
               {platformOptions.map((option) => (
                 <option key={option.value} value={option.value}>
-                  {option.label}
+                  {t(option.label)}
                 </option>
               ))}
             </select>
           </label>
           <label className="grid gap-1 text-sm font-medium text-zinc-700">
-            Style
+            {t("product.style")}
             <select
               className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
               disabled={stylesLoading || !!listError}
@@ -442,7 +450,7 @@ function ProductConfigurationForm({
               onChange={(event) => setStyleName(event.target.value)}
               value={styleName}
             >
-              <option value="">{stylesLoading ? "Loading styles" : "Select style"}</option>
+              <option value="">{stylesLoading ? t("product.stylesLoading") : t("product.selectStyle")}</option>
               {styleOptions.map((style) => (
                 <option key={style.name} value={style.name}>
                   {style.name}
@@ -453,7 +461,7 @@ function ProductConfigurationForm({
         </div>
 
         <fieldset className="grid gap-2">
-          <legend className="text-sm font-medium text-zinc-700">Languages</legend>
+          <legend className="text-sm font-medium text-zinc-700">{t("product.languages")}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {languageOptions.map((language) => (
               <label
@@ -476,7 +484,7 @@ function ProductConfigurationForm({
 
         {selectedLanguages.length > 1 ? (
           <label className="grid gap-1 text-sm font-medium text-zinc-700">
-            Default language
+            {t("product.defaultLanguage")}
             <select
               className={inputClasses}
               name="default_language"
@@ -497,7 +505,7 @@ function ProductConfigurationForm({
 
         <div className="flex justify-end">
           <button className={primaryButtonClasses} disabled={!canSubmit} type="submit">
-            {saving ? "Saving" : "Save configuration"}
+            {saving ? t("action.saving") : t("action.saveConfiguration")}
           </button>
         </div>
       </form>
@@ -541,9 +549,9 @@ function hasProductConfiguration(product: Product): boolean {
   );
 }
 
-function languageSummary(languages: Language[] | undefined): string {
+function languageSummary(languages: Language[] | undefined, t: (key: string) => string): string {
   if (!languages || languages.length === 0) {
-    return "Not configured";
+    return t("product.languageSummaryEmpty");
   }
   return languages.join(", ");
 }
@@ -588,10 +596,10 @@ function canUseDom(): boolean {
 }
 
 const platformOptions: Array<{ label: string; value: Platform }> = [
-  { label: "Web", value: "web" },
-  { label: "Mobile", value: "mobile" },
-  { label: "Desktop", value: "desktop" },
-  { label: "Tablet", value: "tablet" }
+  { label: "platform.web", value: "web" },
+  { label: "platform.mobile", value: "mobile" },
+  { label: "platform.desktop", value: "desktop" },
+  { label: "platform.tablet", value: "tablet" }
 ];
 
 const inputClasses =

@@ -9,6 +9,7 @@ import {
   type ProductIndexEntry,
   type RequirementWithDocument
 } from "../api.js";
+import { useT } from "../LocaleContext.js";
 import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
 import { StatusBadge, type ConfigStatus } from "../components/StatusBadge.js";
 
@@ -41,6 +42,7 @@ type LoadState =
   | { data: ProductListData; status: "ready" };
 
 export function ProductList() {
+  const t = useT();
   const [state, setState] = useState<LoadState>({ status: "loading" });
 
   useEffect(() => {
@@ -65,15 +67,15 @@ export function ProductList() {
 
   if (state.status === "loading") {
     return (
-      <StatePanel state="loading" title="Product index">
-        Loading products, configuration state, and latest requirement status.
+      <StatePanel state="loading" title={t("product.index")}>
+        {t("product.indexLoading")}
       </StatePanel>
     );
   }
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href="/products/new">New product</PrimaryActionLink>} state="error" title="Product index unavailable">
+      <StatePanel action={<PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>} state="error" title={t("product.indexUnavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -105,11 +107,13 @@ export async function loadProductListData(client: Pick<FormaApiClient, "getProdu
 }
 
 export function ProductListContent({ productDetails = {}, products, requirementSummaries }: ProductListContentProps) {
+  const t = useT();
+
   if (products.length === 0) {
     return (
       <div className="space-y-5">
-        <StatePanel action={<PrimaryActionLink href="/products/new">New product</PrimaryActionLink>} state="empty" title="No products">
-          Product records will appear here after creation.
+        <StatePanel action={<PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>} state="empty" title={t("product.noProducts")}>
+          {t("product.noProductsHelp")}
         </StatePanel>
       </div>
     );
@@ -118,8 +122,8 @@ export function ProductListContent({ productDetails = {}, products, requirementS
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm leading-6 text-zinc-600">{products.length} products loaded. Requirement summaries are isolated per product.</p>
-        <PrimaryActionLink href="/products/new">New product</PrimaryActionLink>
+        <p className="text-sm leading-6 text-zinc-600">{products.length} {t("product.loaded")}</p>
+        <PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -129,6 +133,7 @@ export function ProductListContent({ productDetails = {}, products, requirementS
             key={product.id}
             product={product}
             requirementSummary={requirementSummaries[product.id]}
+            t={t}
           />
         ))}
       </div>
@@ -139,11 +144,13 @@ export function ProductListContent({ productDetails = {}, products, requirementS
 function ProductCard({
   detail,
   product,
-  requirementSummary
+  requirementSummary,
+  t
 }: {
   detail?: ProductDetailSummary;
   product: ProductIndexEntry;
   requirementSummary?: RequirementSummary;
+  t: (key: string) => string;
 }) {
   const detailProduct = detail?.product;
   const configStatus = getConfigStatus(detailProduct);
@@ -154,37 +161,37 @@ function ProductCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="truncate text-sm font-semibold tracking-normal text-zinc-950">{product.name}</h2>
-          <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600">{product.description || "No description"}</p>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600">{product.description || t("product.noDescription")}</p>
         </div>
         <StatusBadge status={configStatus} />
       </div>
 
       <dl className="mt-4 grid gap-2 text-sm">
         <div className="flex items-center justify-between gap-3">
-          <dt className="text-zinc-500">Product ID</dt>
+          <dt className="text-zinc-500">{t("product.id")}</dt>
           <dd className="font-mono text-xs text-zinc-700">{product.id}</dd>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <dt className="text-zinc-500">Requirements</dt>
-          <dd className="font-medium text-zinc-800">{requirementLabel(requirementSummary)}</dd>
+          <dt className="text-zinc-500">{t("requirement.records")}</dt>
+          <dd className="font-medium text-zinc-800">{requirementLabel(requirementSummary, t)}</dd>
         </div>
         <div className="flex items-center justify-between gap-3">
-          <dt className="text-zinc-500">Latest status</dt>
+          <dt className="text-zinc-500">{t("product.latestStatus")}</dt>
           <dd>{latest ? <StatusBadge status={latest.status} /> : <StatusBadge status="not_loaded" />}</dd>
         </div>
       </dl>
 
-      {detail?.error ? <p className="mt-3 text-xs leading-5 text-red-700">{detail.error.error_code} - Config request failed</p> : null}
+      {detail?.error ? <p className="mt-3 text-xs leading-5 text-red-700">{detail.error.error_code} - {t("product.configRequestFailed")}</p> : null}
       {requirementSummary?.error ? (
-        <p className="mt-3 text-xs leading-5 text-red-700">{requirementSummary.error.error_code} - Requirement status request failed</p>
+        <p className="mt-3 text-xs leading-5 text-red-700">{requirementSummary.error.error_code} - {t("requirement.requestFailed")}</p>
       ) : null}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <a className={secondaryLinkClasses} href={`/products/${product.id}`}>
-          Open
+          {t("action.open")}
         </a>
         <a className={secondaryLinkClasses} href={latest ? `/products/${product.id}/baseline` : `/products/${product.id}#new-requirement`}>
-          {latest ? "Baseline" : "Create requirement"}
+          {latest ? t("action.baseline") : t("action.createRequirement")}
         </a>
       </div>
     </article>
@@ -222,12 +229,12 @@ function requirementTimestamp(requirement: RequirementWithDocument): number {
   return Date.parse(requirement.updated_at || requirement.created_at) || 0;
 }
 
-function requirementLabel(summary: RequirementSummary | undefined): string {
+function requirementLabel(summary: RequirementSummary | undefined, t: (key: string) => string): string {
   if (!summary) {
-    return "not loaded";
+    return t("status.not_loaded").toLowerCase();
   }
 
-  return `${summary.count} ${summary.count === 1 ? "requirement" : "requirements"}`;
+  return `${summary.count} ${summary.count === 1 ? t("requirement.recordCountSingular") : t("requirement.recordCount")}`;
 }
 
 function getConfigStatus(product: Product | undefined): ConfigStatus {

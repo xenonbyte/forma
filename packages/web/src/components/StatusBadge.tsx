@@ -1,4 +1,5 @@
 import type { DesignStatus, RequirementStatus } from "../api.js";
+import { useT } from "../LocaleContext.js";
 
 export type ConfigStatus = "configuration_incomplete" | "configured" | "initialized" | "not_initialized" | "not_loaded" | "unconfigured";
 export type StatusBadgeStatus = ConfigStatus | DesignStatus | RequirementStatus;
@@ -24,26 +25,12 @@ const statusTone: Record<StatusBadgeStatus, string> = {
   unconfigured: "border-red-200 bg-red-50 text-red-700"
 };
 
-const statusLabel: Record<StatusBadgeStatus, string> = {
-  active: "Active",
-  archived: "Archived",
-  configuration_incomplete: "Configuration incomplete",
-  configured: "Configured",
-  done: "Done",
-  empty: "Empty",
-  expired: "Expired",
-  initialized: "Initialized",
-  not_initialized: "Not initialized",
-  not_loaded: "Not loaded",
-  pending: "Pending",
-  submitted: "Submitted",
-  unconfigured: "Unconfigured"
-};
-
 export function StatusBadge({ label, status }: StatusBadgeProps) {
+  const t = useT();
+
   return (
     <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold leading-none ${statusTone[status]}`}>
-      {label ?? statusLabel[status]}
+      {label ?? t(`status.${status}`)}
     </span>
   );
 }

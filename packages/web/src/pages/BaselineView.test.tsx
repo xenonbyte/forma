@@ -6,9 +6,11 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import * as baselineView from "./BaselineView.js";
 import { BaselineView } from "./BaselineView.js";
 import type { FormaApiClient, PageCopyPayload, ProductBaseline } from "../api.js";
+import { localeStorageKey, setLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -24,6 +26,8 @@ afterEach(() => {
   for (const container of containers.splice(0)) {
     container.remove();
   }
+  window.localStorage.clear();
+  setLocale("en");
 });
 
 describe("BaselineContent", () => {
@@ -125,6 +129,38 @@ describe("BaselineContent", () => {
 
     expect(container.textContent).toContain("Navigation graph");
     expect(container.textContent).toContain("Checkout");
+  });
+
+  it("updates static baseline text when the persisted locale changes", async () => {
+    expect(BaselineContent).toBeTypeOf("function");
+    if (!BaselineContent) {
+      return;
+    }
+
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <LocaleProvider>
+          <LocaleSwitch />
+          <BaselineContent baseline={baselineFixture} client={createClient({ baseline: baselineFixture })} productId="P-123abc" />
+        </LocaleProvider>
+      );
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Functional pages");
+    expect(container.textContent).toContain("Sources");
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>("[data-locale-zh]"), "Chinese locale button").click();
+      await flushPromises();
+    });
+
+    expect(window.localStorage.getItem(localeStorageKey)).toBe("zh");
+    expect(container.textContent).toContain("功能页面");
+    expect(container.textContent).toContain("来源");
+    expect(container.textContent).not.toContain("Functional pages");
   });
 });
 
@@ -342,6 +378,15 @@ function createClient({
       return pageCopies[pageId] ?? { page_id: pageId, default_language_copy: [], translations: [] };
     })
   } satisfies Pick<FormaApiClient, "getBaseline" | "getPageCopy">;
+}
+
+function LocaleSwitch() {
+  const { setLocale } = useLocale();
+  return (
+    <button data-locale-zh="" onClick={() => setLocale("zh")} type="button">
+      中
+    </button>
+  );
 }
 
 function createTestRoot() {

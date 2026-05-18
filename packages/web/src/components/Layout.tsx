@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-import { useLocale } from "../LocaleContext.js";
-import { t, type Locale } from "../i18n.js";
+import { useLocale, useT } from "../LocaleContext.js";
+import type { Locale } from "../i18n.js";
 
 export interface NavItem {
   href: string;
@@ -29,6 +29,7 @@ const focusClasses =
 
 export function Layout({ children, currentPathname, navItems, routeContext, title }: LayoutProps) {
   const { locale, setLocale } = useLocale();
+  const tx = useT();
 
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-zinc-950">
@@ -41,7 +42,7 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
             >
               Forma
             </a>
-            <p className="mt-1 text-xs font-medium text-zinc-500">Admin workbench</p>
+            <p className="mt-1 text-xs font-medium text-zinc-500">{tx("app.adminWorkbench")}</p>
           </div>
 
           <nav aria-label="Primary" className="flex gap-1 overflow-x-auto px-3 py-3 md:block md:space-y-1 md:overflow-visible">
@@ -58,8 +59,8 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
                   href={item.href}
                   key={item.href}
                 >
-                  <span className="block text-sm font-medium">{navLabel(item)}</span>
-                  <span className="mt-0.5 block text-xs text-zinc-500">{navMeta(item)}</span>
+                  <span className="block text-sm font-medium">{navLabel(item, tx)}</span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{navMeta(item, tx)}</span>
                 </a>
               );
             })}
@@ -70,8 +71,8 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
           <header className="sticky top-0 z-10 border-b border-zinc-200 bg-[#fdfdfd]/95 px-4 py-3 backdrop-blur md:px-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">{routeLabel(routeContext)}</p>
-                <h1 className="mt-1 truncate text-xl font-semibold tracking-normal text-zinc-950">{routeLabel(title)}</h1>
+                <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">{routeLabel(routeContext, tx)}</p>
+                <h1 className="mt-1 truncate text-xl font-semibold tracking-normal text-zinc-950">{routeLabel(title, tx)}</h1>
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
                 <div className="inline-flex rounded-md border border-zinc-200 bg-white p-0.5" aria-label="Language">
@@ -89,8 +90,8 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
                     </button>
                   ))}
                 </div>
-                <span className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5">Client shell</span>
-                <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-zinc-600">Idle</span>
+                <span className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5">{tx("app.clientShell")}</span>
+                <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-zinc-600">{tx("app.idle")}</span>
               </div>
             </div>
           </header>
@@ -108,13 +109,14 @@ const languageChoices: Array<{ label: string; value: Locale }> = [
 ];
 
 export function StatePanel({ action, children, state, title }: StatePanelProps) {
+  const tx = useT();
   const tone = stateTone[state];
 
   return (
     <section className={`rounded-lg border ${tone.panel} p-4 shadow-sm`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className={`text-xs font-semibold uppercase tracking-normal ${tone.label}`}>{state}</p>
+          <p className={`text-xs font-semibold uppercase tracking-normal ${tone.label}`}>{tx(`state.${state}`)}</p>
           <h2 className="mt-1 text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
         </div>
         {action}
@@ -150,7 +152,7 @@ function isActiveRoute(currentPathname: string, href: string): boolean {
   return currentPathname === href || currentPathname.startsWith(`${href}/`);
 }
 
-function navLabel(item: NavItem): string {
+function navLabel(item: NavItem, t: (key: string) => string): string {
   if (item.href === "/products") {
     return t("nav.products");
   }
@@ -160,7 +162,7 @@ function navLabel(item: NavItem): string {
   return item.label;
 }
 
-function navMeta(item: NavItem): string {
+function navMeta(item: NavItem, t: (key: string) => string): string {
   if (item.href === "/products") {
     return t("nav.products.meta");
   }
@@ -170,7 +172,7 @@ function navMeta(item: NavItem): string {
   return item.meta;
 }
 
-function routeLabel(value: string): string {
+function routeLabel(value: string, t: (key: string) => string): string {
   if (value === "Products") {
     return t("nav.products");
   }

@@ -4,9 +4,11 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { ProductNew } from "./ProductNew.js";
 import * as productNew from "./ProductNew.js";
 import { ApiError, type FormaApiClient, type Language, type Product, type StyleMetadata } from "../api.js";
+import { localeStorageKey, setLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -60,6 +62,8 @@ afterEach(() => {
     container.remove();
   }
   vi.restoreAllMocks();
+  window.localStorage.clear();
+  setLocale("en");
 });
 
 describe("deriveDefaultLanguage", () => {
@@ -79,6 +83,34 @@ describe("deriveDefaultLanguage", () => {
 });
 
 describe("ProductNew", () => {
+  it("updates static form text when the persisted locale changes", async () => {
+    const client = createClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <LocaleProvider>
+          <LocaleSwitch />
+          <ProductNew client={client} navigate={vi.fn()} />
+        </LocaleProvider>
+      );
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Product details");
+    expect(container.textContent).toContain("Required fields");
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>("[data-locale-zh]"), "Chinese locale button").click();
+      await flushPromises();
+    });
+
+    expect(window.localStorage.getItem(localeStorageKey)).toBe("zh");
+    expect(container.textContent).toContain("产品详情");
+    expect(container.textContent).toContain("必填字段");
+    expect(container.textContent).not.toContain("Product details");
+  });
+
   it("keeps submit disabled until required product configuration is complete", async () => {
     const client = createClient();
     const { container, root } = createTestRoot();
@@ -304,6 +336,15 @@ describe("ProductNew", () => {
     expect(defaultLanguage.value).toBe("zh-CN");
   });
 });
+
+function LocaleSwitch() {
+  const { setLocale } = useLocale();
+  return (
+    <button data-locale-zh="" onClick={() => setLocale("zh")} type="button">
+      中
+    </button>
+  );
+}
 
 function createClient() {
   return {
