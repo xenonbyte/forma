@@ -37,6 +37,37 @@ describe("requirement and baseline services", () => {
     expect(baseline.pages[0].id).toBe("login");
   });
 
+  it("reads stored product rules from the baseline rules file", async () => {
+    const { store, product } = await createConfiguredStore();
+    await writeYamlAtomic(join(store.home, "data", product.id, "baseline", "rules.yaml"), {
+      rules: [
+        {
+          id: "R-12345678-rule-001",
+          source_requirement: "R-12345678",
+          given: "用户在登录页",
+          when: "点击登录",
+          then: "进入首页"
+        }
+      ]
+    });
+
+    await expect(store.requirements.getProductRules(product.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: "R-12345678-rule-001",
+        source_requirement: "R-12345678",
+        given: "用户在登录页",
+        when: "点击登录",
+        then: "进入首页"
+      })
+    ]);
+  });
+
+  it("returns an empty rule list when the baseline rules file is missing", async () => {
+    const { store, product } = await createConfiguredStore();
+
+    await expect(store.requirements.getProductRules(product.id)).resolves.toEqual([]);
+  });
+
   it("forces submitted page design statuses to pending", async () => {
     const { store, product } = await createConfiguredStore();
     const req = await store.requirements.createEmptyRequirement(product.id, "Login");

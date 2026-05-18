@@ -35,9 +35,27 @@ export const requirementSchema = z.object({
   navigation: z.array(z.lazy(() => baselineNavigationSchema))
 }).strict();
 
+const ruleInputSchema = z.object({
+  id: z.string().min(1),
+  page_id: z.string().min(1).optional(),
+  given: z.string().min(1),
+  when: z.string().min(1),
+  then: z.string().min(1),
+  replaces_rule_id: z.string().optional()
+}).strict();
+
+const storedRuleSchema = ruleInputSchema.omit({ replaces_rule_id: true }).extend({
+  source_requirement: requirementIdSchema
+}).strict();
+
+const rulesFileSchema = z.object({
+  rules: z.array(storedRuleSchema)
+}).strict();
+
 export type RequirementPage = z.infer<typeof requirementPageSchema>;
 export type Requirement = z.infer<typeof requirementSchema>;
 export type RequirementWithDocument = Requirement & { document_md: string };
+export type StoredRule = z.infer<typeof storedRuleSchema>;
 
 export interface SubmitRequirementInput {
   requirement_id: string;
@@ -192,6 +210,11 @@ export class RequirementService {
     return latest;
   }
 
+  async getProductRules(productId: string): Promise<StoredRule[]> {
+    await this.products.getProduct(productId);
+    return this.readRules(productId);
+  }
+
   private async withDocument(requirement: Requirement): Promise<RequirementWithDocument> {
     return { ...requirement, document_md: await this.readDocument(requirement.product_id, requirement.id) };
   }
@@ -250,6 +273,62 @@ export class RequirementService {
 
   private baselineFile(productId: string): string {
     return join(this.dataDir, productId, "baseline", "baseline.yaml");
+  }
+
+  private rulesFile(productId: string): string {
+    return join(this.dataDir, productId, "baseline", "rules.yaml");
+  }
+
+  private async readRules(productId: string): Promise<StoredRule[]> {
+    const file = this.rulesFile(productId);
+    if (!(await fileExists(file))) {
+      return [];
+    }
+
+    return (await readYamlAs(file, rulesFileSchema)).rules;
+  }
+
+  private async writeRulesForRequirement(
+    productId: string,
+    requirementId: string,
+    rules: z.infer<typeof ruleInputSchema>[],
+    removeRuleIds: string[],
+    removePageIds: string[]
+  ): Promise<void> {
+    const parsedRequirementId = requirementIdSchema.parse(requirementId);
+    const incomingRules = rules.map((rule) => ruleInputSchema.parse(rule));
+    const replacementRuleIds = new Set(
+      incomingRules.flatMap((rule) => rule.replaces_rule_id ? [rule.replaces_rule_id] : [])
+    );
+    const explicitRemoveRuleIds = new Set(removeRuleIds);
+    const explicitRemovePageIds = new Set(removePageIds);
+
+    const retainedRules = (await this.readRules(productId)).filter((rule) => {
+      if (rule.source_requirement === parsedRequirementId) {
+        return false;
+      }
+      if (replacementRuleIds.has(rule.id) || explicitRemoveRuleIds.has(rule.id)) {
+        return false;
+      }
+      if (rule.page_id && explicitRemovePageIds.has(rule.page_id)) {
+        return false;
+      }
+      return true;
+    });
+
+    const nextRules = [
+      ...retainedRules,
+      ...incomingRules.map((rule) => {
+        const { replaces_rule_id: _replacesRuleId, ...storedRule } = rule;
+        return storedRuleSchema.parse({
+          ...storedRule,
+          id: `${parsedRequirementId}-${rule.id}`,
+          source_requirement: parsedRequirementId
+        });
+      })
+    ];
+
+    await writeYamlAtomic(this.rulesFile(productId), { rules: nextRules });
   }
 
   private async commitRequirementAndBaseline(requirement: Requirement, documentMd: string): Promise<void> {
