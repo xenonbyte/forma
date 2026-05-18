@@ -3,7 +3,7 @@ import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { BaselineService, baselineNavigationSchema } from "./baseline.js";
-import { copyItemSchema } from "./copy.js";
+import { copyItemSchema, type CopyByPage, type CopyService, type PageTranslation } from "./copy.js";
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
 import type { ProductService } from "./product.js";
@@ -29,10 +29,23 @@ export const requirementSchema = z.object({
   product_id: z.string().regex(/^P-[a-f0-9]{6}$/),
   title: z.string().min(1),
   status: z.enum(requirementStatuses),
+  ui_affected: z.boolean().default(true),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
   pages: z.array(requirementPageSchema),
   navigation: z.array(z.lazy(() => baselineNavigationSchema))
+}).strict();
+
+const requirementPageInputSchema = z.object({
+  page_id: z.string().min(1),
+  name: z.string().min(1),
+  baseline_page: z.string().min(1),
+  features: z.string().optional(),
+  copy: z.array(z.lazy(() => copyItemSchema)).optional(),
+  fields: z.string().optional(),
+  interactions: z.string().optional(),
+  change_type: z.enum(["new", "patch", "rebuild"]),
+  change_summary: z.string().optional()
 }).strict();
 
 const ruleInputSchema = z.object({
@@ -52,10 +65,36 @@ const rulesFileSchema = z.object({
   rules: z.array(storedRuleSchema)
 }).strict();
 
+const translationEntryInputSchema = z.object({
+  context: z.string().min(1),
+  texts: z.record(z.string(), z.string()),
+  outdated: z.boolean().optional()
+}).strict();
+
+const pageTranslationInputSchema = z.object({
+  page_id: z.string().min(1),
+  entries: z.array(translationEntryInputSchema)
+}).strict();
+
+const saveRequirementInputSchema = z.object({
+  requirement_id: requirementIdSchema,
+  document_md: z.string(),
+  ui_affected: z.boolean().default(true),
+  pages: z.array(requirementPageInputSchema).default([]),
+  navigation: z.array(z.lazy(() => baselineNavigationSchema)).default([]),
+  translations: z.array(pageTranslationInputSchema).default([]),
+  rules: z.array(ruleInputSchema).default([]),
+  remove_rule_ids: z.array(z.string().min(1)).default([]),
+  remove_page_ids: z.array(z.string().min(1)).default([])
+}).strict();
+
 export type RequirementPage = z.infer<typeof requirementPageSchema>;
 export type Requirement = z.infer<typeof requirementSchema>;
 export type RequirementWithDocument = Requirement & { document_md: string };
 export type StoredRule = z.infer<typeof storedRuleSchema>;
+export type SaveRequirementInput = z.input<typeof saveRequirementInputSchema>;
+
+type ParsedSaveRequirementInput = z.infer<typeof saveRequirementInputSchema>;
 
 export interface SubmitRequirementInput {
   requirement_id: string;
@@ -72,24 +111,33 @@ export interface RequirementServiceOptions {
   home: string;
   products: ProductService;
   baseline: BaselineService;
+  copy: CopyService;
 }
 
 interface RequirementServiceTestHooks {
   afterBaselineUpdate?(): Promise<void> | void;
+  afterTranslationsWrite?(): Promise<void> | void;
   afterDocumentWrite?(): Promise<void> | void;
+  afterRulesWrite?(): Promise<void> | void;
 }
 
 export class RequirementService {
   private readonly dataDir: string;
   private readonly products: ProductService;
   private readonly baseline: BaselineService;
+  private readonly copy: CopyService;
   private testHooks: RequirementServiceTestHooks;
 
   constructor(options: RequirementServiceOptions) {
     this.dataDir = join(options.home, "data");
     this.products = options.products;
     this.baseline = options.baseline;
+    this.copy = options.copy;
     this.testHooks = {};
+  }
+
+  setTestHooksForUnitTests(hooks: RequirementServiceTestHooks): void {
+    this.testHooks = hooks;
   }
 
   async createEmptyRequirement(productId: string, title: string): Promise<Requirement> {
@@ -101,6 +149,7 @@ export class RequirementService {
       product_id: productId,
       title,
       status: "empty",
+      ui_affected: true,
       created_at: now,
       updated_at: now,
       pages: [],
@@ -109,6 +158,35 @@ export class RequirementService {
 
     await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
     return requirement;
+  }
+
+  async saveRequirement(input: SaveRequirementInput): Promise<Requirement> {
+    const parsed = saveRequirementInputSchema.parse(input);
+    const current = await this.readRequirementById(parsed.requirement_id);
+    if (current.status === "archived") {
+      throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
+        requirement_id: current.id,
+        status: current.status
+      });
+    }
+
+    assertDocument(parsed.document_md);
+    if (!parsed.ui_affected) {
+      return this.doLogicOnlyUpdate(current, parsed);
+    }
+
+    assertPages(parsed.pages);
+    if (current.status === "empty") {
+      return this.doFirstSubmit(current, parsed);
+    }
+    if (current.status === "submitted" || current.status === "active") {
+      return this.doPageUpdate(current, parsed);
+    }
+
+    throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
+      requirement_id: current.id,
+      status: current.status
+    });
   }
 
   async submitRequirement(input: SubmitRequirementInput): Promise<Requirement> {
@@ -201,8 +279,8 @@ export class RequirementService {
 
   async getLatestRequirement(productId: string): Promise<Requirement> {
     await this.products.getProduct(productId);
-    const requirements = await this.readProductRequirements(productId);
-    const latest = requirements.sort(compareCreatedAtDesc)[0];
+    const requirements = (await this.readProductRequirements(productId)).filter((requirement) => requirement.status !== "archived");
+    const latest = requirements.sort(compareUpdatedAtDesc)[0];
     if (!latest) {
       throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found", { product_id: productId });
     }
@@ -263,6 +341,67 @@ export class RequirementService {
     return readFile(file, "utf8");
   }
 
+  private async doFirstSubmit(current: Requirement, input: ParsedSaveRequirementInput): Promise<Requirement> {
+    const removePageIds = new Set(input.remove_page_ids);
+    const pages = input.pages
+      .filter((page) => !removePageIds.has(page.page_id))
+      .map((page) => requirementPageSchema.parse({ ...stripPageInputMetadata(page), design_status: "pending" }));
+    assertPages(pages);
+    const next = requirementSchema.parse({
+      ...current,
+      status: resolveRequirementStatus(pages),
+      ui_affected: true,
+      updated_at: new Date().toISOString(),
+      pages,
+      navigation: filterRemovedNavigation(input.navigation, current.pages, pages, removePageIds)
+    });
+
+    await this.commitWithBaseline(current, next, input);
+    return next;
+  }
+
+  private async doPageUpdate(current: Requirement, input: ParsedSaveRequirementInput): Promise<Requirement> {
+    const removePageIds = new Set(input.remove_page_ids);
+    const currentPagesById = new Map(current.pages.map((page) => [page.page_id, page]));
+    const inputPageIds = new Set(input.pages.map((page) => page.page_id));
+    const changedPages = input.pages
+      .filter((page) => !removePageIds.has(page.page_id))
+      .map((page) => {
+        const currentPage = currentPagesById.get(page.page_id);
+        return requirementPageSchema.parse({
+          ...currentPage,
+          ...stripPageInputMetadata(page),
+          design_status: resolveDesignStatus(page.change_type)
+        });
+      });
+    const unchangedPages = current.pages.filter((page) => !inputPageIds.has(page.page_id) && !removePageIds.has(page.page_id));
+    const pages = [...changedPages, ...unchangedPages];
+    assertPages(pages);
+    const next = requirementSchema.parse({
+      ...current,
+      status: resolveRequirementStatus(pages),
+      ui_affected: true,
+      updated_at: new Date().toISOString(),
+      pages,
+      navigation: filterRemovedNavigation(input.navigation, current.pages, pages, removePageIds)
+    });
+
+    await this.commitWithBaseline(current, next, input);
+    return next;
+  }
+
+  private async doLogicOnlyUpdate(current: Requirement, input: ParsedSaveRequirementInput): Promise<Requirement> {
+    const next = requirementSchema.parse({
+      ...current,
+      status: current.pages.length === 0 || current.pages.every((page) => page.design_status === "done") ? "active" : current.status,
+      ui_affected: false,
+      updated_at: new Date().toISOString()
+    });
+
+    await this.commitLogicOnly(next, input);
+    return next;
+  }
+
   private requirementFile(productId: string, requirementId: string): string {
     return join(this.dataDir, productId, requirementId, "requirement.yaml");
   }
@@ -277,6 +416,10 @@ export class RequirementService {
 
   private rulesFile(productId: string): string {
     return join(this.dataDir, productId, "baseline", "rules.yaml");
+  }
+
+  private translationsFile(productId: string, requirementId: string): string {
+    return join(this.dataDir, productId, requirementId, "copy-translations.yaml");
   }
 
   private async readRules(productId: string): Promise<StoredRule[]> {
@@ -356,6 +499,90 @@ export class RequirementService {
     }
   }
 
+  private async commitWithBaseline(
+    current: Requirement,
+    requirement: Requirement,
+    input: ParsedSaveRequirementInput
+  ): Promise<void> {
+    const files = [
+      this.requirementFile(requirement.product_id, requirement.id),
+      this.documentFile(requirement.product_id, requirement.id),
+      this.translationsFile(requirement.product_id, requirement.id),
+      this.baselineFile(requirement.product_id),
+      this.rulesFile(requirement.product_id)
+    ];
+    const product = await this.products.getProduct(requirement.product_id);
+    const mergedTranslations = await this.mergedTranslationsForUiSave(current, requirement, input.translations, product.languages?.length === 1);
+    const snapshots = await snapshotFiles(files);
+
+    try {
+      await this.baseline.updateFromRequirement({
+        productId: requirement.product_id,
+        requirementId: requirement.id,
+        pages: requirement.pages,
+        navigation: mapNavigationToBaseline(requirement.pages, requirement.navigation)
+      });
+      await this.testHooks.afterBaselineUpdate?.();
+      await this.copy.saveTranslations(requirement.product_id, requirement.id, mergedTranslations);
+      await this.testHooks.afterTranslationsWrite?.();
+      await writeDocumentAtomic(this.documentFile(requirement.product_id, requirement.id), input.document_md);
+      await this.testHooks.afterDocumentWrite?.();
+      await this.writeRulesForRequirement(
+        requirement.product_id,
+        requirement.id,
+        input.rules,
+        input.remove_rule_ids,
+        input.remove_page_ids
+      );
+      await this.testHooks.afterRulesWrite?.();
+      await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
+    } catch (error) {
+      await restoreSnapshots(snapshots);
+      throw error;
+    }
+  }
+
+  private async commitLogicOnly(requirement: Requirement, input: ParsedSaveRequirementInput): Promise<void> {
+    const files = [
+      this.requirementFile(requirement.product_id, requirement.id),
+      this.documentFile(requirement.product_id, requirement.id),
+      this.rulesFile(requirement.product_id)
+    ];
+    const snapshots = await snapshotFiles(files);
+
+    try {
+      await writeDocumentAtomic(this.documentFile(requirement.product_id, requirement.id), input.document_md);
+      await this.testHooks.afterDocumentWrite?.();
+      await this.writeRulesForRequirement(
+        requirement.product_id,
+        requirement.id,
+        input.rules,
+        input.remove_rule_ids,
+        []
+      );
+      await this.testHooks.afterRulesWrite?.();
+      await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
+    } catch (error) {
+      await restoreSnapshots(snapshots);
+      throw error;
+    }
+  }
+
+  private async mergedTranslationsForUiSave(
+    current: Requirement,
+    requirement: Requirement,
+    translations: PageTranslation[],
+    isSingleLanguage: boolean
+  ): Promise<PageTranslation[]> {
+    if (isSingleLanguage) {
+      return [];
+    }
+
+    const oldCopy = copyByPageId(current.pages);
+    const newCopy = copyByPageId(requirement.pages);
+    return this.copy.mergeTranslations(requirement.product_id, requirement.id, oldCopy, newCopy, translations);
+  }
+
   private parseRequirementId(requirementId: string): string {
     const parsed = requirementIdSchema.safeParse(requirementId);
     if (!parsed.success) {
@@ -378,13 +605,50 @@ function assertPages(pages: unknown[]): void {
   }
 }
 
+function stripPageInputMetadata(page: z.infer<typeof requirementPageInputSchema>): Omit<z.infer<typeof requirementPageInputSchema>, "change_type" | "change_summary"> {
+  const { change_type: _changeType, change_summary: _changeSummary, ...requirementPage } = page;
+  return requirementPage;
+}
+
+function resolveDesignStatus(changeType: z.infer<typeof requirementPageInputSchema>["change_type"]): RequirementPage["design_status"] {
+  return changeType === "new" ? "pending" : "expired";
+}
+
+function resolveRequirementStatus(pages: RequirementPage[]): Requirement["status"] {
+  return pages.some((page) => page.design_status === "pending" || page.design_status === "expired") ? "submitted" : "active";
+}
+
+function copyByPageId(pages: RequirementPage[]): CopyByPage {
+  return Object.fromEntries(pages.map((page) => [page.page_id, page.copy ?? []]));
+}
+
+function filterRemovedNavigation(
+  navigation: z.infer<typeof baselineNavigationSchema>[],
+  currentPages: RequirementPage[],
+  nextPages: RequirementPage[],
+  removePageIds: Set<string>
+): z.infer<typeof baselineNavigationSchema>[] {
+  const removedBaselineIds = new Set(
+    currentPages
+      .filter((page) => removePageIds.has(page.page_id))
+      .flatMap((page) => [page.page_id, page.baseline_page])
+  );
+  const nextPageIds = new Set(nextPages.flatMap((page) => [page.page_id, page.baseline_page]));
+
+  return navigation.filter((item) => {
+    if (removePageIds.has(item.from) || removePageIds.has(item.to) || removedBaselineIds.has(item.from) || removedBaselineIds.has(item.to)) {
+      return false;
+    }
+    return nextPageIds.has(item.from) && nextPageIds.has(item.to);
+  });
+}
+
 function mapNavigationToBaseline(
   pages: RequirementPage[],
   navigation: z.infer<typeof baselineNavigationSchema>[]
 ): z.infer<typeof baselineNavigationSchema>[] {
-  const activePages = pages.filter((page) => page.design_status !== "expired");
   const pageToBaseline = new Map(
-    activePages.flatMap((page) => [
+    pages.flatMap((page) => [
       [page.page_id, page.baseline_page],
       [page.baseline_page, page.baseline_page]
     ])
@@ -403,6 +667,10 @@ function compareCreatedAtAsc(a: Requirement, b: Requirement): number {
 
 function compareCreatedAtDesc(a: Requirement, b: Requirement): number {
   return b.created_at.localeCompare(a.created_at) || b.id.localeCompare(a.id);
+}
+
+function compareUpdatedAtDesc(a: Requirement, b: Requirement): number {
+  return b.updated_at.localeCompare(a.updated_at) || b.id.localeCompare(a.id);
 }
 
 async function writeDocumentAtomic(file: string, content: string): Promise<void> {

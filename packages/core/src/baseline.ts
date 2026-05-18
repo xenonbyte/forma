@@ -74,12 +74,12 @@ export class BaselineService {
     navigation: BaselineNavigation[];
   }): Promise<ProductBaseline> {
     const current = await this.getProductBaseline(input.productId);
-    const activePages = input.pages.filter((page) => page.design_status !== "expired");
-    const activeBaselineIds = new Set(activePages.map((page) => page.baseline_page));
+    const sourcePages = input.pages;
+    const sourceBaselineIds = new Set(sourcePages.map((page) => page.baseline_page));
     const nextPagesById = new Map(current.pages.map((page) => [page.id, { ...page }]));
 
     for (const page of current.pages) {
-      if (page.source_requirements.includes(input.requirementId) && !activeBaselineIds.has(page.id)) {
+      if (page.source_requirements.includes(input.requirementId) && !sourceBaselineIds.has(page.id)) {
         nextPagesById.set(page.id, {
           ...page,
           source_requirements: page.source_requirements.filter((source) => source !== input.requirementId)
@@ -87,7 +87,7 @@ export class BaselineService {
       }
     }
 
-    for (const page of activePages) {
+    for (const page of sourcePages) {
       const existing = nextPagesById.get(page.baseline_page);
       nextPagesById.set(page.baseline_page, {
         id: page.baseline_page,

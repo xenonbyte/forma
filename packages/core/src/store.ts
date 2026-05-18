@@ -21,7 +21,7 @@ export function createFormaStore(options: FormaStoreOptions) {
   const sessions = new SessionService({ home: options.home, products });
   const baseline = new BaselineService({ home: options.home, products });
   const copy = new CopyService({ home: options.home });
-  const requirements = new RequirementService({ home: options.home, products, baseline });
+  const requirements = new RequirementService({ home: options.home, products, baseline, copy });
   const designs = new DesignService({ home: options.home, products });
   const sync = new SyncService({ home: options.home, pencilService: pencil, runner: defaultPencilRunner, styleLimit: options.syncStyleLimit });
 
