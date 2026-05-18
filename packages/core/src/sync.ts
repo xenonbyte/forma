@@ -70,10 +70,15 @@ const variableKeyMap: Record<string, keyof StyleVariables> = {
   foreground: "text-primary",
   ink: "text-primary",
   "text primary": "text-primary",
+  "text-primary": "text-primary",
   "heading font": "font-heading",
+  "heading-font": "font-heading",
   "body font": "font-body",
+  "body-font": "font-body",
   "corner radius": "border-radius",
+  "border-radius": "border-radius",
   "base spacing": "spacing-unit",
+  "spacing-unit": "spacing-unit",
   md: "border-radius",
   xs: "spacing-unit"
 };
@@ -170,6 +175,9 @@ export function describeStyle(markdown: string): string {
 
       const description = /^description:\s*(.+?)\s*$/.exec(trimmed);
       if (description) {
+        if (description[1] === "|") {
+          return describeBlockScalar(lines, index + 1);
+        }
         return normalizeDescription(description[1]).slice(0, 50);
       }
     }
@@ -236,4 +244,17 @@ function normalizeVariableValue(value: string, variableKey: keyof StyleVariables
 
 function normalizeDescription(value: string): string {
   return value.replace(/^["']|["']$/g, "").trim();
+}
+
+function describeBlockScalar(lines: string[], start: number): string {
+  for (let index = start; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (line.trim() === "---") {
+      break;
+    }
+    if (line.trim()) {
+      return line.trim().slice(0, 50);
+    }
+  }
+  return "Style generated from DESIGN.md";
 }

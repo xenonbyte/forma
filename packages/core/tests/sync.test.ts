@@ -67,6 +67,29 @@ base spacing: 10
     });
   });
 
+  it("extracts variables from DESIGN-v2 hyphenated fields", () => {
+    expect(
+      extractVariablesFromDesignMd(`
+# Demo
+primary: "#101010"
+background: "#fafafa"
+text-primary: "#202020"
+heading-font: "Acme Display"
+body-font: "Acme Text"
+border-radius: 14px
+spacing-unit: 6px
+`)
+    ).toEqual({
+      primary: "#101010",
+      background: "#fafafa",
+      "text-primary": "#202020",
+      "font-heading": "Acme Display",
+      "font-body": "Acme Text",
+      "border-radius": "14",
+      "spacing-unit": "6"
+    });
+  });
+
   it("extracts variables from DESIGN.md front matter tokens", () => {
     expect(
       extractVariablesFromDesignMd(`---
@@ -121,6 +144,15 @@ colors:
 
 Body copy should not win over front matter description.`)
     ).toBe("A photography-first interface with immersive galle");
+    expect(
+      describeStyle(`---
+description: |
+  An almost defiantly minimal documentation-first system that treats the home page like a Markdown README.
+colors:
+  primary: "#000000"
+---
+# Title`)
+    ).toBe("An almost defiantly minimal documentation-first sy");
     expect(
       describeStyle(`---
 colors:
