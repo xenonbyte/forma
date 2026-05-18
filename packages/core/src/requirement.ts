@@ -19,6 +19,7 @@ export const requirementPageSchema = z.object({
   design_status: z.enum(designStatuses),
   design_id: z.string().regex(/^D-[a-f0-9]{8}$/).optional(),
   change_type: z.enum(["new", "patch", "rebuild"]).optional(),
+  change_summary: z.string().optional(),
   features: z.string().optional(),
   copy: z.array(z.lazy(() => copyItemSchema)).optional(),
   fields: z.string().optional(),
@@ -346,7 +347,7 @@ export class RequirementService {
     const removePageIds = new Set(input.remove_page_ids);
     const pages = input.pages
       .filter((page) => !removePageIds.has(page.page_id))
-      .map((page) => requirementPageSchema.parse({ ...stripPageInputMetadata(page), design_status: "pending" }));
+      .map((page) => resolveSavedPage(current.id, page));
     assertPages(pages);
     const next = requirementSchema.parse({
       ...current,
@@ -369,11 +370,7 @@ export class RequirementService {
       .filter((page) => !removePageIds.has(page.page_id))
       .map((page) => {
         const currentPage = currentPagesById.get(page.page_id);
-        return requirementPageSchema.parse({
-          ...currentPage,
-          ...stripPageInputMetadata(page),
-          design_status: resolveDesignStatus(page.change_type)
-        });
+        return resolveSavedPage(current.id, page, currentPage);
       });
     const unchangedPages = current.pages.filter((page) => !inputPageIds.has(page.page_id) && !removePageIds.has(page.page_id));
     const pages = [...changedPages, ...unchangedPages];
@@ -606,13 +603,31 @@ function assertPages(pages: unknown[]): void {
   }
 }
 
-function stripPageInputMetadata(page: z.infer<typeof requirementPageInputSchema>): Omit<z.infer<typeof requirementPageInputSchema>, "change_summary"> {
-  const { change_summary: _changeSummary, ...requirementPage } = page;
-  return requirementPage;
-}
+function resolveSavedPage(
+  requirementId: string,
+  page: z.infer<typeof requirementPageInputSchema>,
+  currentPage?: RequirementPage
+): RequirementPage {
+  if (page.change_type === "new") {
+    const { design_id: _designId, ...pageWithoutDesign } = { ...currentPage, ...page };
+    return requirementPageSchema.parse({ ...pageWithoutDesign, design_status: "pending" });
+  }
 
-function resolveDesignStatus(changeType: z.infer<typeof requirementPageInputSchema>["change_type"]): RequirementPage["design_status"] {
-  return changeType === "new" ? "pending" : "expired";
+  if (!currentPage?.design_id) {
+    throw new FormaError("PAGE_NOT_DONE", "Page is not done", {
+      requirement_id: requirementId,
+      page_id: page.page_id,
+      change_type: page.change_type,
+      design_status: currentPage?.design_status ?? "missing"
+    });
+  }
+
+  return requirementPageSchema.parse({
+    ...currentPage,
+    ...page,
+    design_id: currentPage.design_id,
+    design_status: "expired"
+  });
 }
 
 function resolveRequirementStatus(pages: RequirementPage[]): Requirement["status"] {

@@ -57,6 +57,22 @@ async function readTextIfExists(file: string): Promise<string | undefined> {
   return (await fileExists(file)) ? readFile(file, "utf8") : undefined;
 }
 
+async function markRequirementPagesDone(
+  home: string,
+  productId: string,
+  requirementId: string,
+  designIdsByPageId: Record<string, string>
+) {
+  const requirementFile = join(home, "data", productId, requirementId, "requirement.yaml");
+  const saved = await readYaml<Record<string, unknown>>(requirementFile);
+  const pages = (saved.pages as Array<Record<string, unknown>>).map((page) => ({
+    ...page,
+    design_status: "done",
+    design_id: designIdsByPageId[String(page.page_id)]
+  }));
+  await writeYamlAtomic(requirementFile, { ...saved, pages });
+}
+
 describe("requirement and baseline services", () => {
   it("submits an empty requirement and updates baseline", async () => {
     const { store, product } = await createConfiguredStore();
@@ -736,6 +752,235 @@ describe("requirement and baseline services", () => {
     expect(saved.navigation).toEqual([{ from: "cart", to: "success", label: "Done" }]);
   });
 
+  it("persists change summaries for new, patch, and rebuild saves", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Summaries");
+
+    await store.requirements.saveRequirement({
+      requirement_id: req.id,
+      document_md: "# Summaries\nInitial",
+      ui_affected: true,
+      pages: [
+        { page_id: "cart", name: "购物车", baseline_page: "cart", change_type: "new", change_summary: "Create cart" },
+        { page_id: "pay", name: "支付页", baseline_page: "pay", change_type: "new", change_summary: "Create pay" }
+      ],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).resolves.toMatchObject({
+      pages: [
+        expect.objectContaining({ page_id: "cart", change_summary: "Create cart" }),
+        expect.objectContaining({ page_id: "pay", change_summary: "Create pay" })
+      ]
+    });
+
+    const requirementFile = join(store.home, "data", product.id, req.id, "requirement.yaml");
+    await writeYamlAtomic(requirementFile, {
+      ...(await readYaml<Record<string, unknown>>(requirementFile)),
+      pages: [
+        {
+          page_id: "cart",
+          name: "购物车",
+          baseline_page: "cart",
+          design_status: "done",
+          design_id: "D-11111111",
+          change_type: "new",
+          change_summary: "Create cart"
+        },
+        {
+          page_id: "pay",
+          name: "支付页",
+          baseline_page: "pay",
+          design_status: "done",
+          design_id: "D-22222222",
+          change_type: "new",
+          change_summary: "Create pay"
+        }
+      ]
+    });
+
+    const saved = await store.requirements.saveRequirement({
+      requirement_id: req.id,
+      document_md: "# Summaries\nUpdated",
+      ui_affected: true,
+      pages: [
+        { page_id: "cart", name: "购物车", baseline_page: "cart", change_type: "patch", change_summary: "Patch cart" },
+        { page_id: "pay", name: "支付页", baseline_page: "pay", change_type: "rebuild", change_summary: "Rebuild pay" }
+      ],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+
+    expect(saved.pages).toEqual([
+      expect.objectContaining({
+        page_id: "cart",
+        design_status: "expired",
+        design_id: "D-11111111",
+        change_summary: "Patch cart"
+      }),
+      expect.objectContaining({
+        page_id: "pay",
+        design_status: "expired",
+        design_id: "D-22222222",
+        change_summary: "Rebuild pay"
+      })
+    ]);
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).resolves.toMatchObject({
+      pages: [
+        expect.objectContaining({ page_id: "cart", change_summary: "Patch cart" }),
+        expect.objectContaining({ page_id: "pay", change_summary: "Rebuild pay" })
+      ]
+    });
+  });
+
+  it("clears old design ids when an existing page is saved as new", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Reset Page");
+    await store.requirements.saveRequirement({
+      requirement_id: req.id,
+      document_md: "# Reset\nInitial",
+      ui_affected: true,
+      pages: [{ page_id: "checkout", name: "结账页", baseline_page: "checkout", change_type: "new" }],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+    const requirementFile = join(store.home, "data", product.id, req.id, "requirement.yaml");
+    await writeYamlAtomic(requirementFile, {
+      ...(await readYaml<Record<string, unknown>>(requirementFile)),
+      pages: [
+        {
+          page_id: "checkout",
+          name: "结账页",
+          baseline_page: "checkout",
+          design_status: "done",
+          design_id: "D-11111111"
+        }
+      ]
+    });
+
+    const saved = await store.requirements.saveRequirement({
+      requirement_id: req.id,
+      document_md: "# Reset\nNew flow",
+      ui_affected: true,
+      pages: [
+        {
+          page_id: "checkout",
+          name: "新结账页",
+          baseline_page: "checkout",
+          change_type: "new",
+          change_summary: "Replace checkout"
+        }
+      ],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+
+    expect(saved.pages).toEqual([
+      expect.not.objectContaining({ design_id: "D-11111111" })
+    ]);
+    expect(saved.pages[0]).toMatchObject({
+      page_id: "checkout",
+      design_status: "pending",
+      change_summary: "Replace checkout"
+    });
+    expect(saved.pages[0]).not.toHaveProperty("design_id");
+  });
+
+  it("rejects patch for missing pages without mutating saved files", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Missing Patch");
+    await store.requirements.saveRequirement({
+      requirement_id: req.id,
+      document_md: "# Missing Patch\nInitial",
+      ui_affected: true,
+      pages: [{ page_id: "keep", name: "保留", baseline_page: "keep", change_type: "new" }],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+    const files = [
+      join(store.home, "data", product.id, req.id, "requirement.yaml"),
+      join(store.home, "data", product.id, req.id, "document.md"),
+      join(store.home, "data", product.id, "baseline", "baseline.yaml")
+    ];
+    const before = await Promise.all(files.map(readTextIfExists));
+
+    await expect(
+      store.requirements.saveRequirement({
+        requirement_id: req.id,
+        document_md: "# Missing Patch\nInvalid",
+        ui_affected: true,
+        pages: [{ page_id: "missing", name: "缺失", baseline_page: "missing", change_type: "patch" }],
+        navigation: [],
+        translations: [],
+        rules: [],
+        remove_rule_ids: [],
+        remove_page_ids: []
+      })
+    ).rejects.toMatchObject({
+      code: "PAGE_NOT_DONE",
+      details: { requirement_id: req.id, page_id: "missing", change_type: "patch" }
+    });
+    await expect(Promise.all(files.map(readTextIfExists))).resolves.toEqual(before);
+  });
+
+  it("rejects patch and rebuild for existing pages without a design id", async () => {
+    for (const changeType of ["patch", "rebuild"] as const) {
+      const { store, product } = await createConfiguredStore();
+      const req = await store.requirements.createEmptyRequirement(product.id, `${changeType} No Design`);
+      await store.requirements.saveRequirement({
+        requirement_id: req.id,
+        document_md: `# ${changeType}\nInitial`,
+        ui_affected: true,
+        pages: [{ page_id: "profile", name: "资料页", baseline_page: "profile", change_type: "new" }],
+        navigation: [],
+        translations: [],
+        rules: [],
+        remove_rule_ids: [],
+        remove_page_ids: []
+      });
+      const files = [
+        join(store.home, "data", product.id, req.id, "requirement.yaml"),
+        join(store.home, "data", product.id, req.id, "document.md"),
+        join(store.home, "data", product.id, "baseline", "baseline.yaml")
+      ];
+      const before = await Promise.all(files.map(readTextIfExists));
+
+      await expect(
+        store.requirements.saveRequirement({
+          requirement_id: req.id,
+          document_md: `# ${changeType}\nInvalid`,
+          ui_affected: true,
+          pages: [{ page_id: "profile", name: "资料页", baseline_page: "profile", change_type: changeType }],
+          navigation: [],
+          translations: [],
+          rules: [],
+          remove_rule_ids: [],
+          remove_page_ids: []
+        })
+      ).rejects.toMatchObject({
+        code: "PAGE_NOT_DONE",
+        details: { requirement_id: req.id, page_id: "profile", change_type: changeType }
+      });
+      await expect(Promise.all(files.map(readTextIfExists))).resolves.toEqual(before);
+    }
+  });
+
   it("moves active UI requirements back to submitted when a UI save expires a page", async () => {
     const { store, product } = await createConfiguredStore();
     const req = await store.requirements.createEmptyRequirement(product.id, "Profile");
@@ -745,12 +990,9 @@ describe("requirement and baseline services", () => {
       pages: [{ page_id: "profile", name: "资料页", baseline_page: "profile" }],
       navigation: []
     });
+    await markRequirementPagesDone(store.home, product.id, req.id, { profile: "D-11111111" });
     const requirementFile = join(store.home, "data", product.id, req.id, "requirement.yaml");
-    await writeYamlAtomic(requirementFile, {
-      ...(await readYaml<Record<string, unknown>>(requirementFile)),
-      status: "active",
-      pages: [{ page_id: "profile", name: "资料页", baseline_page: "profile", design_status: "done" }]
-    });
+    await writeYamlAtomic(requirementFile, { ...(await readYaml<Record<string, unknown>>(requirementFile)), status: "active" });
 
     const saved = await store.requirements.saveRequirement({
       requirement_id: req.id,
@@ -995,6 +1237,7 @@ describe("requirement and baseline services", () => {
       remove_rule_ids: [],
       remove_page_ids: []
     });
+    await markRequirementPagesDone(store.home, product.id, req.id, { keep: "D-11111111", remove: "D-22222222" });
 
     const saved = await store.requirements.saveRequirement({
       requirement_id: req.id,
@@ -1122,6 +1365,7 @@ describe("requirement and baseline services", () => {
       remove_rule_ids: [],
       remove_page_ids: []
     });
+    await markRequirementPagesDone(store.home, product.id, req.id, { login: "D-11111111" });
 
     await store.requirements.saveRequirement({
       requirement_id: req.id,
@@ -1157,6 +1401,7 @@ describe("requirement and baseline services", () => {
       remove_rule_ids: [],
       remove_page_ids: []
     });
+    await markRequirementPagesDone(store.home, product.id, req.id, { login: "D-11111111" });
     const sentinelTranslations: PageTranslation[] = [
       { page_id: "login", entries: [{ context: "submit", texts: { en: "Existing Login" } }] }
     ];
@@ -1235,6 +1480,7 @@ describe("requirement and baseline services", () => {
       remove_rule_ids: [],
       remove_page_ids: []
     });
+    await markRequirementPagesDone(store.home, product.id, req.id, { login: "D-11111111" });
 
     await store.requirements.saveRequirement({
       requirement_id: req.id,
@@ -1341,6 +1587,7 @@ describe("requirement and baseline services", () => {
         remove_rule_ids: [],
         remove_page_ids: []
       });
+      await markRequirementPagesDone(store.home, product.id, req.id, { login: "D-11111111" });
       const files = [
         join(store.home, "data", product.id, req.id, "requirement.yaml"),
         join(store.home, "data", product.id, req.id, "document.md"),
