@@ -67,17 +67,118 @@ base spacing: 10
     });
   });
 
+  it("extracts variables from DESIGN.md front matter tokens", () => {
+    expect(
+      extractVariablesFromDesignMd(`---
+colors:
+  primary: "#0066cc"
+  canvas: "#ffffff"
+  ink: "#1d1d1f"
+typography:
+  hero-display:
+    fontFamily: "SF Pro Display, system-ui, sans-serif"
+  body:
+    fontFamily: "SF Pro Text, system-ui, sans-serif"
+rounded:
+  md: 11px
+spacing:
+  xs: 8px
+---
+# Demo
+`)
+    ).toEqual({
+      primary: "#0066cc",
+      background: "#ffffff",
+      "text-primary": "#1d1d1f",
+      "font-heading": "SF Pro Display",
+      "font-body": "SF Pro Text",
+      "border-radius": "11",
+      "spacing-unit": "8"
+    });
+  });
+
   it("classifies and describes style documents", () => {
     expect(classifyStyle("An AI assistant for LLM chat")).toBe("AI 产品");
+    expect(classifyStyle("Project task productivity tool")).toBe("工具类");
     expect(classifyStyle("Retail store checkout")).toBe("电商");
+    expect(classifyStyle("Finance bank payment dashboard")).toBe("金融");
+    expect(classifyStyle("Social community message feed")).toBe("社交");
+    expect(classifyStyle("Health medical fitness tracker")).toBe("健康");
     expect(classifyStyle("Plain editorial layout")).toBe("其他");
     expect(describeStyle("# Title\n\nA focused product interface with dense controls.\nSecond line")).toBe(
       "A focused product interface with dense controls."
     );
+    expect(describeStyle("# Title\n\n123456789012345678901234567890123456789012345678901234567890")).toBe(
+      "12345678901234567890123456789012345678901234567890"
+    );
+    expect(describeStyle("# Title")).toBe("Style generated from DESIGN.md");
   });
 
   it("computes stable sha256 and validates status shapes", () => {
     expect(sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     expect(syncStatusSchema.parse({ status: "idle" })).toEqual({ status: "idle" });
+    expect(
+      syncStatusSchema.parse({
+        status: "idle",
+        last_sync: {
+          completed_at: "2026-05-18T00:00:00.000Z",
+          styles_total: 3,
+          styles_updated: 2,
+          styles_added: 1,
+          styles_failed: 0,
+          duration_ms: 1250
+        }
+      })
+    ).toEqual({
+      status: "idle",
+      last_sync: {
+        completed_at: "2026-05-18T00:00:00.000Z",
+        styles_total: 3,
+        styles_updated: 2,
+        styles_added: 1,
+        styles_failed: 0,
+        duration_ms: 1250
+      }
+    });
+    expect(
+      syncStatusSchema.parse({
+        status: "running",
+        task_id: "sync-1",
+        started_at: "2026-05-18T00:00:00.000Z",
+        progress: {
+          phase: "extracting_variables",
+          current: 1,
+          total: 3,
+          current_style: "linear"
+        }
+      })
+    ).toEqual({
+      status: "running",
+      task_id: "sync-1",
+      started_at: "2026-05-18T00:00:00.000Z",
+      progress: {
+        phase: "extracting_variables",
+        current: 1,
+        total: 3,
+        current_style: "linear"
+      }
+    });
+    expect(
+      syncStatusSchema.parse({
+        status: "failed",
+        task_id: "sync-1",
+        error: {
+          phase: "git_clone",
+          message: "git not found"
+        }
+      })
+    ).toEqual({
+      status: "failed",
+      task_id: "sync-1",
+      error: {
+        phase: "git_clone",
+        message: "git not found"
+      }
+    });
   });
 });
