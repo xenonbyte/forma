@@ -121,7 +121,21 @@ describe("MCP forma tools", () => {
 
     expect(textPayload(result)).toMatchObject({
       tools: formaToolNames,
-      usage_guide: expect.stringContaining("save_requirement")
+      usage_guide: {
+        guidance: expect.arrayContaining([
+          expect.stringContaining("save_requirement"),
+          expect.stringContaining("get_product_rules"),
+          expect.stringContaining("get_page_copy")
+        ]),
+        workflows: {
+          develop_frontend: [
+            "get_requirement",
+            "get_design_annotations",
+            "export_design_asset",
+            "get_product_rules"
+          ]
+        }
+      }
     });
   });
 

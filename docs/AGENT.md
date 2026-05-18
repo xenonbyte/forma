@@ -31,7 +31,7 @@ The installer also writes shared Forma guidance and MCP configuration for the se
 
 2. Use `fm-list-product` or the Web admin to select/create a product.
 3. Configure the product with platform, style, `languages`, and `default_language`.
-4. Generate components when needed, then call `complete_product_init` through the agent route or Web-backed workflow.
+4. Generate components through the agent/MCP flow when needed, then call `complete_product_init` through the MCP/agent route after components are generated.
 5. Use `fm-status` to confirm platform, style, language config, default language, and component initialization.
 
 ## Iterative Requirement Flow

@@ -249,11 +249,21 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
   return {
     help: tool("help", async () => ({
       tools: formaToolNames,
-      usage_guide: [
-        "Use save_requirement for all requirement submissions and updates.",
-        "Use get_product_rules to inspect persisted behavioral rules.",
-        "Use get_page_copy and update_page_copy for page-level source copy translations."
-      ].join(" ")
+      usage_guide: {
+        guidance: [
+          "Use save_requirement for all requirement submissions and updates.",
+          "Use get_product_rules to inspect persisted behavioral rules.",
+          "Use get_page_copy and update_page_copy for page-level source copy translations."
+        ],
+        workflows: {
+          develop_frontend: [
+            "get_requirement",
+            "get_design_annotations",
+            "export_design_asset",
+            "get_product_rules"
+          ]
+        }
+      }
     })),
     list_products: tool("list_products", async () => store.products.listProducts()),
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),

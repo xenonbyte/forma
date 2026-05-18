@@ -30,7 +30,7 @@ Product configuration is complete only when platform, style, languages/default l
 - `save_requirement`: creates or updates a requirement through the unified state machine.
 - `get_product_rules`: reads persisted product-level behavioral rules.
 
-`save_requirement` accepts `document_md`, `ui_affected`, pages, navigation, translations, rules, `remove_page_ids`, and `remove_rule_ids`. Pages use structured copy arrays with `{ context, text }`; page changes use `change_type` values `new`, `patch`, or `rebuild`.
+MCP `save_requirement` requires `requirement_id`, `document_md`, `ui_affected`, `pages`, and `navigation`. It accepts optional `translations`, `rules`, `remove_page_ids`, and `remove_rule_ids`. Pages use structured copy arrays with `{ context, text }`; page changes use `change_type` values `new`, `patch`, or `rebuild`.
 
 ## Baseline
 
