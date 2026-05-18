@@ -7,8 +7,7 @@ export type FormaAgentPlatform = (typeof formaAgentPlatforms)[number];
 export const formaAgentCommands = [
   "fm-list-product",
   "fm-status",
-  "fm-upload-requirement",
-  "fm-update-requirement",
+  "fm-requirement",
   "fm-design",
   "fm-refine-design",
   "fm-refine-components",

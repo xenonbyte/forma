@@ -9,3 +9,7 @@ Core rules:
 - Call Forma MCP tools rather than editing Forma data files directly.
 - Report stable Forma error codes exactly as returned by the MCP server.
 - Do not hide pending or expired design state from the user.
+- v0.3 language config is product context: surface `languages` and `default_language`, and clearly call out old products with missing languages.
+- v0.3 structured copy is authoritative: pass page `copy` arrays and translations exactly, preserving context keys and text.
+- v0.3 `ui_affected=false` requirements must stop design/refine routes before calling design tools.
+- Keep stable MCP usage: read fresh MCP state, validate generated JSON before saving, then call the intended MCP mutation once.

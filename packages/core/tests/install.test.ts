@@ -1,20 +1,21 @@
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { InstallService, readYaml } from "../src/index.js";
+import { InstallService, formaInstallCommands, readYaml, writeYamlAtomic } from "../src/index.js";
 
 const commands = [
   "fm-list-product",
   "fm-status",
-  "fm-upload-requirement",
-  "fm-update-requirement",
+  "fm-requirement",
   "fm-design",
   "fm-refine-design",
   "fm-refine-components",
   "fm-change-style",
   "fm-rollback-design"
 ] as const;
+
+const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
 
 type Platform = "claude" | "codex" | "gemini";
 
@@ -50,7 +51,48 @@ async function readManifest(formaHome: string, platform: Platform): Promise<Inst
   return readYaml<InstallManifest>(join(formaHome, "manifests", `${platform}.manifest`));
 }
 
+function commandTarget(userHome: string, platform: Platform, command: string): string {
+  if (platform === "claude") {
+    return join(userHome, ".claude", "commands", `${command}.md`);
+  }
+  if (platform === "gemini") {
+    return join(userHome, ".gemini", "commands", `${command}.toml`);
+  }
+  return join(userHome, ".codex", "prompts", "skills", command, "SKILL.md");
+}
+
+function customCommandTarget(userHome: string, platform: Platform): string {
+  if (platform === "claude") {
+    return join(userHome, ".claude", "commands", "custom.md");
+  }
+  if (platform === "gemini") {
+    return join(userHome, ".gemini", "commands", "custom.toml");
+  }
+  return join(userHome, ".codex", "prompts", "skills", "custom", "SKILL.md");
+}
+
+async function writeOldManifest(
+  formaHome: string,
+  platform: Platform,
+  installedPaths: string[],
+  backups: Array<{ target: string; backup: string }>
+): Promise<void> {
+  await writeYamlAtomic(join(formaHome, "manifests", `${platform}.manifest`), {
+    schema_version: 1,
+    platform,
+    installed_paths: installedPaths,
+    backups,
+    config_paths: [],
+    installed_at: "2026-01-01T00:00:00.000Z"
+  });
+}
+
 describe("InstallService", () => {
+  it("uses the v0.3 unified requirement command list", () => {
+    expect(formaInstallCommands).toEqual(commands);
+    expect(formaInstallCommands).not.toEqual(expect.arrayContaining(removedRequirementCommands));
+  });
+
   it("installs all platform command templates and shared skill", async () => {
     const { formaHome, userHome, service } = await createService();
 
@@ -66,6 +108,11 @@ describe("InstallService", () => {
       await expect(
         readFile(join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"), "utf8")
       ).resolves.toContain(`# Forma route: ${command}`);
+    }
+    for (const command of removedRequirementCommands) {
+      await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".gemini", "commands", `${command}.toml`))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"))).resolves.toBe(false);
     }
     await expect(readFile(join(formaHome, "skills", "forma", "SKILL.md"), "utf8")).resolves.toContain(
       "Forma shared guidance"
@@ -85,6 +132,9 @@ describe("InstallService", () => {
         ...commands.map((command) => join(userHome, ".claude", "commands", `${command}.md`))
       ])
     );
+    for (const command of removedRequirementCommands) {
+      expect(claude.installed_paths).not.toContain(join(userHome, ".claude", "commands", `${command}.md`));
+    }
     expect(claude.config_paths).toEqual([join(userHome, ".claude", "mcp.json")]);
 
     const gemini = await readManifest(formaHome, "gemini");
@@ -95,6 +145,9 @@ describe("InstallService", () => {
         ...commands.map((command) => join(userHome, ".gemini", "commands", `${command}.toml`))
       ])
     );
+    for (const command of removedRequirementCommands) {
+      expect(gemini.installed_paths).not.toContain(join(userHome, ".gemini", "commands", `${command}.toml`));
+    }
     expect(gemini.config_paths).toEqual([join(userHome, ".gemini", "settings.json")]);
 
     const codex = await readManifest(formaHome, "codex");
@@ -105,7 +158,79 @@ describe("InstallService", () => {
         ...commands.map((command) => join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"))
       ])
     );
+    for (const command of removedRequirementCommands) {
+      expect(codex.installed_paths).not.toContain(
+        join(userHome, ".codex", "prompts", "skills", command, "SKILL.md")
+      );
+    }
     expect(codex.config_paths).toEqual([join(userHome, ".codex", "config.toml")]);
+  });
+
+  it("removes stale command files from old manifests during install upgrade", async () => {
+    for (const platform of ["claude", "codex", "gemini"] satisfies Platform[]) {
+      const { formaHome, userHome, service } = await createService();
+      const oldCommandPaths = removedRequirementCommands.map((command) => commandTarget(userHome, platform, command));
+      const unrelatedCommand = customCommandTarget(userHome, platform);
+
+      for (const [index, commandPath] of oldCommandPaths.entries()) {
+        await mkdir(dirname(commandPath), { recursive: true });
+        await writeFile(commandPath, `# Forma route: ${removedRequirementCommands[index]}\n`, "utf8");
+      }
+      await mkdir(dirname(unrelatedCommand), { recursive: true });
+      await writeFile(unrelatedCommand, "# Custom\n", "utf8");
+      await writeOldManifest(
+        formaHome,
+        platform,
+        [join(formaHome, "skills", "forma", "SKILL.md"), ...oldCommandPaths],
+        []
+      );
+
+      await service.installPlatforms([platform]);
+
+      for (const oldPath of oldCommandPaths) {
+        await expect(exists(oldPath)).resolves.toBe(false);
+      }
+      await expect(readFile(commandTarget(userHome, platform, "fm-requirement"), "utf8")).resolves.toContain(
+        "# Forma route: fm-requirement"
+      );
+      await expect(readFile(unrelatedCommand, "utf8")).resolves.toBe("# Custom\n");
+
+      const upgradedManifest = await readManifest(formaHome, platform);
+      const serializedManifest = JSON.stringify(upgradedManifest);
+      for (const oldPath of oldCommandPaths) {
+        expect(upgradedManifest.installed_paths).not.toContain(oldPath);
+        expect(serializedManifest).not.toContain(oldPath);
+      }
+
+      await service.uninstallPlatforms([platform]);
+
+      for (const oldPath of oldCommandPaths) {
+        await expect(exists(oldPath)).resolves.toBe(false);
+      }
+      await expect(exists(commandTarget(userHome, platform, "fm-requirement"))).resolves.toBe(false);
+      await expect(readFile(unrelatedCommand, "utf8")).resolves.toBe("# Custom\n");
+    }
+  });
+
+  it("restores user backups when stale manifest paths are cleaned during install upgrade", async () => {
+    const { formaHome, userHome, service } = await createService();
+    const oldCommand = commandTarget(userHome, "claude", "fm-upload-requirement");
+    const backup = join(formaHome, "backups", "claude", ".claude", "commands", "fm-upload-requirement.md");
+    await mkdir(dirname(oldCommand), { recursive: true });
+    await mkdir(join(formaHome, "backups", "claude", ".claude", "commands"), { recursive: true });
+    await writeFile(oldCommand, "# Forma route: fm-upload-requirement\n", "utf8");
+    await writeFile(backup, "# User upload shortcut\n", "utf8");
+    await writeOldManifest(formaHome, "claude", [oldCommand], [{ target: oldCommand, backup }]);
+
+    await service.installPlatforms(["claude"]);
+
+    await expect(readFile(oldCommand, "utf8")).resolves.toBe("# User upload shortcut\n");
+    const upgradedManifest = await readManifest(formaHome, "claude");
+    expect(JSON.stringify(upgradedManifest)).not.toContain(oldCommand);
+
+    await service.uninstallPlatforms(["claude"]);
+
+    await expect(readFile(oldCommand, "utf8")).resolves.toBe("# User upload shortcut\n");
   });
 
   it("uninstalls only manifest-owned files and preserves unrelated files and config entries", async () => {

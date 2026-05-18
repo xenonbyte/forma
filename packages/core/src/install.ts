@@ -10,8 +10,7 @@ export type AgentInstallPlatform = "claude" | "codex" | "gemini";
 export const formaInstallCommands = [
   "fm-list-product",
   "fm-status",
-  "fm-upload-requirement",
-  "fm-update-requirement",
+  "fm-requirement",
   "fm-design",
   "fm-refine-design",
   "fm-refine-components",
@@ -118,12 +117,14 @@ export class InstallService {
   }
 
   private async installPlatform(platform: AgentInstallPlatform): Promise<void> {
+    const existingManifest = await readOptionalManifest(this.manifestFile(platform));
     const record: InstallRecord = { installedPaths: [], backups: [], configPaths: [] };
 
     await this.installSharedSkill(platform, record);
     await this.installCommandTemplates(platform, record);
     await this.installMcpConfig(platform, record);
-    await this.writeManifest(platform, record);
+    await this.cleanupStaleManifestTargets(platform, existingManifest, record);
+    await this.writeManifest(platform, record, existingManifest);
   }
 
   private async installSharedSkill(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
@@ -335,18 +336,57 @@ export class InstallService {
     return join(this.userHome, ".codex", "prompts", "skills", command, "SKILL.md");
   }
 
-  private async writeManifest(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
-    const existingManifest = await readOptionalManifest(this.manifestFile(platform));
+  private async writeManifest(
+    platform: AgentInstallPlatform,
+    record: InstallRecord,
+    existingManifest?: InstallManifest
+  ): Promise<void> {
     const carriedBackups = await this.backupsForInstalledPathsFromOtherManifests(platform, record.installedPaths);
+    const currentTargets = new Set([...record.installedPaths, ...record.configPaths]);
+    const retainedBackups = (existingManifest?.backups ?? []).filter((backup) => currentTargets.has(backup.target));
     const manifest: InstallManifest = {
       schema_version: 1,
       platform,
       installed_paths: unique(record.installedPaths),
-      backups: mergeBackupRecords(existingManifest?.backups ?? [], carriedBackups, record.backups),
+      backups: mergeBackupRecords(retainedBackups, carriedBackups, record.backups),
       config_paths: unique(record.configPaths),
       installed_at: new Date().toISOString()
     };
     await writeYamlAtomic(this.manifestFile(platform), manifest);
+  }
+
+  private async cleanupStaleManifestTargets(
+    platform: AgentInstallPlatform,
+    existingManifest: InstallManifest | undefined,
+    record: InstallRecord
+  ): Promise<void> {
+    if (!existingManifest) {
+      return;
+    }
+
+    const currentTargets = new Set([...record.installedPaths, ...record.configPaths]);
+    const protectedTargets = await this.pathsOwnedByOtherPlatforms([platform]);
+    const backupByTarget = new Map<string, string>();
+    for (const backup of existingManifest.backups) {
+      if (!backupByTarget.has(backup.target)) {
+        backupByTarget.set(backup.target, backup.backup);
+      }
+    }
+
+    const previousTargets = unique([...existingManifest.installed_paths, ...existingManifest.config_paths]);
+    for (const target of previousTargets.reverse()) {
+      if (currentTargets.has(target) || protectedTargets.has(target)) {
+        continue;
+      }
+
+      const backup = backupByTarget.get(target);
+      if (backup && (await pathExists(backup))) {
+        await mkdir(dirname(target), { recursive: true });
+        await copyFile(backup, target);
+      } else {
+        await rm(target, { force: true });
+      }
+    }
   }
 
   private manifestFile(platform: AgentInstallPlatform): string {
@@ -369,6 +409,24 @@ export class InstallService {
       const manifest = await readOptionalManifest(this.manifestFile(platform));
       for (const installedPath of manifest?.installed_paths ?? []) {
         paths.add(installedPath);
+      }
+    }
+    return paths;
+  }
+
+  private async pathsOwnedByOtherPlatforms(selectedPlatforms: AgentInstallPlatform[]): Promise<Set<string>> {
+    const selected = new Set(selectedPlatforms);
+    const paths = new Set<string>();
+    for (const platform of ["claude", "codex", "gemini"] satisfies AgentInstallPlatform[]) {
+      if (selected.has(platform)) {
+        continue;
+      }
+      const manifest = await readOptionalManifest(this.manifestFile(platform));
+      for (const installedPath of manifest?.installed_paths ?? []) {
+        paths.add(installedPath);
+      }
+      for (const configPath of manifest?.config_paths ?? []) {
+        paths.add(configPath);
       }
     }
     return paths;
