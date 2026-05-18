@@ -10,22 +10,40 @@ import type { BaselinePage } from "../api.js";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const leaferInstances: MockLeafer[] = [];
+const elementInstances: MockElement[] = [];
 
 class MockLeafer {
+  elements: MockElement[] = [];
   add = vi.fn();
   destroy = vi.fn();
   lockLayout = vi.fn();
+  requestRender = vi.fn();
   unlockLayout = vi.fn();
 
   constructor(public readonly config: Record<string, unknown>) {
     leaferInstances.push(this);
+    this.add = vi.fn((element: MockElement) => {
+      this.elements.push(element);
+    });
   }
 }
 
 class MockElement {
-  on = vi.fn();
+  handlers: Record<string, () => void> = {};
+  fill?: string;
+  stroke?: string;
+  strokeWidth?: number;
+  on = vi.fn((eventName: string, handler: () => void) => {
+    this.handlers[eventName] = handler;
+    return this;
+  });
 
-  constructor(public readonly config: Record<string, unknown>) {}
+  constructor(public readonly config: Record<string, unknown>) {
+    this.fill = typeof config.fill === "string" ? config.fill : undefined;
+    this.stroke = typeof config.stroke === "string" ? config.stroke : undefined;
+    this.strokeWidth = typeof config.strokeWidth === "number" ? config.strokeWidth : undefined;
+    elementInstances.push(this);
+  }
 }
 
 vi.mock("leafer-ui", () => ({
@@ -62,6 +80,7 @@ const containers: HTMLElement[] = [];
 
 beforeEach(() => {
   leaferInstances.length = 0;
+  elementInstances.length = 0;
 });
 
 afterEach(() => {
@@ -114,9 +133,9 @@ describe("NavigationGraph", () => {
 
     expect(leaferInstances).toHaveLength(1);
     expect(leaferInstances[0]?.config).toMatchObject({
-      height: 560,
+      height: 400,
       view: expect.any(HTMLElement),
-      width: 960
+      width: 600
     });
     expect(leaferInstances[0]?.add).toHaveBeenCalled();
 
@@ -125,6 +144,102 @@ describe("NavigationGraph", () => {
     });
 
     expect(leaferInstances[0]?.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws feature counts, trigger labels, and directed edge arrows", async () => {
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <NavigationGraph
+          navigation={[{ from: "home", to: "checkout", label: "Legacy checkout", trigger: "Start checkout" }]}
+          pages={pages}
+        />
+      );
+      await flushPromises();
+    });
+
+    expect(findElement("node-label-home")?.config).toMatchObject({
+      text: "Home\n(2个功能)"
+    });
+    expect(findElement("edge-label-home-checkout")?.config).toMatchObject({
+      text: "Start checkout"
+    });
+
+    const edge = findElement("edge-home-checkout");
+    const arrow = findElement("edge-arrow-home-checkout");
+    const sourceNode = findElement("node-home");
+    const targetNode = findElement("node-checkout");
+
+    expect(edge?.config).toMatchObject({
+      stroke: "#a1a1aa"
+    });
+    expect(arrow?.config).toMatchObject({
+      fill: "#a1a1aa"
+    });
+
+    const path = edge?.config.path as Array<[string, number, number]>;
+    expect(path[0]?.[0]).toBe("M");
+    expect(path[1]?.[0]).toBe("L");
+    expect(pointInsideRect({ x: path[0][1], y: path[0][2] }, sourceNode?.config)).toBe(false);
+    expect(pointInsideRect({ x: path[1][1], y: path[1][2] }, targetNode?.config)).toBe(false);
+  });
+
+  it("selects nodes through real Leafer rect click handlers", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<NavigationGraph navigation={[]} pages={pages} />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      findElement("node-checkout")?.handlers.click?.();
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Collect payment");
+    expect(container.textContent).not.toContain("Pay");
+    expect(container.textContent).not.toContain("card");
+    expect(container.textContent).not.toContain("complete order");
+  });
+
+  it("highlights hovered nodes and their related edges", async () => {
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />);
+      await flushPromises();
+    });
+
+    const homeNode = findElement("node-home");
+    const relatedEdge = findElement("edge-home-checkout");
+    const relatedArrow = findElement("edge-arrow-home-checkout");
+
+    homeNode?.handlers["pointer.enter"]?.();
+
+    expect(homeNode?.stroke).toBe("#3B82F6");
+    expect(relatedEdge?.stroke).toBe("#3B82F6");
+    expect(relatedArrow?.fill).toBe("#3B82F6");
+    expect(leaferInstances[0]?.requestRender).toHaveBeenCalled();
+
+    homeNode?.handlers["pointer.leave"]?.();
+
+    expect(relatedEdge?.stroke).toBe("#a1a1aa");
+    expect(relatedArrow?.fill).toBe("#a1a1aa");
+  });
+
+  it("shows nodes and an empty navigation message when pages have no navigation relationships", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<NavigationGraph navigation={[]} pages={pages} />);
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("暂无页面间导航关系");
+    expect(findElement("node-home")).toBeDefined();
+    expect(findElement("node-checkout")).toBeDefined();
   });
 
   it("shows selected page features from the accessible node controls", async () => {
@@ -148,6 +263,21 @@ describe("NavigationGraph", () => {
     expect(container.textContent).not.toContain("complete order");
   });
 });
+
+function findElement(name: string) {
+  return elementInstances.find((element) => element.config.name === name);
+}
+
+function pointInsideRect(point: { x: number; y: number }, config: Record<string, unknown> | undefined): boolean {
+  if (!config) {
+    return false;
+  }
+  const x = Number(config.x);
+  const y = Number(config.y);
+  const width = Number(config.width);
+  const height = Number(config.height);
+  return point.x > x && point.x < x + width && point.y > y && point.y < y + height;
+}
 
 function createTestRoot() {
   const container = document.createElement("div");

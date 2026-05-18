@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { BaselinePage } from "../api.js";
-import { countFeatures, layoutNavigationGraph, type ForceLayoutResult } from "../lib/force-layout.js";
+import { countFeatures, layoutNavigationGraph, type ForceLayoutEdge, type ForceLayoutNode, type ForceLayoutResult } from "../lib/force-layout.js";
 
 export type NavigationGraphNavigationInput = { from: string; to: string; label?: string; trigger?: string };
 
@@ -57,9 +57,11 @@ interface LeaferElement {
 
 const selectedStroke = "#d97706";
 const nodeStroke = "#d4d4d8";
-const hoverStroke = "#2563eb";
+const hoverStroke = "#3B82F6";
+const edgeStroke = "#a1a1aa";
 const nodeFill = "#ffffff";
 const selectedFill = "#fffbeb";
+const arrowSize = 6;
 
 export function normalizeNavigation(input: NavigationGraphNavigationInput[]): NavigationGraphEdge[] {
   return input.map((edge) => ({
@@ -137,7 +139,8 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
     <div className="space-y-4">
       <div
         aria-label="Navigation graph"
-        className="relative h-[560px] w-full overflow-hidden rounded-md border border-zinc-200 bg-zinc-50"
+        className="relative w-full overflow-hidden rounded-md border border-zinc-200 bg-zinc-50"
+        style={{ height: layout.height }}
       >
         <div className="absolute inset-0 [&>canvas]:h-full [&>canvas]:w-full" ref={containerRef} />
         {runtimeError ? (
@@ -146,6 +149,8 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
           </div>
         ) : null}
       </div>
+
+      {normalizedNavigation.length === 0 ? <p className="text-sm text-zinc-500">暂无页面间导航关系</p> : null}
 
       <div aria-label="Graph nodes" className="sr-only">
         {pages.map((page) => (
@@ -176,21 +181,36 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
 
   try {
     leafer.lockLayout?.();
+    const nodeBoxes = new Map(layout.nodes.map((node) => [node.id, nodeBoxFor(node)]));
+    const edgeElementsByNodeId = new Map<string, LeaferElement[]>();
 
     for (const edge of layout.edges) {
-      leafer.add(
-        new runtime.Path({
-          hitSelf: false,
-          hittable: false,
-          name: `edge-${edge.from}-${edge.to}`,
-          path: [
-            ["M", edge.source.x, edge.source.y],
-            ["L", edge.target.x, edge.target.y]
-          ],
-          stroke: "#a1a1aa",
-          strokeWidth: 1.5
-        })
-      );
+      const geometry = edgeGeometry(edge, nodeBoxes);
+      const edgeLine = new runtime.Path({
+        hitSelf: false,
+        hittable: false,
+        name: `edge-${edge.from}-${edge.to}`,
+        path: [
+          ["M", geometry.start.x, geometry.start.y],
+          ["L", geometry.end.x, geometry.end.y]
+        ],
+        stroke: edgeStroke,
+        strokeWidth: 1.5
+      });
+      const arrow = new runtime.Path({
+        fill: edgeStroke,
+        hitSelf: false,
+        hittable: false,
+        name: `edge-arrow-${edge.from}-${edge.to}`,
+        path: geometry.arrowPath
+      });
+
+      leafer.add(edgeLine);
+      leafer.add(arrow);
+      registerEdgeElement(edgeElementsByNodeId, edge.from, edgeLine);
+      registerEdgeElement(edgeElementsByNodeId, edge.from, arrow);
+      registerEdgeElement(edgeElementsByNodeId, edge.to, edgeLine);
+      registerEdgeElement(edgeElementsByNodeId, edge.to, arrow);
       leafer.add(
         new runtime.Text({
           fill: "#71717a",
@@ -201,16 +221,15 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
           text: edge.label,
           textAlign: "center",
           width: 160,
-          x: (edge.source.x + edge.target.x) / 2 - 80,
-          y: (edge.source.y + edge.target.y) / 2 - 18
+          x: (geometry.start.x + geometry.end.x) / 2 - 80,
+          y: (geometry.start.y + geometry.end.y) / 2 - 18
         })
       );
     }
 
     for (const node of layout.nodes) {
       const selected = node.id === selectedPageId;
-      const width = Math.max(128, node.radius * 3.4);
-      const height = 52;
+      const { height, width } = nodeBoxFor(node);
       const rect = new runtime.Rect({
         cornerRadius: 8,
         cursor: "pointer",
@@ -230,11 +249,13 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
           rect.stroke = hoverStroke;
           rect.strokeWidth = 2;
         }
+        applyEdgeElementsState(edgeElementsByNodeId.get(node.id) ?? [], true);
         leafer.requestRender?.();
       });
       rect.on?.(runtime.PointerEvent.LEAVE, () => {
         rect.stroke = selected ? selectedStroke : nodeStroke;
         rect.strokeWidth = selected ? 2 : 1;
+        applyEdgeElementsState(edgeElementsByNodeId.get(node.id) ?? [], false);
         leafer.requestRender?.();
       });
       rect.on?.(runtime.PointerEvent.CLICK, () => {
@@ -249,12 +270,13 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
           fontWeight: 600,
           hittable: false,
           name: `node-label-${node.id}`,
-          text: node.label,
+          text: `${node.label}\n(${node.featureCount ?? 0}个功能)`,
           textAlign: "center",
           textOverflow: "ellipsis",
+          textWrap: "none",
           width: width - 16,
           x: node.x - width / 2 + 8,
-          y: node.y - 9
+          y: node.y - 18
         })
       );
     }
@@ -271,6 +293,100 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
       leafer.destroy();
     }
   };
+}
+
+function nodeBoxFor(node: ForceLayoutNode): { height: number; width: number } {
+  return {
+    height: 56,
+    width: Math.max(144, node.radius * 3.6)
+  };
+}
+
+function edgeGeometry(edge: ForceLayoutEdge, nodeBoxes: Map<string, { height: number; width: number }>) {
+  if (edge.source === edge.target) {
+    const box = nodeBoxes.get(edge.source.id) ?? nodeBoxFor(edge.source);
+    const start = { x: edge.source.x + box.width / 2, y: edge.source.y };
+    const end = { x: edge.source.x, y: edge.source.y - box.height / 2 };
+    return {
+      start,
+      end,
+      arrowPath: trianglePath(end, start, arrowSize)
+    };
+  }
+
+  const sourceBox = nodeBoxes.get(edge.source.id) ?? nodeBoxFor(edge.source);
+  const targetBox = nodeBoxes.get(edge.target.id) ?? nodeBoxFor(edge.target);
+  const start = boxBoundaryPoint(edge.source, edge.target, sourceBox);
+  const end = boxBoundaryPoint(edge.target, edge.source, targetBox);
+
+  return {
+    start,
+    end,
+    arrowPath: trianglePath(end, start, arrowSize)
+  };
+}
+
+function boxBoundaryPoint(from: ForceLayoutNode, toward: ForceLayoutNode, box: { height: number; width: number }) {
+  const dx = toward.x - from.x;
+  const dy = toward.y - from.y;
+
+  if (dx === 0 && dy === 0) {
+    return { x: from.x, y: from.y - box.height / 2 };
+  }
+
+  const halfWidth = box.width / 2;
+  const halfHeight = box.height / 2;
+  const scale = Math.min(
+    dx === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx),
+    dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy)
+  );
+
+  return {
+    x: roundSceneValue(from.x + dx * scale),
+    y: roundSceneValue(from.y + dy * scale)
+  };
+}
+
+function trianglePath(tip: { x: number; y: number }, tail: { x: number; y: number }, size: number) {
+  const dx = tip.x - tail.x;
+  const dy = tip.y - tail.y;
+  const length = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
+  const unitX = dx / length;
+  const unitY = dy / length;
+  const baseX = tip.x - unitX * size;
+  const baseY = tip.y - unitY * size;
+  const perpX = -unitY * (size / 2);
+  const perpY = unitX * (size / 2);
+
+  return [
+    ["M", roundSceneValue(tip.x), roundSceneValue(tip.y)],
+    ["L", roundSceneValue(baseX + perpX), roundSceneValue(baseY + perpY)],
+    ["L", roundSceneValue(baseX - perpX), roundSceneValue(baseY - perpY)],
+    ["Z"]
+  ];
+}
+
+function registerEdgeElement(edgeElementsByNodeId: Map<string, LeaferElement[]>, nodeId: string, element: LeaferElement): void {
+  const elements = edgeElementsByNodeId.get(nodeId) ?? [];
+  if (!elements.includes(element)) {
+    elements.push(element);
+  }
+  edgeElementsByNodeId.set(nodeId, elements);
+}
+
+function applyEdgeElementsState(elements: LeaferElement[], highlighted: boolean): void {
+  for (const element of elements) {
+    if (element.fill !== undefined) {
+      element.fill = highlighted ? hoverStroke : edgeStroke;
+    }
+    if (element.stroke !== undefined) {
+      element.stroke = highlighted ? hoverStroke : edgeStroke;
+    }
+  }
+}
+
+function roundSceneValue(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 async function loadLeaferRuntime(): Promise<LeaferRuntime> {

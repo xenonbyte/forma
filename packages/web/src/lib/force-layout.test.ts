@@ -8,7 +8,12 @@ describe("countFeatures", () => {
     expect(countFeatures("  \n\t\n ")).toBe(0);
   });
 
-  it("counts non-empty lines and bullet items", () => {
+  it("counts plus-separated feature items as the primary format", () => {
+    expect(countFeatures("Search products + Filter results + Export report")).toBe(3);
+    expect(countFeatures(" + Search products +  + Export report + ")).toBe(2);
+  });
+
+  it("counts non-empty lines and bullet items for compatibility", () => {
     expect(countFeatures("Search\nFilters\nExport")).toBe(3);
     expect(countFeatures("- Search\n- Filters\n- Export")).toBe(3);
   });
@@ -82,8 +87,8 @@ describe("layoutNavigationGraph", () => {
       edges: [{ from: "small", to: "large", label: "open" }],
     });
 
-    expect(result.width).toBe(960);
-    expect(result.height).toBe(560);
+    expect(result.width).toBe(600);
+    expect(result.height).toBe(400);
     expect(result.nodes[1]?.radius).toBeGreaterThan(result.nodes[0]?.radius ?? 0);
 
     for (const node of result.nodes) {
@@ -111,10 +116,32 @@ describe("layoutNavigationGraph", () => {
 
   it("returns an empty fixed-size graph for empty input", () => {
     expect(layoutNavigationGraph({ nodes: [], edges: [] })).toEqual({
-      width: 960,
-      height: 560,
+      width: 600,
+      height: 400,
       nodes: [],
       edges: [],
     });
   });
+
+  it("grows graph size every five nodes up to the maximum", () => {
+    expect(layoutNavigationGraph({ nodes: createNodes(5), edges: [] })).toMatchObject({
+      width: 600,
+      height: 400,
+    });
+    expect(layoutNavigationGraph({ nodes: createNodes(6), edges: [] })).toMatchObject({
+      width: 800,
+      height: 600,
+    });
+    expect(layoutNavigationGraph({ nodes: createNodes(30), edges: [] })).toMatchObject({
+      width: 1600,
+      height: 1200,
+    });
+  });
 });
+
+function createNodes(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `page-${index}`,
+    label: `Page ${index}`,
+  }));
+}

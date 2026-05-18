@@ -76,6 +76,7 @@ describe("BaselineContent", () => {
     expect(html).toContain("Functional pages");
     expect(html).toContain("Checkout flow");
     expect(html).toContain("Payment terms");
+    expect(html).toContain("Continue");
     expect(html).not.toContain("Navigation graph");
   });
 

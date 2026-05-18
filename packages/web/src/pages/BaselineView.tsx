@@ -11,6 +11,7 @@ export interface BaselineViewProps {
 
 type BaselineState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { baseline: ProductBaseline; status: "ready" };
 type BaselineTab = "graph" | "list";
+type BaselineNavigationDisplayEdge = ProductBaseline["navigation"][number] & { trigger?: string };
 
 export function BaselineView({ client = apiClient, params }: BaselineViewProps) {
   const productId = params.productId ?? "";
@@ -147,7 +148,7 @@ export function BaselineContent({ baseline, productId }: { baseline: ProductBase
                     <span className="truncate font-mono text-zinc-700">{edge.from}</span>
                     <span className="text-zinc-400">to</span>
                     <span className="truncate font-mono text-zinc-700">{edge.to}</span>
-                    <span className="truncate text-zinc-500">{edge.label ?? "No label"}</span>
+                    <span className="truncate text-zinc-500">{navigationEdgeLabel(edge)}</span>
                   </div>
                 ))}
               </div>
@@ -170,6 +171,10 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd className="min-w-0 whitespace-pre-wrap text-zinc-800">{value}</dd>
     </div>
   );
+}
+
+function navigationEdgeLabel(edge: BaselineNavigationDisplayEdge): string {
+  return edge.trigger ?? edge.label ?? "No label";
 }
 
 const secondaryLinkClasses =

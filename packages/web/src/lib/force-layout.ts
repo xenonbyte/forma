@@ -28,13 +28,22 @@ export interface ForceLayoutResult {
   edges: ForceLayoutEdge[];
 }
 
-const LAYOUT_WIDTH = 960;
-const LAYOUT_HEIGHT = 560;
+const MIN_LAYOUT_WIDTH = 600;
+const MIN_LAYOUT_HEIGHT = 400;
+const MAX_LAYOUT_WIDTH = 1600;
+const MAX_LAYOUT_HEIGHT = 1200;
 const MIN_RADIUS = 24;
 const MAX_RADIUS = 44;
 const ITERATIONS = 100;
 
 export function countFeatures(features: string): number {
+  if (features.includes("+")) {
+    return features
+      .split("+")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0).length;
+  }
+
   return features
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -45,16 +54,18 @@ export function layoutNavigationGraph(input: {
   nodes: ForceLayoutNodeInput[];
   edges: ForceLayoutEdgeInput[];
 }): ForceLayoutResult {
+  const size = resolveLayoutSize(input.nodes.length);
+
   if (input.nodes.length === 0) {
     return {
-      width: LAYOUT_WIDTH,
-      height: LAYOUT_HEIGHT,
+      width: size.width,
+      height: size.height,
       nodes: [],
       edges: [],
     };
   }
 
-  const nodes = createInitialNodes(input.nodes);
+  const nodes = createInitialNodes(input.nodes, size);
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const edges = input.edges.flatMap((edge): ForceLayoutEdge[] => {
     const source = nodeById.get(edge.from);
@@ -67,20 +78,20 @@ export function layoutNavigationGraph(input: {
     return [{ ...edge, source, target }];
   });
 
-  simulate(nodes, edges);
+  simulate(nodes, edges, size);
 
   return {
-    width: LAYOUT_WIDTH,
-    height: LAYOUT_HEIGHT,
+    width: size.width,
+    height: size.height,
     nodes,
     edges,
   };
 }
 
-function createInitialNodes(inputs: ForceLayoutNodeInput[]): ForceLayoutNode[] {
-  const centerX = LAYOUT_WIDTH / 2;
-  const centerY = LAYOUT_HEIGHT / 2;
-  const orbitRadius = Math.min(LAYOUT_WIDTH, LAYOUT_HEIGHT) * 0.32;
+function createInitialNodes(inputs: ForceLayoutNodeInput[], size: { height: number; width: number }): ForceLayoutNode[] {
+  const centerX = size.width / 2;
+  const centerY = size.height / 2;
+  const orbitRadius = Math.min(size.width, size.height) * 0.32;
 
   return inputs.map((input, index) => {
     const angle = inputs.length === 1 ? 0 : (Math.PI * 2 * index) / inputs.length - Math.PI / 2;
@@ -90,14 +101,14 @@ function createInitialNodes(inputs: ForceLayoutNodeInput[]): ForceLayoutNode[] {
 
     return {
       ...input,
-      x: clamp(roundLayoutValue(x), radius, LAYOUT_WIDTH - radius),
-      y: clamp(roundLayoutValue(y), radius, LAYOUT_HEIGHT - radius),
+      x: clamp(roundLayoutValue(x), radius, size.width - radius),
+      y: clamp(roundLayoutValue(y), radius, size.height - radius),
       radius,
     };
   });
 }
 
-function simulate(nodes: ForceLayoutNode[], edges: ForceLayoutEdge[]): void {
+function simulate(nodes: ForceLayoutNode[], edges: ForceLayoutEdge[], size: { height: number; width: number }): void {
   const velocities = nodes.map(() => ({ x: 0, y: 0 }));
   const indexByNode = new Map(nodes.map((node, index) => [node, index]));
 
@@ -174,15 +185,24 @@ function simulate(nodes: ForceLayoutNode[], edges: ForceLayoutEdge[]): void {
         continue;
       }
 
-      velocity.x += (LAYOUT_WIDTH / 2 - node.x) * 0.006;
-      velocity.y += (LAYOUT_HEIGHT / 2 - node.y) * 0.006;
+      velocity.x += (size.width / 2 - node.x) * 0.006;
+      velocity.y += (size.height / 2 - node.y) * 0.006;
       velocity.x *= 0.82;
       velocity.y *= 0.82;
 
-      node.x = clamp(roundLayoutValue(node.x + velocity.x), node.radius, LAYOUT_WIDTH - node.radius);
-      node.y = clamp(roundLayoutValue(node.y + velocity.y), node.radius, LAYOUT_HEIGHT - node.radius);
+      node.x = clamp(roundLayoutValue(node.x + velocity.x), node.radius, size.width - node.radius);
+      node.y = clamp(roundLayoutValue(node.y + velocity.y), node.radius, size.height - node.radius);
     }
   }
+}
+
+function resolveLayoutSize(nodeCount: number): { height: number; width: number } {
+  const growthSteps = Math.floor(Math.max(0, nodeCount - 1) / 5);
+
+  return {
+    width: clamp(MIN_LAYOUT_WIDTH + growthSteps * 200, MIN_LAYOUT_WIDTH, MAX_LAYOUT_WIDTH),
+    height: clamp(MIN_LAYOUT_HEIGHT + growthSteps * 200, MIN_LAYOUT_HEIGHT, MAX_LAYOUT_HEIGHT),
+  };
 }
 
 function radiusForFeatureCount(featureCount: number): number {
