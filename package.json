@@ -1,0 +1,29 @@
+{
+  "name": "forma-workspace",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter './packages/*' --filter '!@xenonbyte/forma-cli' -r --if-present build && pnpm --filter @xenonbyte/forma-cli build",
+    "test": "vitest run",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "pack:cli": "pnpm --filter @xenonbyte/forma-cli pack",
+    "dev:web": "pnpm --filter @xenonbyte/forma-web dev",
+    "smoke:pencil": "pnpm --filter @xenonbyte/forma-core build && pnpm --filter @xenonbyte/forma-server build && tsx scripts/smoke-pencil.ts"
+  },
+  "dependencies": {
+    "@xenonbyte/forma-cli": "workspace:*",
+    "@xenonbyte/forma-core": "workspace:*",
+    "@xenonbyte/forma-server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "happy-dom": "^20.9.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^4.0.7"
+  }
+}

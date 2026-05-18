@@ -1,0 +1,895 @@
+styles:
+  - name: linear
+    description: Focused tool UI
+    design_md_path: styles/linear/DESIGN.md
+    variables:
+      primary: '#5E6AD2'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: claude
+    description: Warm editorial workspace
+    design_md_path: styles/claude/DESIGN.md
+    variables:
+      primary: '#D97706'
+      background: '#FFFBF5'
+      text-primary: '#1F2937'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: airbnb
+    description: >-
+      A warm, generous consumer marketplace anchored on a clean white canvas and Airbnb Rausch (#ff385c), the single
+      brand voltage that carries every primary CTA, search-button orb, a...
+    design_md_path: styles/airbnb/DESIGN.md
+    variables:
+      primary: '#ff385c'
+      background: '#ffffff'
+      text-primary: '#222222'
+      font-heading: '''Airbnb Cereal VF'', Circular, -apple-system, system-ui, Roboto, ''Helvetica Neue'', sans-serif'
+      font-body: '''Airbnb Cereal VF'', Circular, sans-serif'
+      border-radius: 14px
+      spacing-unit: 12px
+  - name: airtable
+    description: >-
+      A sober, editorial workflow-software interface anchored on white canvas and dark-ink type, where brand voltage
+      comes from full-bleed signature cards in coral, dark green, peach,...
+    design_md_path: styles/airtable/DESIGN.md
+    variables:
+      primary: '#181d26'
+      background: '#ffffff'
+      text-primary: '#181d26'
+      font-heading: Haas Groot Disp, Haas, sans-serif
+      font-body: Haas, sans-serif
+      border-radius: 10px
+      spacing-unit: 16px
+  - name: apple
+    description: A photography-first interface that turns marketing into a museum gallery.
+    design_md_path: styles/apple/DESIGN.md
+    variables:
+      primary: '#0066cc'
+      background: '#ffffff'
+      text-primary: '#1d1d1f'
+      font-heading: SF Pro Display, system-ui, -apple-system, sans-serif
+      font-body: SF Pro Text, system-ui, -apple-system, sans-serif
+      border-radius: 11px
+      spacing-unit: 17px
+  - name: binance
+    description: >-
+      A confident financial-platform interface anchored on a deep near-black canvas, where Binance's iconic yellow
+      (#FCD535) carries every primary CTA, brand accent, and value-claim m...
+    design_md_path: styles/binance/DESIGN.md
+    variables:
+      primary: '#fcd535'
+      background: '#fcd535'
+      text-primary: '#181a20'
+      font-heading: BinanceNova, sans-serif
+      font-body: BinanceNova, sans-serif
+      border-radius: 6px
+      spacing-unit: 16px
+  - name: bmw
+    description: >-
+      BMW's corporate site — distinct from BMW M's motorsport-bombastic variant, this is a measured and settled
+      corporate-automotive interface.
+    design_md_path: styles/bmw/DESIGN.md
+    variables:
+      primary: '#1c69d4'
+      background: '#ffffff'
+      text-primary: '#262626'
+      font-heading: '''BMW Type Next Latin'', system-ui, -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, sans-serif'
+      font-body: '''BMW Type Next Latin'', sans-serif'
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: bmw-m
+    description: >-
+      A motorsport-engineering interface anchored on a near-black canvas with white BMW Type Next Latin display
+      headlines in confident UPPERCASE.
+    design_md_path: styles/bmw-m/DESIGN.md
+    variables:
+      primary: '#ffffff'
+      background: '#000000'
+      text-primary: '#ffffff'
+      font-heading: BMWTypeNextLatin, sans-serif
+      font-body: BMWTypeNextLatin Light, BMWTypeNextLatin, sans-serif
+      border-radius: 6px
+      spacing-unit: 16px
+  - name: bugatti
+    description: >-
+      An austere luxury-automotive interface that uses near-pure black canvas, white uppercase letterspaced display, and
+      full-bleed automotive photography as the only voltage.
+    design_md_path: styles/bugatti/DESIGN.md
+    variables:
+      primary: '#ffffff'
+      background: '#000000'
+      text-primary: '#ffffff'
+      font-heading: Bugatti Display, sans-serif
+      font-body: Bugatti Text Regular, serif
+      border-radius: 0px
+      spacing-unit: 16px
+  - name: cal
+    description: >-
+      A clean, calendar-software-first interface anchored on white canvas with black primary CTAs and custom Cal Sans
+      display typography.
+    design_md_path: styles/cal/DESIGN.md
+    variables:
+      primary: '#111111'
+      background: '#ffffff'
+      text-primary: '#111111'
+      font-heading: Cal Sans, Inter, sans-serif
+      font-body: Inter, sans-serif
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: clay
+    description: A vibrant claymation-meets-data interface for Clay.com (GTM data-orchestration platform).
+    design_md_path: styles/clay/DESIGN.md
+    variables:
+      primary: '#0a0a0a'
+      background: '#fffaf0'
+      text-primary: '#0a0a0a'
+      font-heading: Plain Black, Inter, sans-serif
+      font-body: Inter, sans-serif
+      border-radius: 12px
+      spacing-unit: 16px
+  - name: clickhouse
+    description: >-
+      A high-performance database interface anchored on near-pure black canvas with electric yellow as the brand
+      voltage.
+    design_md_path: styles/clickhouse/DESIGN.md
+    variables:
+      primary: '#faff69'
+      background: '#0a0a0a'
+      text-primary: '#ffffff'
+      font-heading: Inter, sans-serif
+      font-body: Inter, sans-serif
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: cohere
+    description: >-
+      Cohere's 2026 web system is a controlled enterprise AI interface built from stark white editorial space, deep
+      green-black product bands, soft mineral surfaces, rounded media car...
+    design_md_path: styles/cohere/DESIGN.md
+    variables:
+      primary: '#17171c'
+      background: '#ffffff'
+      text-primary: '#212121'
+      font-heading: CohereText
+      font-body: Unica77 Cohere Web
+      border-radius: 16px
+      spacing-unit: 12px
+  - name: coinbase
+    description: >-
+      An institutional-grade crypto exchange whose marketing surfaces read like a quietly-confident financial-services
+      brand.
+    design_md_path: styles/coinbase/DESIGN.md
+    variables:
+      primary: '#0052ff'
+      background: '#ffffff'
+      text-primary: '#0a0b0d'
+      font-heading: '''Coinbase Display'', sans-serif'
+      font-body: '''Coinbase Sans'', sans-serif'
+      border-radius: 12px
+      spacing-unit: 20px
+  - name: composio
+    description: >-
+      A developer-tools brand for AI-agent tool integration whose marketing surfaces lean into a dark, technical
+      aesthetic with a single deep-electric-blue voltage (`#0007cd`).
+    design_md_path: styles/composio/DESIGN.md
+    variables:
+      primary: '#0007cd'
+      background: '#0f0f0f'
+      text-primary: '#ffffff'
+      font-heading: '''abcDiatype'', ui-sans-serif, system-ui, sans-serif'
+      font-body: '''abcDiatype'', ui-sans-serif, system-ui, sans-serif'
+      border-radius: 8px
+      spacing-unit: 20px
+  - name: cursor
+    description: >-
+      An AI-first code editor whose marketing site reads like a quietly-confident developer-tools brand with a
+      warm-cream editorial canvas (`#f7f7f4`) instead of the typical dark IDE...
+    design_md_path: styles/cursor/DESIGN.md
+    variables:
+      primary: '#f54e00'
+      background: '#f7f7f4'
+      text-primary: '#26251e'
+      font-heading: '''CursorGothic'', sans-serif'
+      font-body: '''CursorGothic'', sans-serif'
+      border-radius: 8px
+      spacing-unit: 20px
+  - name: elevenlabs
+    description: elevenlabs inspired design style
+    design_md_path: styles/elevenlabs/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: expo
+    description: A React Native developer-platform whose marketing site reads like a quietly-confident infrastructure brand.
+    design_md_path: styles/expo/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#ffffff'
+      text-primary: '#171717'
+      font-heading: '''Inter'', sans-serif'
+      font-body: '''Inter'', sans-serif'
+      border-radius: 8px
+      spacing-unit: 20px
+  - name: ferrari
+    description: A luxury-automotive brand whose marketing surfaces read as cinematic editorial.
+    design_md_path: styles/ferrari/DESIGN.md
+    variables:
+      primary: '#da291c'
+      background: '#181818'
+      text-primary: '#ffffff'
+      font-heading: '''FerrariSans'', sans-serif'
+      font-body: '''FerrariSans'', sans-serif'
+      border-radius: 6px
+      spacing-unit: 32px
+  - name: figma
+    description: A confident black-and-white editorial frame interrupted by oversized, hand-cut pastel color blocks.
+    design_md_path: styles/figma/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: figmaSans
+      font-body: figmaSans
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: framer
+    description: >-
+      A confident dark-canvas builder marketing site that treats the page like a working artboard — pure black surfaces,
+      white display type set in GT Walsheim Medium with aggressive n...
+    design_md_path: styles/framer/DESIGN.md
+    variables:
+      primary: '#ffffff'
+      background: '#090909'
+      text-primary: '#ffffff'
+      font-heading: GT Walsheim Medium
+      font-body: Inter Variable
+      border-radius: 10px
+      spacing-unit: 15px
+  - name: hashicorp
+    description: >-
+      An enterprise-infrastructure marketing canvas built around a near-black ground (#000000) and a system of
+      per-product accent colors — Terraform purple, Vault yellow, Consul pink,...
+    design_md_path: styles/hashicorp/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#000000'
+      text-primary: '#ffffff'
+      font-heading: hashicorpSans
+      font-body: hashicorpSans
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: ibm
+    description: >-
+      An enterprise-marketing canvas faithful to Carbon Design System: white surfaces, charcoal type, IBM Blue (#0f62fe)
+      as the single confident accent, and a deliberately flat-square...
+    design_md_path: styles/ibm/DESIGN.md
+    variables:
+      primary: '#0f62fe'
+      background: '#ffffff'
+      text-primary: '#161616'
+      font-heading: IBM Plex Sans
+      font-body: IBM Plex Sans
+      border-radius: 6px
+      spacing-unit: 16px
+  - name: intercom
+    description: >-
+      An editorial customer-service marketing canvas built around a soft cream-white ground, charcoal type set in Saans
+      (Intercom's proprietary geometric sans), and a single confident...
+    design_md_path: styles/intercom/DESIGN.md
+    variables:
+      primary: '#111111'
+      background: '#f5f1ec'
+      text-primary: '#111111'
+      font-heading: Saans
+      font-body: Saans
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: kraken
+    description: kraken inspired design style
+    design_md_path: styles/kraken/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: lamborghini
+    description: lamborghini inspired design style
+    design_md_path: styles/lamborghini/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: linear.app
+    description: >-
+      A near-black product-focused marketing canvas built around #010102 (the deepest dark surface of any tool in this
+      collection), light gray text (#f7f8f8), and the signature Linear...
+    design_md_path: styles/linear.app/DESIGN.md
+    variables:
+      primary: '#5e6ad2'
+      background: '#010102'
+      text-primary: '#f7f8f8'
+      font-heading: Linear Display
+      font-body: Linear Text
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: lovable
+    description: lovable inspired design style
+    design_md_path: styles/lovable/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: mastercard
+    description: mastercard inspired design style
+    design_md_path: styles/mastercard/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: meta
+    description: >-
+      Meta's design system spans hardware commerce (Quest VR, Ray-Ban Meta AI glasses) and brand surfaces with a
+      confident product-merchandising voice.
+    design_md_path: styles/meta/DESIGN.md
+    variables:
+      primary: '#0064e0'
+      background: '#ffffff'
+      text-primary: '#1c1e21'
+      font-heading: Optimistic VF
+      font-body: Optimistic VF
+      border-radius: 6px
+      spacing-unit: 12px
+  - name: minimax
+    description: >-
+      MiniMax presents itself as a premium AI infrastructure brand through a striking duality — bold black-pill CTAs and
+      stark white canvas for marketing, paired with vibrant gradient...
+    design_md_path: styles/minimax/DESIGN.md
+    variables:
+      primary: '#0a0a0a'
+      background: '#ffffff'
+      text-primary: '#0a0a0a'
+      font-heading: DM Sans
+      font-body: DM Sans
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: mintlify
+    description: >-
+      Mintlify presents documentation infrastructure with a dual-mode aesthetic — atmospheric sky-gradient marketing
+      heroes (cloud illustration backdrops, soft cream-to-blue washes) p...
+    design_md_path: styles/mintlify/DESIGN.md
+    variables:
+      primary: '#0a0a0a'
+      background: '#ffffff'
+      text-primary: '#0a0a0a'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: miro
+    description: >-
+      Miro presents itself as the AI-powered visual workspace through a confident, almost playful brand voice — anchored
+      by its signature canary yellow ({colors.brand-yellow}) wordmar...
+    design_md_path: styles/miro/DESIGN.md
+    variables:
+      primary: '#1c1c1e'
+      background: '#ffffff'
+      text-primary: '#1c1c1e'
+      font-heading: Roobert PRO
+      font-body: Roobert PRO
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: mistral.ai
+    description: >-
+      Mistral AI brands itself with a singular signature — atmospheric sunset gradients (mustard, orange, deep red)
+      layered over photography of mountains, plus a horizontal "sunset st...
+    design_md_path: styles/mistral.ai/DESIGN.md
+    variables:
+      primary: '#fa520f'
+      background: '#ffffff'
+      text-primary: '#1f1f1f'
+      font-heading: PP Editorial Old
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: mongodb
+    description: >-
+      MongoDB carries a strong dual-mode visual identity — dark deep-teal hero bands with bright MongoDB green
+      ({colors.brand-green}) CTAs paired with stark white documentation surfaces.
+    design_md_path: styles/mongodb/DESIGN.md
+    variables:
+      primary: '#00ed64'
+      background: '#ffffff'
+      text-primary: '#001e2b'
+      font-heading: Euclid Circular A
+      font-body: Euclid Circular A
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: nike
+    description: >-
+      A photography-first commerce system built on extreme typographic contrast — towering uppercase Futura display
+      lockups burned into editorial campaign imagery, sitting above a den...
+    design_md_path: styles/nike/DESIGN.md
+    variables:
+      primary: '#111111'
+      background: '#ffffff'
+      text-primary: '#111111'
+      font-heading: Helvetica Now Display Medium
+      font-body: Helvetica Now Text
+      border-radius: 24px
+      spacing-unit: 12px
+  - name: notion
+    description: >-
+      Notion presents itself as the all-in-one workspace through a confident, illustration-rich brand voice — anchored
+      by a deep navy hero band ({colors.brand-navy}) decorated with br...
+    design_md_path: styles/notion/DESIGN.md
+    variables:
+      primary: '#5645d4'
+      background: '#ffffff'
+      text-primary: '#1a1a1a'
+      font-heading: Notion Sans
+      font-body: Notion Sans
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: nvidia
+    description: >-
+      An engineering-grade marketing system organized around two surface modes — a deep black canvas for hero and footer
+      chapters and a flat paper-white canvas for body content — conn...
+    design_md_path: styles/nvidia/DESIGN.md
+    variables:
+      primary: '#76b900'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: NVIDIA-EMEA
+      font-body: NVIDIA-EMEA
+      border-radius: 2px
+      spacing-unit: 12px
+  - name: ollama
+    description: >-
+      An almost defiantly minimal documentation-first system that treats the home page like a Markdown README —
+      paper-white canvas, 36px center-aligned heading, a single black pill CT...
+    design_md_path: styles/ollama/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: SF Pro Rounded
+      font-body: ui-sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: opencode.ai
+    description: >-
+      A terminal-native marketing system rendered entirely in Berkeley Mono — every word on the page, from the hero
+      headline down to the footer fine print, is monospaced.
+    design_md_path: styles/opencode.ai/DESIGN.md
+    variables:
+      primary: '#201d1d'
+      background: '#fdfcfc'
+      text-primary: '#201d1d'
+      font-heading: Berkeley Mono
+      font-body: Berkeley Mono
+      border-radius: 4px
+      spacing-unit: 12px
+  - name: pinterest
+    description: >-
+      A photography-first discovery system organized around the Pinterest Red CTA, the masonry pin grid, and a soft
+      warm-cream chrome that gets out of the imagery's way.
+    design_md_path: styles/pinterest/DESIGN.md
+    variables:
+      primary: '#e60023'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: Pin Sans
+      font-body: Pin Sans
+      border-radius: 16px
+      spacing-unit: 12px
+  - name: playstation
+    description: >-
+      A three-surface marketing system organized around alternating black, white, and PlayStation Blue chapters that
+      scroll past the viewer like a console launch trailer.
+    design_md_path: styles/playstation/DESIGN.md
+    variables:
+      primary: '#0070d1'
+      background: '#0070d1'
+      text-primary: '#000000'
+      font-heading: PlayStation SST
+      font-body: PlayStation SST
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: posthog
+    description: >-
+      A playful developer-tools system rendered on a warm cream canvas with hand-drawn hedgehog mascots dotted across
+      every page like marginalia in a sketchbook.
+    design_md_path: styles/posthog/DESIGN.md
+    variables:
+      primary: '#f7a501'
+      background: '#eeefe9'
+      text-primary: '#23251d'
+      font-heading: IBM Plex Sans Variable
+      font-body: IBM Plex Sans Variable
+      border-radius: 6px
+      spacing-unit: 12px
+  - name: raycast
+    description: raycast inspired design style
+    design_md_path: styles/raycast/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: renault
+    description: >-
+      Renault's web presence pairs the freshly-modernised Renault diamond (the 2021 flat-line rhombus mark) with a stark
+      black-and-white canvas, a signature Sunlight Yellow accent, an...
+    design_md_path: styles/renault/DESIGN.md
+    variables:
+      primary: '#ffed00'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: NouvelR
+      font-body: NouvelR
+      border-radius: 4px
+      spacing-unit: 16px
+  - name: replicate
+    description: >-
+      Replicate's marketing surfaces pair the warm-cream developer-tools aesthetic of an indie ML playground with a
+      confident hot-orange brand accent and a signature display typeface...
+    design_md_path: styles/replicate/DESIGN.md
+    variables:
+      primary: '#ea2804'
+      background: '#f9f7f3'
+      text-primary: '#202020'
+      font-heading: rb-freigeist-neue
+      font-body: basier-square
+      border-radius: 10px
+      spacing-unit: 12px
+  - name: resend
+    description: >-
+      Resend's marketing surfaces sit on a near-pure black canvas with off-white text and a single signature color — the
+      deep editorial-serif Domaine Display headline mark — that give...
+    design_md_path: styles/resend/DESIGN.md
+    variables:
+      primary: '#fcfdff'
+      background: '#000000'
+      text-primary: '#fcfdff'
+      font-heading: Domaine Display
+      font-body: ABC Favorit
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: revolut
+    description: >-
+      Revolut's marketing surfaces pair a stark black canvas with the brand's cobalt-violet (`#494fdf`) and a wide
+      accent palette of deep, fully-saturated product colours — teal, ligh...
+    design_md_path: styles/revolut/DESIGN.md
+    variables:
+      primary: '#494fdf'
+      background: '#494fdf'
+      text-primary: '#191c1f'
+      font-heading: Aeonik Pro
+      font-body: Inter
+      border-radius: 12px
+      spacing-unit: 14px
+  - name: runwayml
+    description: runwayml inspired design style
+    design_md_path: styles/runwayml/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: sanity
+    description: sanity inspired design style
+    design_md_path: styles/sanity/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: sentry
+    description: >-
+      An inspired interpretation of Sentri's design language — a developer-tools brand built on a deep purple-violet
+      midnight canvas, electric lime accents, and a slightly subversive...
+    design_md_path: styles/sentry/DESIGN.md
+    variables:
+      primary: '#150f23'
+      background: '#150f23'
+      text-primary: '#1f1633'
+      font-heading: Rubik, -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif
+      font-body: Rubik, -apple-system, system-ui, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: shopify
+    description: >-
+      An inspired interpretation of Shopifi's design language — a cinematic commerce platform that runs two parallel
+      design tracks.
+    design_md_path: styles/shopify/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#000000'
+      text-primary: '#000000'
+      font-heading: NeueHaasGrotesk Display, Helvetica, Arial, sans-serif
+      font-body: Inter Variable, Inter, Helvetica, Arial, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: slack
+    description: >-
+      An inspired interpretation of Slacc's design language — a workplace messaging brand built on a deep aubergine
+      primary, with cream-lavender hero gradients, blue inline links, and...
+    design_md_path: styles/slack/DESIGN.md
+    variables:
+      primary: '#4a154b'
+      background: '#ffffff'
+      text-primary: '#1d1d1d'
+      font-heading: Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif
+      font-body: Salesforce-Sans, system-ui, -apple-system, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: spacex
+    description: spacex inspired design style
+    design_md_path: styles/spacex/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: spotify
+    description: spotify inspired design style
+    design_md_path: styles/spotify/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: starbucks
+    description: starbucks inspired design style
+    design_md_path: styles/starbucks/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: stripe
+    description: >-
+      An inspired interpretation of Stripi's design language — a financial-infrastructure brand built on a deep navy
+      ink, an electric indigo primary, and a recurring atmospheric gradi...
+    design_md_path: styles/stripe/DESIGN.md
+    variables:
+      primary: '#533afd'
+      background: '#ffffff'
+      text-primary: '#0d253d'
+      font-heading: sohne-var, 'SF Pro Display', system-ui, -apple-system, sans-serif
+      font-body: sohne-var, 'SF Pro Display', system-ui, -apple-system, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: supabase
+    description: supabase inspired design style
+    design_md_path: styles/supabase/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: superhuman
+    description: >-
+      An inspired interpretation of Superhumon's design language — a fast-email productivity brand split between an
+      editorial dark hero (deep indigo navy with violet-sky atmospheric b...
+    design_md_path: styles/superhuman/DESIGN.md
+    variables:
+      primary: '#1b1938'
+      background: '#ffffff'
+      text-primary: '#292827'
+      font-heading: '''Super Sans VF'', system-ui, -apple-system, ''Segoe UI'', Roboto, sans-serif'
+      font-body: '''Super Sans VF'', system-ui, -apple-system, ''Segoe UI'', Roboto, sans-serif'
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: tesla
+    description: tesla inspired design style
+    design_md_path: styles/tesla/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: theverge
+    description: theverge inspired design style
+    design_md_path: styles/theverge/DESIGN.md
+    variables:
+      primary: '#111827'
+      background: '#FFFFFF'
+      text-primary: '#111827'
+      font-heading: Inter
+      font-body: Inter
+      border-radius: 8px
+      spacing-unit: 8px
+  - name: together.ai
+    description: >-
+      An inspired interpretation of Together AI's design language — an AI infrastructure platform whose surface
+      alternates between near-black hero bands (with a three-color orange-mag...
+    design_md_path: styles/together.ai/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: The Future, Inter, Helvetica Neue, Arial, sans-serif
+      font-body: The Future, Inter, Helvetica Neue, Arial, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: uber
+    description: >-
+      An inspired interpretation of Uber's design language — a transportation-and-delivery super-app brand whose web
+      surface is a black-and-white duet, framed by a custom geometric di...
+    design_md_path: styles/uber/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: UberMove, UberMoveText, system-ui, Helvetica Neue, Arial, sans-serif
+      font-body: UberMoveText, system-ui, Helvetica Neue, Arial, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: vercel
+    description: >-
+      An inspired interpretation of Vercel's design language — a developer-platform brand whose surface is a stark
+      black-and-ink duet on near-white canvas, broken at hero scale by a m...
+    design_md_path: styles/vercel/DESIGN.md
+    variables:
+      primary: '#171717'
+      background: '#ffffff'
+      text-primary: '#171717'
+      font-heading: Geist, Inter, system-ui, -apple-system, sans-serif
+      font-body: Geist, Inter, system-ui, -apple-system, sans-serif
+      border-radius: 8px
+      spacing-unit: 16px
+  - name: vodafone
+    description: >-
+      An inspired interpretation of Vodafone's design language — a telecom super-brand whose web surface alternates
+      between editorial photography hero bands with massive uppercase dis...
+    design_md_path: styles/vodafone/DESIGN.md
+    variables:
+      primary: '#e60000'
+      background: '#ffffff'
+      text-primary: '#25282b'
+      font-heading: Vodafone, Vodafone Rg, Helvetica Neue, Arial, sans-serif
+      font-body: Vodafone, Vodafone Rg, Helvetica Neue, Arial, sans-serif
+      border-radius: 6px
+      spacing-unit: 12px
+  - name: voltagent
+    description: >-
+      An inspired interpretation of Voltagent's design language — a developer-focused AI agent engineering platform
+      whose surface is an unrelenting near-black canvas broken only by a...
+    design_md_path: styles/voltagent/DESIGN.md
+    variables:
+      primary: '#00d992'
+      background: '#101010'
+      text-primary: '#f2f2f2'
+      font-heading: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif
+      font-body: Inter, system-ui, -apple-system, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: warp
+    description: >-
+      An inspired interpretation of Warp's design language — an agentic terminal-and-development-environment brand whose
+      surface is a warm near-charcoal canvas (a tint warmer than pur...
+    design_md_path: styles/warp/DESIGN.md
+    variables:
+      primary: '#f7f5f0'
+      background: '#2b2622'
+      text-primary: '#f7f5f0'
+      font-heading: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif
+      font-body: Inter, system-ui, -apple-system, sans-serif
+      border-radius: 4px
+      spacing-unit: 10px
+  - name: webflow
+    description: >-
+      An inspired interpretation of Webflow's design language — a visual web development platform whose surface
+      contrasts a deep near-black `#080808` primary against a generous white...
+    design_md_path: styles/webflow/DESIGN.md
+    variables:
+      primary: '#080808'
+      background: '#ffffff'
+      text-primary: '#080808'
+      font-heading: WF Visual Sans Variable, Inter, system-ui, sans-serif
+      font-body: WF Visual Sans Variable, Inter, system-ui, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: wired
+    description: >-
+      An inspired interpretation of Wired's design language — a flagship technology-magazine brand whose surface is a
+      strict editorial duet of stark black wordmark on white canvas, an...
+    design_md_path: styles/wired/DESIGN.md
+    variables:
+      primary: '#000000'
+      background: '#ffffff'
+      text-primary: '#000000'
+      font-heading: WiredDisplay, "Times New Roman", Georgia, serif
+      font-body: Apercu, "Helvetica Neue", Helvetica, Arial, sans-serif
+      border-radius: 0px
+      spacing-unit: 12px
+  - name: wise
+    description: >-
+      An inspired interpretation of Wise's design language — a global money-transfer brand whose surface combines an
+      unusually heavy near-black display sans (weight 900 at 64–126 px)...
+    design_md_path: styles/wise/DESIGN.md
+    variables:
+      primary: '#9fe870'
+      background: '#ffffff'
+      text-primary: '#0e0f0c'
+      font-heading: Wise Sans, Inter, system-ui, sans-serif
+      font-body: Inter, system-ui, sans-serif
+      border-radius: 12px
+      spacing-unit: 12px
+  - name: x.ai
+    description: >-
+      An inspired interpretation of xAI's design language — Elon Musk's frontier-AI company whose web surface is a
+      strict near-black canvas broken only by white pill outlines, occasio...
+    design_md_path: styles/x.ai/DESIGN.md
+    variables:
+      primary: '#ffffff'
+      background: '#0a0a0a'
+      text-primary: '#ffffff'
+      font-heading: universalSans, Inter, system-ui, -apple-system, sans-serif
+      font-body: universalSans, Inter, system-ui, sans-serif
+      border-radius: 8px
+      spacing-unit: 12px
+  - name: zapier
+    description: >-
+      An inspired interpretation of Zapier's design language — a workflow-automation platform whose surface combines
+      warm-cream neutrals (`#fffefb` canvas, `#f8f4f0` soft cream) with...
+    design_md_path: styles/zapier/DESIGN.md
+    variables:
+      primary: '#ff4f00'
+      background: '#fffefb'
+      text-primary: '#201515'
+      font-heading: Degular Display, Inter, system-ui, -apple-system, sans-serif
+      font-body: Inter, system-ui, sans-serif
+      border-radius: 12px
+      spacing-unit: 12px

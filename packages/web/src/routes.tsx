@@ -1,0 +1,239 @@
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+
+import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
+import { BaselineView } from "./pages/BaselineView.js";
+import { DesignView } from "./pages/DesignView.js";
+import { ProductDetail } from "./pages/ProductDetail.js";
+import { ProductList } from "./pages/ProductList.js";
+import { ProductNew } from "./pages/ProductNew.js";
+import { RequirementDetail } from "./pages/RequirementDetail.js";
+import { StyleDetail } from "./pages/StyleDetail.js";
+import { StyleLibrary } from "./pages/StyleLibrary.js";
+
+export interface RoutePageProps {
+  hash: string;
+  params: Record<string, string>;
+  route: RouteDefinition;
+}
+
+export interface RouteDefinition {
+  component: (props: RoutePageProps) => ReactNode;
+  context: string;
+  navGroup: "products" | "styles";
+  path: string;
+  title: (params: Record<string, string>) => string;
+}
+
+export interface RouteMatch {
+  found: boolean;
+  hash: string;
+  params: Record<string, string>;
+  pathname: string;
+  route: RouteDefinition;
+}
+
+const navigationEvent = "forma:navigation";
+
+export const routeTable: RouteDefinition[] = [
+  {
+    component: ProductList,
+    context: "Products",
+    navGroup: "products",
+    path: "/products",
+    title: () => "Products"
+  },
+  {
+    component: ProductNewRoute,
+    context: "Products",
+    navGroup: "products",
+    path: "/products/new",
+    title: () => "New product"
+  },
+  {
+    component: ProductDetail,
+    context: "Product",
+    navGroup: "products",
+    path: "/products/:productId",
+    title: ({ productId }) => productId
+  },
+  {
+    component: BaselineView,
+    context: "Baseline",
+    navGroup: "products",
+    path: "/products/:productId/baseline",
+    title: ({ productId }) => `${productId} baseline`
+  },
+  {
+    component: RequirementDetail,
+    context: "Requirement",
+    navGroup: "products",
+    path: "/products/:productId/requirements/:reqId",
+    title: ({ reqId }) => reqId
+  },
+  {
+    component: DesignView,
+    context: "Design",
+    navGroup: "products",
+    path: "/products/:productId/requirements/:reqId/designs/:designId",
+    title: ({ designId }) => designId
+  },
+  {
+    component: StyleLibraryRoute,
+    context: "Styles",
+    navGroup: "styles",
+    path: "/styles",
+    title: () => "Styles"
+  },
+  {
+    component: StyleDetail,
+    context: "Style",
+    navGroup: "styles",
+    path: "/styles/:name",
+    title: ({ name }) => name
+  }
+];
+
+export const notFoundRoute: RouteDefinition = {
+  component: NotFoundPage,
+  context: "Route",
+  navGroup: "products",
+  path: "*",
+  title: () => "Not found"
+};
+
+export function useCurrentRoute(): RouteMatch {
+  const [location, setLocation] = useState(() => readCurrentLocation());
+
+  useEffect(() => {
+    if (!canUseDom()) {
+      return undefined;
+    }
+
+    const updateLocation = () => setLocation(readCurrentLocation());
+    const handleAnchorClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+
+      const target = event.target instanceof Element ? event.target : null;
+      const anchor = target?.closest<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target || anchor.hasAttribute("download")) {
+        return;
+      }
+
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin || !matchRoute(url.pathname).found) {
+        return;
+      }
+
+      event.preventDefault();
+      window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+      updateLocation();
+    };
+
+    window.addEventListener("popstate", updateLocation);
+    window.addEventListener(navigationEvent, updateLocation);
+    document.addEventListener("click", handleAnchorClick);
+
+    return () => {
+      window.removeEventListener("popstate", updateLocation);
+      window.removeEventListener(navigationEvent, updateLocation);
+      document.removeEventListener("click", handleAnchorClick);
+    };
+  }, []);
+
+  return useMemo(() => matchRoute(location), [location]);
+}
+
+export function navigateTo(pathname: string) {
+  if (!canUseDom()) {
+    return;
+  }
+
+  const url = new URL(pathname, window.location.href);
+  window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  window.dispatchEvent(new Event(navigationEvent));
+}
+
+export function matchRoute(rawPathname: string, routes: RouteDefinition[] = routeTable): RouteMatch {
+  const hash = extractHash(rawPathname);
+  const pathname = normalizePathname(rawPathname);
+  const pathnameToMatch = pathname === "/" ? "/products" : pathname;
+
+  for (const route of routes) {
+    const params = matchPath(route.path, pathnameToMatch);
+    if (params) {
+      return { found: true, hash, params, pathname: pathnameToMatch, route };
+    }
+  }
+
+  return { found: false, hash, params: {}, pathname, route: notFoundRoute };
+}
+
+function ProductNewRoute() {
+  return <ProductNew navigate={navigateTo} />;
+}
+
+function StyleLibraryRoute() {
+  return <StyleLibrary />;
+}
+
+function NotFoundPage() {
+  return (
+    <StatePanel
+      action={<PrimaryActionLink href="/products">Products</PrimaryActionLink>}
+      state="error"
+      title="Route not found"
+    >
+      Route is outside the Forma admin table.
+    </StatePanel>
+  );
+}
+
+function matchPath(routePath: string, pathname: string): Record<string, string> | undefined {
+  const routeSegments = routePath.split("/").filter(Boolean);
+  const pathSegments = pathname.split("/").filter(Boolean);
+  const params: Record<string, string> = {};
+
+  if (routeSegments.length !== pathSegments.length) {
+    return undefined;
+  }
+
+  for (const [index, routeSegment] of routeSegments.entries()) {
+    const pathSegment = pathSegments[index];
+    if (routeSegment.startsWith(":")) {
+      params[routeSegment.slice(1)] = safeDecode(pathSegment);
+    } else if (routeSegment !== pathSegment) {
+      return undefined;
+    }
+  }
+
+  return params;
+}
+
+function normalizePathname(rawPathname: string): string {
+  const [pathname = "/"] = rawPathname.split(/[?#]/);
+  const withLeadingSlash = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  return withLeadingSlash.length > 1 ? withLeadingSlash.replace(/\/+$/, "") : withLeadingSlash;
+}
+
+function readCurrentLocation(): string {
+  return canUseDom() ? `${window.location.pathname}${window.location.search}${window.location.hash}` : "/products";
+}
+
+function canUseDom(): boolean {
+  return typeof window !== "undefined" && typeof document !== "undefined";
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function extractHash(rawPathname: string): string {
+  const hashIndex = rawPathname.indexOf("#");
+  return hashIndex >= 0 ? rawPathname.slice(hashIndex) : "";
+}

@@ -1,0 +1,183 @@
+import { access, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { z } from "zod";
+import { FormaError } from "./errors.js";
+import { createId } from "./ids.js";
+import type { Platform } from "./schemas.js";
+import { platforms } from "./schemas.js";
+import { styleMetadataSchema } from "./styles.js";
+import { readYamlAs, writeYamlAtomic } from "./yaml.js";
+
+export const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
+
+const productIndexEntrySchema = z.object({
+  id: productIdSchema,
+  name: z.string().min(1),
+  description: z.string()
+});
+
+const productIndexSchema = z.object({
+  products: z.array(productIndexEntrySchema)
+});
+
+const productSchema = productIndexEntrySchema.extend({
+  platform: z.enum(platforms).optional(),
+  style: styleMetadataSchema.optional(),
+  components_initialized: z.boolean().optional()
+});
+
+const productConfigSchema = z.object({
+  platform: z.enum(platforms),
+  style: styleMetadataSchema
+});
+
+export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
+export type Product = z.infer<typeof productSchema>;
+export type ProductConfig = {
+  platform: Platform;
+  style: z.infer<typeof styleMetadataSchema>;
+};
+
+export interface ProductServiceOptions {
+  home: string;
+}
+
+export class ProductService {
+  private readonly home: string;
+  private readonly dataDir: string;
+  private readonly indexFile: string;
+
+  constructor(options: ProductServiceOptions) {
+    this.home = options.home;
+    this.dataDir = join(options.home, "data");
+    this.indexFile = join(this.dataDir, "products.yaml");
+  }
+
+  async createProduct(input: { name: string; description: string }): Promise<Product> {
+    const product = productSchema.parse({
+      id: createId("product"),
+      name: input.name,
+      description: input.description,
+      components_initialized: false
+    });
+    const index = await this.readProductIndex();
+
+    await writeYamlAtomic(this.productFile(product.id), product);
+    await writeYamlAtomic(this.indexFile, {
+      products: [...index.products, productIndexEntrySchema.parse(product)]
+    });
+
+    return product;
+  }
+
+  async initProductConfig(productId: string, config: ProductConfig): Promise<Product> {
+    const product = await this.getProduct(productId);
+    const next = productSchema.parse({
+      ...product,
+      ...productConfigSchema.parse(config)
+    });
+
+    await writeYamlAtomic(this.productFile(next.id), next);
+    return next;
+  }
+
+  async markComponentsInitialized(productId: string): Promise<Product> {
+    const product = await this.getProduct(productId);
+    const libraryFile = this.componentLibraryFile(product.id);
+    if (!(await fileExists(libraryFile))) {
+      throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
+        product_id: product.id,
+        missing: ["components_library"]
+      });
+    }
+    await assertValidComponentLibrary(libraryFile);
+    const next = productSchema.parse({ ...product, components_initialized: true });
+
+    await writeYamlAtomic(this.productFile(next.id), next);
+    return next;
+  }
+
+  componentLibraryFile(productId: string): string {
+    return join(this.home, "library", `${this.parseProductId(productId)}.lib.pen`);
+  }
+
+  async getProduct(productId: string): Promise<Product> {
+    const parsedProductId = this.parseProductId(productId);
+    const file = this.productFile(parsedProductId);
+    if (!(await fileExists(file))) {
+      throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: parsedProductId });
+    }
+
+    return readYamlAs(file, productSchema);
+  }
+
+  async listProducts(): Promise<ProductIndexEntry[]> {
+    return (await this.readProductIndex()).products;
+  }
+
+  private async readProductIndex(): Promise<z.infer<typeof productIndexSchema>> {
+    if (!(await fileExists(this.indexFile))) {
+      return { products: [] };
+    }
+
+    return readYamlAs(this.indexFile, productIndexSchema);
+  }
+
+  private productFile(productId: string): string {
+    return join(this.dataDir, productId, "product.yaml");
+  }
+
+  private parseProductId(productId: string): string {
+    const parsed = productIdSchema.safeParse(productId);
+    if (!parsed.success) {
+      throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: productId });
+    }
+
+    return parsed.data;
+  }
+}
+
+async function assertValidComponentLibrary(file: string): Promise<void> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(file, "utf8"));
+  } catch (error) {
+    throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", {
+      file,
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.children) || parsed.children.length === 0 || containsTruncationMarker(parsed)) {
+    throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", { file });
+  }
+}
+
+function containsTruncationMarker(value: unknown): boolean {
+  if (value === "...") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some(containsTruncationMarker);
+  }
+  if (isRecord(value)) {
+    return Object.values(value).some(containsTruncationMarker);
+  }
+  return false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await access(file);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}

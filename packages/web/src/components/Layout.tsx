@@ -1,0 +1,141 @@
+import type { ReactNode } from "react";
+
+export interface NavItem {
+  href: string;
+  label: string;
+  meta: string;
+}
+
+export interface LayoutProps {
+  children: ReactNode;
+  currentPathname: string;
+  navItems: NavItem[];
+  routeContext: string;
+  title: string;
+}
+
+export interface StatePanelProps {
+  action?: ReactNode;
+  children: ReactNode;
+  state: "empty" | "error" | "loading";
+  title: string;
+}
+
+const focusClasses =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+
+export function Layout({ children, currentPathname, navItems, routeContext, title }: LayoutProps) {
+  return (
+    <div className="min-h-screen bg-[#f7f8fa] text-zinc-950">
+      <div className="flex min-h-screen flex-col md:flex-row">
+        <aside className="w-full shrink-0 border-b border-zinc-200 bg-[#fbfbfc] md:w-64 md:border-b-0 md:border-r">
+          <div className="border-b border-zinc-200 px-4 py-4">
+            <a
+              className={`inline-flex rounded-md text-base font-semibold tracking-normal text-zinc-950 active:scale-95 ${focusClasses}`}
+              href="/products"
+            >
+              Forma
+            </a>
+            <p className="mt-1 text-xs font-medium text-zinc-500">Admin workbench</p>
+          </div>
+
+          <nav aria-label="Primary" className="flex gap-1 overflow-x-auto px-3 py-3 md:block md:space-y-1 md:overflow-visible">
+            {navItems.map((item) => {
+              const active = isActiveRoute(currentPathname, item.href);
+              return (
+                <a
+                  aria-current={active ? "page" : undefined}
+                  className={`min-w-40 rounded-md border px-3 py-2 text-left transition active:scale-95 md:block md:min-w-0 ${focusClasses} ${
+                    active
+                      ? "border-amber-200 bg-amber-50 text-zinc-950 shadow-sm"
+                      : "border-transparent text-zinc-600 hover:border-zinc-200 hover:bg-white hover:text-zinc-950"
+                  }`}
+                  href={item.href}
+                  key={item.href}
+                >
+                  <span className="block text-sm font-medium">{item.label}</span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{item.meta}</span>
+                </a>
+              );
+            })}
+          </nav>
+        </aside>
+
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="sticky top-0 z-10 border-b border-zinc-200 bg-[#fdfdfd]/95 px-4 py-3 backdrop-blur md:px-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">{routeContext}</p>
+                <h1 className="mt-1 truncate text-xl font-semibold tracking-normal text-zinc-950">{title}</h1>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+                <span className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5">Client shell</span>
+                <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-zinc-600">Idle</span>
+              </div>
+            </div>
+          </header>
+
+          <main className="min-w-0 flex-1 px-4 py-5 md:px-6 md:py-6">{children}</main>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function StatePanel({ action, children, state, title }: StatePanelProps) {
+  const tone = stateTone[state];
+
+  return (
+    <section className={`rounded-lg border ${tone.panel} p-4 shadow-sm`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className={`text-xs font-semibold uppercase tracking-normal ${tone.label}`}>{state}</p>
+          <h2 className="mt-1 text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
+        </div>
+        {action}
+      </div>
+      <div className="mt-3 text-sm leading-6 text-zinc-600">{children}</div>
+    </section>
+  );
+}
+
+export function WorkSurface({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <div className="border-b border-zinc-200 px-4 py-3">
+        <h2 className="text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
+      </div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
+
+export function PrimaryActionLink({ children, href }: { children: ReactNode; href: string }) {
+  return (
+    <a
+      className={`inline-flex items-center justify-center rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-amber-400 active:scale-95 ${focusClasses}`}
+      href={href}
+    >
+      {children}
+    </a>
+  );
+}
+
+function isActiveRoute(currentPathname: string, href: string): boolean {
+  return currentPathname === href || currentPathname.startsWith(`${href}/`);
+}
+
+const stateTone = {
+  empty: {
+    label: "text-zinc-500",
+    panel: "border-zinc-200 bg-white"
+  },
+  error: {
+    label: "text-red-700",
+    panel: "border-red-200 bg-red-50"
+  },
+  loading: {
+    label: "text-amber-700",
+    panel: "border-amber-200 bg-amber-50"
+  }
+};

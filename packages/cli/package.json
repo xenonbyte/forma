@@ -1,0 +1,27 @@
+{
+  "name": "@xenonbyte/forma-cli",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "bin": {
+    "forma": "./bin/forma.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && tsx ../../scripts/copy-assets.ts",
+    "prepack": "pnpm --dir ../.. build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@xenonbyte/forma-core": "workspace:*",
+    "@xenonbyte/forma-mcp": "workspace:*",
+    "@xenonbyte/forma-server": "workspace:*"
+  }
+}
