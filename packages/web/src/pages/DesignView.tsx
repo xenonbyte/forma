@@ -15,7 +15,7 @@ import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout
 import { PropertyPanel } from "../components/PropertyPanel.js";
 
 export interface DesignViewProps {
-  client?: Pick<FormaApiClient, "getDesignAnnotations" | "getDesignHistory">;
+  client?: Pick<FormaApiClient, "getDesignAnnotations" | "getDesignDiff" | "getDesignHistory">;
   params: Record<string, string>;
 }
 
@@ -95,6 +95,7 @@ export function DesignView({ client = apiClient, params }: DesignViewProps) {
     <DesignContent
       annotations={state.annotations}
       designId={designId}
+      diffClient={client}
       history={state.history}
       hoveredNode={hoveredNode}
       onHoverNode={handleHoverNode}
@@ -111,6 +112,7 @@ export function DesignView({ client = apiClient, params }: DesignViewProps) {
 export function DesignContent({
   annotations,
   designId,
+  diffClient = apiClient,
   history,
   hoveredNode,
   onHoverNode,
@@ -123,6 +125,7 @@ export function DesignContent({
 }: {
   annotations: AnnotationNode[];
   designId: string;
+  diffClient?: Pick<FormaApiClient, "getDesignDiff">;
   history: DesignHistoryPayload;
   hoveredNode: AnnotationNode | null;
   onHoverNode: (node: AnnotationNode | null) => void;
@@ -183,7 +186,7 @@ export function DesignContent({
         ) : (
           <div className="space-y-4">
             <VersionControls onChange={onVersionSelectionChange} selection={activeSelection} versions={sortedVersions} />
-            <DiffViewer designId={designId} fromVersion={activeSelection.fromVersion} toVersion={activeSelection.toVersion} />
+            <DiffViewer client={diffClient} designId={designId} fromVersion={activeSelection.fromVersion} toVersion={activeSelection.toVersion} />
           </div>
         )}
       </WorkSurface>

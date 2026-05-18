@@ -38,6 +38,8 @@ export interface LeaferRuntime {
   Rect: new (config: Record<string, unknown>) => LeaferRect;
 }
 
+export type LeaferRuntimeLoader = () => Promise<LeaferRuntime>;
+
 interface CanvasSize {
   height: number;
   width: number;
@@ -115,7 +117,7 @@ export function AnnotationCanvas({
     let scene: AnnotationScene | null = null;
     setRuntimeError(null);
     container.replaceChildren();
-    void loadLeaferRuntime()
+    void leaferRuntimeLoader()
       .then((runtime) => {
         if (disposed) {
           return;
@@ -166,12 +168,12 @@ export function AnnotationCanvas({
           </div>
         ) : null}
         {runtimeError ? (
-          <div className="absolute inset-x-3 top-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+          <div className="absolute inset-x-3 top-3 z-20 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             Annotation runtime unavailable: {runtimeError}
           </div>
         ) : null}
         {runtimeError && imageUrl ? (
-          <img alt="Design preview fallback" className="absolute inset-0 h-full w-full object-contain" src={imageUrl} />
+          <img alt="Design preview fallback" className="absolute inset-0 z-0 h-full w-full object-contain" src={imageUrl} />
         ) : null}
         <div className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] rounded-md border border-zinc-200 bg-white/95 px-2.5 py-1.5 text-xs shadow-sm">
           <span className="font-medium text-zinc-700">{nodes.length} nodes</span>
@@ -201,67 +203,82 @@ export function mountAnnotationCanvasScene({
     width: size.width
   });
 
-  leafer.lockLayout?.();
-  if (imageUrl) {
-    leafer.add(
-      new runtime.Rect({
-        fill: { type: "image", url: imageUrl, mode: "fit" },
-        height: size.height,
-        hitSelf: false,
-        hittable: false,
-        name: "preview-image",
-        width: size.width,
-        x: 0,
-        y: 0
-      })
-    );
-  }
-
-  for (const node of nodes) {
-    if (!isDrawableNode(node)) {
-      continue;
+  try {
+    leafer.lockLayout?.();
+    if (imageUrl) {
+      leafer.add(
+        new runtime.Rect({
+          fill: { type: "image", url: imageUrl, mode: "fit" },
+          height: size.height,
+          hitSelf: false,
+          hittable: false,
+          name: "preview-image",
+          width: size.width,
+          x: 0,
+          y: 0
+        })
+      );
     }
 
-    const selected = selectedNodeIds.includes(node.id);
-    const rect = new runtime.Rect({
-      cursor: "pointer",
-      data: { nodeId: node.id },
-      fill: transparentFill,
-      height: node.height,
-      hitFill: "all",
-      name: node.id,
-      stroke: selected ? selectedStroke : transparentStroke,
-      strokeWidth: selected ? 3 : 1,
-      width: node.width,
-      x: node.x,
-      y: node.y
-    });
+    for (const node of nodes) {
+      if (!isDrawableNode(node)) {
+        continue;
+      }
 
-    rect.on(runtime.PointerEvent.ENTER, () => {
-      applyRectState(rect, true, selected);
-      onHoverNode?.(node);
-      leafer.requestRender?.();
-    });
-    rect.on(runtime.PointerEvent.LEAVE, () => {
-      applyRectState(rect, false, selected);
-      onHoverNode?.(null);
-      leafer.requestRender?.();
-    });
-    rect.on(runtime.PointerEvent.CLICK, () => {
-      onSelectNode?.(node);
-    });
-    leafer.add(rect);
+      const selected = selectedNodeIds.includes(node.id);
+      const rect = new runtime.Rect({
+        cursor: "pointer",
+        data: { nodeId: node.id },
+        fill: transparentFill,
+        height: node.height,
+        hitFill: "all",
+        name: node.id,
+        stroke: selected ? selectedStroke : transparentStroke,
+        strokeWidth: selected ? 3 : 1,
+        width: node.width,
+        x: node.x,
+        y: node.y
+      });
+
+      rect.on(runtime.PointerEvent.ENTER, () => {
+        applyRectState(rect, true, selected);
+        onHoverNode?.(node);
+        leafer.requestRender?.();
+      });
+      rect.on(runtime.PointerEvent.LEAVE, () => {
+        applyRectState(rect, false, selected);
+        onHoverNode?.(null);
+        leafer.requestRender?.();
+      });
+      rect.on(runtime.PointerEvent.CLICK, () => {
+        onSelectNode?.(node);
+      });
+      leafer.add(rect);
+    }
+    if (spacing) {
+      addSpacingOverlay(leafer, runtime, spacing);
+    }
+    leafer.unlockLayout?.();
+  } catch (error) {
+    cleanupFailedScene(leafer);
+    throw error;
   }
-  if (spacing) {
-    addSpacingOverlay(leafer, runtime, spacing);
-  }
-  leafer.unlockLayout?.();
 
   return {
     leafer,
     dispose: () => {
       leafer.destroy();
     }
+  };
+}
+
+let leaferRuntimeLoader: LeaferRuntimeLoader = loadLeaferRuntime;
+
+export function setAnnotationCanvasRuntimeLoaderForTest(loader: LeaferRuntimeLoader): () => void {
+  const previous = leaferRuntimeLoader;
+  leaferRuntimeLoader = loader;
+  return () => {
+    leaferRuntimeLoader = previous;
   };
 }
 
@@ -276,6 +293,19 @@ async function loadLeaferRuntime(): Promise<LeaferRuntime> {
     },
     Rect: runtime.Rect as LeaferRuntime["Rect"]
   };
+}
+
+function cleanupFailedScene(leafer: LeaferInstance): void {
+  try {
+    leafer.unlockLayout?.();
+  } catch {
+    // Preserve the construction failure; cleanup errors are secondary here.
+  }
+  try {
+    leafer.destroy();
+  } catch {
+    // Preserve the construction failure; cleanup errors are secondary here.
+  }
 }
 
 function applyRectState(rect: LeaferRect, hovered: boolean, selected: boolean): void {

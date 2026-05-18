@@ -108,6 +108,36 @@ describe("AnnotationCanvas", () => {
     expect(leaferInstances[0]?.destroy).toHaveBeenCalled();
   });
 
+  it("unlocks and destroys Leafer when scene construction fails after initialization", () => {
+    leaferInstances.length = 0;
+    rectInstances.length = 0;
+    const error = new Error("Rect construction failed");
+    class ThrowingRect extends MockRect {
+      constructor(config: Record<string, unknown>) {
+        super(config);
+        throw error;
+      }
+    }
+    const throwingRuntime = { ...runtime, Rect: ThrowingRect } satisfies LeaferRuntime;
+
+    expect(() =>
+      mountAnnotationCanvasScene(
+        {
+          container: {} as HTMLElement,
+          imageUrl: "/api/designs/D-123/image/file?version=2",
+          nodes,
+          selectedNodeIds: ["cta"],
+          size: { width: 400, height: 300 }
+        },
+        throwingRuntime
+      )
+    ).toThrow(error);
+
+    expect(leaferInstances).toHaveLength(1);
+    expect(leaferInstances[0]?.unlockLayout).toHaveBeenCalled();
+    expect(leaferInstances[0]?.destroy).toHaveBeenCalled();
+  });
+
   it("renders stable empty and selected states", () => {
     const empty = renderToStaticMarkup(<AnnotationCanvas nodes={[]} />);
     const selected = renderToStaticMarkup(<AnnotationCanvas nodes={nodes} selectedNodeIds={["cta"]} imageUrl="/api/designs/D-123/image/file?version=2" />);
