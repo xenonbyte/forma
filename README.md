@@ -1,16 +1,6 @@
 # Forma
 
-Forma is a local product-design asset management tool for turning requirement documents into Pencil-backed design artifacts. It keeps product requirements, functional baselines, generated `.pen` files, previews, annotations, history, and design diffs together so agents can move from product intent to inspectable design assets without losing provenance.
-
-Forma v0.1 runs as a pnpm workspace with a CLI, MCP server, Fastify Web admin, React UI, core persistence/services, and installable agent commands for Claude, Codex, and Gemini.
-
-## What It Solves
-
-- Stores product requirements, baselines, designs, previews, and annotations in one local Forma home.
-- Uses real Pencil CLI generation and export instead of a mock design engine.
-- Exposes deterministic backend gates through core services, MCP tools, and the Web API.
-- Provides a Web admin for products, requirements, baselines, styles, design previews, history, annotations, and diffs.
-- Installs `fm-*` agent commands and MCP configuration for supported agent platforms.
+Forma is a local product-design workspace for turning product requirements into Pencil-backed design assets. It keeps product configuration, requirements, structured copy, baselines, generated `.pen` files, previews, annotations, history, and design diffs in one local Forma home.
 
 ## Requirements
 
@@ -25,7 +15,18 @@ pnpm install
 pnpm build
 ```
 
-During development, run commands from the repository root. The root `bin/forma.js` entrypoint uses the workspace packages.
+Run commands from the repository root during development. The root `bin/forma.js` entrypoint uses the workspace packages.
+
+## Architecture
+
+| Package | Role |
+| --- | --- |
+| `@xenonbyte/forma-core` | Persistence, product configuration, requirements, baselines, copy, styles, designs, diffs, install manifests, and shared validation gates. |
+| `@xenonbyte/forma-mcp` | MCP tool surface used by agents for sessions, products, requirements, baselines, copy, styles, and design workflows. |
+| `@xenonbyte/forma-server` | Fastify API and static Web serving layer backed by core services. |
+| `@xenonbyte/forma-web` | React Web admin for products, requirements, baselines, multilingual copy, styles, designs, annotations, and diffs. |
+| `@xenonbyte/forma-agent` | Installable Claude, Codex, and Gemini command templates plus shared Forma agent guidance. |
+| `@xenonbyte/forma-cli` | User-facing `forma` CLI for status, serving, installation, packaging assets, and MCP startup. |
 
 ## Common CLI Commands
 
@@ -45,7 +46,7 @@ forma serve
 forma install --platform claude,codex,gemini
 ```
 
-`forma status` reports the Forma data directory, installed agent platforms, Pencil CLI availability/authentication, and Web server state. `forma serve` starts the Web admin on the configured local host/port, defaulting to `127.0.0.1:3000`.
+`forma status` reports the Forma data directory, installed agent platforms, Pencil CLI availability/authentication, and Web server state. `forma serve` starts the local Web admin, defaulting to `127.0.0.1:3000`.
 
 ## Web Admin
 
@@ -55,7 +56,19 @@ Start the local server:
 node bin/forma.js serve
 ```
 
-Open the local URL, then use the Web admin to inspect products, create products, browse styles, open requirement/design detail pages, and compare design versions through the diff view.
+Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, review multilingual copy, open design previews, view annotations, and compare design versions.
+
+## Agent Integration
+
+Forma installs command templates for Claude, Codex, and Gemini. The current command set covers product selection, unified requirement capture, design generation/refinement, component refinement, style changes, rollback, and status checks.
+
+See [docs/AGENT.md](docs/AGENT.md) for the command table and recommended first-time and iterative workflows.
+
+## MCP Tools
+
+The MCP server exposes tool families for sessions, products, requirements, baselines, designs, styles, copy, utilities, and structured error reporting. v0.3 centers requirement changes on `save_requirement`, product rules through `get_product_rules`, and multilingual copy through `get_page_copy` / `update_page_copy`.
+
+See [docs/MCP.md](docs/MCP.md) for tool groups, v0.3 behavior changes, and the frontend development data path.
 
 ## Data Location
 
@@ -65,7 +78,7 @@ The CLI and Web server use `~/.forma` by default. Override the root with `FORMA_
 FORMA_HOME=/path/to/forma-home node bin/forma.js status
 ```
 
-Runtime data lives under `$FORMA_HOME/data`, including products, requirements, design metadata, `.pen` files, preview PNGs, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
+Runtime data lives under `$FORMA_HOME/data`, including products, requirements, baselines, design metadata, `.pen` files, preview PNGs, copy translations, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
 
 ## Pencil Smoke Test
 
@@ -91,26 +104,3 @@ node bin/forma.js status
 node scripts/copy-assets.ts --check
 pnpm pack:cli --dry-run
 ```
-
-The v0.1 verification record is documented in [docs/verification/2026-05-18-v0.1.md](docs/verification/2026-05-18-v0.1.md).
-
-## v0.1 Scope
-
-Included in v0.1:
-
-- Local product, requirement, baseline, style, design, annotation, history, and diff workflows.
-- Real Pencil CLI integration for generation, validation, export, rollback, and smoke testing.
-- Built-in offline style resources copied into Forma-managed storage.
-- Web admin and MCP tools backed by the same core gates.
-- Agent command installation for Claude, Codex, and Gemini.
-
-Not included in v0.1:
-
-- Automatic online style sync.
-- Multi-user permissions.
-- Project-management integrations.
-- Advanced visual navigation graph rendering.
-- Code generation from designs.
-- A custom vector design engine.
-
-These deferred areas are candidates for v0.2 or later. Design diff support is already part of v0.1.
