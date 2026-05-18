@@ -78,7 +78,7 @@ vi.mock("leafer-ui", () => ({
 
 const pages: BaselinePage[] = [
   {
-    copy: "Welcome",
+    copy: [{ context: "hero", text: "Welcome" }],
     features: "Search products\nFilter results",
     fields: "query",
     id: "home",
@@ -87,7 +87,7 @@ const pages: BaselinePage[] = [
     source_requirements: ["R-12345678"]
   },
   {
-    copy: "Pay",
+    copy: [{ context: "cta", text: "Pay" }],
     features: "Collect payment",
     fields: "card",
     id: "checkout",
