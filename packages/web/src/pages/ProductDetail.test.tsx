@@ -1,9 +1,81 @@
+// @vitest-environment happy-dom
+
+import { act } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createRoot, type Root } from "react-dom/client";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as productDetail from "./ProductDetail.js";
-import type { ProductBaseline } from "../api.js";
+import { ProductDetail } from "./ProductDetail.js";
+import { ApiError, type FormaApiClient, type Product, type ProductBaseline, type RequirementWithDocument, type StyleMetadata } from "../api.js";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const style: StyleMetadata = {
+  name: "linear",
+  description: "Focused tool UI",
+  design_md_path: "styles/linear/DESIGN.md",
+  variables: {
+    primary: "#111827",
+    background: "#ffffff",
+    "text-primary": "#111827",
+    "font-heading": "Inter",
+    "font-body": "Inter",
+    "border-radius": "8px",
+    "spacing-unit": "8px"
+  }
+};
+
+const configuredProduct: Product = {
+  id: "P-123abc",
+  name: "Checkout App",
+  description: "Mobile checkout workbench",
+  platform: "web",
+  style,
+  languages: ["en"],
+  default_language: "en",
+  components_initialized: true
+};
+
+const incompleteProduct: Product = {
+  id: "P-123abc",
+  name: "Checkout App",
+  description: "Mobile checkout workbench"
+};
+
+const baseline: ProductBaseline = {
+  product_id: "P-123abc",
+  pages: [],
+  navigation: []
+};
+
+const activeRequirement: RequirementWithDocument = {
+  id: "R-12345678",
+  product_id: "P-123abc",
+  title: "Checkout update",
+  status: "active",
+  created_at: "2026-05-17T00:00:00.000Z",
+  updated_at: "2026-05-17T01:00:00.000Z",
+  pages: [],
+  navigation: [],
+  document_md: "# Checkout update"
+};
+
+const roots: Root[] = [];
+const containers: HTMLElement[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    act(() => {
+      root.unmount();
+    });
+  }
+  for (const container of containers.splice(0)) {
+    container.remove();
+  }
+  vi.restoreAllMocks();
+});
 
 describe("ProductDetailSummaryPanels", () => {
   it("renders baseline page and navigation counts without requiring the whole page", () => {
@@ -30,8 +102,8 @@ describe("ProductDetailSummaryPanels", () => {
           baseline: {
             product_id: "P-123abc",
             pages: [
-              { id: "home", name: "Home", features: "", copy: "", fields: "", interactions: "", source_requirements: ["R-12345678"] },
-              { id: "checkout", name: "Checkout", features: "", copy: "", fields: "", interactions: "", source_requirements: ["R-12345678"] }
+              { id: "home", name: "Home", features: "", copy: [], fields: "", interactions: "", source_requirements: ["R-12345678"] },
+              { id: "checkout", name: "Checkout", features: "", copy: [], fields: "", interactions: "", source_requirements: ["R-12345678"] }
             ],
             navigation: [{ from: "home", to: "checkout" }]
           },
@@ -71,3 +143,192 @@ describe("ProductDetailSummaryPanels", () => {
     expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
   });
 });
+
+describe("ProductDetail", () => {
+  it("creates title-only requirements and reloads the requirement list", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    client.listRequirements.mockResolvedValueOnce([]).mockResolvedValueOnce([activeRequirement]);
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(container.querySelector<HTMLFormElement>("#new-requirement form"), "new requirement form");
+    expect(form.querySelectorAll("textarea")).toHaveLength(0);
+
+    await act(async () => {
+      setInputValue(required(form.querySelector<HTMLInputElement>('input[name="requirement_title"]'), "requirement title input"), " Checkout update ");
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    expect(client.createEmptyRequirement).toHaveBeenCalledWith("P-123abc", { title: "Checkout update" });
+    expect(client.createRequirement).not.toHaveBeenCalled();
+    expect(client.listRequirements).toHaveBeenCalledTimes(2);
+    expect(required(form.querySelector<HTMLInputElement>('input[name="requirement_title"]'), "requirement title input").value).toBe("");
+  });
+
+  it("renders a completion form for missing product configuration and submits it", async () => {
+    const client = createClient({ product: incompleteProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(container.querySelector<HTMLFormElement>('form[data-product-config-form="true"]'), "product configuration form");
+    expect(client.listStyles).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
+      required(form.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
+      required(form.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
+      await flushPromises();
+    });
+
+    await act(async () => {
+      setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="default_language"]'), "default language select"), "zh-CN");
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
+      platform: "web",
+      style: "linear",
+      languages: ["en", "zh-CN"],
+      default_language: "zh-CN"
+    });
+  });
+
+  it("keeps product configuration retry enabled after a submit failure", async () => {
+    const client = createClient({ product: incompleteProduct, requirements: [] });
+    client.configureProduct.mockRejectedValueOnce(new ApiError("CONFIG_FAILED", "Style configuration failed", {}, 400));
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(container.querySelector<HTMLFormElement>('form[data-product-config-form="true"]'), "product configuration form");
+
+    await fillProductConfigForm(form);
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("CONFIG_FAILED - Style configuration failed");
+    expect(required(form.querySelector<HTMLButtonElement>('button[type="submit"]'), "submit button").disabled).toBe(false);
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    expect(client.configureProduct).toHaveBeenCalledTimes(2);
+    expect(client.configureProduct).toHaveBeenNthCalledWith(2, "P-123abc", {
+      platform: "web",
+      style: "linear",
+      languages: ["en", "zh-CN"],
+      default_language: "zh-CN"
+    });
+  });
+});
+
+function createClient({ product, requirements }: { product: Product; requirements: RequirementWithDocument[] }) {
+  return {
+    archiveRequirement: vi.fn(async (_productId, requirementId) => requirements.find((requirement) => requirement.id === requirementId) ?? activeRequirement),
+    configureProduct: vi.fn(async (_productId, input) => ({
+      ...product,
+      platform: input.platform,
+      style,
+      languages: input.languages,
+      default_language: input.default_language
+    })),
+    createEmptyRequirement: vi.fn(async (_productId, input) => ({
+      ...activeRequirement,
+      title: input.title
+    })),
+    createRequirement: vi.fn(async () => activeRequirement),
+    getBaseline: vi.fn(async () => baseline),
+    getProduct: vi.fn(async () => product),
+    listRequirements: vi.fn(async () => requirements),
+    listStyles: vi.fn(async () => [style])
+  } satisfies Pick<
+    FormaApiClient,
+    | "archiveRequirement"
+    | "configureProduct"
+    | "createEmptyRequirement"
+    | "createRequirement"
+    | "getBaseline"
+    | "getProduct"
+    | "listRequirements"
+    | "listStyles"
+  >;
+}
+
+function createTestRoot() {
+  const container = document.createElement("div");
+  document.body.append(container);
+  containers.push(container);
+  const root = createRoot(container);
+  roots.push(root);
+  return { container, root };
+}
+
+function required<T extends Element>(element: T | null, label: string): T {
+  if (!element) {
+    throw new Error(`Missing ${label}`);
+  }
+  return element;
+}
+
+async function fillProductConfigForm(form: HTMLFormElement) {
+  await act(async () => {
+    setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+    setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
+    required(form.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
+    required(form.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
+    await flushPromises();
+  });
+
+  await act(async () => {
+    setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="default_language"]'), "default language select"), "zh-CN");
+    await flushPromises();
+  });
+}
+
+function setInputValue(input: HTMLInputElement | HTMLTextAreaElement, value: string) {
+  setNativeValue(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  setNativeValue(select, value);
+  select.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function setNativeValue(element: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, value: string) {
+  const prototype =
+    element instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : element instanceof HTMLSelectElement
+        ? HTMLSelectElement.prototype
+        : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  setter?.call(element, value);
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}

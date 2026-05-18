@@ -235,15 +235,23 @@ function getConfigStatus(product: Product | undefined): ConfigStatus {
     return "not_loaded";
   }
 
-  if (product.platform && product.style && product.components_initialized) {
+  if (isListConfigurationComplete(product)) {
     return "initialized";
   }
 
-  if (product.platform && product.style) {
-    return "configured";
-  }
+  return "configuration_incomplete";
+}
 
-  return "unconfigured";
+function isListConfigurationComplete(product: Product): boolean {
+  return Boolean(
+    product.platform &&
+      product.style &&
+      product.languages &&
+      product.languages.length > 0 &&
+      product.default_language &&
+      product.languages.includes(product.default_language) &&
+      product.components_initialized
+  );
 }
 
 const secondaryLinkClasses =

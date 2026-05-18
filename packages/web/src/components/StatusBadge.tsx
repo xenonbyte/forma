@@ -1,6 +1,6 @@
 import type { DesignStatus, RequirementStatus } from "../api.js";
 
-export type ConfigStatus = "configured" | "initialized" | "not_initialized" | "not_loaded" | "unconfigured";
+export type ConfigStatus = "configuration_incomplete" | "configured" | "initialized" | "not_initialized" | "not_loaded" | "unconfigured";
 export type StatusBadgeStatus = ConfigStatus | DesignStatus | RequirementStatus;
 
 export interface StatusBadgeProps {
@@ -11,6 +11,7 @@ export interface StatusBadgeProps {
 const statusTone: Record<StatusBadgeStatus, string> = {
   active: "border-emerald-200 bg-emerald-50 text-emerald-700",
   archived: "border-zinc-200 bg-zinc-100 text-zinc-600",
+  configuration_incomplete: "border-amber-200 bg-amber-50 text-amber-700",
   configured: "border-sky-200 bg-sky-50 text-sky-700",
   done: "border-emerald-200 bg-emerald-50 text-emerald-700",
   empty: "border-zinc-200 bg-white text-zinc-600",
@@ -26,6 +27,7 @@ const statusTone: Record<StatusBadgeStatus, string> = {
 const statusLabel: Record<StatusBadgeStatus, string> = {
   active: "Active",
   archived: "Archived",
+  configuration_incomplete: "Configuration incomplete",
   configured: "Configured",
   done: "Done",
   empty: "Empty",

@@ -56,6 +56,7 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
 
   const requirement = state.requirement;
   const hasDocument = requirement.document_md.trim().length > 0;
+  const noUiChanges = requirement.ui_affected === false;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -63,6 +64,11 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={requirement.status} />
+            {noUiChanges ? (
+              <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold leading-none text-zinc-700">
+                No UI changes
+              </span>
+            ) : null}
             <span className="font-mono text-xs text-zinc-500">{requirement.id}</span>
           </div>
           <a className={secondaryLinkClasses} href={`/products/${productId}`}>
@@ -97,10 +103,12 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
                     <p className="mt-1 text-xs text-zinc-500">Baseline: {page.baseline_page}</p>
                   </div>
                   <div className="flex items-center">
-                    <StatusBadge status={page.design_status} />
+                    {noUiChanges ? <span className="text-sm text-zinc-500">No UI changes</span> : <StatusBadge status={page.design_status} />}
                   </div>
                   <div className="flex items-center">
-                    {page.design_id ? (
+                    {noUiChanges ? (
+                      <span className="text-sm text-zinc-500">No design action</span>
+                    ) : page.design_id ? (
                       <a className={secondaryLinkClasses} href={`/products/${productId}/requirements/${requirement.id}/designs/${page.design_id}`}>
                         Open design
                       </a>
@@ -116,25 +124,27 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
       </div>
 
       <div className="space-y-3">
-        <WorkSurface title="Design history">
-          {requirement.pages.some((page) => page.design_id) ? (
-            <div className="space-y-2">
-              {requirement.pages
-                .filter((page) => page.design_id)
-                .map((page) => (
-                  <a
-                    className={secondaryLinkClasses}
-                    href={`/products/${productId}/requirements/${requirement.id}/designs/${page.design_id}`}
-                    key={page.design_id}
-                  >
-                    {page.design_id}
-                  </a>
-                ))}
-            </div>
-          ) : (
-            <p className="text-sm text-zinc-500">No design IDs are present.</p>
-          )}
-        </WorkSurface>
+        {noUiChanges ? null : (
+          <WorkSurface title="Design history">
+            {requirement.pages.some((page) => page.design_id) ? (
+              <div className="space-y-2">
+                {requirement.pages
+                  .filter((page) => page.design_id)
+                  .map((page) => (
+                    <a
+                      className={secondaryLinkClasses}
+                      href={`/products/${productId}/requirements/${requirement.id}/designs/${page.design_id}`}
+                      key={page.design_id}
+                    >
+                      {page.design_id}
+                    </a>
+                  ))}
+              </div>
+            ) : (
+              <p className="text-sm text-zinc-500">No design IDs are present.</p>
+            )}
+          </WorkSurface>
+        )}
         <WorkSurface title="Navigation">
           {requirement.navigation.length === 0 ? (
             <p className="text-sm text-zinc-500">No navigation edges are attached.</p>

@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 
+import { useLocale } from "../LocaleContext.js";
+import { t, type Locale } from "../i18n.js";
+
 export interface NavItem {
   href: string;
   label: string;
@@ -25,6 +28,8 @@ const focusClasses =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
 export function Layout({ children, currentPathname, navItems, routeContext, title }: LayoutProps) {
+  const { locale, setLocale } = useLocale();
+
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-zinc-950">
       <div className="flex min-h-screen flex-col md:flex-row">
@@ -53,8 +58,8 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
                   href={item.href}
                   key={item.href}
                 >
-                  <span className="block text-sm font-medium">{item.label}</span>
-                  <span className="mt-0.5 block text-xs text-zinc-500">{item.meta}</span>
+                  <span className="block text-sm font-medium">{navLabel(item)}</span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{navMeta(item)}</span>
                 </a>
               );
             })}
@@ -65,10 +70,25 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
           <header className="sticky top-0 z-10 border-b border-zinc-200 bg-[#fdfdfd]/95 px-4 py-3 backdrop-blur md:px-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">{routeContext}</p>
-                <h1 className="mt-1 truncate text-xl font-semibold tracking-normal text-zinc-950">{title}</h1>
+                <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">{routeLabel(routeContext)}</p>
+                <h1 className="mt-1 truncate text-xl font-semibold tracking-normal text-zinc-950">{routeLabel(title)}</h1>
               </div>
-              <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
+                <div className="inline-flex rounded-md border border-zinc-200 bg-white p-0.5" aria-label="Language">
+                  {languageChoices.map((choice) => (
+                    <button
+                      aria-pressed={locale === choice.value}
+                      className={`rounded px-2 py-1 text-xs font-semibold transition active:scale-95 ${focusClasses} ${
+                        locale === choice.value ? "bg-zinc-950 text-white" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
+                      }`}
+                      key={choice.value}
+                      onClick={() => setLocale(choice.value)}
+                      type="button"
+                    >
+                      {choice.label}
+                    </button>
+                  ))}
+                </div>
                 <span className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5">Client shell</span>
                 <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-zinc-600">Idle</span>
               </div>
@@ -81,6 +101,11 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
     </div>
   );
 }
+
+const languageChoices: Array<{ label: string; value: Locale }> = [
+  { label: "EN", value: "en" },
+  { label: "中", value: "zh" }
+];
 
 export function StatePanel({ action, children, state, title }: StatePanelProps) {
   const tone = stateTone[state];
@@ -123,6 +148,36 @@ export function PrimaryActionLink({ children, href }: { children: ReactNode; hre
 
 function isActiveRoute(currentPathname: string, href: string): boolean {
   return currentPathname === href || currentPathname.startsWith(`${href}/`);
+}
+
+function navLabel(item: NavItem): string {
+  if (item.href === "/products") {
+    return t("nav.products");
+  }
+  if (item.href === "/styles") {
+    return t("nav.styles");
+  }
+  return item.label;
+}
+
+function navMeta(item: NavItem): string {
+  if (item.href === "/products") {
+    return t("nav.products.meta");
+  }
+  if (item.href === "/styles") {
+    return t("nav.styles.meta");
+  }
+  return item.meta;
+}
+
+function routeLabel(value: string): string {
+  if (value === "Products") {
+    return t("nav.products");
+  }
+  if (value === "Styles") {
+    return t("nav.styles");
+  }
+  return value;
 }
 
 const stateTone = {

@@ -3,19 +3,25 @@ import { useEffect, useState, type FormEvent } from "react";
 import {
   apiClient,
   formatApiError,
+  languageOptions,
   type ApiErrorInfo,
-  type BaselineNavigation,
-  type CreateRequirementInput,
   type FormaApiClient,
+  type Language,
+  type Platform,
   type Product,
   type ProductBaseline,
-  type RequirementWithDocument
+  type RequirementWithDocument,
+  type StyleMetadata
 } from "../api.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge, type ConfigStatus } from "../components/StatusBadge.js";
+import { deriveDefaultLanguage } from "./ProductNew.js";
 
 export interface ProductDetailProps {
-  client?: Pick<FormaApiClient, "archiveRequirement" | "createRequirement" | "getBaseline" | "getProduct" | "listRequirements">;
+  client?: Pick<
+    FormaApiClient,
+    "archiveRequirement" | "configureProduct" | "createEmptyRequirement" | "getBaseline" | "getProduct" | "listRequirements" | "listStyles"
+  >;
   hash?: string;
   params: Record<string, string>;
 }
@@ -37,9 +43,6 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
-  const [documentMd, setDocumentMd] = useState("");
-  const [navigationJson, setNavigationJson] = useState("[]");
-  const [pagesJson, setPagesJson] = useState("");
   const [creating, setCreating] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<ProductDetailState>({ status: "loading" });
@@ -79,10 +82,7 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
     return () => window.clearTimeout(timeout);
   }, [hash, state.status]);
 
-  const parsedPages = parseJsonArray(pagesJson);
-  const parsedNavigation = parseJsonArray(navigationJson);
-  const canCreateRequirement =
-    title.trim().length > 0 && documentMd.trim().length > 0 && parsedPages.ok && parsedPages.value.length > 0 && parsedNavigation.ok && !creating;
+  const canCreateRequirement = title.trim().length > 0 && !creating;
 
   async function handleCreateRequirement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,15 +93,7 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
     setActionError(null);
     setCreating(true);
     try {
-      await client.createRequirement(productId, {
-        document_md: documentMd.trim(),
-        navigation: parsedNavigation.value as BaselineNavigation[],
-        pages: parsedPages.value as CreateRequirementInput["pages"],
-        title: title.trim()
-      });
-      setDocumentMd("");
-      setNavigationJson("[]");
-      setPagesJson("");
+      await client.createEmptyRequirement(productId, { title: title.trim() });
       setTitle("");
       setReloadKey((value) => value + 1);
     } catch (error: unknown) {
@@ -109,6 +101,11 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
     } finally {
       setCreating(false);
     }
+  }
+
+  function handleProductConfigured(product: Product) {
+    setActionError(null);
+    setState((current) => (current.status === "ready" ? { ...current, product } : current));
   }
 
   async function handleArchive(requirementId: string) {
@@ -151,10 +148,12 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
       />
 
       <WorkSurface title="Product configuration">
-        <div className="grid gap-4 text-sm md:grid-cols-4">
+        <div className="grid gap-4 text-sm md:grid-cols-6">
           <Fact label="Product ID" value={state.product.id} />
           <Fact label="Platform" value={state.product.platform ?? "Not configured"} />
           <Fact label="Style" value={state.product.style?.name ?? "Not configured"} />
+          <Fact label="Languages" value={languageSummary(state.product.languages)} />
+          <Fact label="Default language" value={state.product.default_language ?? "Not configured"} />
           <div>
             <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Config status</p>
             <div className="mt-2">
@@ -163,6 +162,16 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
           </div>
         </div>
       </WorkSurface>
+
+      {needsProductConfiguration(state.product) ? (
+        <ProductConfigurationForm
+          client={client}
+          onConfigured={handleProductConfigured}
+          onError={setActionError}
+          product={state.product}
+          productId={productId}
+        />
+      ) : null}
 
       {state.requirementState.status === "error" ? (
         <StatePanel state="error" title="Requirement list unavailable">
@@ -210,32 +219,18 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
           <form className="grid gap-4" onSubmit={handleCreateRequirement}>
             <label className="grid gap-1 text-sm font-medium text-zinc-700">
               Title
-              <input className={inputClasses} onChange={(event) => setTitle(event.target.value)} placeholder="Checkout update" value={title} />
+              <input
+                className={inputClasses}
+                name="requirement_title"
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="Checkout update"
+                value={title}
+              />
             </label>
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              Document markdown
-              <textarea className={`${inputClasses} min-h-28 resize-y font-mono`} onChange={(event) => setDocumentMd(event.target.value)} value={documentMd} />
-            </label>
-            <div className="grid gap-4 lg:grid-cols-2">
-              <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                Pages JSON
-                <textarea className={`${inputClasses} min-h-32 resize-y font-mono`} onChange={(event) => setPagesJson(event.target.value)} value={pagesJson} />
-              </label>
-              <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                Navigation JSON
-                <textarea
-                  className={`${inputClasses} min-h-32 resize-y font-mono`}
-                  onChange={(event) => setNavigationJson(event.target.value)}
-                  value={navigationJson}
-                />
-              </label>
-            </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-zinc-500">
-                {canCreateRequirement ? "Payload is ready." : "Submit requires title, document, at least one page, and navigation JSON."}
-              </p>
+              <p className="text-sm text-zinc-500">{canCreateRequirement ? "Title is ready." : "Submit requires a title."}</p>
               <button className={primaryButtonClasses} disabled={!canCreateRequirement} type="submit">
-                {creating ? "Submitting" : "Submit requirement"}
+                {creating ? "Creating" : "Create requirement"}
               </button>
             </div>
           </form>
@@ -329,6 +324,187 @@ export function ProductDetailSummaryPanels({
   );
 }
 
+function ProductConfigurationForm({
+  client,
+  onConfigured,
+  onError,
+  product,
+  productId
+}: {
+  client: Pick<FormaApiClient, "configureProduct" | "listStyles">;
+  onConfigured: (product: Product) => void;
+  onError: (error: ApiErrorInfo | null) => void;
+  product: Product;
+  productId: string;
+}) {
+  const [defaultLanguage, setDefaultLanguage] = useState<Language | "">(
+    deriveDefaultLanguage(product.languages ?? [], product.default_language)
+  );
+  const [listError, setListError] = useState<ApiErrorInfo | null>(null);
+  const [platform, setPlatform] = useState<Platform | "">(product.platform ?? "");
+  const [saving, setSaving] = useState(false);
+  const [selectedLanguages, setSelectedLanguages] = useState<Language[]>(product.languages ?? []);
+  const [submitError, setSubmitError] = useState<ApiErrorInfo | null>(null);
+  const [styleName, setStyleName] = useState(product.style?.name ?? "");
+  const [styles, setStyles] = useState<StyleMetadata[]>([]);
+  const [stylesLoading, setStylesLoading] = useState(true);
+  const styleOptions = ensureCurrentStyle(styles, product.style);
+  const canSubmit =
+    platform !== "" && styleName.length > 0 && selectedLanguages.length > 0 && defaultLanguage !== "" && !listError && !stylesLoading && !saving;
+
+  useEffect(() => {
+    let cancelled = false;
+    setStylesLoading(true);
+    setListError(null);
+
+    client
+      .listStyles()
+      .then((nextStyles) => {
+        if (!cancelled) {
+          setStyles(nextStyles);
+          setStylesLoading(false);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          const nextError = formatApiError(error);
+          setListError(nextError);
+          onError(nextError);
+          setStyles([]);
+          setStyleName("");
+          setStylesLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [client, onError]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSubmit) {
+      return;
+    }
+
+    setSaving(true);
+    setSubmitError(null);
+    onError(null);
+    try {
+      const configured = await client.configureProduct(productId, {
+        default_language: defaultLanguage as Language,
+        languages: selectedLanguages,
+        platform: platform as Platform,
+        style: styleName
+      });
+      onConfigured(configured);
+    } catch (error: unknown) {
+      const nextError = formatApiError(error);
+      setSubmitError(nextError);
+      onError(nextError);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateSelectedLanguage(language: Language, checked: boolean) {
+    const nextSelected = checked ? [...selectedLanguages, language] : selectedLanguages.filter((selected) => selected !== language);
+    setSelectedLanguages(nextSelected);
+    setDefaultLanguage(deriveDefaultLanguage(nextSelected, defaultLanguage || undefined));
+  }
+
+  return (
+    <WorkSurface title="Complete configuration">
+      <form className="grid gap-4" data-product-config-form="true" onSubmit={handleSubmit}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="grid gap-1 text-sm font-medium text-zinc-700">
+            Platform
+            <select
+              className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
+              name="platform"
+              onChange={(event) => setPlatform(event.target.value as Platform | "")}
+              value={platform}
+            >
+              <option value="">Select platform</option>
+              {platformOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium text-zinc-700">
+            Style
+            <select
+              className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
+              disabled={stylesLoading || !!listError}
+              name="style"
+              onChange={(event) => setStyleName(event.target.value)}
+              value={styleName}
+            >
+              <option value="">{stylesLoading ? "Loading styles" : "Select style"}</option>
+              {styleOptions.map((style) => (
+                <option key={style.name} value={style.name}>
+                  {style.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-medium text-zinc-700">Languages</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {languageOptions.map((language) => (
+              <label
+                className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700"
+                key={language.value}
+              >
+                <input
+                  checked={selectedLanguages.includes(language.value)}
+                  className="h-4 w-4 accent-amber-500"
+                  name="languages"
+                  onChange={(event) => updateSelectedLanguage(language.value, event.target.checked)}
+                  type="checkbox"
+                  value={language.value}
+                />
+                {language.label}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        {selectedLanguages.length > 1 ? (
+          <label className="grid gap-1 text-sm font-medium text-zinc-700">
+            Default language
+            <select
+              className={inputClasses}
+              name="default_language"
+              onChange={(event) => setDefaultLanguage(event.target.value as Language)}
+              value={defaultLanguage}
+            >
+              {selectedLanguages.map((language) => (
+                <option key={language} value={language}>
+                  {languageOptions.find((option) => option.value === language)?.label ?? language}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {listError ? <p className="text-sm text-red-700">{listError.error_code} - {listError.message}</p> : null}
+        {submitError ? <p className="text-sm text-red-700">{submitError.error_code} - {submitError.message}</p> : null}
+
+        <div className="flex justify-end">
+          <button className={primaryButtonClasses} disabled={!canSubmit} type="submit">
+            {saving ? "Saving" : "Save configuration"}
+          </button>
+        </div>
+      </form>
+    </WorkSurface>
+  );
+}
+
 function Fact({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -339,15 +515,44 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 function configStatus(product: Product): ConfigStatus {
-  if (product.platform && product.style && product.components_initialized) {
+  if (!hasProductConfiguration(product)) {
+    return "configuration_incomplete";
+  }
+
+  if (product.components_initialized) {
     return "initialized";
   }
 
-  if (product.platform && product.style) {
-    return "configured";
-  }
+  return "configured";
+}
 
-  return "unconfigured";
+function needsProductConfiguration(product: Product): boolean {
+  return !hasProductConfiguration(product);
+}
+
+function hasProductConfiguration(product: Product): boolean {
+  return Boolean(
+    product.platform &&
+      product.style &&
+      product.languages &&
+      product.languages.length > 0 &&
+      product.default_language &&
+      product.languages.includes(product.default_language)
+  );
+}
+
+function languageSummary(languages: Language[] | undefined): string {
+  if (!languages || languages.length === 0) {
+    return "Not configured";
+  }
+  return languages.join(", ");
+}
+
+function ensureCurrentStyle(styles: StyleMetadata[], currentStyle: StyleMetadata | undefined): StyleMetadata[] {
+  if (!currentStyle || styles.some((style) => style.name === currentStyle.name)) {
+    return styles;
+  }
+  return [currentStyle, ...styles];
 }
 
 async function loadBaseline(client: Pick<FormaApiClient, "getBaseline">, productId: string): Promise<BaselineSummaryState> {
@@ -366,15 +571,6 @@ async function loadRequirements(client: Pick<FormaApiClient, "listRequirements">
   }
 }
 
-function parseJsonArray(value: string): { ok: false; value: [] } | { ok: true; value: unknown[] } {
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? { ok: true, value: parsed } : { ok: false, value: [] };
-  } catch {
-    return { ok: false, value: [] };
-  }
-}
-
 function decodeHashId(hash: string): string {
   if (!hash.startsWith("#") || hash.length === 1) {
     return "";
@@ -390,6 +586,13 @@ function decodeHashId(hash: string): string {
 function canUseDom(): boolean {
   return typeof window !== "undefined" && typeof document !== "undefined";
 }
+
+const platformOptions: Array<{ label: string; value: Platform }> = [
+  { label: "Web", value: "web" },
+  { label: "Mobile", value: "mobile" },
+  { label: "Desktop", value: "desktop" },
+  { label: "Tablet", value: "tablet" }
+];
 
 const inputClasses =
   "rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 shadow-sm transition placeholder:text-zinc-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
