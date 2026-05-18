@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { FormaError } from "./errors.js";
 
 export interface PencilRunner {
-  run(command: string, args: string[], options?: { cwd?: string }): Promise<{ stdout: string; stderr: string }>;
+  run(command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }): Promise<{ stdout: string; stderr: string }>;
 }
 
 export interface PencilLockContext {
@@ -69,7 +69,7 @@ const productIdPattern = /^P-[a-f0-9]{6}$/;
 export const defaultPencilRunner: PencilRunner = {
   async run(command, args, options) {
     return await new Promise((resolve, reject) => {
-      const child = spawn(command, args, { cwd: options?.cwd, stdio: ["ignore", "pipe", "pipe"] });
+      const child = spawn(command, args, { cwd: options?.cwd, stdio: ["ignore", "pipe", "pipe"], timeout: options?.timeoutMs });
       let stdout = "";
       let stderr = "";
 
