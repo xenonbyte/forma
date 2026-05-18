@@ -11,6 +11,12 @@ importers:
       '@xenonbyte/forma-cli':
         specifier: workspace:*
         version: link:packages/cli
+      '@xenonbyte/forma-core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@xenonbyte/forma-server':
+        specifier: workspace:*
+        version: link:packages/server
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

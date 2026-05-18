@@ -12,10 +12,12 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "pack:cli": "pnpm --filter @xenonbyte/forma-cli pack",
     "dev:web": "pnpm --filter @xenonbyte/forma-web dev",
-    "smoke:pencil": "tsx scripts/smoke-pencil.ts"
+    "smoke:pencil": "pnpm --filter @xenonbyte/forma-core build && pnpm --filter @xenonbyte/forma-server build && tsx scripts/smoke-pencil.ts"
   },
   "dependencies": {
-    "@xenonbyte/forma-cli": "workspace:*"
+    "@xenonbyte/forma-cli": "workspace:*",
+    "@xenonbyte/forma-core": "workspace:*",
+    "@xenonbyte/forma-server": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
