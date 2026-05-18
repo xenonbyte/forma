@@ -3,8 +3,27 @@ import type { AnnotationNode, DesignDiff, ExportedDesignAsset } from "@xenonbyte
 export type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export type Platform = "mobile" | "desktop" | "tablet" | "web";
+export type Language = "zh-CN" | "zh-TW" | "en" | "ja" | "ko" | "pt" | "fr" | "de" | "ru";
 export type RequirementStatus = "empty" | "submitted" | "active" | "archived";
 export type DesignStatus = "pending" | "done" | "expired";
+export type RequirementChangeType = "new" | "patch" | "rebuild";
+
+export const languageLabels: Record<Language, string> = {
+  "zh-CN": "Chinese (Simplified)",
+  "zh-TW": "Chinese (Traditional)",
+  en: "English",
+  ja: "Japanese",
+  ko: "Korean",
+  pt: "Portuguese",
+  fr: "French",
+  de: "German",
+  ru: "Russian"
+};
+
+export const languageOptions: Array<{ label: string; value: Language }> = (Object.keys(languageLabels) as Language[]).map((value) => ({
+  label: languageLabels[value],
+  value
+}));
 
 export interface StyleVariables {
   primary: string;
@@ -31,6 +50,8 @@ export interface ProductIndexEntry {
 
 export interface Product extends ProductIndexEntry {
   components_initialized?: boolean;
+  default_language?: Language;
+  languages?: Language[];
   platform?: Platform;
   style?: StyleMetadata;
 }
@@ -41,9 +62,33 @@ export interface BaselineNavigation {
   to: string;
 }
 
+export interface CopyItem {
+  context: string;
+  text: string;
+}
+
+export interface TranslationEntry {
+  context: string;
+  outdated?: boolean;
+  texts: Record<string, string>;
+}
+
+export interface PageTranslation {
+  entries: TranslationEntry[];
+  page_id: string;
+}
+
+export interface PageCopyPayload {
+  default_language_copy: CopyItem[];
+  page_id: string;
+  translations: TranslationEntry[];
+}
+
 export interface RequirementPage {
   baseline_page: string;
-  copy?: string;
+  change_summary?: string;
+  change_type?: RequirementChangeType;
+  copy?: CopyItem[];
   design_id?: string;
   design_status: DesignStatus;
   features?: string;
@@ -53,27 +98,83 @@ export interface RequirementPage {
   page_id: string;
 }
 
-export interface RequirementWithDocument {
+export interface Requirement {
   created_at: string;
-  document_md: string;
   id: string;
   navigation: BaselineNavigation[];
   pages: RequirementPage[];
   product_id: string;
   status: RequirementStatus;
   title: string;
+  ui_affected?: boolean;
   updated_at: string;
+}
+
+export interface RequirementWithDocument extends Requirement {
+  document_md: string;
+}
+
+export interface ProductConfigInput {
+  default_language: Language;
+  languages: Language[];
+  platform: Platform;
+  style: string;
+}
+
+export interface CreateEmptyRequirementInput {
+  title: string;
+}
+
+export interface CreateRequirementPageInput extends Omit<SaveRequirementPageInput, "change_type"> {
+  change_type?: RequirementChangeType;
 }
 
 export interface CreateRequirementInput {
   document_md: string;
   navigation: BaselineNavigation[];
-  pages: Array<Omit<RequirementPage, "design_status"> & { design_status?: DesignStatus }>;
+  pages: CreateRequirementPageInput[];
+  remove_page_ids?: string[];
+  remove_rule_ids?: string[];
+  rules?: RequirementRuleInput[];
   title: string;
+  translations?: PageTranslation[];
+  ui_affected?: boolean;
+}
+
+export interface SaveRequirementPageInput {
+  baseline_page: string;
+  change_summary?: string;
+  change_type: RequirementChangeType;
+  copy?: CopyItem[];
+  features?: string;
+  fields?: string;
+  interactions?: string;
+  name: string;
+  page_id: string;
+}
+
+export interface RequirementRuleInput {
+  given: string;
+  id: string;
+  page_id?: string;
+  replaces_rule_id?: string;
+  then: string;
+  when: string;
+}
+
+export interface SaveRequirementInput {
+  document_md: string;
+  navigation?: BaselineNavigation[];
+  pages?: SaveRequirementPageInput[];
+  remove_page_ids?: string[];
+  remove_rule_ids?: string[];
+  rules?: RequirementRuleInput[];
+  translations?: PageTranslation[];
+  ui_affected?: boolean;
 }
 
 export interface BaselinePage {
-  copy: string;
+  copy: CopyItem[];
   features: string;
   fields: string;
   id: string;
@@ -170,6 +271,8 @@ export type { AnnotationNode, DesignDiff };
 
 export interface FormaApiClient {
   archiveRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
+  configureProduct(productId: string, input: ProductConfigInput): Promise<Product>;
+  createEmptyRequirement(productId: string, input: CreateEmptyRequirementInput): Promise<Requirement>;
   createProduct(input: Pick<ProductIndexEntry, "description" | "name">): Promise<Product>;
   createRequirement(productId: string, input: CreateRequirementInput): Promise<RequirementWithDocument>;
   exportDesignAsset(designId: string, nodeId: string, format: DesignExportFormat): Promise<DesignExportPayload>;
@@ -178,6 +281,7 @@ export interface FormaApiClient {
   getDesignDiff(designId: string, fromVersion: number, toVersion: number): Promise<DesignDiffPayload>;
   getDesignHistory(designId: string): Promise<DesignHistoryPayload>;
   getDesignImage(designId: string, version?: number): Promise<DesignImageMetadata>;
+  getPageCopy(productId: string, pageId: string, requirementId?: string): Promise<PageCopyPayload>;
   getProduct(productId: string): Promise<Product>;
   getRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
   getStyle(name: string): Promise<StyleDetailPayload>;
@@ -186,6 +290,7 @@ export interface FormaApiClient {
   listProducts(): Promise<ProductIndexEntry[]>;
   listRequirements(productId: string): Promise<RequirementWithDocument[]>;
   listStyles(): Promise<StyleMetadata[]>;
+  saveRequirement(productId: string, requirementId: string, input: SaveRequirementInput): Promise<RequirementWithDocument>;
   syncStyles(): Promise<SyncStartedPayload>;
 }
 
@@ -247,18 +352,51 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
         ...requestOptions(fetcher),
         method: "PUT"
       }),
+    configureProduct: (productId, input) =>
+      apiRecord<Product>(`/api/products/${encodeURIComponent(productId)}/config`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    createEmptyRequirement: (productId, input) =>
+      apiRecord<Requirement>(`/api/products/${encodeURIComponent(productId)}/requirements`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
     createProduct: (input) =>
       apiRecord<Product>("/api/products", {
         ...requestOptions(fetcher),
         body: input,
         method: "POST"
       }),
-    createRequirement: (productId, input) =>
-      apiRecord<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements`, {
+    createRequirement: async (productId, input) => {
+      const encodedProductId = encodeURIComponent(productId);
+      const created = await apiRecord<Requirement>(`/api/products/${encodedProductId}/requirements`, {
         ...requestOptions(fetcher),
-        body: input,
+        body: { title: input.title },
         method: "POST"
-      }),
+      });
+      const saveInput = {
+        document_md: input.document_md,
+        navigation: input.navigation,
+        pages: input.pages.map(normalizeCreateRequirementPage),
+        ...(input.remove_page_ids ? { remove_page_ids: input.remove_page_ids } : {}),
+        ...(input.remove_rule_ids ? { remove_rule_ids: input.remove_rule_ids } : {}),
+        ...(input.rules ? { rules: input.rules } : {}),
+        ...(input.translations ? { translations: input.translations } : {}),
+        ui_affected: input.ui_affected ?? true
+      };
+
+      return apiRecord<RequirementWithDocument>(
+        `/api/products/${encodedProductId}/requirements/${encodeURIComponent(created.id)}/save`,
+        {
+          ...requestOptions(fetcher),
+          body: saveInput,
+          method: "POST"
+        }
+      );
+    },
     exportDesignAsset: (designId, nodeId, format) =>
       apiRecord<DesignExportPayload>(
         `/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: nodeId, format }).toString()}`,
@@ -280,6 +418,13 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       const query = version === undefined ? "" : `?${new URLSearchParams({ version: String(version) }).toString()}`;
       return apiRecord<DesignImageMetadata>(`/api/designs/${encodeURIComponent(designId)}/image${query}`, requestOptions(fetcher));
     },
+    getPageCopy: (productId, pageId, requirementId) => {
+      const query = requirementId ? `?${new URLSearchParams({ requirement_id: requirementId }).toString()}` : "";
+      return apiRecord<PageCopyPayload>(
+        `/api/products/${encodeURIComponent(productId)}/baseline/pages/${encodeURIComponent(pageId)}/copy${query}`,
+        requestOptions(fetcher)
+      );
+    },
     getProduct: (productId) => apiRecord<Product>(`/api/products/${encodeURIComponent(productId)}`, requestOptions(fetcher)),
     getRequirement: (productId, requirementId) =>
       apiRecord<RequirementWithDocument>(
@@ -293,6 +438,12 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     listRequirements: (productId) =>
       apiArray<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements`, requestOptions(fetcher)),
     listStyles: () => apiArray<StyleMetadata>("/api/styles", requestOptions(fetcher)),
+    saveRequirement: (productId, requirementId, input) =>
+      apiRecord<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/save`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
     syncStyles: () =>
       apiRecord<SyncStartedPayload>("/api/styles/sync", {
         ...requestOptions(fetcher),
@@ -337,6 +488,33 @@ function normalizeApiPath(path: string): string {
 
 function requestOptions(fetcher: Fetcher | undefined): Pick<ApiRequestOptions, "fetcher"> {
   return fetcher ? { fetcher } : {};
+}
+
+function normalizeCreateRequirementPage(page: CreateRequirementPageInput): SaveRequirementPageInput {
+  const next: SaveRequirementPageInput = {
+    baseline_page: page.baseline_page,
+    change_type: page.change_type ?? "new",
+    name: page.name,
+    page_id: page.page_id
+  };
+
+  if (page.change_summary !== undefined) {
+    next.change_summary = page.change_summary;
+  }
+  if (page.copy !== undefined) {
+    next.copy = page.copy;
+  }
+  if (page.features !== undefined) {
+    next.features = page.features;
+  }
+  if (page.fields !== undefined) {
+    next.fields = page.fields;
+  }
+  if (page.interactions !== undefined) {
+    next.interactions = page.interactions;
+  }
+
+  return next;
 }
 
 async function apiArray<T>(path: string, options?: ApiRequestOptions): Promise<T[]> {

@@ -79,14 +79,31 @@ describe("apiRequest", () => {
   });
 
   it("keeps document payloads on requirement mutations", async () => {
-    const requests: Array<[RequestInfo | URL, string | undefined]> = [];
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
     const client = createApiClient(async (input, init) => {
-      requests.push([input, init?.method]);
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
+      const path = input.toString();
+      if (path.endsWith("/requirements")) {
+        return jsonResponse({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          title: "Checkout",
+          status: "empty",
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [],
+          navigation: []
+        });
+      }
       return jsonResponse({
         id: "R-12345678",
         product_id: "P-123abc",
         title: "Checkout",
-        status: input.toString().endsWith("/archive") ? "archived" : "submitted",
+        status: path.endsWith("/archive") ? "archived" : "submitted",
         created_at: "2026-05-17T00:00:00.000Z",
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
@@ -99,7 +116,15 @@ describe("apiRequest", () => {
       client.createRequirement("P-123abc", {
         title: "Checkout",
         document_md: "# Checkout",
-        pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }],
+        pages: [
+          { page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" },
+          {
+            page_id: "profile-page",
+            name: "Profile",
+            baseline_page: "profile",
+            change_type: "patch"
+          }
+        ],
         navigation: []
       })
     ).resolves.toMatchObject({ id: "R-12345678", document_md: "# Checkout" });
@@ -110,8 +135,190 @@ describe("apiRequest", () => {
       document_md: "# Checkout"
     });
     expect(requests).toEqual([
-      ["/api/products/P-123abc/requirements", "POST"],
-      ["/api/products/P-123abc/requirements/R-12345678/archive", "PUT"]
+      {
+        input: "/api/products/P-123abc/requirements",
+        method: "POST",
+        body: { title: "Checkout" }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/save",
+        method: "POST",
+        body: {
+          document_md: "# Checkout",
+          navigation: [],
+          pages: [
+            {
+              page_id: "checkout-page",
+              name: "Checkout",
+              baseline_page: "checkout",
+              change_type: "new"
+            },
+            {
+              page_id: "profile-page",
+              name: "Profile",
+              baseline_page: "profile",
+              change_type: "patch"
+            }
+          ],
+          ui_affected: true
+        }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/archive",
+        method: "PUT",
+        body: undefined
+      }
+    ]);
+  });
+
+  it("builds v0.3 product configuration and requirement routes", async () => {
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
+
+      const path = input.toString();
+      if (path.endsWith("/config")) {
+        return jsonResponse({
+          id: "P-123abc",
+          name: "Workbench",
+          description: "Internal tool",
+          platform: "web",
+          languages: ["zh-CN", "en"],
+          default_language: "zh-CN"
+        });
+      }
+      if (path.endsWith("/save")) {
+        return jsonResponse({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          title: "Checkout",
+          status: "submitted",
+          ui_affected: true,
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [],
+          navigation: [],
+          document_md: "# Checkout"
+        });
+      }
+      return jsonResponse({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "empty",
+        ui_affected: true,
+        created_at: "2026-05-17T00:00:00.000Z",
+        updated_at: "2026-05-17T00:00:00.000Z",
+        pages: [],
+        navigation: []
+      });
+    });
+
+    await expect(
+      client.configureProduct("P-123abc", {
+        platform: "web",
+        style: "linear",
+        languages: ["zh-CN", "en"],
+        default_language: "zh-CN"
+      })
+    ).resolves.toMatchObject({ id: "P-123abc", default_language: "zh-CN" });
+    await expect(client.createEmptyRequirement("P-123abc", { title: "Checkout" })).resolves.toMatchObject({
+      id: "R-12345678",
+      status: "empty"
+    });
+    await expect(
+      client.saveRequirement("P-123abc", "R-12345678", {
+        document_md: "# Checkout",
+        pages: [
+          {
+            page_id: "checkout-page",
+            name: "Checkout",
+            baseline_page: "checkout",
+            change_type: "patch",
+            copy: [{ context: "title", text: "Checkout" }]
+          }
+        ],
+        navigation: [],
+        translations: [
+          {
+            page_id: "checkout-page",
+            entries: [{ context: "title", texts: { en: "Checkout", "zh-CN": "结账" } }]
+          }
+        ],
+        rules: [],
+        remove_rule_ids: [],
+        remove_page_ids: [],
+        ui_affected: true
+      })
+    ).resolves.toMatchObject({ id: "R-12345678", document_md: "# Checkout" });
+
+    expect(requests).toEqual([
+      {
+        input: "/api/products/P-123abc/config",
+        method: "POST",
+        body: {
+          platform: "web",
+          style: "linear",
+          languages: ["zh-CN", "en"],
+          default_language: "zh-CN"
+        }
+      },
+      {
+        input: "/api/products/P-123abc/requirements",
+        method: "POST",
+        body: { title: "Checkout" }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/save",
+        method: "POST",
+        body: {
+          document_md: "# Checkout",
+          pages: [
+            {
+              page_id: "checkout-page",
+              name: "Checkout",
+              baseline_page: "checkout",
+              change_type: "patch",
+              copy: [{ context: "title", text: "Checkout" }]
+            }
+          ],
+          navigation: [],
+          translations: [
+            {
+              page_id: "checkout-page",
+              entries: [{ context: "title", texts: { en: "Checkout", "zh-CN": "结账" } }]
+            }
+          ],
+          rules: [],
+          remove_rule_ids: [],
+          remove_page_ids: [],
+          ui_affected: true
+        }
+      }
+    ]);
+  });
+
+  it("builds baseline page copy routes", async () => {
+    const requests: Array<RequestInfo | URL> = [];
+    const client = createApiClient(async (input) => {
+      requests.push(input);
+      return jsonResponse({
+        page_id: "checkout",
+        default_language_copy: [{ context: "title", text: "结账" }],
+        translations: [{ context: "title", texts: { en: "Checkout" } }]
+      });
+    });
+
+    await expect(client.getPageCopy("P-123abc", "checkout")).resolves.toMatchObject({ page_id: "checkout" });
+    await expect(client.getPageCopy("P-123abc", "checkout", "R 123")).resolves.toMatchObject({ page_id: "checkout" });
+
+    expect(requests).toEqual([
+      "/api/products/P-123abc/baseline/pages/checkout/copy",
+      "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R+123"
     ]);
   });
 

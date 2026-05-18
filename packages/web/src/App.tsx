@@ -1,3 +1,4 @@
+import { LocaleProvider } from "./LocaleContext.js";
 import { Layout, type NavItem } from "./components/Layout.js";
 import { useCurrentRoute } from "./routes.js";
 
@@ -19,13 +20,15 @@ export function App() {
   const Page = match.route.component;
 
   return (
-    <Layout
-      currentPathname={match.pathname}
-      navItems={navItems}
-      routeContext={match.route.context}
-      title={match.route.title(match.params)}
-    >
-      <Page hash={match.hash} params={match.params} route={match.route} />
-    </Layout>
+    <LocaleProvider>
+      <Layout
+        currentPathname={match.pathname}
+        navItems={navItems}
+        routeContext={match.route.context}
+        title={match.route.title(match.params)}
+      >
+        <Page hash={match.hash} params={match.params} route={match.route} />
+      </Layout>
+    </LocaleProvider>
   );
 }
