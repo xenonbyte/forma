@@ -72,6 +72,16 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     sessions: {
       getCurrentSession: vi.fn(async () => ({ current_product: "P-123abc" }))
     },
+    sync: {
+      recoverFromCrash: vi.fn(async () => undefined),
+      startSync: vi.fn(async () => ({
+        task_id: "sync-test",
+        status: "running",
+        started_at: "2026-05-18T00:00:00.000Z",
+        progress: { phase: "clone", completed: 0, total: 4 }
+      })),
+      getStatus: vi.fn(async () => ({ status: "idle" }))
+    },
     styles: {
       getStyle: vi.fn(async () => ({
         metadata: {
@@ -257,7 +267,7 @@ describe("Fastify API routes", () => {
     expect(store.designs.diffDesigns).toHaveBeenCalledWith("D-12345678", 1, 2);
   });
 
-  it("exposes all required route families and keeps style sync absent", async () => {
+  it("exposes all required route families", async () => {
     const home = await homeWithPreview();
     const app = await appWith(fakeStore({ home }));
 
@@ -280,10 +290,93 @@ describe("Fastify API routes", () => {
       app.inject({ method: "GET", url: "/api/styles" }),
       app.inject({ method: "GET", url: "/api/styles/linear/preview" })
     ]);
-    const styleSync = await app.inject({ method: "POST", url: "/api/styles/sync" });
 
     expect(responses.map((response) => response.statusCode)).toEqual(Array(responses.length).fill(200));
-    expect(styleSync.statusCode).toBe(404);
+  });
+
+  it("starts style sync and returns an accepted task response", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "POST", url: "/api/styles/sync" });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toEqual({
+      task_id: "sync-test",
+      status: "running",
+      message: "Style sync started"
+    });
+    expect(store.sync.startSync).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns style sync status", async () => {
+    const store = fakeStore({
+      sync: {
+        ...fakeStore().sync,
+        getStatus: vi.fn(async () => ({
+          status: "running",
+          task_id: "sync-test",
+          started_at: "2026-05-18T00:00:00.000Z",
+          progress: { phase: "clone", completed: 0, total: 4 }
+        }))
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "GET", url: "/api/styles/sync/status" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: "running",
+      task_id: "sync-test",
+      started_at: "2026-05-18T00:00:00.000Z",
+      progress: { phase: "clone", completed: 0, total: 4 }
+    });
+    expect(store.sync.getStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps duplicate style sync starts to 409", async () => {
+    const store = fakeStore({
+      sync: {
+        ...fakeStore().sync,
+        startSync: vi.fn(async () => {
+          throw new FormaError("SYNC_ALREADY_RUNNING", "Style sync is already running", { task_id: "sync-running" });
+        })
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "POST", url: "/api/styles/sync" });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error_code: "SYNC_ALREADY_RUNNING" });
+  });
+
+  it("maps missing Git during style sync start to 503", async () => {
+    const store = fakeStore({
+      sync: {
+        ...fakeStore().sync,
+        startSync: vi.fn(async () => {
+          throw new FormaError("SYNC_GIT_NOT_FOUND", "Git executable not found");
+        })
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "POST", url: "/api/styles/sync" });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ error_code: "SYNC_GIT_NOT_FOUND" });
+  });
+
+  it("triggers async sync crash recovery when building the server", async () => {
+    const store = fakeStore();
+
+    const app = buildServer({ store: store as never });
+    apps.push(app);
+    await Promise.resolve();
+
+    expect(store.sync.recoverFromCrash).toHaveBeenCalledTimes(1);
   });
 
   it("maps requirement archive invalid status to 409", async () => {
