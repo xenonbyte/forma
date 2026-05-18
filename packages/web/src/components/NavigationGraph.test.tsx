@@ -11,6 +11,7 @@ import type { BaselinePage } from "../api.js";
 
 const leaferInstances: MockLeafer[] = [];
 const elementInstances: MockElement[] = [];
+type MockElementKind = "Path" | "Rect" | "Text";
 
 class MockLeafer {
   elements: MockElement[] = [];
@@ -38,7 +39,10 @@ class MockElement {
     return this;
   });
 
-  constructor(public readonly config: Record<string, unknown>) {
+  constructor(
+    public readonly config: Record<string, unknown>,
+    public readonly kind: MockElementKind
+  ) {
     this.fill = typeof config.fill === "string" ? config.fill : undefined;
     this.stroke = typeof config.stroke === "string" ? config.stroke : undefined;
     this.strokeWidth = typeof config.strokeWidth === "number" ? config.strokeWidth : undefined;
@@ -46,12 +50,30 @@ class MockElement {
   }
 }
 
+class MockPath extends MockElement {
+  constructor(config: Record<string, unknown>) {
+    super(config, "Path");
+  }
+}
+
+class MockRect extends MockElement {
+  constructor(config: Record<string, unknown>) {
+    super(config, "Rect");
+  }
+}
+
+class MockText extends MockElement {
+  constructor(config: Record<string, unknown>) {
+    super(config, "Text");
+  }
+}
+
 vi.mock("leafer-ui", () => ({
   Leafer: MockLeafer,
-  Path: MockElement,
+  Path: MockPath,
   PointerEvent: { CLICK: "click", ENTER: "pointer.enter", LEAVE: "pointer.leave" },
-  Rect: MockElement,
-  Text: MockElement
+  Rect: MockRect,
+  Text: MockText
 }));
 
 const pages: BaselinePage[] = [
@@ -166,10 +188,10 @@ describe("NavigationGraph", () => {
       text: "Start checkout"
     });
 
-    const edge = findElement("edge-home-checkout");
-    const arrow = findElement("edge-arrow-home-checkout");
-    const sourceNode = findElement("node-home");
-    const targetNode = findElement("node-checkout");
+    const edge = findElement("edge-home-checkout", "Path");
+    const arrow = findElement("edge-arrow-home-checkout", "Path");
+    const sourceNode = findElement("node-home", "Rect");
+    const targetNode = findElement("node-checkout", "Rect");
 
     expect(edge?.config).toMatchObject({
       stroke: "#a1a1aa"
@@ -178,11 +200,29 @@ describe("NavigationGraph", () => {
       fill: "#a1a1aa"
     });
 
-    const path = edge?.config.path as Array<[string, number, number]>;
+    const path = edge?.config.path as PathCommand[];
+    const arrowPath = arrow?.config.path as PathCommand[];
     expect(path[0]?.[0]).toBe("M");
     expect(path[1]?.[0]).toBe("L");
-    expect(pointInsideRect({ x: path[0][1], y: path[0][2] }, sourceNode?.config)).toBe(false);
-    expect(pointInsideRect({ x: path[1][1], y: path[1][2] }, targetNode?.config)).toBe(false);
+    expect(pointInsideRect(commandPoint(path[0]), sourceNode?.config)).toBe(false);
+    expect(pointInsideRect(commandPoint(path[1]), targetNode?.config)).toBe(false);
+    expect(arrowTipSize(arrowPath)).toBeCloseTo(6, 1);
+  });
+
+  it("draws self edges around the node without crossing its interior", async () => {
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<NavigationGraph navigation={[{ from: "home", to: "home", trigger: "Stay" }]} pages={pages} />);
+      await flushPromises();
+    });
+
+    const edge = findElement("edge-home-home", "Path");
+    const homeNode = findElement("node-home", "Rect");
+    const path = edge?.config.path as PathCommand[];
+
+    expect(path.map((command) => command[0])).toEqual(["M", "L", "L", "L"]);
+    expect(pathCrossesRectInterior(path, homeNode?.config)).toBe(false);
   });
 
   it("selects nodes through real Leafer rect click handlers", async () => {
@@ -194,7 +234,7 @@ describe("NavigationGraph", () => {
     });
 
     await act(async () => {
-      findElement("node-checkout")?.handlers.click?.();
+      findElement("node-checkout", "Rect")?.handlers.click?.();
       await flushPromises();
     });
 
@@ -212,9 +252,9 @@ describe("NavigationGraph", () => {
       await flushPromises();
     });
 
-    const homeNode = findElement("node-home");
-    const relatedEdge = findElement("edge-home-checkout");
-    const relatedArrow = findElement("edge-arrow-home-checkout");
+    const homeNode = findElement("node-home", "Rect");
+    const relatedEdge = findElement("edge-home-checkout", "Path");
+    const relatedArrow = findElement("edge-arrow-home-checkout", "Path");
 
     homeNode?.handlers["pointer.enter"]?.();
 
@@ -264,8 +304,36 @@ describe("NavigationGraph", () => {
   });
 });
 
-function findElement(name: string) {
-  return elementInstances.find((element) => element.config.name === name);
+type PathCommand = [string, number?, number?];
+
+function findElement(name: string, kind?: MockElementKind) {
+  return elementInstances.find((element) => element.config.name === name && (!kind || element.kind === kind));
+}
+
+function commandPoint(command: PathCommand | undefined): { x: number; y: number } {
+  return { x: Number(command?.[1]), y: Number(command?.[2]) };
+}
+
+function arrowTipSize(path: PathCommand[]): number {
+  const tip = commandPoint(path[0]);
+  const left = commandPoint(path[1]);
+  const right = commandPoint(path[2]);
+  const baseMidpoint = { x: (left.x + right.x) / 2, y: (left.y + right.y) / 2 };
+  return Math.sqrt((tip.x - baseMidpoint.x) ** 2 + (tip.y - baseMidpoint.y) ** 2);
+}
+
+function pathCrossesRectInterior(path: PathCommand[], config: Record<string, unknown> | undefined): boolean {
+  for (let index = 1; index < path.length; index += 1) {
+    const start = commandPoint(path[index - 1]);
+    const end = commandPoint(path[index]);
+    for (let step = 1; step < 10; step += 1) {
+      const t = step / 10;
+      if (pointInsideRect({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t }, config)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function pointInsideRect(point: { x: number; y: number }, config: Record<string, unknown> | undefined): boolean {

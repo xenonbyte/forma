@@ -55,6 +55,14 @@ interface LeaferElement {
   strokeWidth?: number;
 }
 
+type GraphPoint = { x: number; y: number };
+
+interface EdgeGeometry {
+  arrowPath: Array<Array<number | string>>;
+  labelPoint: GraphPoint;
+  path: Array<Array<number | string>>;
+}
+
 const selectedStroke = "#d97706";
 const nodeStroke = "#d4d4d8";
 const hoverStroke = "#3B82F6";
@@ -190,10 +198,7 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
         hitSelf: false,
         hittable: false,
         name: `edge-${edge.from}-${edge.to}`,
-        path: [
-          ["M", geometry.start.x, geometry.start.y],
-          ["L", geometry.end.x, geometry.end.y]
-        ],
+        path: geometry.path,
         stroke: edgeStroke,
         strokeWidth: 1.5
       });
@@ -221,8 +226,8 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
           text: edge.label,
           textAlign: "center",
           width: 160,
-          x: (geometry.start.x + geometry.end.x) / 2 - 80,
-          y: (geometry.start.y + geometry.end.y) / 2 - 18
+          x: geometry.labelPoint.x - 80,
+          y: geometry.labelPoint.y - 18
         })
       );
     }
@@ -302,15 +307,22 @@ function nodeBoxFor(node: ForceLayoutNode): { height: number; width: number } {
   };
 }
 
-function edgeGeometry(edge: ForceLayoutEdge, nodeBoxes: Map<string, { height: number; width: number }>) {
+function edgeGeometry(edge: ForceLayoutEdge, nodeBoxes: Map<string, { height: number; width: number }>): EdgeGeometry {
   if (edge.source === edge.target) {
     const box = nodeBoxes.get(edge.source.id) ?? nodeBoxFor(edge.source);
     const start = { x: edge.source.x + box.width / 2, y: edge.source.y };
+    const elbowRight = { x: edge.source.x + box.width / 2 + 36, y: edge.source.y };
+    const elbowTop = { x: edge.source.x + box.width / 2 + 36, y: edge.source.y - box.height / 2 - 28 };
     const end = { x: edge.source.x, y: edge.source.y - box.height / 2 };
     return {
-      start,
-      end,
-      arrowPath: trianglePath(end, start, arrowSize)
+      arrowPath: trianglePath(end, elbowTop, arrowSize),
+      labelPoint: { x: elbowTop.x, y: elbowTop.y },
+      path: [
+        ["M", start.x, start.y],
+        ["L", elbowRight.x, elbowRight.y],
+        ["L", elbowTop.x, elbowTop.y],
+        ["L", end.x, end.y]
+      ]
     };
   }
 
@@ -320,9 +332,12 @@ function edgeGeometry(edge: ForceLayoutEdge, nodeBoxes: Map<string, { height: nu
   const end = boxBoundaryPoint(edge.target, edge.source, targetBox);
 
   return {
-    start,
-    end,
-    arrowPath: trianglePath(end, start, arrowSize)
+    arrowPath: trianglePath(end, start, arrowSize),
+    labelPoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
+    path: [
+      ["M", start.x, start.y],
+      ["L", end.x, end.y]
+    ]
   };
 }
 

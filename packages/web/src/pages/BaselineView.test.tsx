@@ -77,6 +77,7 @@ describe("BaselineContent", () => {
     expect(html).toContain("Checkout flow");
     expect(html).toContain("Payment terms");
     expect(html).toContain("Continue");
+    expect(html).toContain("Legacy return");
     expect(html).not.toContain("Navigation graph");
   });
 
@@ -119,7 +120,10 @@ const baselineFixture: ProductBaseline = {
       source_requirements: ["R-12345678"]
     }
   ],
-  navigation: [{ from: "checkout", to: "checkout", trigger: "Continue" } as ProductBaseline["navigation"][number] & { trigger: string }]
+  navigation: [
+    { from: "checkout", to: "checkout", trigger: "Continue" } as ProductBaseline["navigation"][number] & { trigger: string },
+    { from: "checkout", to: "checkout", label: "Legacy return" }
+  ]
 };
 
 function createTestRoot() {
