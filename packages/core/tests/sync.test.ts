@@ -75,17 +75,23 @@ function createFakeRunner(styles: StyleFixture[], options: { failPencilFor?: str
       }
 
       if (command === "pencil") {
+        const inIndex = args.indexOf("--in");
         const outIndex = args.indexOf("--out");
         const promptIndex = args.indexOf("--prompt");
+        const input = inIndex >= 0 ? args[inIndex + 1] : undefined;
         const out = outIndex >= 0 ? args[outIndex + 1] : undefined;
         const prompt = promptIndex >= 0 ? args[promptIndex + 1] : "";
         prompts.push(prompt);
         if (options.failPencilFor && prompt.includes(`Style name: ${options.failPencilFor}`)) {
           throw new Error(`pencil failed for ${options.failPencilFor}`);
         }
+        if (!input) {
+          throw new Error("missing --in");
+        }
         if (!out) {
           throw new Error("missing --out");
         }
+        await readFile(input, "utf8");
         await writeFile(out, JSON.stringify({ children: [{ id: "root", type: "frame" }] }), "utf8");
         return { stdout: "ok\n", stderr: "" };
       }
@@ -128,6 +134,11 @@ async function writeStyleRepo(root: string, styles: StyleFixture[]) {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, "DESIGN.md"), style.designMd, "utf8");
   }
+}
+
+async function writePreviewTemplate(home: string) {
+  await mkdir(join(home, "styles"), { recursive: true });
+  await writeFile(join(home, "styles", "_preview-template.pen"), JSON.stringify({ children: [{ id: "template", type: "frame" }] }), "utf8");
 }
 
 async function waitForSync(service: SyncService, fakeTimers = false) {
@@ -557,6 +568,7 @@ describe("SyncService state, gates, and recovery", () => {
 describe("SyncService task execution", () => {
   it("clones the design repository, renders previews, and writes the styles index", async () => {
     const home = await tempDir();
+    await writePreviewTemplate(home);
     const styles = [
       { name: "alpha", designMd: designMd("alpha", "#0055cc") },
       { name: "beta", designMd: designMd("beta", "#cc5500") }
@@ -569,7 +581,7 @@ describe("SyncService task execution", () => {
       now: () => new Date("2026-05-18T00:00:00.000Z")
     });
 
-    await service.startSync();
+    const started = await service.startSync();
     const status = await waitForSync(service);
 
     expect(status).toEqual({
@@ -595,9 +607,17 @@ describe("SyncService task execution", () => {
     }
     expect(calls).toContainEqual({
       command: "git",
-      args: ["clone", "--depth", "1", "https://github.com/VoltAgent/awesome-design-md.git", expect.any(String)],
+      args: ["clone", "--depth", "1", "https://github.com/VoltAgent/awesome-design-md.git", `/tmp/forma-sync-${started.task_id}`],
       options: { timeoutMs: 60_000 }
     });
+    const pencilCall = calls.find((call) => call.command === "pencil" && call.args.includes("--prompt"));
+    expect(pencilCall).toBeDefined();
+    const inputIndex = pencilCall!.args.indexOf("--in");
+    const outputIndex = pencilCall!.args.indexOf("--out");
+    expect(inputIndex).toBeGreaterThanOrEqual(0);
+    expect(outputIndex).toBeGreaterThanOrEqual(0);
+    expect(pencilCall!.args[inputIndex + 1]).toBe(pencilCall!.args[outputIndex + 1]);
+    expect(pencilCall!.args[inputIndex + 1]).toBe(`/tmp/forma-sync-${started.task_id}/alpha.pen`);
     expect(prompts.join("\n")).toContain("--primary: #0055cc");
     expect(prompts.join("\n")).toContain("--background: #ffffff");
     expect(prompts.join("\n")).toContain("--text-primary: #111827");
@@ -609,6 +629,7 @@ describe("SyncService task execution", () => {
 
   it("counts added and updated styles without counting unchanged styles as updated", async () => {
     const home = await tempDir();
+    await writePreviewTemplate(home);
     const unchanged = designMd("unchanged", "#111111");
     const previousChanged = designMd("changed", "#222222");
     const nextChanged = designMd("changed", "#333333");
@@ -644,6 +665,7 @@ describe("SyncService task execution", () => {
 
   it("keeps syncing metadata and other previews when one style preview fails", async () => {
     const home = await tempDir();
+    await writePreviewTemplate(home);
     const styles = [
       { name: "broken", designMd: designMd("broken", "#990000") },
       { name: "working", designMd: designMd("working", "#009900") }
@@ -701,6 +723,40 @@ describe("SyncService task execution", () => {
         styles_failed: 2
       }
     });
+    await expect(access(join(home, "styles", "alpha", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(home, "styles", "beta", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps metadata when the preview template is missing and counts previews as failed", async () => {
+    const home = await tempDir();
+    const styles = [
+      { name: "alpha", designMd: designMd("alpha", "#0055cc") },
+      { name: "beta", designMd: designMd("beta", "#cc5500") }
+    ];
+    const { runner } = createFakeRunner(styles);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+
+    expect(status).toMatchObject({
+      status: "idle",
+      last_sync: {
+        styles_total: 2,
+        styles_added: 2,
+        styles_updated: 0,
+        styles_failed: 2
+      }
+    });
+    const index = await readYaml<{ styles: Array<{ name: string }> }>(join(home, "styles", "styles.yaml"));
+    expect(index.styles.map((style) => style.name)).toEqual(["alpha", "beta"]);
+    await expect(readFile(join(home, "styles", "alpha", "DESIGN.md"), "utf8")).resolves.toBe(styles[0]!.designMd);
+    await expect(readFile(join(home, "styles", "beta", "DESIGN.md"), "utf8")).resolves.toBe(styles[1]!.designMd);
     await expect(access(join(home, "styles", "alpha", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(home, "styles", "beta", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
   });

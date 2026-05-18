@@ -1,6 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { z, ZodError } from "zod";
 import { FormaError } from "./errors.js";
@@ -178,7 +177,7 @@ export class SyncService {
   }
 
   private async runTask(taskId: string, startedAt: string): Promise<void> {
-    const tempRepoDir = join(tmpdir(), `forma-sync-${taskId}`);
+    const tempRepoDir = join("/tmp", `forma-sync-${taskId}`);
     const stylesDir = join(this.home, "styles");
     let currentPhase: SyncPhase = "git_clone";
 
@@ -225,7 +224,7 @@ export class SyncService {
       let stylesFailed = 0;
       let rendered = 0;
       for (const batch of chunk(styles, previewBatchSize)) {
-        const batchFailed = await this.renderPreviewBatchWithLock(batch, taskId, startedAt, rendered, styles.length);
+        const batchFailed = await this.renderPreviewBatchWithLock(batch, taskId, startedAt, rendered, styles.length, tempRepoDir);
         stylesFailed += batchFailed;
         rendered += batch.length;
         await this.writeProgress(taskId, startedAt, "rendering_previews", rendered, styles.length, batch.at(-1)?.name);
@@ -312,7 +311,8 @@ export class SyncService {
     taskId: string,
     startedAt: string,
     completedBeforeBatch: number,
-    total: number
+    total: number,
+    previewWorkDir: string
   ): Promise<number> {
     for (let retry = 0; retry <= lockRetryCount; retry += 1) {
       try {
@@ -320,7 +320,7 @@ export class SyncService {
           let failed = 0;
           for (const [index, style] of batch.entries()) {
             try {
-              await this.renderStylePreview(style);
+              await this.renderStylePreview(style, previewWorkDir);
               style.previewSucceeded = true;
             } catch {
               failed += 1;
@@ -349,26 +349,23 @@ export class SyncService {
     return batch.length;
   }
 
-  private async renderStylePreview(style: ScannedStyle): Promise<void> {
-    const previewTempDir = join(tmpdir(), `forma-sync-preview-${randomBytes(8).toString("hex")}`);
-    try {
-      await mkdir(previewTempDir, { recursive: true });
-      const penPath = join(previewTempDir, `${style.name}.pen`);
-      const pngPath = join(previewTempDir, `${style.name}.png`);
-      if (!this.runner) {
-        throw new Error("Pencil runner unavailable");
-      }
-      await this.runner.run("pencil", ["--out", penPath, "--prompt", previewPrompt(style)]);
-      await this.pencilService.validatePenFile(penPath);
-      await this.pencilService.exportPreview(penPath, pngPath);
-      const output = await stat(pngPath);
-      if (output.size <= 0) {
-        throw new Error("Preview export is empty");
-      }
-      await copyFileAtomic(pngPath, join(this.home, "styles", style.name, "preview@2x.png"));
-    } finally {
-      await rm(previewTempDir, { recursive: true, force: true });
+  private async renderStylePreview(style: ScannedStyle, previewWorkDir: string): Promise<void> {
+    await mkdir(previewWorkDir, { recursive: true });
+    const penPath = join(previewWorkDir, `${style.name}.pen`);
+    const pngPath = join(previewWorkDir, `${style.name}.png`);
+    const templatePath = join(this.home, "styles", "_preview-template.pen");
+    if (!this.runner) {
+      throw new Error("Pencil runner unavailable");
     }
+    await copyFile(templatePath, penPath);
+    await this.runner.run("pencil", ["--in", penPath, "--out", penPath, "--prompt", previewPrompt(style)]);
+    await this.pencilService.validatePenFile(penPath);
+    await this.pencilService.exportPreview(penPath, pngPath);
+    const output = await stat(pngPath);
+    if (output.size <= 0) {
+      throw new Error("Preview export is empty");
+    }
+    await copyFileAtomic(pngPath, join(this.home, "styles", style.name, "preview@2x.png"));
   }
 
   private async readStatus(): Promise<SyncStatus> {
