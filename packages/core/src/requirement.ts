@@ -3,6 +3,7 @@ import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { BaselineService, baselineNavigationSchema } from "./baseline.js";
+import { copyItemSchema } from "./copy.js";
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
 import type { ProductService } from "./product.js";
@@ -18,7 +19,7 @@ export const requirementPageSchema = z.object({
   design_status: z.enum(designStatuses),
   design_id: z.string().regex(/^D-[a-f0-9]{8}$/).optional(),
   features: z.string().optional(),
-  copy: z.string().optional(),
+  copy: z.array(z.lazy(() => copyItemSchema)).optional(),
   fields: z.string().optional(),
   interactions: z.string().optional()
 }).strict();
@@ -31,7 +32,7 @@ export const requirementSchema = z.object({
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
   pages: z.array(requirementPageSchema),
-  navigation: z.array(baselineNavigationSchema)
+  navigation: z.array(z.lazy(() => baselineNavigationSchema))
 }).strict();
 
 export type RequirementPage = z.infer<typeof requirementPageSchema>;

@@ -242,7 +242,7 @@ describe("requirement and baseline services", () => {
           name: "购物车",
           baseline_page: "cart",
           features: "Items",
-          copy: "Cart copy",
+          copy: [{ context: "cart_title", text: "购物车" }],
           fields: "Quantity",
           interactions: "Update item"
         },
@@ -260,7 +260,7 @@ describe("requirement and baseline services", () => {
           name: "购物车",
           baseline_page: "cart",
           features: "Updated items",
-          copy: "Updated cart copy",
+          copy: [{ context: "cart_title", text: "购物车" }],
           fields: "Coupon",
           interactions: "Apply coupon"
         },
@@ -288,12 +288,15 @@ describe("requirement and baseline services", () => {
         id: "cart",
         name: "购物车",
         features: "Updated items",
-        copy: "Updated cart copy",
+        copy: [{ context: "cart_title", text: "购物车" }],
         fields: "Coupon",
         interactions: "Apply coupon",
         source_requirements: [req.id]
       }),
       expect.objectContaining({ id: "success", source_requirements: [req.id] })
+    ]);
+    expect(baseline.pages.find((page) => page.id === "cart")?.copy).toEqual([
+      { context: "cart_title", text: "购物车" }
     ]);
     expect(baseline.pages.map((page) => page.id)).not.toContain("pay");
     expect(baseline.navigation).toEqual([{ from: "cart", to: "success", label: "Success" }]);

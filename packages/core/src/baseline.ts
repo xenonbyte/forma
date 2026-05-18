@@ -1,6 +1,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import { copyItemSchema, type CopyItem } from "./copy.js";
 import type { ProductService } from "./product.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
@@ -8,7 +9,7 @@ export const baselinePageSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   features: z.string(),
-  copy: z.string(),
+  copy: z.array(z.lazy(() => copyItemSchema)),
   fields: z.string(),
   interactions: z.string(),
   source_requirements: z.array(z.string().min(1))
@@ -35,7 +36,7 @@ export interface BaselineSourcePage {
   name: string;
   baseline_page: string;
   features?: string;
-  copy?: string;
+  copy?: CopyItem[];
   fields?: string;
   interactions?: string;
   design_status?: string;
@@ -92,7 +93,7 @@ export class BaselineService {
         id: page.baseline_page,
         name: page.name,
         features: page.features ?? "",
-        copy: page.copy ?? "",
+        copy: page.copy ?? [],
         fields: page.fields ?? "",
         interactions: page.interactions ?? "",
         source_requirements: dedupe([...(existing?.source_requirements ?? []), input.requirementId])
