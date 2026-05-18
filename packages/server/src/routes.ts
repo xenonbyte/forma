@@ -1,12 +1,12 @@
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput } from "@xenonbyte/forma-core";
+import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput, type SyncStatus } from "@xenonbyte/forma-core";
 
 type StoreSync = {
-  recoverFromCrash: () => Promise<void>;
-  startSync: () => Promise<{ task_id: string; status: "running" }>;
-  getStatus: () => Promise<unknown>;
+  recoverFromCrash: () => Promise<SyncStatus> | Promise<void>;
+  startSync: () => Promise<Extract<SyncStatus, { status: "running" }>>;
+  getStatus: () => Promise<SyncStatus>;
 };
 
 export type FormaStore = ReturnType<typeof createFormaStore> & { sync: StoreSync };

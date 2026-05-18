@@ -47,7 +47,7 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
     });
   });
 
-  void store.sync?.recoverFromCrash().catch(() => undefined);
+  void store.sync.recoverFromCrash().catch(() => undefined);
 
   registerRoutes(app, store);
   return app;

@@ -1,4 +1,4 @@
-import { FormaError } from "@xenonbyte/forma-core";
+import { createFormaStore, FormaError } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -78,7 +78,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         task_id: "sync-test",
         status: "running",
         started_at: "2026-05-18T00:00:00.000Z",
-        progress: { phase: "clone", completed: 0, total: 4 }
+        progress: { phase: "git_clone", current: 0, total: 4 }
       })),
       getStatus: vi.fn(async () => ({ status: "idle" }))
     },
@@ -317,7 +317,7 @@ describe("Fastify API routes", () => {
           status: "running",
           task_id: "sync-test",
           started_at: "2026-05-18T00:00:00.000Z",
-          progress: { phase: "clone", completed: 0, total: 4 }
+          progress: { phase: "git_clone", current: 0, total: 4 }
         }))
       }
     });
@@ -330,7 +330,7 @@ describe("Fastify API routes", () => {
       status: "running",
       task_id: "sync-test",
       started_at: "2026-05-18T00:00:00.000Z",
-      progress: { phase: "clone", completed: 0, total: 4 }
+      progress: { phase: "git_clone", current: 0, total: 4 }
     });
     expect(store.sync.getStatus).toHaveBeenCalledTimes(1);
   });
@@ -643,7 +643,11 @@ describe("Fastify API routes", () => {
 
   it("auto-installs built-in styles for GET /api/styles on a fresh home", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-server-styles-"));
-    const app = buildServer({ home, bundledStylesDir: resolve("styles") });
+    const store = {
+      ...createFormaStore({ home, bundledStylesDir: resolve("styles") }),
+      sync: fakeStore().sync
+    };
+    const app = buildServer({ store: store as never });
     apps.push(app);
     await app.ready();
 
