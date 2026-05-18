@@ -1,8 +1,7 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
-import { FormaError } from "./errors.js";
-import type { ProductService } from "./product.js";
+import { assertProductConfig, type ProductService } from "./product.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 const sessionSchema = z.object({
@@ -35,18 +34,7 @@ export class SessionService {
 
   async setCurrentProduct(productId: string): Promise<FormaSession> {
     const product = await this.products.getProduct(productId);
-    const missing = [
-      product.platform ? null : "platform",
-      product.style ? null : "style",
-      product.components_initialized ? null : "components_initialized"
-    ].filter((field): field is string => field !== null);
-
-    if (missing.length > 0) {
-      throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
-        product_id: productId,
-        missing
-      });
-    }
+    assertProductConfig(product, productId, ["platform", "style", "languages", "components_initialized"]);
 
     const session = sessionSchema.parse({ current_product: productId });
     await writeYamlAtomic(this.sessionFile, session);

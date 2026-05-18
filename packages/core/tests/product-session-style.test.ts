@@ -9,6 +9,19 @@ async function createTestStore() {
   return createFormaStore({ home, bundledStylesDir: resolve("styles") });
 }
 
+async function createStoreWithStyle() {
+  const store = await createTestStore();
+  return {
+    store,
+    style: {
+      name: "linear",
+      description: "Focused tool UI",
+      design_md_path: "styles/linear/DESIGN.md",
+      variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
+    }
+  };
+}
+
 describe("product session and style services", () => {
   it("creates products and blocks incomplete session", async () => {
     const store = await createTestStore();
@@ -17,9 +30,63 @@ describe("product session and style services", () => {
     await expect(store.sessions.setCurrentProduct(product.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
       details: {
-        missing: ["platform", "style", "components_initialized"]
+        missing: ["platform", "style", "languages", "components_initialized"]
       }
     });
+  });
+
+  it("stores product language config and rejects invalid defaults", async () => {
+    const { store, style } = await createStoreWithStyle();
+    const product = await store.products.createProduct({ name: "App", description: "Demo" });
+
+    await expect(
+      store.products.initProductConfig(product.id, {
+        platform: "web",
+        style,
+        languages: ["zh-CN", "en"],
+        default_language: "en"
+      })
+    ).resolves.toMatchObject({
+      languages: ["zh-CN", "en"],
+      default_language: "en"
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({
+      languages: ["zh-CN", "en"],
+      default_language: "en"
+    });
+
+    await expect(
+      store.products.initProductConfig(product.id, {
+        platform: "web",
+        style,
+        languages: ["zh-CN"],
+        default_language: "en"
+      })
+    ).rejects.toThrow();
+  });
+
+  it("rejects seeded product language config with only one language field", async () => {
+    const store = await createTestStore();
+    const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
+
+    await writeFile(
+      join(store.home, "data", product.id, "product.yaml"),
+      [
+        `id: ${product.id}`,
+        "name: Shop App",
+        "description: Mobile shop",
+        "languages:",
+        "  - en",
+        ""
+      ].join("\n")
+    );
+    await expect(store.products.getProduct(product.id)).rejects.toThrow();
+
+    await writeFile(
+      join(store.home, "data", product.id, "product.yaml"),
+      [`id: ${product.id}`, "name: Shop App", "description: Mobile shop", "default_language: en", ""].join("\n")
+    );
+    await expect(store.products.getProduct(product.id)).rejects.toThrow();
   });
 
   it("sets session after platform style and components exist", async () => {
@@ -28,6 +95,8 @@ describe("product session and style services", () => {
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
     await store.products.initProductConfig(product.id, {
       platform: "mobile",
+      languages: ["en"],
+      default_language: "en",
       style: {
         name: "linear",
         description: "Focused tool UI",
@@ -85,6 +154,8 @@ describe("product session and style services", () => {
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
     const baseConfig = {
       platform: "mobile" as const,
+      languages: ["en"] as ["en"],
+      default_language: "en" as const,
       style: {
         name: "linear",
         description: "Focused tool UI",
@@ -114,6 +185,8 @@ describe("product session and style services", () => {
     await expect(
       store.products.initProductConfig(product.id, {
         platform: "mobile",
+        languages: ["en"],
+        default_language: "en",
         style: {
           name: "linear",
           description: "Focused tool UI",

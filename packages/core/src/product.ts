@@ -3,8 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
-import type { Platform } from "./schemas.js";
-import { platforms } from "./schemas.js";
+import { languages, platforms } from "./schemas.js";
 import { styleMetadataSchema } from "./styles.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
@@ -23,20 +22,62 @@ const productIndexSchema = z.object({
 const productSchema = productIndexEntrySchema.extend({
   platform: z.enum(platforms).optional(),
   style: styleMetadataSchema.optional(),
+  languages: z.array(z.enum(languages)).optional(),
+  default_language: z.enum(languages).optional(),
   components_initialized: z.boolean().optional()
+}).superRefine((product, context) => {
+  const hasLanguages = product.languages !== undefined;
+  const hasDefaultLanguage = product.default_language !== undefined;
+
+  if (hasLanguages !== hasDefaultLanguage) {
+    context.addIssue({
+      code: "custom",
+      message: "languages and default_language must be configured together",
+      path: hasLanguages ? ["default_language"] : ["languages"]
+    });
+    return;
+  }
+
+  if (product.languages !== undefined && product.languages.length === 0) {
+    context.addIssue({
+      code: "custom",
+      message: "languages must not be empty",
+      path: ["languages"]
+    });
+  }
+
+  if (
+    product.languages !== undefined &&
+    product.default_language !== undefined &&
+    !product.languages.includes(product.default_language)
+  ) {
+    context.addIssue({
+      code: "custom",
+      message: "default_language must be included in languages",
+      path: ["default_language"]
+    });
+  }
 });
 
 const productConfigSchema = z.object({
   platform: z.enum(platforms),
-  style: styleMetadataSchema
+  style: styleMetadataSchema,
+  languages: z.array(z.enum(languages)).min(1),
+  default_language: z.enum(languages)
+}).superRefine((config, context) => {
+  if (!config.languages.includes(config.default_language)) {
+    context.addIssue({
+      code: "custom",
+      message: "default_language must be included in languages",
+      path: ["default_language"]
+    });
+  }
 });
 
 export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
 export type Product = z.infer<typeof productSchema>;
-export type ProductConfig = {
-  platform: Platform;
-  style: z.infer<typeof styleMetadataSchema>;
-};
+export type ProductConfig = z.infer<typeof productConfigSchema>;
+export type ProductConfigField = "platform" | "style" | "languages" | "components_initialized";
 
 export interface ProductServiceOptions {
   home: string;
@@ -150,6 +191,39 @@ async function assertValidComponentLibrary(file: string): Promise<void> {
 
   if (!isRecord(parsed) || !Array.isArray(parsed.children) || parsed.children.length === 0 || containsTruncationMarker(parsed)) {
     throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", { file });
+  }
+}
+
+export function assertProductConfig(product: unknown, productId: string, fields: ProductConfigField[]): void {
+  const missing = fields.filter((field) => isProductConfigFieldIncomplete(product, field));
+
+  if (missing.length > 0) {
+    throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
+      product_id: productId,
+      missing
+    });
+  }
+}
+
+function isProductConfigFieldIncomplete(product: unknown, field: ProductConfigField): boolean {
+  if (!isRecord(product)) {
+    return true;
+  }
+
+  switch (field) {
+    case "platform":
+      return product.platform === undefined;
+    case "style":
+      return product.style === undefined;
+    case "languages":
+      return (
+        !Array.isArray(product.languages) ||
+        product.languages.length === 0 ||
+        typeof product.default_language !== "string" ||
+        !product.languages.includes(product.default_language)
+      );
+    case "components_initialized":
+      return product.components_initialized !== true;
   }
 }
 
