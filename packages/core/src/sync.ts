@@ -162,7 +162,9 @@ export class SyncService {
       return await readYamlAs(this.stateFile, syncStatusSchema);
     } catch (error) {
       if (isEnoent(error)) {
-        return { status: "idle" };
+        const idle = syncStatusSchema.parse({ status: "idle" });
+        await this.writeStatus(idle);
+        return idle;
       }
       if (isIoError(error)) {
         throw error;

@@ -329,7 +329,15 @@ describe("SyncService state, gates, and recovery", () => {
       details: { command: "git --version" }
     });
     expect(await service.getStatus()).toEqual({ status: "idle" });
-    await expect(readYaml(join(home, "sync-state.yaml"))).rejects.toThrow();
+    expect(await readYaml(join(home, "sync-state.yaml"))).toEqual({ status: "idle" });
+  });
+
+  it("creates idle sync state for a fresh home", async () => {
+    const home = await tempDir();
+    const service = new SyncService({ home, pencilService: { checkAvailability: async () => undefined } });
+
+    expect(await service.getStatus()).toEqual({ status: "idle" });
+    expect(await readYaml(join(home, "sync-state.yaml"))).toEqual({ status: "idle" });
   });
 
   it("recovers stale running state as failed", async () => {
