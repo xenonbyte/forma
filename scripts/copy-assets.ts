@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, cp, mkdir, readFile, rm } from "node:fs/promises";
+import { access, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,11 +55,17 @@ export async function copyAssets(copies: AssetCopy[] = assetCopies): Promise<voi
   for (const copy of copies) {
     assertSafeAssetTarget(copy.target);
     if (!(await pathExists(copy.source))) {
+      if (isWebAssetCopy(copy)) {
+        throw new Error(`Missing web dist: ${relative(repoRoot, copy.source)}. Run pnpm build before packaging the CLI.`);
+      }
       console.log(`skip ${copy.label}: ${copy.source} does not exist`);
       continue;
     }
     if (copy.label === "styles") {
       await assertBuiltInStyles(copy.source);
+    }
+    if (isWebAssetCopy(copy)) {
+      await assertWebAssets(copy.source);
     }
 
     await mkdir(dirname(copy.target), { recursive: true });
@@ -74,6 +80,7 @@ export async function checkAssets(): Promise<void> {
   console.log(`validated styles: ${sourceStyles.length} built-in styles in ${relative(repoRoot, repoStylesDir)}`);
 
   await checkCopiedStyleAssets();
+  await checkCopiedWebAssets();
 }
 
 export async function assertBuiltInStyles(
@@ -117,6 +124,19 @@ export async function assertCopiedBuiltInStyles(
   return copiedStyles;
 }
 
+export async function assertWebAssets(webAssetsDirInput: string | URL): Promise<void> {
+  const webAssetsDir = filePath(webAssetsDirInput);
+  await access(resolve(webAssetsDir, "index.html"), constants.F_OK);
+
+  const assetFiles = await listFiles(resolve(webAssetsDir, "assets"));
+  if (!assetFiles.some((file) => file.endsWith(".js"))) {
+    throw new Error(`Expected Web assets to include at least one JavaScript bundle in ${resolve(webAssetsDir, "assets")}`);
+  }
+  if (!assetFiles.some((file) => file.endsWith(".css"))) {
+    throw new Error(`Expected Web assets to include at least one CSS bundle in ${resolve(webAssetsDir, "assets")}`);
+  }
+}
+
 function assertSafeAssetTarget(target: string): void {
   const relativeTarget = relative(cliAssetsDir, resolve(target));
   if (relativeTarget === "" || relativeTarget.startsWith("..") || relativeTarget.startsWith("/")) {
@@ -133,6 +153,33 @@ async function checkCopiedStyleAssets(): Promise<void> {
 
   const copiedStyles = await assertCopiedBuiltInStyles(repoStylesDir, copiedStylesDir);
   console.log(`validated copied styles: ${copiedStyles.length} built-in styles in ${relative(repoRoot, copiedStylesDir)}`);
+}
+
+async function checkCopiedWebAssets(): Promise<void> {
+  const copiedWebAssetsDir = resolve(cliAssetsDir, "web");
+  await assertWebAssets(copiedWebAssetsDir);
+  console.log(`validated copied web assets in ${relative(repoRoot, copiedWebAssetsDir)}`);
+}
+
+async function listFiles(root: string): Promise<string[]> {
+  const entries = await readdir(root, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const file = resolve(root, entry.name);
+      if (entry.isDirectory()) {
+        return listFiles(file);
+      }
+      if (entry.isFile()) {
+        return [file];
+      }
+      return [];
+    })
+  );
+  return files.flat();
+}
+
+function isWebAssetCopy(copy: AssetCopy): boolean {
+  return copy.label === "web dist";
 }
 
 function filePath(value: string | URL): string {

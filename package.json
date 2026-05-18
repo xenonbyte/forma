@@ -7,7 +7,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "pnpm -r --if-present build",
+    "build": "pnpm --filter './packages/*' --filter '!@xenonbyte/forma-cli' -r --if-present build && pnpm --filter @xenonbyte/forma-cli build",
     "test": "vitest run",
     "typecheck": "pnpm -r --if-present typecheck",
     "pack:cli": "pnpm --filter @xenonbyte/forma-cli pack",

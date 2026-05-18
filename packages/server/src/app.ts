@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { access, readFile } from "node:fs/promises";
+import { extname, join, resolve, sep } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { createFormaStore, FormaError } from "@xenonbyte/forma-core";
 import { registerRoutes, RouteHttpError, type FormaStore } from "./routes.js";
@@ -8,6 +9,7 @@ export interface BuildServerOptions {
   store?: FormaStore;
   home?: string;
   bundledStylesDir?: string;
+  webAssetsDir?: string;
 }
 
 export type FormaServer = FastifyInstance;
@@ -24,7 +26,20 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
     reply.status(statusForError(error)).send(payload);
   });
 
-  app.setNotFoundHandler((_request, reply) => {
+  app.setNotFoundHandler(async (request, reply) => {
+    if (options.webAssetsDir && canServeWebAsset(request.method, request.url)) {
+      if (pathname(request.url) === "/favicon.ico") {
+        reply.status(204).send();
+        return;
+      }
+
+      const asset = await readWebAsset(options.webAssetsDir, request.url);
+      if (asset) {
+        reply.type(asset.contentType).send(request.method === "HEAD" ? undefined : asset.content);
+        return;
+      }
+    }
+
     reply.status(404).send({
       error_code: "NOT_FOUND",
       message: "Route not found",
@@ -34,6 +49,86 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
 
   registerRoutes(app, store);
   return app;
+}
+
+function canServeWebAsset(method: string, url: string): boolean {
+  const requestPath = pathname(url);
+  return (method === "GET" || method === "HEAD") && requestPath !== "/api" && !requestPath.startsWith("/api/");
+}
+
+async function readWebAsset(webAssetsDir: string, url: string): Promise<{ content: Buffer; contentType: string } | undefined> {
+  const root = resolve(webAssetsDir);
+  const requestPath = pathname(url);
+  const assetPath = requestPath === "/" ? "" : requestPath.replace(/^\/+/, "");
+  const resolvedAsset = resolve(root, assetPath);
+  const resolvedIndex = resolve(root, "index.html");
+
+  if (assetPath) {
+    if (!isInside(root, resolvedAsset)) {
+      return undefined;
+    }
+    if (extname(resolvedAsset)) {
+      const file = await readFileIfExists(resolvedAsset);
+      if (file) {
+        return { content: file, contentType: contentTypeFor(resolvedAsset) };
+      }
+      return undefined;
+    }
+    if (isStaticAssetPath(assetPath)) {
+      return undefined;
+    }
+  }
+
+  const index = await readFileIfExists(resolvedIndex);
+  return index ? { content: index, contentType: "text/html; charset=utf-8" } : undefined;
+}
+
+function pathname(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url, "http://forma.local").pathname);
+  } catch {
+    return "/";
+  }
+}
+
+function isInside(root: string, file: string): boolean {
+  return file === root || file.startsWith(`${root}${sep}`);
+}
+
+function isStaticAssetPath(assetPath: string): boolean {
+  return assetPath === "assets" || assetPath.startsWith("assets/");
+}
+
+async function readFileIfExists(file: string): Promise<Buffer | undefined> {
+  try {
+    await access(file);
+    return await readFile(file);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+function contentTypeFor(file: string): string {
+  switch (extname(file)) {
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".js":
+    case ".mjs":
+      return "text/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function defaultFormaHome(): string {

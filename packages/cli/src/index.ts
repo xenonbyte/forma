@@ -67,7 +67,7 @@ export interface CliEnv {
   now?: () => Date;
   startMcp?: () => Promise<string | void>;
   startServer?: (options?: CliServeOptions) => Promise<CliServerStartResult>;
-  startWebServer?: (options: { home: string; bundledStylesDir?: string }) => Promise<void>;
+  startWebServer?: (options: { home: string; bundledStylesDir?: string; webAssetsDir?: string }) => Promise<void>;
   createInstallService?: (options: CliInstallServiceOptions) => CliInstallService;
   checkPencil?: () => Promise<CliPencilStatus>;
   installedPlatforms?: () => Promise<AgentInstallPlatform[]>;
@@ -471,8 +471,9 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
     return await (env.verifyServerProcess?.(metadata) ?? defaultVerifyServerProcess(metadata, readProcessCommand));
   };
   const spawnDetachedServer = env.spawnDetachedServer ?? defaultSpawnDetachedServer;
-  const launchWebServer = env.startWebServer ?? ((options: { home: string; bundledStylesDir?: string }) => startWebServer(options));
+  const launchWebServer = env.startWebServer ?? ((options: { home: string; bundledStylesDir?: string; webAssetsDir?: string }) => startWebServer(options));
   const bundledStylesDir = packageBundledStylesDir();
+  const webAssetsDir = packageWebAssetsDir();
   const installServiceOptions = { formaHome, templatesDir: packageAgentTemplatesDir() };
   const runtimeEnv: RuntimeCliEnv = {
     formaHome,
@@ -492,7 +493,7 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
             token: options.token ?? randomUUID()
           });
         }
-        await launchWebServer({ home: formaHome, bundledStylesDir });
+        await launchWebServer({ home: formaHome, bundledStylesDir, webAssetsDir });
         return undefined;
       }),
     createInstallService: () => (env.createInstallService ? env.createInstallService(installServiceOptions) : new InstallService(installServiceOptions)),
@@ -830,6 +831,10 @@ function packageAgentTemplatesDir(): string {
 
 function packageBundledStylesDir(): string {
   return packageAssetPath("styles");
+}
+
+function packageWebAssetsDir(): string {
+  return packageAssetPath("web");
 }
 
 async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions): Promise<CliSpawnDetachedServerResult> {

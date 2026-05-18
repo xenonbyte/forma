@@ -182,7 +182,8 @@ describe("runCli", () => {
     expect(webStarts).toEqual([
       {
         home: env.state.formaHome,
-        bundledStylesDir: expect.stringMatching(/packages\/cli\/dist\/assets\/styles$/)
+        bundledStylesDir: expect.stringMatching(/packages\/cli\/dist\/assets\/styles$/),
+        webAssetsDir: expect.stringMatching(/packages\/cli\/dist\/assets\/web$/)
       }
     ]);
   });

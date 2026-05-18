@@ -107,6 +107,14 @@ async function appWith(store = fakeStore()) {
   return app;
 }
 
+async function webAssetsDir() {
+  const root = await mkdtemp(join(tmpdir(), "forma-web-assets-"));
+  await mkdir(join(root, "assets"), { recursive: true });
+  await writeFile(join(root, "index.html"), "<!doctype html><main id=\"root\">Forma Web</main>", "utf8");
+  await writeFile(join(root, "assets", "app.js"), "console.log('forma');", "utf8");
+  return root;
+}
+
 async function homeWithPreview(files: string[] = ["preview@2x.png", "preview.v1@2x.png"]) {
   const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
   await writeDesignYaml(home, { version: 1, history: [] });
@@ -168,6 +176,54 @@ async function writeDesignFile(home: string, file: string, content: string) {
 }
 
 describe("Fastify API routes", () => {
+  it("serves packaged Web assets and falls back to the SPA for app routes", async () => {
+    const app = buildServer({ store: fakeStore() as never, webAssetsDir: await webAssetsDir() });
+    apps.push(app);
+    await app.ready();
+
+    const appRoute = await app.inject({ method: "GET", url: "/products" });
+    const asset = await app.inject({ method: "GET", url: "/assets/app.js" });
+    const assetHead = await app.inject({ method: "HEAD", url: "/assets/app.js" });
+    const missingAssetWithoutExtension = await app.inject({ method: "GET", url: "/assets/missing" });
+    const missingAsset = await app.inject({ method: "GET", url: "/assets/missing.js" });
+    const traversalAsset = await app.inject({ method: "GET", url: "/..%2Fsecret.txt" });
+    const favicon = await app.inject({ method: "GET", url: "/favicon.ico" });
+    const apiRootNotFound = await app.inject({ method: "GET", url: "/api" });
+    const apiRootWithQueryNotFound = await app.inject({ method: "GET", url: "/api?x=1" });
+    const apiRootHeadNotFound = await app.inject({ method: "HEAD", url: "/api" });
+    const apiNotFound = await app.inject({ method: "GET", url: "/api/missing" });
+
+    expect(appRoute.statusCode).toBe(200);
+    expect(appRoute.headers["content-type"]).toContain("text/html");
+    expect(appRoute.body).toContain("Forma Web");
+    expect(asset.statusCode).toBe(200);
+    expect(asset.headers["content-type"]).toContain("text/javascript");
+    expect(asset.body).toContain("forma");
+    expect(assetHead.statusCode).toBe(200);
+    expect(assetHead.headers["content-type"]).toContain("text/javascript");
+    expect(assetHead.body).toBe("");
+    expect(missingAsset.statusCode).toBe(404);
+    expect(missingAsset.headers["content-type"]).toContain("application/json");
+    expect(missingAsset.json()).toMatchObject({ error_code: "NOT_FOUND" });
+    expect(missingAssetWithoutExtension.statusCode).toBe(404);
+    expect(missingAssetWithoutExtension.headers["content-type"]).toContain("application/json");
+    expect(missingAssetWithoutExtension.json()).toMatchObject({ error_code: "NOT_FOUND" });
+    expect(traversalAsset.statusCode).toBe(404);
+    expect(traversalAsset.headers["content-type"]).toContain("application/json");
+    expect(traversalAsset.json()).toMatchObject({ error_code: "NOT_FOUND" });
+    expect(favicon.statusCode).toBe(204);
+    expect(apiRootNotFound.statusCode).toBe(404);
+    expect(apiRootNotFound.headers["content-type"]).toContain("application/json");
+    expect(apiRootNotFound.json()).toMatchObject({ error_code: "NOT_FOUND" });
+    expect(apiRootWithQueryNotFound.statusCode).toBe(404);
+    expect(apiRootWithQueryNotFound.headers["content-type"]).toContain("application/json");
+    expect(apiRootWithQueryNotFound.json()).toMatchObject({ error_code: "NOT_FOUND" });
+    expect(apiRootHeadNotFound.statusCode).toBe(404);
+    expect(apiRootHeadNotFound.headers["content-type"]).toContain("application/json");
+    expect(apiNotFound.statusCode).toBe(404);
+    expect(apiNotFound.json()).toMatchObject({ error_code: "NOT_FOUND" });
+  });
+
   it("registers representative product, style, annotation, and diff routes", async () => {
     const store = fakeStore();
     const app = await appWith(store);

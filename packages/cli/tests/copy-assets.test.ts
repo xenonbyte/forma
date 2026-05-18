@@ -1,8 +1,9 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { assertBuiltInStyles, assertCopiedBuiltInStyles } from "../../../scripts/copy-assets.ts";
+import { assertBuiltInStyles, assertCopiedBuiltInStyles, assertWebAssets, copyAssets } from "../../../scripts/copy-assets.ts";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -68,6 +69,31 @@ describe("copy-assets built-in style checks", () => {
     await expect(assertCopiedBuiltInStyles(sourceStylesDir, copiedStylesDir)).rejects.toThrow(
       "Copied built-in styles do not match source styles"
     );
+  });
+});
+
+describe("copy-assets Web asset checks", () => {
+  it("fails when the Web dist source is missing during copy", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-web-assets-copy-"));
+    const missingSource = join(root, "missing-web-dist");
+    const target = fileURLToPath(new URL("../../../packages/cli/dist/assets/web-test-missing", import.meta.url));
+
+    await rm(target, { recursive: true, force: true });
+    await expect(copyAssets([{ label: "web dist", source: missingSource, target }])).rejects.toThrow(
+      "Missing web dist"
+    );
+  });
+
+  it("requires copied Web assets to include index, JavaScript, and CSS bundles", async () => {
+    const webAssetsDir = await mkdtemp(join(tmpdir(), "forma-web-assets-"));
+    await mkdir(join(webAssetsDir, "assets"), { recursive: true });
+    await writeFile(join(webAssetsDir, "index.html"), "<!doctype html><div id=\"root\"></div>", "utf8");
+    await writeFile(join(webAssetsDir, "assets", "index.js"), "console.log('forma');", "utf8");
+
+    await expect(assertWebAssets(webAssetsDir)).rejects.toThrow("CSS bundle");
+
+    await writeFile(join(webAssetsDir, "assets", "index.css"), "body { margin: 0; }", "utf8");
+    await expect(assertWebAssets(webAssetsDir)).resolves.toBeUndefined();
   });
 });
 
