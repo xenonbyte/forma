@@ -6,6 +6,7 @@ export * from "./yaml.js";
 export * from "./schemas.js";
 export * from "./product.js";
 export * from "./baseline.js";
+export * from "./copy.js";
 export * from "./requirement.js";
 export * from "./session.js";
 export * from "./store.js";

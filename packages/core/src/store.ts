@@ -1,4 +1,5 @@
 import { BaselineService } from "./baseline.js";
+import { CopyService } from "./copy.js";
 import { DesignService } from "./design.js";
 import { ProductService } from "./product.js";
 import { RequirementService } from "./requirement.js";
@@ -19,6 +20,7 @@ export function createFormaStore(options: FormaStoreOptions) {
   const products = new ProductService({ home: options.home });
   const sessions = new SessionService({ home: options.home, products });
   const baseline = new BaselineService({ home: options.home, products });
+  const copy = new CopyService({ home: options.home });
   const requirements = new RequirementService({ home: options.home, products, baseline });
   const designs = new DesignService({ home: options.home, products });
   const sync = new SyncService({ home: options.home, pencilService: pencil, runner: defaultPencilRunner, styleLimit: options.syncStyleLimit });
@@ -26,6 +28,7 @@ export function createFormaStore(options: FormaStoreOptions) {
   return {
     home: options.home,
     baseline,
+    copy,
     designs,
     products,
     requirements,
