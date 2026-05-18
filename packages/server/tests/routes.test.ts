@@ -31,6 +31,9 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         navigation: []
       }))
     },
+    copy: {
+      getTranslations: vi.fn(async () => [])
+    },
     designs: {
       diffDesigns: vi.fn(async () => ({ added: [], removed: [], modified: [] })),
       exportDesignAsset: vi.fn(async () => ({
@@ -45,6 +48,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
       getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
+      initProductConfig: vi.fn(async (_productId, config) => ({ id: "P-123abc", name: "App", description: "Demo", ...config })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }])
     },
     requirements: {
@@ -67,6 +71,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
           ]
         }
       ]),
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input })),
       submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
     },
     sessions: {
@@ -267,6 +272,50 @@ describe("Fastify API routes", () => {
     expect(store.designs.diffDesigns).toHaveBeenCalledWith("D-12345678", 1, 2);
   });
 
+  it("initializes product config with style metadata, platform, languages, and default language", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/config",
+      payload: {
+        platform: "web",
+        style: "linear",
+        languages: ["zh-CN", "en"],
+        default_language: "zh-CN"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.styles.getStyle).toHaveBeenCalledWith("linear");
+    expect(store.products.initProductConfig).toHaveBeenCalledWith("P-123abc", {
+      platform: "web",
+      style: {
+        name: "linear",
+        description: "Focused tool UI",
+        design_md_path: "styles/linear/DESIGN.md",
+        variables: {
+          primary: "#111827",
+          background: "#ffffff",
+          "text-primary": "#111827",
+          "font-heading": "Inter",
+          "font-body": "Inter",
+          "border-radius": "8px",
+          "spacing-unit": "8px"
+        }
+      },
+      languages: ["zh-CN", "en"],
+      default_language: "zh-CN"
+    });
+    expect(response.json()).toMatchObject({
+      id: "P-123abc",
+      platform: "web",
+      languages: ["zh-CN", "en"],
+      default_language: "zh-CN"
+    });
+  });
+
   it("exposes all required route families", async () => {
     const home = await homeWithPreview();
     const app = await appWith(fakeStore({ home }));
@@ -277,7 +326,7 @@ describe("Fastify API routes", () => {
       app.inject({
         method: "POST",
         url: "/api/products/P-123abc/requirements",
-        payload: { title: "Checkout", document_md: "# Checkout", pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }], navigation: [] }
+        payload: { title: "Checkout" }
       }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678" }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/baseline" }),
@@ -404,20 +453,18 @@ describe("Fastify API routes", () => {
     });
   });
 
-  it("returns submitted requirement with document from create requirement route", async () => {
+  it("creates an empty requirement from title only without submitting requirement content", async () => {
     const requirements = {
       ...fakeStore().requirements,
-      createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" })),
-      getRequirement: vi.fn(async () => ({
+      createEmptyRequirement: vi.fn(async () => ({
         id: "R-12345678",
         product_id: "P-123abc",
         title: "Checkout",
-        status: "submitted",
+        status: "empty",
         created_at: "2026-05-17T00:00:00.000Z",
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
-        navigation: [],
-        document_md: "# Checkout"
+        navigation: []
       })),
       submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
     };
@@ -426,12 +473,119 @@ describe("Fastify API routes", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/products/P-123abc/requirements",
-      payload: { title: "Checkout", document_md: "# Checkout", pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }], navigation: [] }
+      payload: { title: "Checkout" }
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ id: "R-12345678", status: "submitted", document_md: "# Checkout" });
+    expect(response.json()).toMatchObject({ id: "R-12345678", status: "empty" });
+    expect(response.json()).not.toHaveProperty("document_md");
+    expect(requirements.createEmptyRequirement).toHaveBeenCalledWith("P-123abc", "Checkout");
+    expect(requirements.submitRequirement).not.toHaveBeenCalled();
+  });
+
+  it("rejects legacy submit payload fields on the title-only create requirement route", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" }))
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements",
+      payload: {
+        title: "Checkout",
+        document_md: "# Checkout",
+        pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }],
+        navigation: []
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    expect(requirements.createEmptyRequirement).not.toHaveBeenCalled();
+  });
+
+  it("saves requirement content after checking product ownership", async () => {
+    const body = {
+      document_md: "# Checkout",
+      pages: [
+        {
+          page_id: "checkout-page",
+          name: "Checkout",
+          baseline_page: "checkout",
+          copy: [{ context: "title", text: "结账" }],
+          change_type: "patch"
+        }
+      ],
+      navigation: []
+    };
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", pages: [], document_md: "" })),
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/save",
+      payload: body
+    });
+
+    expect(response.statusCode).toBe(200);
     expect(requirements.getRequirement).toHaveBeenCalledWith({ requirement_id: "R-12345678" });
+    expect(requirements.saveRequirement).toHaveBeenCalledWith({ requirement_id: "R-12345678", ...body });
+    expect(response.json()).toMatchObject({ id: "R-12345678", status: "submitted", document_md: "# Checkout" });
+  });
+
+  it("uses the path requirement id when saving even if the body contains another requirement id", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", pages: [], document_md: "" })),
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/save",
+      payload: {
+        requirement_id: "R-deadbeef",
+        document_md: "# Checkout",
+        pages: [],
+        navigation: []
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(requirements.getRequirement).toHaveBeenCalledWith({ requirement_id: "R-12345678" });
+    expect(requirements.saveRequirement).toHaveBeenCalledWith({
+      requirement_id: "R-12345678",
+      document_md: "# Checkout",
+      pages: [],
+      navigation: []
+    });
+    expect(response.json()).toMatchObject({ id: "R-12345678", requirement_id: "R-12345678" });
+  });
+
+  it("rejects saving a requirement owned by another product before persisting content", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [], document_md: "" })),
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted" }))
+    };
+    const app = await appWith(fakeStore({ requirements }));
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/save",
+      payload: { document_md: "# Other", pages: [], navigation: [] }
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+    expect(requirements.saveRequirement).not.toHaveBeenCalled();
   });
 
   it("returns archived requirement with document from archive route", async () => {
@@ -545,6 +699,252 @@ describe("Fastify API routes", () => {
     expect(requirements.archiveRequirement).not.toHaveBeenCalled();
   });
 
+  it("returns baseline page copy for an explicit owned requirement", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirement: vi.fn(async () => ({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        pages: [
+          {
+            page_id: "checkout",
+            baseline_page: "checkout",
+            copy: [{ context: "title", text: "结账" }]
+          }
+        ],
+        document_md: "# Checkout"
+      }))
+    };
+    const copy = {
+      getTranslations: vi.fn(async () => [
+        {
+          page_id: "checkout",
+          entries: [{ context: "title", texts: { en: "Checkout" } }]
+        }
+      ])
+    };
+    const app = await appWith(fakeStore({ requirements, copy }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R-12345678"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      page_id: "checkout",
+      default_language_copy: [{ context: "title", text: "结账" }],
+      translations: [{ context: "title", texts: { en: "Checkout" } }]
+    });
+    expect(requirements.getRequirement).toHaveBeenCalledWith({ requirement_id: "R-12345678" });
+    expect(copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-12345678");
+  });
+
+  it("rejects baseline page copy for an explicit cross-product requirement", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirement: vi.fn(async () => ({
+        id: "R-12345678",
+        product_id: "P-other1",
+        pages: [{ page_id: "checkout", baseline_page: "checkout", copy: [{ context: "title", text: "结账" }] }],
+        document_md: "# Checkout"
+      }))
+    };
+    const copy = {
+      getTranslations: vi.fn(async () => [
+        {
+          page_id: "checkout",
+          entries: [{ context: "title", texts: { en: "Checkout" } }]
+        }
+      ])
+    };
+    const app = await appWith(fakeStore({ requirements, copy }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R-12345678"
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+    expect(copy.getTranslations).not.toHaveBeenCalled();
+  });
+
+  it("resolves baseline page copy from the newest source requirement when no requirement id is provided", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirementHistory: vi.fn(async () => [
+        {
+          id: "R-bbb2222",
+          product_id: "P-123abc",
+          created_at: "2026-05-16T00:00:00.000Z",
+          updated_at: "2026-05-18T00:00:00.000Z",
+          pages: [
+            {
+              page_id: "bbb-checkout",
+              baseline_page: "checkout",
+              copy: [{ context: "title", text: "BBB 结账" }]
+            }
+          ]
+        },
+        {
+          id: "R-old1111",
+          product_id: "P-123abc",
+          created_at: "2026-05-15T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [
+            {
+              page_id: "old-checkout",
+              baseline_page: "checkout",
+              copy: [{ context: "title", text: "旧结账" }]
+            }
+          ]
+        },
+        {
+          id: "R-aaa1111",
+          product_id: "P-123abc",
+          created_at: "2026-05-16T00:00:00.000Z",
+          updated_at: "2026-05-18T00:00:00.000Z",
+          pages: [
+            {
+              page_id: "latest-checkout",
+              baseline_page: "checkout",
+              copy: [{ context: "title", text: "结账" }]
+            }
+          ]
+        }
+      ])
+    };
+    const baseline = {
+      getProductBaseline: vi.fn(async () => ({
+        product_id: "P-123abc",
+        pages: [
+          {
+            id: "checkout",
+            name: "Checkout",
+            features: "",
+            copy: "",
+            fields: "",
+            interactions: "",
+            source_requirements: ["R-old1111", "R-bbb2222", "R-aaa1111"]
+          }
+        ],
+        navigation: []
+      }))
+    };
+    const copy = {
+      getTranslations: vi.fn(async () => [
+        {
+          page_id: "latest-checkout",
+          entries: [{ context: "title", texts: { en: "Checkout" } }]
+        }
+      ])
+    };
+    const app = await appWith(fakeStore({ baseline, requirements, copy }));
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/copy" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      page_id: "checkout",
+      default_language_copy: [{ context: "title", text: "结账" }],
+      translations: [{ context: "title", texts: { en: "Checkout" } }]
+    });
+    expect(copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-aaa1111");
+  });
+
+  it("does not match baseline page copy by a requirement page id that points to another baseline page", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirementHistory: vi.fn(async () => [
+        {
+          id: "R-12345678",
+          product_id: "P-123abc",
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [
+            {
+              page_id: "checkout",
+              baseline_page: "profile",
+              copy: [{ context: "title", text: "WRONG" }]
+            }
+          ]
+        }
+      ])
+    };
+    const copy = {
+      getTranslations: vi.fn(async () => [
+        {
+          page_id: "checkout",
+          entries: [{ context: "title", texts: { en: "WRONG" } }]
+        }
+      ])
+    };
+    const app = await appWith(fakeStore({ requirements, copy }));
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/copy" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      page_id: "checkout",
+      default_language_copy: [],
+      translations: []
+    });
+    expect(response.body).not.toContain("WRONG");
+    expect(copy.getTranslations).not.toHaveBeenCalled();
+  });
+
+  it("returns empty baseline page copy arrays when the selected source requirement has no page copy", async () => {
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirementHistory: vi.fn(async () => [
+        {
+          id: "R-12345678",
+          product_id: "P-123abc",
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [{ page_id: "checkout-page", baseline_page: "checkout" }]
+        }
+      ])
+    };
+    const baseline = {
+      getProductBaseline: vi.fn(async () => ({
+        product_id: "P-123abc",
+        pages: [
+          {
+            id: "checkout",
+            name: "Checkout",
+            features: "",
+            copy: [{ context: "title", text: "Baseline 结账" }],
+            fields: "",
+            interactions: "",
+            source_requirements: ["R-12345678"]
+          }
+        ],
+        navigation: []
+      }))
+    };
+    const copy = {
+      getTranslations: vi.fn(async () => [
+        {
+          page_id: "checkout-page",
+          entries: [{ context: "title", texts: { en: "Stale Checkout" } }]
+        }
+      ])
+    };
+    const app = await appWith(fakeStore({ baseline, requirements, copy }));
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/copy" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      page_id: "checkout",
+      default_language_copy: [],
+      translations: []
+    });
+    expect(copy.getTranslations).not.toHaveBeenCalled();
+  });
+
   it("returns 404 for unknown design image and history routes", async () => {
     const app = await appWith(
       fakeStore({
@@ -572,6 +972,43 @@ describe("Fastify API routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "BASELINE_IMAGE_NOT_FOUND" });
+  });
+
+  it("returns baseline image metadata for an expired source page when its preview still exists", async () => {
+    const home = await homeWithPreview();
+    const requirements = {
+      ...fakeStore().requirements,
+      getRequirementHistory: vi.fn(async () => [
+        {
+          id: "R-12345678",
+          product_id: "P-123abc",
+          created_at: "2026-05-17T00:00:00.000Z",
+          updated_at: "2026-05-17T00:00:00.000Z",
+          pages: [
+            {
+              page_id: "checkout-page",
+              baseline_page: "checkout",
+              design_status: "expired",
+              design_id: "D-12345678"
+            }
+          ]
+        }
+      ])
+    };
+    const app = await appWith(fakeStore({ home, requirements }));
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/image" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      product_id: "P-123abc",
+      baseline_page_id: "checkout",
+      requirement_id: "R-12345678",
+      requirement_page_id: "checkout-page",
+      design_id: "D-12345678",
+      image_url: "/api/designs/D-12345678/image/file",
+      preview_path: join(home, "data", "P-123abc", "R-12345678", "D-12345678", "preview@2x.png")
+    });
   });
 
   it("returns 404 when a requested historical design preview is missing", async () => {

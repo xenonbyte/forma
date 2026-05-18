@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput, type SyncStatus } from "@xenonbyte/forma-core";
+import { designSchema, readYamlAs, type createFormaStore, type Design, type Language, type Platform, type SyncStatus } from "@xenonbyte/forma-core";
 
 type StoreSync = {
   recoverFromCrash: () => Promise<SyncStatus> | Promise<void>;
@@ -52,20 +52,32 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
 
   app.get<{ Params: { id: string } }>("/api/products/:id", async (request) => store.products.getProduct(request.params.id));
 
+  app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/config", async (request) => {
+    const body = objectBody(request.body);
+    const style = await store.styles.getStyle(requiredString(body, "style"));
+    return store.products.initProductConfig(request.params.id, {
+      platform: requiredPlatform(body, "platform"),
+      style: style.metadata,
+      languages: requiredStringArray(body, "languages") as Language[],
+      default_language: requiredString(body, "default_language") as Language
+    });
+  });
+
   app.get<{ Params: { id: string } }>("/api/products/:id/requirements", async (request) =>
     store.requirements.getRequirementHistory(request.params.id)
   );
 
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/requirements", async (request) => {
     const body = objectBody(request.body);
-    const requirement = await store.requirements.createEmptyRequirement(request.params.id, requiredString(body, "title"));
-    const submitted = await store.requirements.submitRequirement({
-      requirement_id: requirement.id,
-      document_md: requiredString(body, "document_md"),
-      pages: requiredArray(body, "pages") as SubmitRequirementInput["pages"],
-      navigation: requiredArray(body, "navigation") as SubmitRequirementInput["navigation"]
-    });
-    return store.requirements.getRequirement({ requirement_id: submitted.id });
+    requireOnlyFields(body, ["title"]);
+    return store.requirements.createEmptyRequirement(request.params.id, requiredString(body, "title"));
+  });
+
+  app.post<{ Params: { id: string; reqId: string }; Body: unknown }>("/api/products/:id/requirements/:reqId/save", async (request) => {
+    await getOwnedRequirement(store, request.params.id, request.params.reqId);
+    const body = objectBody(request.body);
+    const input = { ...body, requirement_id: request.params.reqId } as Parameters<typeof store.requirements.saveRequirement>[0];
+    return store.requirements.saveRequirement(input);
   });
 
   app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request) => {
@@ -84,6 +96,11 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
 
   app.get<{ Params: { id: string; pageId: string } }>("/api/products/:id/baseline/pages/:pageId/image", async (request) =>
     getBaselineImageMetadata(store, request.params.id, request.params.pageId)
+  );
+
+  app.get<{ Params: { id: string; pageId: string }; Querystring: { requirement_id?: string } }>(
+    "/api/products/:id/baseline/pages/:pageId/copy",
+    async (request) => getBaselinePageCopy(store, request.params.id, request.params.pageId, request.query.requirement_id)
   );
 
   app.get<{ Params: { id: string; pageId: string } }>("/api/products/:id/baseline/pages/:pageId/annotations", async (request) => {
@@ -190,12 +207,28 @@ function requiredString(input: UnknownRecord, field: string): string {
   return value;
 }
 
-function requiredArray(input: UnknownRecord, field: string): unknown[] {
+function requiredPlatform(input: UnknownRecord, field: string): Platform {
+  const value = requiredString(input, field);
+  if (value !== "mobile" && value !== "desktop" && value !== "tablet" && value !== "web") {
+    throw new RouteInputError(`Invalid field: ${field}`, { field, value });
+  }
+  return value;
+}
+
+function requiredStringArray(input: UnknownRecord, field: string): string[] {
   const value = input[field];
-  if (!Array.isArray(value)) {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item.trim().length === 0)) {
     throw new RouteInputError(`Missing required field: ${field}`, { field });
   }
   return value;
+}
+
+function requireOnlyFields(input: UnknownRecord, fields: string[]): void {
+  const allowed = new Set(fields);
+  const extraFields = Object.keys(input).filter((field) => !allowed.has(field));
+  if (extraFields.length > 0) {
+    throw new RouteInputError("Unexpected request fields", { fields: extraFields });
+  }
 }
 
 function requiredPositiveIntegerQuery(value: string | undefined, field: string): number {
@@ -243,6 +276,43 @@ async function getOwnedRequirement(store: FormaStore, productId: string, require
   return requirement;
 }
 
+async function getBaselinePageCopy(store: FormaStore, productId: string, pageId: string, requirementId: string | undefined) {
+  const baselinePage = await getBaselinePage(store, productId, pageId);
+  const requirement = requirementId
+    ? await getOwnedRequirement(store, productId, requirementId)
+    : (await store.requirements.getRequirementHistory(productId))
+      .filter((item) => baselinePage.source_requirements.includes(item.id))
+      .sort(compareRequirementsNewestFirst)[0];
+
+  if (!requirement) {
+    return emptyBaselinePageCopy(pageId);
+  }
+
+  const requirementPage = requirement.pages.find((item) => item.baseline_page === pageId);
+  if (!requirementPage) {
+    return emptyBaselinePageCopy(pageId);
+  }
+  if (!requirementPage.copy || requirementPage.copy.length === 0) {
+    return emptyBaselinePageCopy(pageId);
+  }
+
+  const translations = await store.copy.getTranslations(productId, requirement.id);
+  const pageTranslation = translations.find((item) => item.page_id === requirementPage.page_id);
+  return {
+    page_id: pageId,
+    default_language_copy: requirementPage.copy ?? [],
+    translations: pageTranslation?.entries ?? []
+  };
+}
+
+function emptyBaselinePageCopy(pageId: string) {
+  return {
+    page_id: pageId,
+    default_language_copy: [],
+    translations: []
+  };
+}
+
 async function getStylePreview(store: FormaStore, name: string) {
   const style = await store.styles.getStyle(name);
   const styleDir = dirname(style.metadata.design_md_path);
@@ -261,7 +331,7 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
 
   for (const requirement of requirements) {
     const requirementPage = requirement.pages.find((item) => item.baseline_page === pageId);
-    if (!requirementPage?.design_id || requirementPage.design_status !== "done") {
+    if (!requirementPage?.design_id) {
       continue;
     }
 
