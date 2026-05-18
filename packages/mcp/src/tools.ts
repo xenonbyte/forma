@@ -1,6 +1,6 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { FormaError, PencilService, type createFormaStore } from "@xenonbyte/forma-core";
+import { assertProductConfig, FormaError, languages, PencilService, platforms, type createFormaStore } from "@xenonbyte/forma-core";
 import * as z from "zod/v4";
 
 export const formaToolNames = [
@@ -12,6 +12,9 @@ export const formaToolNames = [
   "get_baseline_image",
   "get_requirement_history",
   "get_requirement",
+  "get_product_rules",
+  "get_page_copy",
+  "update_page_copy",
   "get_current_session",
   "set_current_session",
   "init_product_config",
@@ -19,8 +22,7 @@ export const formaToolNames = [
   "update_product_config",
   "list_styles",
   "get_style",
-  "submit_requirement",
-  "update_requirement",
+  "save_requirement",
   "generate_page_design",
   "generate_components",
   "save_designs",
@@ -65,6 +67,27 @@ const productIdSchema = z.object({ product_id: z.string().min(1) }).strict();
 const requirementIdSchema = z.object({ requirement_id: z.string().min(1) }).strict();
 const designIdSchema = z.object({ design_id: z.string().min(1) }).strict();
 const baselinePageSchema = z.object({ product_id: z.string().min(1), page_id: z.string().min(1) }).strict();
+const copyItemSchema = z.object({
+  context: z.string().min(1),
+  text: z.string().min(1)
+}).strict();
+const translationEntrySchema = z.object({
+  context: z.string().min(1),
+  texts: z.record(z.string(), z.string()),
+  outdated: z.boolean().optional()
+}).strict();
+const pageTranslationSchema = z.object({
+  page_id: z.string().min(1),
+  entries: z.array(translationEntrySchema)
+}).strict();
+const ruleInputSchema = z.object({
+  id: z.string().min(1),
+  page_id: z.string().min(1).optional(),
+  given: z.string().min(1),
+  when: z.string().min(1),
+  then: z.string().min(1),
+  replaces_rule_id: z.string().optional()
+}).strict();
 const styleVariablesSchema = z.object({
   primary: z.string(),
   background: z.string(),
@@ -85,46 +108,52 @@ const requirementPageInputSchema = z.object({
   name: z.string().min(1),
   baseline_page: z.string().min(1),
   features: z.string().optional(),
-  copy: z.string().optional(),
+  copy: z.array(copyItemSchema).optional(),
   fields: z.string().optional(),
-  interactions: z.string().optional()
+  interactions: z.string().optional(),
+  change_type: z.enum(["new", "patch", "rebuild"]),
+  change_summary: z.string().optional()
 }).strict();
 const navigationInputSchema = z.object({
   from: z.string().min(1),
   to: z.string().min(1),
   label: z.string().optional()
 }).strict();
-const submitRequirementSchema = z.union([
-  z.object({
-    requirement_id: z.string().min(1),
-    document_md: z.string(),
-    pages: z.array(requirementPageInputSchema),
-    navigation: z.array(navigationInputSchema)
-  }).strict(),
-  z.object({
-    product_id: z.string().min(1),
-    title: z.string().min(1),
-    document_md: z.string(),
-    pages: z.array(requirementPageInputSchema),
-    navigation: z.array(navigationInputSchema)
-  }).strict()
-]);
-const updateRequirementSchema = z.object({
+const saveRequirementSchema = z.object({
   requirement_id: z.string().min(1),
   document_md: z.string(),
+  ui_affected: z.boolean(),
   pages: z.array(requirementPageInputSchema),
   navigation: z.array(navigationInputSchema),
-  expired_pages: z.array(z.string().min(1))
+  translations: z.array(pageTranslationSchema).optional(),
+  rules: z.array(ruleInputSchema).optional(),
+  remove_rule_ids: z.array(z.string().min(1)).optional(),
+  remove_page_ids: z.array(z.string().min(1)).optional()
 }).strict();
 const getRequirementSchema = z.union([
   z.object({ requirement_id: z.string().min(1) }).strict(),
   z.object({ product_id: z.string().min(1) }).strict()
 ]);
+const getPageCopySchema = z.object({
+  product_id: z.string().min(1),
+  page_id: z.string().min(1),
+  requirement_id: z.string().min(1).optional()
+}).strict();
+const updatePageCopySchema = z.object({
+  requirement_id: z.string().min(1),
+  page_id: z.string().min(1),
+  translations: z.array(translationEntrySchema)
+}).strict();
 const productConfigSchema = z.object({
   product_id: z.string().min(1),
-  platform: z.enum(["mobile", "desktop", "tablet", "web"]),
-  style: styleMetadataSchema
-}).strict();
+  platform: z.enum(platforms),
+  style: styleMetadataSchema,
+  languages: z.array(z.enum(languages)).min(1),
+  default_language: z.enum(languages)
+}).strict().refine((config) => config.languages.includes(config.default_language), {
+  message: "default_language must be included in languages",
+  path: ["default_language"]
+});
 const pencilGenerationSchema = z.object({
   product_id: z.string().min(1),
   prompt: z.string().min(1),
@@ -166,6 +195,9 @@ export const formaToolInputSchemas = {
   get_baseline_image: baselinePageSchema,
   get_requirement_history: productIdSchema,
   get_requirement: getRequirementSchema,
+  get_product_rules: productIdSchema,
+  get_page_copy: getPageCopySchema,
+  update_page_copy: updatePageCopySchema,
   get_current_session: emptySchema,
   set_current_session: productIdSchema,
   init_product_config: productConfigSchema,
@@ -173,8 +205,7 @@ export const formaToolInputSchemas = {
   update_product_config: productConfigSchema,
   list_styles: emptySchema,
   get_style: styleNameSchema,
-  submit_requirement: submitRequirementSchema,
-  update_requirement: updateRequirementSchema,
+  save_requirement: saveRequirementSchema,
   generate_page_design: pencilGenerationSchema,
   generate_components: componentGenerationSchema,
   save_designs: saveDesignsSchema,
@@ -193,15 +224,17 @@ const descriptions = {
   get_baseline_image: "Read deterministic metadata for the latest preview backing a baseline page.",
   get_requirement_history: "List product requirement history.",
   get_requirement: "Read a requirement by id or latest product requirement.",
+  get_product_rules: "Read product-level behavioral rules.",
+  get_page_copy: "Read source copy and translations for a requirement page.",
+  update_page_copy: "Update translations for a requirement page.",
   get_current_session: "Read the current product session.",
   set_current_session: "Set the current product session.",
-  init_product_config: "Write platform and style configuration for an existing product.",
+  init_product_config: "Write platform, style, and language configuration for an existing product.",
   complete_product_init: "Mark product components as initialized.",
-  update_product_config: "Update platform and style configuration for a product.",
+  update_product_config: "Update platform, style, and language configuration for a product.",
   list_styles: "List installed styles.",
   get_style: "Read style metadata and design guidance.",
-  submit_requirement: "Submit a new or existing requirement.",
-  update_requirement: "Update a submitted or active requirement.",
+  save_requirement: "Create or update a requirement through the unified state machine.",
   generate_page_design: "Generate a page design through Pencil.",
   generate_components: "Generate product components through Pencil.",
   save_designs: "Persist validated design outputs.",
@@ -214,14 +247,24 @@ const descriptions = {
 export function createFormaTools(store: FormaStore, options: CreateFormaToolsOptions = {}): FormaTools {
   const pencil = options.pencil ?? new PencilService({ home: store.home });
   return {
-    help: tool("help", async () => ({ tools: formaToolNames })),
+    help: tool("help", async () => ({
+      tools: formaToolNames,
+      usage_guide: [
+        "Use save_requirement for all requirement submissions and updates.",
+        "Use get_product_rules to inspect persisted behavioral rules.",
+        "Use get_page_copy and update_page_copy for page-level source copy translations."
+      ].join(" ")
+    })),
     list_products: tool("list_products", async () => store.products.listProducts()),
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),
     get_product_baseline: tool("get_product_baseline", async (input) => store.baseline.getProductBaseline(input.product_id)),
     get_baseline_page: tool("get_baseline_page", async (input) => getBaselinePage(store, input.product_id, input.page_id)),
     get_baseline_image: tool("get_baseline_image", async (input) => getBaselineImage(store, input.product_id, input.page_id)),
     get_requirement_history: tool("get_requirement_history", async (input) => store.requirements.getRequirementHistory(input.product_id)),
-    get_requirement: tool("get_requirement", async (input) => store.requirements.getRequirement(input)),
+    get_requirement: tool("get_requirement", async (input) => getRequirementWithCopyAndDesignMetadata(store, input)),
+    get_product_rules: tool("get_product_rules", async (input) => store.requirements.getProductRules(input.product_id)),
+    get_page_copy: tool("get_page_copy", async (input) => getPageCopy(store, input)),
+    update_page_copy: tool("update_page_copy", async (input) => updatePageCopy(store, input)),
     get_current_session: tool("get_current_session", async () => store.sessions.getCurrentSession()),
     set_current_session: tool("set_current_session", async (input) => store.sessions.setCurrentProduct(input.product_id)),
     init_product_config: tool("init_product_config", async (input) => {
@@ -235,27 +278,15 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
     }),
     list_styles: tool("list_styles", async () => store.styles.listStyles()),
     get_style: tool("get_style", async (input) => store.styles.getStyle(input.name)),
-    submit_requirement: tool("submit_requirement", async (input) => {
-      if ("requirement_id" in input) {
-        return store.requirements.submitRequirement(input);
-      }
-      const requirement = await store.requirements.createEmptyRequirement(input.product_id, input.title);
-      return store.requirements.submitRequirement({
-        requirement_id: requirement.id,
-        document_md: input.document_md,
-        pages: input.pages,
-        navigation: input.navigation
-      });
-    }),
-    update_requirement: tool("update_requirement", async (input) => store.requirements.updateRequirement(input)),
+    save_requirement: tool("save_requirement", async (input) => store.requirements.saveRequirement(input)),
     generate_page_design: tool("generate_page_design", async (input) => {
       const product = await store.products.getProduct(input.product_id);
-      assertProductConfig(product, input.product_id, ["platform", "style", "components_initialized"]);
+      assertProductConfig(product, input.product_id, ["platform", "style", "languages", "components_initialized"]);
       return pencil.generatePageDesign(input);
     }),
     generate_components: tool("generate_components", async (input) => {
       const product = await store.products.getProduct(input.product_id);
-      assertProductConfig(product, input.product_id, ["platform", "style"]);
+      assertProductConfig(product, input.product_id, ["platform", "style", "languages"]);
       return pencil.generateComponents(input);
     }),
     save_designs: tool("save_designs", async (input) => store.designs.saveDesigns(
@@ -328,6 +359,95 @@ function toFormaErrorPayload(error: unknown): { error_code: string; message: str
   return { error_code: "INTERNAL_ERROR", message: "Unexpected tool error", details: {} };
 }
 
+async function getRequirementWithCopyAndDesignMetadata(store: FormaStore, input: z.infer<typeof getRequirementSchema>) {
+  const requirement = await store.requirements.getRequirement(input);
+  const copyTranslations = await store.copy.getTranslations(requirement.product_id, requirement.id);
+  const pages = await Promise.all(requirement.pages.map(async (page) => {
+    if (!page.design_id) {
+      return page;
+    }
+
+    try {
+      return { ...page, design_metadata: await store.designs.getDesignMetadata(page.design_id) };
+    } catch (error) {
+      if (isFormaErrorCode(error, "DESIGN_NOT_FOUND")) {
+        return page;
+      }
+      throw error;
+    }
+  }));
+
+  return { ...requirement, pages, copy_translations: copyTranslations };
+}
+
+async function getPageCopy(store: FormaStore, input: z.infer<typeof getPageCopySchema>) {
+  const requirement = input.requirement_id
+    ? await getProductRequirement(store, input.product_id, input.requirement_id)
+    : await getLatestNonArchivedRequirement(store, input.product_id);
+  const page = requirement.pages.find((item) => item.page_id === input.page_id);
+  if (!page) {
+    throw new ToolError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
+      product_id: input.product_id,
+      requirement_id: requirement.id,
+      page_id: input.page_id
+    });
+  }
+
+  const translations = await store.copy.getTranslations(requirement.product_id, requirement.id);
+  return {
+    product_id: requirement.product_id,
+    requirement_id: requirement.id,
+    page_id: input.page_id,
+    copy: page.copy ?? [],
+    translations: translations.find((item) => item.page_id === input.page_id) ?? { page_id: input.page_id, entries: [] }
+  };
+}
+
+async function updatePageCopy(store: FormaStore, input: z.infer<typeof updatePageCopySchema>) {
+  const requirement = await store.requirements.getRequirement({ requirement_id: input.requirement_id });
+  if (!requirement.pages.some((page) => page.page_id === input.page_id)) {
+    throw new ToolError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
+      product_id: requirement.product_id,
+      requirement_id: requirement.id,
+      page_id: input.page_id
+    });
+  }
+
+  await store.copy.updatePageTranslations(requirement.product_id, requirement.id, input.page_id, input.translations);
+  return store.copy.getTranslations(requirement.product_id, requirement.id);
+}
+
+async function getProductRequirement(store: FormaStore, productId: string, requirementId: string) {
+  const requirement = await store.requirements.getRequirement({ requirement_id: requirementId });
+  if (requirement.product_id !== productId) {
+    throw new ToolError("REQUIREMENT_PRODUCT_MISMATCH", "Requirement does not belong to product", {
+      product_id: productId,
+      requirement_id: requirementId,
+      requirement_product_id: requirement.product_id
+    });
+  }
+
+  return requirement;
+}
+
+async function getLatestNonArchivedRequirement(store: FormaStore, productId: string) {
+  const requirements = store.requirements as typeof store.requirements & {
+    getLatestRequirement?: (productId: string) => ReturnType<typeof store.requirements.getLatestRequirement>;
+  };
+  if (typeof requirements.getLatestRequirement === "function") {
+    return requirements.getLatestRequirement(productId);
+  }
+
+  const latest = (await store.requirements.getRequirementHistory(productId))
+    .filter((requirement) => requirement.status !== "archived")
+    .sort(compareRequirementsNewestFirst)[0];
+  if (!latest) {
+    throw new ToolError("REQUIREMENT_NOT_FOUND", "Requirement not found", { product_id: productId });
+  }
+
+  return latest;
+}
+
 async function getBaselinePage(store: FormaStore, productId: string, pageId: string) {
   const baseline = await store.baseline.getProductBaseline(productId);
   const page = baseline.pages.find((item) => item.id === pageId || ("page_id" in item && item.page_id === pageId));
@@ -346,12 +466,12 @@ async function getBaselineImage(store: FormaStore, productId: string, pageId: st
 
   for (const requirement of requirements) {
     const page = requirement.pages.find((item) => item.baseline_page === pageId);
-    if (!page?.design_id || page.design_status !== "done") {
+    if (!page?.design_id) {
       continue;
     }
 
-    const previewPath = join(store.home, "data", productId, requirement.id, page.design_id, "preview@2x.png");
-    if (!(await fileExists(previewPath))) {
+    const previewPath = await getDesignPreviewPath(store, productId, requirement.id, page.design_id);
+    if (!previewPath) {
       continue;
     }
 
@@ -370,6 +490,22 @@ async function getBaselineImage(store: FormaStore, productId: string, pageId: st
     page_id: pageId,
     source_requirements: baselinePage.source_requirements
   });
+}
+
+async function getDesignPreviewPath(store: FormaStore, productId: string, requirementId: string, designId: string): Promise<string | undefined> {
+  try {
+    const metadata = await store.designs.getDesignMetadata(designId);
+    if (isRecord(metadata) && typeof metadata.preview_path === "string" && await fileExists(metadata.preview_path)) {
+      return metadata.preview_path;
+    }
+  } catch (error) {
+    if (!isFormaErrorCode(error, "DESIGN_NOT_FOUND")) {
+      throw error;
+    }
+  }
+
+  const previewPath = join(store.home, "data", productId, requirementId, designId, "preview@2x.png");
+  return (await fileExists(previewPath)) ? previewPath : undefined;
 }
 
 function compareRequirementsNewestFirst(
@@ -404,6 +540,10 @@ function titleFromToolName(name: string): string {
   return name.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
 }
 
+function isFormaErrorCode(error: unknown, code: string): error is FormaError {
+  return error instanceof FormaError && error.code === code;
+}
+
 class ToolError extends Error {
   constructor(
     public readonly code: string,
@@ -412,22 +552,6 @@ class ToolError extends Error {
   ) {
     super(message);
     this.name = "ToolError";
-  }
-}
-
-function assertProductConfig(product: unknown, productId: string, fields: Array<"platform" | "style" | "components_initialized">): void {
-  const record = isRecord(product) ? product : {};
-  const missing = fields.filter((field) => {
-    if (field === "components_initialized") {
-      return record.components_initialized !== true;
-    }
-    return !record[field];
-  });
-  if (missing.length > 0) {
-    throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
-      product_id: productId,
-      missing
-    });
   }
 }
 
