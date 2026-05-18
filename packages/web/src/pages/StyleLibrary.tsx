@@ -234,7 +234,8 @@ export function syncSummary(status: SyncStatusPayload | undefined): string | und
     return undefined;
   }
 
-  return `total ${status.last_sync.styles_total}, added ${status.last_sync.styles_added}, updated ${status.last_sync.styles_updated}, failed ${status.last_sync.styles_failed}`;
+  const summary = `同步完成，共 ${status.last_sync.styles_total} 个风格，新增 ${status.last_sync.styles_added} 个，更新 ${status.last_sync.styles_updated} 个`;
+  return status.last_sync.styles_failed > 0 ? `${summary}，失败 ${status.last_sync.styles_failed} 个` : summary;
 }
 
 export function getStyleCategories(styles: StyleMetadata[]): string[] {

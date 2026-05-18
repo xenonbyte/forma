@@ -93,7 +93,7 @@ describe("StyleLibrary sync lifecycle", () => {
 
     expect(client.getSyncStatus).toHaveBeenCalledTimes(2);
     expect(client.listStyles).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("total 1, added 1, updated 0, failed 0");
+    expect(container.textContent).toContain("同步完成，共 1 个风格，新增 1 个，更新 0 个");
   });
 
   it("keeps sync controls available when no styles are installed", async () => {

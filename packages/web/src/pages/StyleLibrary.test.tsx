@@ -90,6 +90,19 @@ describe("style sync helpers", () => {
           duration_ms: 2200
         }
       })
-    ).toBe("total 12, added 2, updated 3, failed 1");
+    ).toBe("同步完成，共 12 个风格，新增 2 个，更新 3 个，失败 1 个");
+    expect(
+      styleLibrary.syncSummary({
+        status: "idle",
+        last_sync: {
+          completed_at: "2026-05-18T00:00:02.000Z",
+          styles_total: 52,
+          styles_added: 1,
+          styles_updated: 3,
+          styles_failed: 0,
+          duration_ms: 2200
+        }
+      })
+    ).toBe("同步完成，共 52 个风格，新增 1 个，更新 3 个");
   });
 });
