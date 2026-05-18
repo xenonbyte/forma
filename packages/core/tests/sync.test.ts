@@ -23,6 +23,8 @@ const minimalPng = Buffer.from([
   0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
 ]);
 
+const oldPreviewPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x6f, 0x6c, 0x64]);
+
 async function tempDir() {
   return mkdtemp(join(tmpdir(), "forma-sync-test-"));
 }
@@ -103,11 +105,13 @@ function createFakeRunner(styles: StyleFixture[], options: { failPencilFor?: str
 }
 
 function createFakePencilService(options: { failExportFor?: string; lockHeld?: boolean } = {}) {
-  return {
+  const service = {
+    lockCalls: 0,
     async checkAvailability() {
       return undefined;
     },
     async withLock<T>(_context: { operation: string; product_id: string }, fn: () => Promise<T>): Promise<T> {
+      service.lockCalls += 1;
       if (options.lockHeld) {
         const error = new Error("Pencil lock is held") as Error & { code: string };
         error.code = "PENCIL_LOCK_HELD";
@@ -125,6 +129,7 @@ function createFakePencilService(options: { failExportFor?: string; lockHeld?: b
       await writeFile(outputPng, minimalPng);
     }
   };
+  return service;
 }
 
 async function writeStyleRepo(root: string, styles: StyleFixture[]) {
@@ -666,6 +671,8 @@ describe("SyncService task execution", () => {
   it("keeps syncing metadata and other previews when one style preview fails", async () => {
     const home = await tempDir();
     await writePreviewTemplate(home);
+    await mkdir(join(home, "styles", "broken"), { recursive: true });
+    await writeFile(join(home, "styles", "broken", "preview@2x.png"), oldPreviewPng);
     const styles = [
       { name: "broken", designMd: designMd("broken", "#990000") },
       { name: "working", designMd: designMd("working", "#009900") }
@@ -693,20 +700,21 @@ describe("SyncService task execution", () => {
     const index = await readYaml<{ styles: Array<{ name: string }> }>(join(home, "styles", "styles.yaml"));
     expect(index.styles.map((style) => style.name)).toEqual(["broken", "working"]);
     await expect(readFile(join(home, "styles", "broken", "DESIGN.md"), "utf8")).resolves.toBe(styles[0]!.designMd);
-    await expect(access(join(home, "styles", "broken", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(home, "styles", "broken", "preview@2x.png"))).resolves.toEqual(oldPreviewPng);
     await expect(readFile(join(home, "styles", "working", "preview@2x.png"))).resolves.toEqual(minimalPng);
   });
 
   it("marks a locked preview batch as failed after exhausting lock retries", async () => {
     vi.useFakeTimers();
     const home = await tempDir();
-    const { runner } = createFakeRunner([
+    const { runner, calls } = createFakeRunner([
       { name: "alpha", designMd: designMd("alpha", "#0055cc") },
       { name: "beta", designMd: designMd("beta", "#cc5500") }
     ]);
+    const pencilService = createFakePencilService({ lockHeld: true });
     const service = new SyncService({
       home,
-      pencilService: createFakePencilService({ lockHeld: true }),
+      pencilService,
       runner,
       now: () => new Date("2026-05-18T00:00:00.000Z")
     });
@@ -723,6 +731,8 @@ describe("SyncService task execution", () => {
         styles_failed: 2
       }
     });
+    expect(pencilService.lockCalls).toBe(16);
+    expect(calls.filter((call) => call.command === "pencil")).toEqual([]);
     await expect(access(join(home, "styles", "alpha", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(home, "styles", "beta", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -759,6 +769,34 @@ describe("SyncService task execution", () => {
     await expect(readFile(join(home, "styles", "beta", "DESIGN.md"), "utf8")).resolves.toBe(styles[1]!.designMd);
     await expect(access(join(home, "styles", "alpha", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(home, "styles", "beta", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not publish partial style writes when updating the staged index fails", async () => {
+    const home = await tempDir();
+    await writePreviewTemplate(home);
+    const previousDesign = designMd("alpha", "#111111");
+    const nextDesign = designMd("alpha", "#222222");
+    await mkdir(join(home, "styles", "alpha"), { recursive: true });
+    await writeFile(join(home, "styles", "alpha", "DESIGN.md"), previousDesign, "utf8");
+    await writeFile(join(home, "styles", "alpha", "preview@2x.png"), oldPreviewPng);
+    await mkdir(join(home, "styles", "styles.yaml"), { recursive: true });
+    const { runner } = createFakeRunner([{ name: "alpha", designMd: nextDesign }]);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+
+    expect(status).toMatchObject({
+      status: "failed",
+      error: { phase: "updating_index" }
+    });
+    await expect(readFile(join(home, "styles", "alpha", "DESIGN.md"), "utf8")).resolves.toBe(previousDesign);
+    await expect(readFile(join(home, "styles", "alpha", "preview@2x.png"))).resolves.toEqual(oldPreviewPng);
   });
 
   it("fails the task during scanning when the cloned repository has no style directories", async () => {

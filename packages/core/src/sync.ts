@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { access, copyFile, cp, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z, ZodError } from "zod";
 import { FormaError } from "./errors.js";
@@ -91,6 +91,7 @@ type ScannedStyle = {
   sha256: string;
   status: "added" | "updated" | "unchanged";
   previewSucceeded: boolean;
+  previewPath?: string;
 };
 
 class SyncTaskFailure extends Error {
@@ -180,6 +181,7 @@ export class SyncService {
     const tempRepoDir = join("/tmp", `forma-sync-${taskId}`);
     const stylesDir = join(this.home, "styles");
     let currentPhase: SyncPhase = "git_clone";
+    let taskFailed = false;
 
     try {
       if (!this.runner) {
@@ -232,23 +234,8 @@ export class SyncService {
 
       currentPhase = "updating_index";
       await this.writeProgress(taskId, startedAt, "updating_index", 0, styles.length);
-      for (const [index, style] of styles.entries()) {
-        await copyFileAtomic(style.designMdPath, join(stylesDir, style.name, "DESIGN.md"));
-        await this.writeProgress(taskId, startedAt, "updating_index", index + 1, styles.length, style.name);
-      }
-
       const completedAt = this.now().toISOString();
-      await writeYamlAtomic(join(stylesDir, "styles.yaml"), {
-        last_synced: completedAt,
-        styles: styles.map((style) => ({
-          name: style.name,
-          description: style.description,
-          category: style.category,
-          design_md_path: `styles/${style.name}/DESIGN.md`,
-          sha256: style.sha256,
-          variables: style.variables
-        }))
-      });
+      await this.updateStylesIndex(taskId, styles, completedAt, startedAt);
 
       await this.writeStatus({
         status: "idle",
@@ -262,6 +249,7 @@ export class SyncService {
         }
       });
     } catch (error) {
+      taskFailed = true;
       const failure = error instanceof SyncTaskFailure ? error : new SyncTaskFailure(currentPhase, errorMessage(error));
       await this.writeStatus({
         status: "failed",
@@ -269,7 +257,76 @@ export class SyncService {
         error: { phase: failure.phase, message: failure.message }
       });
     } finally {
-      await rm(tempRepoDir, { recursive: true, force: true });
+      try {
+        await rm(tempRepoDir, { recursive: true, force: true });
+      } catch (error) {
+        if (!taskFailed) {
+          await this.writeStatus({
+            status: "failed",
+            task_id: taskId,
+            error: { phase: "cleanup", message: `Failed to cleanup sync temp directory: ${errorMessage(error)}` }
+          });
+        }
+      }
+    }
+  }
+
+  private async updateStylesIndex(taskId: string, styles: ScannedStyle[], completedAt: string, startedAt: string): Promise<void> {
+    const stylesDir = join(this.home, "styles");
+    const stageDir = join(this.home, `.styles-stage-${taskId}`);
+    const backupDir = join(this.home, `.styles-backup-${taskId}`);
+    let preserveBackup = false;
+
+    try {
+      await rm(stageDir, { recursive: true, force: true });
+      await rm(backupDir, { recursive: true, force: true });
+      if (await fileExists(stylesDir)) {
+        await cp(stylesDir, stageDir, { recursive: true });
+      } else {
+        await mkdir(stageDir, { recursive: true });
+      }
+
+      for (const [index, style] of styles.entries()) {
+        await copyFileAtomic(style.designMdPath, join(stageDir, style.name, "DESIGN.md"));
+        if (style.previewPath) {
+          await copyFileAtomic(style.previewPath, join(stageDir, style.name, "preview@2x.png"));
+        }
+        await this.writeProgress(taskId, startedAt, "updating_index", index + 1, styles.length, style.name);
+      }
+
+      await writeYamlAtomic(join(stageDir, "styles.yaml"), {
+        last_synced: completedAt,
+        styles: styles.map((style) => ({
+          name: style.name,
+          description: style.description,
+          category: style.category,
+          design_md_path: `styles/${style.name}/DESIGN.md`,
+          sha256: style.sha256,
+          variables: style.variables
+        }))
+      });
+
+      if (await fileExists(stylesDir)) {
+        await rename(stylesDir, backupDir);
+      }
+      try {
+        await rename(stageDir, stylesDir);
+      } catch (error) {
+        if (await fileExists(backupDir)) {
+          try {
+            await rename(backupDir, stylesDir);
+          } catch {
+            preserveBackup = true;
+          }
+        }
+        throw error;
+      }
+      await rm(backupDir, { recursive: true, force: true });
+    } finally {
+      await rm(stageDir, { recursive: true, force: true });
+      if (!preserveBackup) {
+        await rm(backupDir, { recursive: true, force: true });
+      }
     }
   }
 
@@ -320,7 +377,7 @@ export class SyncService {
           let failed = 0;
           for (const [index, style] of batch.entries()) {
             try {
-              await this.renderStylePreview(style, previewWorkDir);
+              style.previewPath = await this.renderStylePreview(style, previewWorkDir);
               style.previewSucceeded = true;
             } catch {
               failed += 1;
@@ -349,7 +406,7 @@ export class SyncService {
     return batch.length;
   }
 
-  private async renderStylePreview(style: ScannedStyle, previewWorkDir: string): Promise<void> {
+  private async renderStylePreview(style: ScannedStyle, previewWorkDir: string): Promise<string> {
     await mkdir(previewWorkDir, { recursive: true });
     const penPath = join(previewWorkDir, `${style.name}.pen`);
     const pngPath = join(previewWorkDir, `${style.name}.png`);
@@ -365,7 +422,7 @@ export class SyncService {
     if (output.size <= 0) {
       throw new Error("Preview export is empty");
     }
-    await copyFileAtomic(pngPath, join(this.home, "styles", style.name, "preview@2x.png"));
+    return pngPath;
   }
 
   private async readStatus(): Promise<SyncStatus> {
