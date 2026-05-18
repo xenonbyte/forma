@@ -192,4 +192,37 @@ describe("apiRequest", () => {
       ["/api/designs/D%20123/export?node_id=node+1&format=svg", undefined]
     ]);
   });
+
+  it("builds typed style sync API routes", async () => {
+    const requests: Array<[RequestInfo | URL, string | undefined]> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push([input, init?.method]);
+      const path = input.toString();
+      if (path === "/api/styles/sync") {
+        return jsonResponse({ task_id: "sync-123", status: "running", message: "Style sync started" });
+      }
+      if (path === "/api/styles/sync/status") {
+        return jsonResponse({
+          status: "running",
+          task_id: "sync-123",
+          started_at: "2026-05-18T00:00:00.000Z",
+          progress: { phase: "scanning", current: 2, total: 7, current_style: "linear" }
+        });
+      }
+      return jsonResponse({}, { status: 404 });
+    });
+
+    await expect(client.syncStyles()).resolves.toEqual({ task_id: "sync-123", status: "running", message: "Style sync started" });
+    await expect(client.getSyncStatus()).resolves.toEqual({
+      status: "running",
+      task_id: "sync-123",
+      started_at: "2026-05-18T00:00:00.000Z",
+      progress: { phase: "scanning", current: 2, total: 7, current_style: "linear" }
+    });
+
+    expect(requests).toEqual([
+      ["/api/styles/sync", "POST"],
+      ["/api/styles/sync/status", undefined]
+    ]);
+  });
 });

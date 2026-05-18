@@ -16,10 +16,10 @@ export type FormaServer = FastifyInstance;
 
 export function buildServer(options: BuildServerOptions = {}): FormaServer {
   const app = Fastify();
-  const store = options.store ?? createFormaStore({
+  const store = (options.store ?? createFormaStore({
     home: options.home ?? defaultFormaHome(),
     bundledStylesDir: options.bundledStylesDir
-  });
+  })) as FormaStore;
 
   app.setErrorHandler((error, _request, reply) => {
     const payload = toErrorPayload(error);
@@ -46,6 +46,8 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
       details: {}
     });
   });
+
+  void store.sync.recoverFromCrash().catch(() => undefined);
 
   registerRoutes(app, store);
   return app;
@@ -140,7 +142,10 @@ function statusForError(error: unknown): number {
     return error.statusCode;
   }
   if (error instanceof FormaError) {
-    if (error.code.startsWith("PENCIL_")) {
+    if (error.code === "SYNC_ALREADY_RUNNING") {
+      return 409;
+    }
+    if (error.code === "SYNC_GIT_NOT_FOUND" || error.code.startsWith("PENCIL_")) {
       return 503;
     }
     if (error.code.endsWith("_NOT_FOUND") || error.code === "HISTORY_FILE_MISSING" || error.code === "NODE_NOT_FOUND") {

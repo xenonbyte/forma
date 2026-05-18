@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PencilService, type PencilRunner } from "../src/index.js";
+import { defaultPencilRunner } from "../src/pencil.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -13,12 +14,12 @@ const minimalPng = Buffer.from([
 ]);
 
 function createFakeRunner(
-  handler: (command: string, args: string[], options?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }> = async () => ({
+  handler: (command: string, args: string[], options?: { cwd?: string; timeoutMs?: number }) => Promise<{ stdout: string; stderr: string }> = async () => ({
     stdout: "",
     stderr: ""
   })
-): PencilRunner & { calls: Array<{ command: string; args: string[]; options?: { cwd?: string } }> } {
-  const calls: Array<{ command: string; args: string[]; options?: { cwd?: string } }> = [];
+): PencilRunner & { calls: Array<{ command: string; args: string[]; options?: { cwd?: string; timeoutMs?: number } }> } {
+  const calls: Array<{ command: string; args: string[]; options?: { cwd?: string; timeoutMs?: number } }> = [];
   return {
     calls,
     async run(command, args, options) {
@@ -37,6 +38,13 @@ async function delay(ms: number) {
 }
 
 describe("PencilService", () => {
+  it("passes timeout options through the default runner", async () => {
+    await expect(defaultPencilRunner.run(process.execPath, ["--version"], { timeoutMs: 5_000 })).resolves.toMatchObject({
+      stderr: expect.any(String),
+      stdout: expect.any(String)
+    });
+  });
+
   it("validates pen files and rejects truncation markers", async () => {
     const home = await createHome("validate");
     const fakeRunner = createFakeRunner();

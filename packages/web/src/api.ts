@@ -100,6 +100,38 @@ export interface StylePreviewPayload {
   preview_path?: string;
 }
 
+export type SyncPhase = "git_clone" | "scanning" | "extracting_variables" | "rendering_previews" | "updating_index" | "cleanup";
+
+export type SyncStatusPayload =
+  | {
+      last_sync?: {
+        completed_at: string;
+        duration_ms: number;
+        styles_added: number;
+        styles_failed: number;
+        styles_total: number;
+        styles_updated: number;
+      };
+      status: "idle";
+    }
+  | {
+      progress: { current: number; current_style?: string; phase: SyncPhase; total: number };
+      started_at: string;
+      status: "running";
+      task_id: string;
+    }
+  | {
+      error: { message: string; phase: SyncPhase };
+      status: "failed";
+      task_id?: string;
+    };
+
+export interface SyncStartedPayload {
+  message: string;
+  status: "running";
+  task_id: string;
+}
+
 export interface DesignHistoryVersion {
   created_at: string;
   current: boolean;
@@ -150,9 +182,11 @@ export interface FormaApiClient {
   getRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
   getStyle(name: string): Promise<StyleDetailPayload>;
   getStylePreview(name: string): Promise<StylePreviewPayload>;
+  getSyncStatus(): Promise<SyncStatusPayload>;
   listProducts(): Promise<ProductIndexEntry[]>;
   listRequirements(productId: string): Promise<RequirementWithDocument[]>;
   listStyles(): Promise<StyleMetadata[]>;
+  syncStyles(): Promise<SyncStartedPayload>;
 }
 
 export interface ApiRequestOptions {
@@ -254,10 +288,16 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       ),
     getStyle: (name) => apiRecord<StyleDetailPayload>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
     getStylePreview: (name) => apiRecord<StylePreviewPayload>(`/api/styles/${encodeURIComponent(name)}/preview`, requestOptions(fetcher)),
+    getSyncStatus: () => apiRecord<SyncStatusPayload>("/api/styles/sync/status", requestOptions(fetcher)),
     listProducts: () => apiArray<ProductIndexEntry>("/api/products", requestOptions(fetcher)),
     listRequirements: (productId) =>
       apiArray<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements`, requestOptions(fetcher)),
-    listStyles: () => apiArray<StyleMetadata>("/api/styles", requestOptions(fetcher))
+    listStyles: () => apiArray<StyleMetadata>("/api/styles", requestOptions(fetcher)),
+    syncStyles: () =>
+      apiRecord<SyncStartedPayload>("/api/styles/sync", {
+        ...requestOptions(fetcher),
+        method: "POST"
+      })
   };
 }
 

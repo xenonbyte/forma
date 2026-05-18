@@ -1,9 +1,15 @@
 import { access, readFile } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
 import type { FastifyInstance } from "fastify";
-import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput } from "@xenonbyte/forma-core";
+import { designSchema, readYamlAs, type createFormaStore, type Design, type SubmitRequirementInput, type SyncStatus } from "@xenonbyte/forma-core";
 
-export type FormaStore = ReturnType<typeof createFormaStore>;
+type StoreSync = {
+  recoverFromCrash: () => Promise<SyncStatus> | Promise<void>;
+  startSync: () => Promise<Extract<SyncStatus, { status: "running" }>>;
+  getStatus: () => Promise<SyncStatus>;
+};
+
+export type FormaStore = ReturnType<typeof createFormaStore> & { sync: StoreSync };
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -138,6 +144,13 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
   );
 
   app.get("/api/styles", async () => store.styles.listStyles());
+
+  app.post("/api/styles/sync", async (_request, reply) => {
+    const started = await store.sync.startSync();
+    reply.status(202).send({ task_id: started.task_id, status: "running", message: "Style sync started" });
+  });
+
+  app.get("/api/styles/sync/status", async () => store.sync.getStatus());
 
   app.get<{ Params: { name: string } }>("/api/styles/:name", async (request) => store.styles.getStyle(request.params.name));
 

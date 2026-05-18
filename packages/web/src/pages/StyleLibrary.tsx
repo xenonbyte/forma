@@ -1,11 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type StyleMetadata, type StyleVariables } from "../api.js";
+import {
+  apiClient,
+  formatApiError,
+  type ApiErrorInfo,
+  type FormaApiClient,
+  type StyleMetadata,
+  type StyleVariables,
+  type SyncStatusPayload
+} from "../api.js";
 import { StatePanel } from "../components/Layout.js";
 import { StyleCard } from "../components/StyleCard.js";
 
 export interface StyleLibraryProps {
-  client?: Pick<FormaApiClient, "listStyles">;
+  client?: Pick<FormaApiClient, "getSyncStatus" | "listStyles" | "syncStyles">;
 }
 
 type StyleLibraryState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { status: "ready"; styles: StyleMetadata[] };
@@ -28,29 +36,92 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
   const [filter, setFilter] = useState<VariableFilter>("all");
   const [query, setQuery] = useState("");
   const [state, setState] = useState<StyleLibraryState>({ status: "loading" });
+  const [syncStatus, setSyncStatus] = useState<SyncStatusPayload>();
   const [view, setView] = useState<ViewMode>("grid");
+
+  const loadStyles = useCallback(
+    async (showLoading = true) => {
+      if (showLoading) {
+        setState({ status: "loading" });
+      }
+
+      try {
+        const styles = await client.listStyles();
+        setState({ status: "ready", styles });
+      } catch (error: unknown) {
+        setState({ error: formatApiError(error), status: "error" });
+      }
+    },
+    [client]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    setState({ status: "loading" });
 
+    loadStyles();
     client
-      .listStyles()
-      .then((styles) => {
+      .getSyncStatus()
+      .then((status) => {
         if (!cancelled) {
-          setState({ status: "ready", styles });
+          setSyncStatus(status);
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setState({ error: formatApiError(error), status: "error" });
+          setSyncStatus({ error: { message: formatApiError(error).message, phase: "cleanup" }, status: "failed" });
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [client]);
+  }, [client, loadStyles]);
+
+  useEffect(() => {
+    if (syncStatus?.status !== "running") {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      client
+        .getSyncStatus()
+        .then((status) => {
+          if (cancelled) {
+            return;
+          }
+
+          setSyncStatus(status);
+          if (status.status === "idle" && status.last_sync) {
+            void loadStyles(false);
+          }
+        })
+        .catch((error: unknown) => {
+          if (!cancelled) {
+            setSyncStatus({ error: { message: formatApiError(error).message, phase: "cleanup" }, status: "failed" });
+          }
+        });
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [client, loadStyles, syncStatus]);
+
+  const handleSync = async () => {
+    try {
+      const started = await client.syncStyles();
+      setSyncStatus({
+        progress: { current: 0, phase: "git_clone", total: 0 },
+        started_at: new Date().toISOString(),
+        status: started.status,
+        task_id: started.task_id
+      });
+    } catch (error: unknown) {
+      setSyncStatus({ error: { message: formatApiError(error).message, phase: "cleanup" }, status: "failed" });
+    }
+  };
 
   const categories = useMemo(() => (state.status === "ready" ? getStyleCategories(state.styles) : ["all"]), [state]);
   const filteredStyles = useMemo(
@@ -74,17 +145,9 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
     );
   }
 
-  if (state.styles.length === 0) {
-    return (
-      <StatePanel state="empty" title="No styles">
-        Installed styles will appear here.
-      </StatePanel>
-    );
-  }
-
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_10rem]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_10rem_11rem]">
         <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Search
           <input className={inputClasses} onChange={(event) => setQuery(event.target.value)} placeholder="Name or description" value={query} />
@@ -118,9 +181,28 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
             </button>
           </div>
         </div>
+        <div className="grid gap-1 text-sm font-medium text-zinc-700">
+          Sync
+          <button
+            className="rounded-md border border-zinc-200 bg-zinc-950 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:bg-zinc-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            data-sync-button="true"
+            disabled={syncStatus?.status === "running"}
+            onClick={handleSync}
+            type="button"
+          >
+            {syncButtonLabel(syncStatus)}
+          </button>
+        </div>
       </div>
 
-      {filteredStyles.length === 0 ? (
+      {syncSummary(syncStatus) ? <p className="text-sm text-zinc-600">{syncSummary(syncStatus)}</p> : null}
+      {syncStatus?.status === "failed" ? <p className="text-sm text-red-600">{syncStatus.error.message}</p> : null}
+
+      {state.styles.length === 0 ? (
+        <StatePanel state="empty" title="No styles">
+          Installed styles will appear here.
+        </StatePanel>
+      ) : filteredStyles.length === 0 ? (
         <StatePanel state="empty" title="No styles match">
           Adjust search or variable filter.
         </StatePanel>
@@ -133,6 +215,27 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
       )}
     </div>
   );
+}
+
+export function syncButtonLabel(status: SyncStatusPayload | undefined): string {
+  if (status?.status === "running") {
+    return `同步中... (${status.progress.current}/${status.progress.total})`;
+  }
+
+  if (status?.status === "failed") {
+    return "同步失败，重试";
+  }
+
+  return "一键同步";
+}
+
+export function syncSummary(status: SyncStatusPayload | undefined): string | undefined {
+  if (status?.status !== "idle" || !status.last_sync) {
+    return undefined;
+  }
+
+  const summary = `同步完成，共 ${status.last_sync.styles_total} 个风格，新增 ${status.last_sync.styles_added} 个，更新 ${status.last_sync.styles_updated} 个`;
+  return status.last_sync.styles_failed > 0 ? `${summary}，失败 ${status.last_sync.styles_failed} 个` : summary;
 }
 
 export function getStyleCategories(styles: StyleMetadata[]): string[] {

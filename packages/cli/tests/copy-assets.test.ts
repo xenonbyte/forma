@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,8 +44,14 @@ describe("copy-assets built-in style checks", () => {
 
   it("validates the repository built-in styles", async () => {
     const styles = await assertBuiltInStyles(new URL("../../../styles", import.meta.url));
+    const previewTemplate = JSON.parse(await readFile(new URL("../../../styles/_preview-template.pen", import.meta.url), "utf8")) as {
+      children?: unknown[];
+      variables?: Record<string, unknown>;
+    };
 
     expect(styles.length).toBeGreaterThanOrEqual(50);
+    expect(previewTemplate.children?.length).toBeGreaterThan(0);
+    expect(previewTemplate.variables).toHaveProperty("--primary");
     expect(styles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ name: "linear", designMdPath: "styles/linear/DESIGN.md" }),

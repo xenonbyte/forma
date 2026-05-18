@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type ProductBaseline } from "../api.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
+import { NavigationGraph } from "../components/NavigationGraph.js";
 
 export interface BaselineViewProps {
   client?: Pick<FormaApiClient, "getBaseline">;
@@ -9,6 +10,8 @@ export interface BaselineViewProps {
 }
 
 type BaselineState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { baseline: ProductBaseline; status: "ready" };
+type BaselineTab = "graph" | "list";
+type BaselineNavigationDisplayEdge = ProductBaseline["navigation"][number] & { trigger?: string };
 
 export function BaselineView({ client = apiClient, params }: BaselineViewProps) {
   const productId = params.productId ?? "";
@@ -64,6 +67,8 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 }
 
 export function BaselineContent({ baseline, productId }: { baseline: ProductBaseline; productId: string }) {
+  const [activeTab, setActiveTab] = useState<BaselineTab>("list");
+
   return (
     <div className="space-y-5">
       <div className="flex justify-start">
@@ -72,64 +77,89 @@ export function BaselineContent({ baseline, productId }: { baseline: ProductBase
         </a>
       </div>
 
-      <WorkSurface title="Functional pages">
-        <div className="divide-y divide-zinc-200">
-          {baseline.pages.map((page) => (
-            <article className="grid gap-3 py-4 lg:grid-cols-[16rem_minmax(0,1fr)_16rem]" key={page.id}>
-              <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold text-zinc-950">{page.name}</h2>
-                <p className="mt-1 font-mono text-xs text-zinc-500">{page.id}</p>
-              </div>
-              <dl className="grid gap-2 text-sm text-zinc-700">
-                <Fact label="Features" value={page.features || "Empty"} />
-                <Fact label="Copy" value={page.copy || "Empty"} />
-                <Fact label="Fields" value={page.fields || "Empty"} />
-                <Fact label="Interactions" value={page.interactions || "Empty"} />
-              </dl>
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Sources</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {page.source_requirements.length > 0 ? (
-                    page.source_requirements.map((requirementId) => (
-                      <a className={pillLinkClasses} href={`/products/${productId}/requirements/${requirementId}`} key={requirementId}>
-                        {requirementId}
-                      </a>
-                    ))
-                  ) : (
-                    <span className="text-sm text-zinc-500">None</span>
-                  )}
-                </div>
-                <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">Actions</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/image`}>
-                    Preview
-                  </a>
-                  <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/annotations`}>
-                    Annotations
-                  </a>
-                </div>
-              </div>
-            </article>
-          ))}
-        </div>
-      </WorkSurface>
+      <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1 shadow-sm" role="tablist" aria-label="Baseline view">
+        {(["list", "graph"] as BaselineTab[]).map((tab) => (
+          <button
+            aria-selected={activeTab === tab}
+            className={`rounded px-3 py-1.5 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+              activeTab === tab ? "bg-amber-100 text-zinc-950" : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950"
+            }`}
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            role="tab"
+            type="button"
+          >
+            {tab === "list" ? "List" : "Graph"}
+          </button>
+        ))}
+      </div>
 
-      <WorkSurface title="Navigation">
-        {baseline.navigation.length === 0 ? (
-          <p className="text-sm text-zinc-500">No navigation edges are present.</p>
-        ) : (
-          <div className="divide-y divide-zinc-200">
-            {baseline.navigation.map((edge, index) => (
-              <div className="grid gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_12rem]" key={`${edge.from}-${edge.to}-${index}`}>
-                <span className="truncate font-mono text-zinc-700">{edge.from}</span>
-                <span className="text-zinc-400">to</span>
-                <span className="truncate font-mono text-zinc-700">{edge.to}</span>
-                <span className="truncate text-zinc-500">{edge.label ?? "No label"}</span>
+      {activeTab === "list" ? (
+        <>
+          <WorkSurface title="Functional pages">
+            <div className="divide-y divide-zinc-200">
+              {baseline.pages.map((page) => (
+                <article className="grid gap-3 py-4 lg:grid-cols-[16rem_minmax(0,1fr)_16rem]" key={page.id}>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold text-zinc-950">{page.name}</h2>
+                    <p className="mt-1 font-mono text-xs text-zinc-500">{page.id}</p>
+                  </div>
+                  <dl className="grid gap-2 text-sm text-zinc-700">
+                    <Fact label="Features" value={page.features || "Empty"} />
+                    <Fact label="Copy" value={page.copy || "Empty"} />
+                    <Fact label="Fields" value={page.fields || "Empty"} />
+                    <Fact label="Interactions" value={page.interactions || "Empty"} />
+                  </dl>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Sources</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {page.source_requirements.length > 0 ? (
+                        page.source_requirements.map((requirementId) => (
+                          <a className={pillLinkClasses} href={`/products/${productId}/requirements/${requirementId}`} key={requirementId}>
+                            {requirementId}
+                          </a>
+                        ))
+                      ) : (
+                        <span className="text-sm text-zinc-500">None</span>
+                      )}
+                    </div>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">Actions</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/image`}>
+                        Preview
+                      </a>
+                      <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/annotations`}>
+                        Annotations
+                      </a>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </WorkSurface>
+
+          <WorkSurface title="Navigation">
+            {baseline.navigation.length === 0 ? (
+              <p className="text-sm text-zinc-500">No navigation edges are present.</p>
+            ) : (
+              <div className="divide-y divide-zinc-200">
+                {baseline.navigation.map((edge, index) => (
+                  <div className="grid gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_12rem]" key={`${edge.from}-${edge.to}-${index}`}>
+                    <span className="truncate font-mono text-zinc-700">{edge.from}</span>
+                    <span className="text-zinc-400">to</span>
+                    <span className="truncate font-mono text-zinc-700">{edge.to}</span>
+                    <span className="truncate text-zinc-500">{navigationEdgeLabel(edge)}</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
-      </WorkSurface>
+            )}
+          </WorkSurface>
+        </>
+      ) : (
+        <WorkSurface title="Navigation graph">
+          <NavigationGraph pages={baseline.pages} navigation={baseline.navigation} />
+        </WorkSurface>
+      )}
     </div>
   );
 }
@@ -141,6 +171,10 @@ function Fact({ label, value }: { label: string; value: string }) {
       <dd className="min-w-0 whitespace-pre-wrap text-zinc-800">{value}</dd>
     </div>
   );
+}
+
+function navigationEdgeLabel(edge: BaselineNavigationDisplayEdge): string {
+  return edge.trigger ?? edge.label ?? "No label";
 }
 
 const secondaryLinkClasses =
