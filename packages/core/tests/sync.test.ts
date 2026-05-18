@@ -3,13 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createFormaStore,
+  FormaError,
   classifyStyle,
   describeStyle,
   extractVariablesFromDesignMd,
+  PencilService,
+  readYaml,
   scanStyleDirectories,
   sha256Hex,
+  SyncService,
   syncStatusSchema
-} from "../src/sync.js";
+} from "../src/index.js";
 
 async function tempDir() {
   return mkdtemp(join(tmpdir(), "forma-sync-test-"));
@@ -238,5 +243,180 @@ colors:
         message: "git not found"
       }
     });
+  });
+});
+
+describe("SyncService state, gates, and recovery", () => {
+  it("starts a sync after Pencil and Git gates when autoRun is false", async () => {
+    const home = await tempDir();
+    const calls: Array<{ command: string; args: string[]; options?: { timeoutMs?: number } }> = [];
+    const runner = {
+      async run(command: string, args: string[], options?: { timeoutMs?: number }) {
+        calls.push({ command, args, options });
+        return { stdout: command === "pencil" && args[0] === "status" ? "active\n" : "ok\n", stderr: "" };
+      }
+    };
+    const pencilService = new PencilService({ home, runner });
+    const service = new SyncService({ home, pencilService, runner, autoRun: false });
+
+    const started = await service.startSync();
+
+    expect(started.task_id).toMatch(/^sync-[a-f0-9]{16}$/);
+    expect(await service.getStatus()).toEqual({
+      status: "running",
+      task_id: started.task_id,
+      started_at: started.started_at,
+      progress: { phase: "git_clone", current: 0, total: 0 }
+    });
+    expect(calls).toEqual([
+      { command: "pencil", args: ["version"], options: undefined },
+      { command: "pencil", args: ["status"], options: undefined },
+      { command: "git", args: ["--version"], options: { timeoutMs: 5_000 } }
+    ]);
+  });
+
+  it("runs Pencil availability before Git gate when starting", async () => {
+    const home = await tempDir();
+    const calls: string[] = [];
+    const runner = {
+      async run(command: string, args: string[], options?: { timeoutMs?: number }) {
+        calls.push(`${command} ${args.join(" ")} ${options?.timeoutMs ?? ""}`.trim());
+        return { stdout: "ok\n", stderr: "" };
+      }
+    };
+    const pencilService = {
+      async checkAvailability() {
+        await runner.run("pencil", ["version"]);
+        await runner.run("pencil", ["status"]);
+      }
+    };
+    const service = new SyncService({ home, pencilService, runner, autoRun: false });
+
+    await service.startSync();
+
+    expect(calls).toEqual(["pencil version", "pencil status", "git --version 5000"]);
+  });
+
+  it("rejects duplicate starts while a non-stale sync is running", async () => {
+    const service = new SyncService({
+      home: await tempDir(),
+      pencilService: { checkAvailability: async () => undefined },
+      runner: { run: async () => ({ stdout: "git version 2\n", stderr: "" }) },
+      autoRun: false,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+    await service.startSync();
+
+    await expect(service.startSync()).rejects.toMatchObject({ code: "SYNC_ALREADY_RUNNING" });
+  });
+
+  it("rejects missing Git without writing running state", async () => {
+    const home = await tempDir();
+    const service = new SyncService({
+      home,
+      pencilService: { checkAvailability: async () => undefined },
+      runner: {
+        async run() {
+          throw new Error("spawn git ENOENT");
+        }
+      },
+      autoRun: false
+    });
+
+    await expect(service.startSync()).rejects.toMatchObject({
+      code: "SYNC_GIT_NOT_FOUND",
+      message: "Git CLI not found",
+      details: { command: "git --version" }
+    });
+    expect(await service.getStatus()).toEqual({ status: "idle" });
+    await expect(readYaml(join(home, "sync-state.yaml"))).rejects.toThrow();
+  });
+
+  it("recovers stale running state as failed", async () => {
+    const home = await tempDir();
+    await writeFile(
+      join(home, "sync-state.yaml"),
+      [
+        "status: running",
+        "task_id: sync-deadbeefdeadbeef",
+        "started_at: '2026-05-18T00:00:00.000Z'",
+        "progress:",
+        "  phase: git_clone",
+        "  current: 0",
+        "  total: 0",
+        ""
+      ].join("\n")
+    );
+    const service = new SyncService({
+      home,
+      pencilService: { checkAvailability: async () => undefined },
+      now: () => new Date("2026-05-18T00:11:00.000Z")
+    });
+
+    expect(await service.getStatus()).toEqual({
+      status: "failed",
+      task_id: "sync-deadbeefdeadbeef",
+      error: { phase: "cleanup", message: "Previous sync task crashed or stopped" }
+    });
+  });
+
+  it("does not reset non-stale running state during recovery", async () => {
+    const home = await tempDir();
+    await writeFile(
+      join(home, "sync-state.yaml"),
+      [
+        "status: running",
+        "task_id: sync-feedfacefeedface",
+        "started_at: '2026-05-18T00:01:00.000Z'",
+        "progress:",
+        "  phase: git_clone",
+        "  current: 0",
+        "  total: 0",
+        ""
+      ].join("\n")
+    );
+    const service = new SyncService({
+      home,
+      pencilService: { checkAvailability: async () => undefined },
+      now: () => new Date("2026-05-18T00:10:59.000Z")
+    });
+
+    expect(await service.recoverFromCrash()).toEqual({
+      status: "running",
+      task_id: "sync-feedfacefeedface",
+      started_at: "2026-05-18T00:01:00.000Z",
+      progress: { phase: "git_clone", current: 0, total: 0 }
+    });
+  });
+
+  it("returns idle for invalid sync state and rewrites it", async () => {
+    const home = await tempDir();
+    await writeFile(join(home, "sync-state.yaml"), "status: wat\n");
+    const service = new SyncService({ home, pencilService: { checkAvailability: async () => undefined } });
+
+    expect(await service.getStatus()).toEqual({ status: "idle" });
+    expect(await readYaml(join(home, "sync-state.yaml"))).toEqual({ status: "idle" });
+  });
+
+  it("exposes sync service from the forma store", async () => {
+    const store = createFormaStore({ home: await tempDir(), bundledStylesDir: join(await tempDir(), "styles") });
+
+    expect(store.sync).toBeInstanceOf(SyncService);
+    await expect(store.sync.getStatus()).resolves.toEqual({ status: "idle" });
+  });
+
+  it("surfaces sync errors as FormaError instances", async () => {
+    const service = new SyncService({
+      home: await tempDir(),
+      pencilService: { checkAvailability: async () => undefined },
+      runner: {
+        async run() {
+          throw new Error("missing");
+        }
+      },
+      autoRun: false
+    });
+
+    await expect(service.startSync()).rejects.toBeInstanceOf(FormaError);
   });
 });

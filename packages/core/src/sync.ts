@@ -1,9 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { access, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { z } from "zod";
-import type { PencilRunner } from "./pencil.js";
+import { z, ZodError } from "zod";
+import { FormaError } from "./errors.js";
+import type { PencilRunner, PencilService } from "./pencil.js";
 import { styleVariablesSchema, type StyleVariables } from "./styles.js";
+import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export type CommandRunner = PencilRunner;
 
@@ -53,6 +55,14 @@ export interface ScannedStyleDirectory {
   designMdPath: string;
 }
 
+export interface SyncServiceOptions {
+  home: string;
+  pencilService: Pick<PencilService, "checkAvailability">;
+  runner?: CommandRunner;
+  autoRun?: boolean;
+  now?: () => Date;
+}
+
 const defaultStyleVariables: StyleVariables = {
   primary: "#3b82f6",
   background: "#FFFFFF",
@@ -62,6 +72,124 @@ const defaultStyleVariables: StyleVariables = {
   "border-radius": "8",
   "spacing-unit": "8"
 };
+
+const syncStaleAfterMs = 10 * 60 * 1000;
+
+export class SyncService {
+  private readonly home: string;
+  private readonly stateFile: string;
+  private readonly pencilService: Pick<PencilService, "checkAvailability">;
+  private readonly runner?: CommandRunner;
+  private readonly autoRun: boolean;
+  private readonly now: () => Date;
+
+  constructor(options: SyncServiceOptions) {
+    this.home = options.home;
+    this.stateFile = join(options.home, "sync-state.yaml");
+    this.pencilService = options.pencilService;
+    this.runner = options.runner;
+    this.autoRun = options.autoRun ?? true;
+    this.now = options.now ?? (() => new Date());
+  }
+
+  async getStatus(): Promise<SyncStatus> {
+    await this.recoverFromCrash();
+    return await this.readStatus();
+  }
+
+  async startSync(): Promise<Extract<SyncStatus, { status: "running" }>> {
+    await this.recoverFromCrash();
+    await this.pencilService.checkAvailability();
+    await this.checkGit();
+
+    const current = await this.readStatus();
+    if (this.isNonStaleRunning(current)) {
+      throw new FormaError("SYNC_ALREADY_RUNNING", "Sync already running", { task_id: current.task_id });
+    }
+
+    const startedAt = this.now().toISOString();
+    const running: Extract<SyncStatus, { status: "running" }> = {
+      status: "running",
+      task_id: `sync-${randomBytes(8).toString("hex")}`,
+      started_at: startedAt,
+      progress: { phase: "git_clone", current: 0, total: 0 }
+    };
+
+    await this.writeStatus(running);
+    if (this.autoRun !== false) {
+      void this.runTask(running.task_id, startedAt).catch(() => undefined);
+    }
+    return running;
+  }
+
+  async recoverFromCrash(): Promise<SyncStatus> {
+    const status = await this.readStatus();
+    if (!this.isStaleRunning(status)) {
+      return status;
+    }
+
+    const failed = syncStatusSchema.parse({
+      status: "failed",
+      task_id: status.task_id,
+      error: { phase: "cleanup", message: "Previous sync task crashed or stopped" }
+    });
+    await this.writeStatus(failed);
+    return failed;
+  }
+
+  private async checkGit(): Promise<void> {
+    if (!this.runner) {
+      throw new FormaError("SYNC_GIT_NOT_FOUND", "Git CLI not found", { command: "git --version" });
+    }
+
+    try {
+      await this.runner.run("git", ["--version"], { timeoutMs: 5_000 });
+    } catch {
+      throw new FormaError("SYNC_GIT_NOT_FOUND", "Git CLI not found", { command: "git --version" });
+    }
+  }
+
+  private async runTask(taskId: string, _startedAt: string): Promise<void> {
+    await this.writeStatus({
+      status: "failed",
+      task_id: taskId,
+      error: { phase: "cleanup", message: "Sync task execution stopped before clone" }
+    });
+  }
+
+  private async readStatus(): Promise<SyncStatus> {
+    try {
+      return await readYamlAs(this.stateFile, syncStatusSchema);
+    } catch (error) {
+      if (isEnoent(error)) {
+        return { status: "idle" };
+      }
+      if (isIoError(error)) {
+        throw error;
+      }
+
+      const idle = syncStatusSchema.parse({ status: "idle" });
+      await this.writeStatus(idle);
+      return idle;
+    }
+  }
+
+  private async writeStatus(status: SyncStatus): Promise<void> {
+    await writeYamlAtomic(this.stateFile, syncStatusSchema.parse(status));
+  }
+
+  private isNonStaleRunning(status: SyncStatus): status is Extract<SyncStatus, { status: "running" }> {
+    return status.status === "running" && !this.isStaleRunning(status);
+  }
+
+  private isStaleRunning(status: SyncStatus): status is Extract<SyncStatus, { status: "running" }> {
+    if (status.status !== "running") {
+      return false;
+    }
+    const startedAt = new Date(status.started_at).getTime();
+    return Number.isFinite(startedAt) && startedAt < this.now().getTime() - syncStaleAfterMs;
+  }
+}
 
 const variableKeyMap: Record<string, keyof StyleVariables> = {
   primary: "primary",
@@ -207,6 +335,14 @@ export async function fileExists(file: string): Promise<boolean> {
     }
     throw error;
   }
+}
+
+function isEnoent(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function isIoError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && !(error instanceof ZodError);
 }
 
 function variableKeyForParsedLine(parent: string | undefined, key: string): keyof StyleVariables | undefined {
