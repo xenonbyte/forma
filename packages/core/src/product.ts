@@ -1,4 +1,4 @@
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { FormaError } from "./errors.js";
@@ -43,10 +43,12 @@ export interface ProductServiceOptions {
 }
 
 export class ProductService {
+  private readonly home: string;
   private readonly dataDir: string;
   private readonly indexFile: string;
 
   constructor(options: ProductServiceOptions) {
+    this.home = options.home;
     this.dataDir = join(options.home, "data");
     this.indexFile = join(this.dataDir, "products.yaml");
   }
@@ -81,10 +83,22 @@ export class ProductService {
 
   async markComponentsInitialized(productId: string): Promise<Product> {
     const product = await this.getProduct(productId);
+    const libraryFile = this.componentLibraryFile(product.id);
+    if (!(await fileExists(libraryFile))) {
+      throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
+        product_id: product.id,
+        missing: ["components_library"]
+      });
+    }
+    await assertValidComponentLibrary(libraryFile);
     const next = productSchema.parse({ ...product, components_initialized: true });
 
     await writeYamlAtomic(this.productFile(next.id), next);
     return next;
+  }
+
+  componentLibraryFile(productId: string): string {
+    return join(this.home, "library", `${this.parseProductId(productId)}.lib.pen`);
   }
 
   async getProduct(productId: string): Promise<Product> {
@@ -121,6 +135,39 @@ export class ProductService {
 
     return parsed.data;
   }
+}
+
+async function assertValidComponentLibrary(file: string): Promise<void> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(file, "utf8"));
+  } catch (error) {
+    throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", {
+      file,
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.children) || parsed.children.length === 0 || containsTruncationMarker(parsed)) {
+    throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", { file });
+  }
+}
+
+function containsTruncationMarker(value: unknown): boolean {
+  if (value === "...") {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return value.some(containsTruncationMarker);
+  }
+  if (isRecord(value)) {
+    return Object.values(value).some(containsTruncationMarker);
+  }
+  return false;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function fileExists(file: string): Promise<boolean> {

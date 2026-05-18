@@ -2,7 +2,7 @@ import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFormaStore, readYaml, writeYamlAtomic } from "../src/index.js";
+import { createFormaStore, DesignService, readYaml, writeYamlAtomic } from "../src/index.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -312,6 +312,19 @@ describe("DesignService", () => {
     });
   });
 
+  it("saveDesigns rejects non-PNG previews without creating design directories", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "invalid-preview");
+    await writeFile(output.previewPath, "not a png");
+
+    await expect(store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }])).rejects.toMatchObject({
+      code: "PEN_FILE_INVALID"
+    });
+
+    const entries = await readdir(join(home, "data", requirement.product_id, requirement.id), { withFileTypes: true });
+    expect(entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("D-")).map((entry) => entry.name)).toEqual([]);
+  });
+
   it("saveDesigns rejects missing requirements", async () => {
     const { home, requirement, store } = await createDesignStore();
     const output = await writeDesignOutput(home, "missing-requirement");
@@ -608,18 +621,49 @@ describe("DesignService", () => {
     await expect(store.designs.diffDesigns(design.id, 1, 2)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
-  it("exportDesignAsset validates that the node exists", async () => {
+  it("exportDesignAsset exports PNG from a node-specific pen instead of copying the full preview", async () => {
     const { home, requirement, store } = await createDesignStore();
     const output = await writeDesignOutput(home, "export");
     const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+    const exportingDesigns = new DesignService({
+      home,
+      products: store.products,
+      exporter: {
+        async exportPreview(penPath, previewPath) {
+          const pen = JSON.parse(await readFile(penPath, "utf8")) as { children: Array<{ id: string }> };
+          expect(pen.children).toEqual([expect.objectContaining({ id: "button" })]);
+          await writeFile(previewPath, alternatePng);
+        }
+      }
+    });
 
-    await expect(store.designs.exportDesignAsset(design.id, "button", "png")).resolves.toMatchObject({
+    const asset = await exportingDesigns.exportDesignAsset(design.id, "button", "png");
+
+    expect(asset).toMatchObject({
       design_id: design.id,
       node_id: "button",
       format: "png",
       path: join(home, "data", requirement.product_id, requirement.id, design.id, "exports", "button.png")
     });
-    await expect(store.designs.exportDesignAsset(design.id, "missing", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
+    expect(await readFile(asset.path)).toEqual(alternatePng);
+    expect(await readFile(asset.path)).not.toEqual(minimalPng);
+    await expect(exportingDesigns.exportDesignAsset(design.id, "missing", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
+  });
+
+  it("exportDesignAsset writes a real SVG with selected node metadata and geometry", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const output = await writeDesignOutput(home, "export-svg");
+    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
+
+    const asset = await store.designs.exportDesignAsset(design.id, "button", "svg");
+
+    const svg = await readFile(asset.path, "utf8");
+    expect(svg.trimStart()).toMatch(/^<svg\b/);
+    expect(svg).toContain('data-node-id="button"');
+    expect(svg).toContain('x="24"');
+    expect(svg).toContain('y="100"');
+    expect(svg).toContain('width="327"');
+    expect(svg).toContain('height="48"');
   });
 
   it("exportDesignAsset rejects missing designs", async () => {

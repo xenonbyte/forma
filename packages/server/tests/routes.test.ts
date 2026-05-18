@@ -1,7 +1,7 @@
 import { FormaError } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer, type FormaServer } from "../src/app.js";
 
@@ -546,6 +546,18 @@ describe("Fastify API routes", () => {
     expect(image.statusCode).toBe(200);
     expect(image.headers["content-type"]).toContain("image/png");
     expect(image.body).toBe("style preview");
+  });
+
+  it("auto-installs built-in styles for GET /api/styles on a fresh home", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-styles-"));
+    const app = buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const response = await app.inject({ method: "GET", url: "/api/styles" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "linear" })]));
   });
 
   it("returns 404 when a style preview image file is missing", async () => {

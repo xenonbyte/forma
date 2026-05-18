@@ -297,6 +297,31 @@ describe("PencilService", () => {
     expect(validRunner.calls.at(-1)?.args).toEqual(["--in", inputPen, "--export", outputPng, "--export-scale", "2"]);
   });
 
+  it("exportAsset passes the requested export type for PDFs", async () => {
+    const home = await createHome("pdf-export");
+    const inputPen = join(home, "input.pen");
+    const outputPdf = join(home, "output.pdf");
+    await writeFile(inputPen, JSON.stringify({ children: [{ id: "root" }] }));
+    const pdfRunner = createFakeRunner(async (_command, args) => {
+      expect(args).toContain("--export-type");
+      expect(args).toContain("pdf");
+      await writeFile(outputPdf, "%PDF-1.7\n");
+      return { stdout: "", stderr: "" };
+    });
+
+    await expect(new PencilService({ home, runner: pdfRunner }).exportAsset(inputPen, outputPdf, "pdf")).resolves.toBeUndefined();
+    expect(pdfRunner.calls.at(-1)?.args).toEqual([
+      "--in",
+      inputPen,
+      "--export",
+      outputPdf,
+      "--export-scale",
+      "2",
+      "--export-type",
+      "pdf"
+    ]);
+  });
+
   it("generatePageDesign runs expected pencil commands and returns temp paths", async () => {
     const home = await createHome("page-design");
     const fakeRunner = createFakeRunner(async (_command, args) => {
@@ -340,12 +365,13 @@ describe("PencilService", () => {
     const service = new PencilService({ home, runner: fakeRunner });
 
     const result = await service.generateComponents({
-      product_id: "P-comp",
+      product_id: "P-c0ffee",
       prompt: "Create controls",
       workspace: "/tmp/workspace"
     });
 
     await expect(access(result.penPath)).resolves.toBeUndefined();
+    await expect(access(join(home, "library", "P-c0ffee.lib.pen"))).resolves.toBeUndefined();
     expect(result.penPath.endsWith("components.lib.pen")).toBe(true);
     expect(fakeRunner.calls.find((call) => call.args.includes("--prompt"))?.args).toEqual([
       "--out",
@@ -353,6 +379,31 @@ describe("PencilService", () => {
       "--prompt",
       "Create controls"
     ]);
+  });
+
+  it("rejects unsafe component library product ids before running Pencil", async () => {
+    const home = await createHome("unsafe-components");
+    const fakeRunner = createFakeRunner(async (_command, args) => {
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args.includes("--out")) {
+        const out = args[args.indexOf("--out") + 1];
+        await writeFile(out, JSON.stringify({ children: [{ id: "button", type: "component" }] }));
+      }
+      return { stdout: "ok", stderr: "" };
+    });
+    const service = new PencilService({ home, runner: fakeRunner });
+
+    await expect(
+      service.generateComponents({
+        product_id: "../escape",
+        prompt: "Create controls",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({ code: "PRODUCT_NOT_FOUND" });
+
+    expect(fakeRunner.calls).toEqual([]);
+    await expect(access(join(home, "escape.lib.pen"))).rejects.toThrow();
+    await expect(access(join(dirname(home), "escape.lib.pen"))).rejects.toThrow();
   });
 
   it("rejects invalid generated pen files and releases the lock", async () => {
@@ -371,7 +422,7 @@ describe("PencilService", () => {
 
     await expect(
       service.generateComponents({
-        product_id: "P-invalid",
+        product_id: "P-badf00",
         prompt: "Create invalid output",
         workspace: "/tmp/workspace"
       })

@@ -24,7 +24,14 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     },
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
-      getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
+      getProduct: vi.fn(async () => ({
+        id: "P-123abc",
+        name: "App",
+        description: "Demo",
+        platform: "web",
+        style: { name: "linear" },
+        components_initialized: true
+      })),
       initProductConfig: vi.fn(async () => ({ id: "P-123abc", platform: "web" })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
       markComponentsInitialized: vi.fn(async () => ({ id: "P-123abc", components_initialized: true }))
@@ -154,6 +161,75 @@ describe("MCP forma tools", () => {
       workspace: "/tmp/workspace"
     });
     expect(store.designs.getDesignAnnotations).toHaveBeenCalledWith("D-12345678");
+  });
+
+  it("gates page design generation on product config and initialized components", async () => {
+    const pencil = {
+      generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" })),
+      generateComponents: vi.fn(async () => ({ tempDir: "/tmp/components", penPath: "/tmp/components/components.lib.pen" }))
+    };
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo", platform: "web", style: { name: "linear" } }))
+      }
+    });
+    const tools = createFormaTools(store, { pencil });
+
+    const result = await tools.generate_page_design({ product_id: "P-123abc", prompt: "Create checkout", workspace: "/tmp/workspace" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "PRODUCT_CONFIG_INCOMPLETE",
+      details: { product_id: "P-123abc", missing: ["components_initialized"] }
+    });
+    expect(pencil.generatePageDesign).not.toHaveBeenCalled();
+  });
+
+  it("gates component generation on existing product platform and style", async () => {
+    const pencil = {
+      generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" })),
+      generateComponents: vi.fn(async () => ({ tempDir: "/tmp/components", penPath: "/tmp/components/components.lib.pen" }))
+    };
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo", platform: "web" }))
+      }
+    });
+    const tools = createFormaTools(store, { pencil });
+
+    const result = await tools.generate_components({ product_id: "P-123abc", prompt: "Create controls", workspace: "/tmp/workspace" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "PRODUCT_CONFIG_INCOMPLETE",
+      details: { product_id: "P-123abc", missing: ["style"] }
+    });
+    expect(pencil.generateComponents).not.toHaveBeenCalled();
+  });
+
+  it("complete_product_init fails when no component library was persisted", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        markComponentsInitialized: vi.fn(async () => {
+          throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
+            product_id: "P-123abc",
+            missing: ["components_library"]
+          });
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.complete_product_init({ product_id: "P-123abc" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "PRODUCT_CONFIG_INCOMPLETE",
+      details: { missing: ["components_library"] }
+    });
   });
 
   it("init_product_config updates config for an existing product and does not create products", async () => {

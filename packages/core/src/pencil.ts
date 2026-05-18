@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { FormaError } from "./errors.js";
 
@@ -53,6 +53,7 @@ export interface GeneratedComponents {
    */
   tempDir: string;
   penPath: string;
+  libraryPath: string;
 }
 
 export interface PencilServiceOptions {
@@ -63,6 +64,7 @@ export interface PencilServiceOptions {
 
 const lockTimeoutMs = 5 * 60 * 1000;
 type InvalidLockMode = "throw" | "ignore";
+const productIdPattern = /^P-[a-f0-9]{6}$/;
 
 export const defaultPencilRunner: PencilRunner = {
   async run(command, args, options) {
@@ -164,14 +166,17 @@ export class PencilService {
   }
 
   async generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponents> {
+    const productId = parseProductId(input.product_id);
     await this.checkAvailability();
-    return await this.withLock({ operation: "components", product_id: input.product_id }, async () => {
+    return await this.withLock({ operation: "components", product_id: productId }, async () => {
       const tempDir = await this.createTempDir();
       try {
         const penPath = join(tempDir, "components.lib.pen");
+        const libraryPath = this.componentLibraryPath(productId);
         await this.runner.run("pencil", ["--out", penPath, "--prompt", input.prompt]);
         await this.validatePenFile(penPath);
-        return { penPath, tempDir };
+        await copyFileAtomic(penPath, libraryPath);
+        return { penPath, tempDir, libraryPath };
       } catch (error) {
         await rm(tempDir, { recursive: true, force: true });
         throw error;
@@ -180,12 +185,23 @@ export class PencilService {
   }
 
   async exportPreview(inputPen: string, outputPng: string): Promise<void> {
-    await this.runner.run("pencil", ["--in", inputPen, "--export", outputPng, "--export-scale", "2"]);
-    const output = await readFile(outputPng).catch((error: unknown) => {
-      throw new FormaError("PEN_FILE_INVALID", "Preview export is invalid", { file: outputPng, cause: errorMessage(error) });
+    await this.exportAsset(inputPen, outputPng, "png");
+  }
+
+  async exportAsset(inputPen: string, output: string, format: "png" | "pdf"): Promise<void> {
+    const args = ["--in", inputPen, "--export", output, "--export-scale", "2"];
+    if (format !== "png") {
+      args.push("--export-type", format);
+    }
+    await this.runner.run("pencil", args);
+    const bytes = await readFile(output).catch((error: unknown) => {
+      throw new FormaError("PEN_FILE_INVALID", "Export is invalid", { file: output, cause: errorMessage(error) });
     });
-    if (!hasPngSignature(output)) {
-      throw new FormaError("PEN_FILE_INVALID", "Preview export is invalid", { file: outputPng });
+    if (format === "png" && !hasPngSignature(bytes)) {
+      throw new FormaError("PEN_FILE_INVALID", "Export is invalid", { file: output });
+    }
+    if (format === "pdf" && !hasPdfSignature(bytes)) {
+      throw new FormaError("PEN_FILE_INVALID", "Export is invalid", { file: output });
     }
   }
 
@@ -284,6 +300,10 @@ export class PencilService {
     await mkdir(tempDir, { recursive: true });
     return tempDir;
   }
+
+  private componentLibraryPath(productId: string): string {
+    return join(this.home, "library", `${parseProductId(productId)}.lib.pen`);
+  }
 }
 
 function defaultIsPidAlive(pid: number): boolean {
@@ -320,6 +340,13 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
 }
 
+function parseProductId(productId: string): string {
+  if (!productIdPattern.test(productId)) {
+    throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: productId });
+  }
+  return productId;
+}
+
 function createOwnerId(): string {
   return randomBytes(16).toString("hex");
 }
@@ -354,6 +381,23 @@ function hasPngSignature(value: Buffer): boolean {
     value[6] === 0x1a &&
     value[7] === 0x0a
   );
+}
+
+function hasPdfSignature(value: Buffer): boolean {
+  return value.length >= 5 && value.subarray(0, 5).toString("ascii") === "%PDF-";
+}
+
+async function copyFileAtomic(source: string, destination: string): Promise<void> {
+  const parentDir = dirname(destination);
+  await mkdir(parentDir, { recursive: true });
+  const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
+  try {
+    await copyFile(source, tempFile);
+    await rename(tempFile, destination);
+  } catch (error) {
+    await rm(tempFile, { force: true });
+    throw error;
+  }
 }
 
 function handleInvalidLock(mode: InvalidLockMode): undefined {

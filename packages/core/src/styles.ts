@@ -84,6 +84,9 @@ export class StyleService {
   }
 
   async listStyles(): Promise<StyleMetadata[]> {
+    if (!(await fileExists(this.stylesIndexFile))) {
+      return this.installBuiltInStyles();
+    }
     return (await readYamlAs(this.stylesIndexFile, stylesIndexSchema)).styles;
   }
 

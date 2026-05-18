@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -35,6 +35,8 @@ describe("product session and style services", () => {
         variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
       }
     });
+    await mkdir(join(store.home, "library"), { recursive: true });
+    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), JSON.stringify({ children: [{ id: "button", type: "component" }] }));
     await store.products.markComponentsInitialized(product.id);
     await store.sessions.setCurrentProduct(product.id);
 
@@ -152,6 +154,16 @@ describe("product session and style services", () => {
     await expect(store.styles.getStyle("missing")).rejects.toMatchObject({ code: "STYLE_NOT_FOUND" });
   });
 
+  it("auto-installs built-in styles when listing styles in a fresh home", async () => {
+    const store = await createTestStore();
+
+    const styles = await store.styles.listStyles();
+
+    expect(styles).toEqual(expect.arrayContaining([expect.objectContaining({ name: "linear" })]));
+    await expect(access(join(store.home, "styles", "styles.yaml"))).resolves.toBeUndefined();
+    await expect(access(join(store.home, "styles", "linear", "DESIGN.md"))).resolves.toBeUndefined();
+  });
+
   it("does not overwrite existing home styles on reinstall", async () => {
     const store = await createTestStore();
     await store.styles.installBuiltInStyles();
@@ -160,6 +172,35 @@ describe("product session and style services", () => {
     await store.styles.installBuiltInStyles();
 
     expect(await readFile(join(store.home, "styles", "linear", "DESIGN.md"), "utf8")).toBe("# Local Linear\n");
+  });
+
+  it("does not mark components initialized until a persisted component library exists", async () => {
+    const store = await createTestStore();
+    const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
+
+    await expect(store.products.markComponentsInitialized(product.id)).rejects.toMatchObject({
+      code: "PRODUCT_CONFIG_INCOMPLETE",
+      details: { missing: ["components_library"] }
+    });
+
+    await mkdir(join(store.home, "library"), { recursive: true });
+    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), JSON.stringify({ children: [{ id: "button", type: "component" }] }));
+
+    await expect(store.products.markComponentsInitialized(product.id)).resolves.toMatchObject({
+      id: product.id,
+      components_initialized: true
+    });
+  });
+
+  it("rejects invalid persisted component libraries", async () => {
+    const store = await createTestStore();
+    const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
+    await mkdir(join(store.home, "library"), { recursive: true });
+    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), "not json");
+
+    await expect(store.products.markComponentsInitialized(product.id)).rejects.toMatchObject({
+      code: "PEN_FILE_INVALID"
+    });
   });
 
   it("fills default style variables", async () => {

@@ -248,8 +248,16 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
       });
     }),
     update_requirement: tool("update_requirement", async (input) => store.requirements.updateRequirement(input)),
-    generate_page_design: tool("generate_page_design", async (input) => pencil.generatePageDesign(input)),
-    generate_components: tool("generate_components", async (input) => pencil.generateComponents(input)),
+    generate_page_design: tool("generate_page_design", async (input) => {
+      const product = await store.products.getProduct(input.product_id);
+      assertProductConfig(product, input.product_id, ["platform", "style", "components_initialized"]);
+      return pencil.generatePageDesign(input);
+    }),
+    generate_components: tool("generate_components", async (input) => {
+      const product = await store.products.getProduct(input.product_id);
+      assertProductConfig(product, input.product_id, ["platform", "style"]);
+      return pencil.generateComponents(input);
+    }),
     save_designs: tool("save_designs", async (input) => store.designs.saveDesigns(
       input.requirement_id,
       input.designs.map((design: z.infer<typeof saveDesignInputSchema>) => ({
@@ -405,4 +413,24 @@ class ToolError extends Error {
     super(message);
     this.name = "ToolError";
   }
+}
+
+function assertProductConfig(product: unknown, productId: string, fields: Array<"platform" | "style" | "components_initialized">): void {
+  const record = isRecord(product) ? product : {};
+  const missing = fields.filter((field) => {
+    if (field === "components_initialized") {
+      return record.components_initialized !== true;
+    }
+    return !record[field];
+  });
+  if (missing.length > 0) {
+    throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
+      product_id: productId,
+      missing
+    });
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

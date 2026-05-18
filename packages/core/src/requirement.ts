@@ -55,15 +55,22 @@ export interface RequirementServiceOptions {
   baseline: BaselineService;
 }
 
+interface RequirementServiceTestHooks {
+  afterBaselineUpdate?(): Promise<void> | void;
+  afterDocumentWrite?(): Promise<void> | void;
+}
+
 export class RequirementService {
   private readonly dataDir: string;
   private readonly products: ProductService;
   private readonly baseline: BaselineService;
+  private testHooks: RequirementServiceTestHooks;
 
   constructor(options: RequirementServiceOptions) {
     this.dataDir = join(options.home, "data");
     this.products = options.products;
     this.baseline = options.baseline;
+    this.testHooks = {};
   }
 
   async createEmptyRequirement(productId: string, title: string): Promise<Requirement> {
@@ -105,15 +112,7 @@ export class RequirementService {
       navigation: input.navigation
     });
 
-    await this.baseline.updateFromRequirement({
-      productId: next.product_id,
-      requirementId: next.id,
-      pages: next.pages,
-      navigation: mapNavigationToBaseline(next.pages, next.navigation)
-    });
-    await writeDocumentAtomic(this.documentFile(next.product_id, next.id), input.document_md);
-    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
-
+    await this.commitRequirementAndBaseline(next, input.document_md);
     return next;
   }
 
@@ -147,15 +146,7 @@ export class RequirementService {
       navigation: input.navigation
     });
 
-    await this.baseline.updateFromRequirement({
-      productId: next.product_id,
-      requirementId: next.id,
-      pages: next.pages,
-      navigation: mapNavigationToBaseline(next.pages, next.navigation)
-    });
-    await writeDocumentAtomic(this.documentFile(next.product_id, next.id), input.document_md);
-    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
-
+    await this.commitRequirementAndBaseline(next, input.document_md);
     return next;
   }
 
@@ -256,6 +247,35 @@ export class RequirementService {
     return join(this.dataDir, productId, requirementId, "document.md");
   }
 
+  private baselineFile(productId: string): string {
+    return join(this.dataDir, productId, "baseline", "baseline.yaml");
+  }
+
+  private async commitRequirementAndBaseline(requirement: Requirement, documentMd: string): Promise<void> {
+    const files = [
+      this.baselineFile(requirement.product_id),
+      this.documentFile(requirement.product_id, requirement.id),
+      this.requirementFile(requirement.product_id, requirement.id)
+    ];
+    const snapshots = await snapshotFiles(files);
+
+    try {
+      await this.baseline.updateFromRequirement({
+        productId: requirement.product_id,
+        requirementId: requirement.id,
+        pages: requirement.pages,
+        navigation: mapNavigationToBaseline(requirement.pages, requirement.navigation)
+      });
+      await this.testHooks.afterBaselineUpdate?.();
+      await writeDocumentAtomic(this.documentFile(requirement.product_id, requirement.id), documentMd);
+      await this.testHooks.afterDocumentWrite?.();
+      await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
+    } catch (error) {
+      await restoreSnapshots(snapshots);
+      throw error;
+    }
+  }
+
   private parseRequirementId(requirementId: string): string {
     const parsed = requirementIdSchema.safeParse(requirementId);
     if (!parsed.success) {
@@ -312,6 +332,45 @@ async function writeDocumentAtomic(file: string, content: string): Promise<void>
   const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
   try {
     await writeFile(tempFile, content, "utf8");
+    await rename(tempFile, file);
+  } catch (error) {
+    await rm(tempFile, { force: true });
+    throw error;
+  }
+}
+
+interface FileSnapshot {
+  file: string;
+  existed: boolean;
+  content?: Buffer;
+}
+
+async function snapshotFiles(files: string[]): Promise<FileSnapshot[]> {
+  return Promise.all(files.map(async (file) => {
+    if (!(await fileExists(file))) {
+      return { file, existed: false };
+    }
+    return { file, existed: true, content: await readFile(file) };
+  }));
+}
+
+async function restoreSnapshots(snapshots: FileSnapshot[]): Promise<void> {
+  for (const snapshot of snapshots) {
+    if (!snapshot.existed) {
+      await rm(snapshot.file, { force: true });
+      continue;
+    }
+    await writeFileAtomic(snapshot.file, snapshot.content ?? Buffer.alloc(0));
+  }
+}
+
+async function writeFileAtomic(file: string, content: string | Buffer): Promise<void> {
+  const parentDir = dirname(file);
+  await mkdir(parentDir, { recursive: true });
+
+  const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
+  try {
+    await writeFile(tempFile, content);
     await rename(tempFile, file);
   } catch (error) {
     await rm(tempFile, { force: true });

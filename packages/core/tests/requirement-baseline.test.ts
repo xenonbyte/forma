@@ -352,6 +352,61 @@ describe("requirement and baseline services", () => {
     });
   });
 
+  it("rolls back baseline changes when submit fails after baseline update", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Login");
+    (store.requirements as unknown as { testHooks?: { afterBaselineUpdate?: () => Promise<void> } }).testHooks = {
+      async afterBaselineUpdate() {
+        throw new Error("document write failed");
+      }
+    };
+
+    await expect(store.requirements.submitRequirement(validSubmit(req.id))).rejects.toThrow("document write failed");
+
+    await expect(store.baseline.getProductBaseline(product.id)).resolves.toEqual({
+      product_id: product.id,
+      pages: [],
+      navigation: []
+    });
+    await expect(readFile(join(store.home, "data", product.id, req.id, "document.md"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT"
+    });
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).resolves.toMatchObject({
+      status: "empty",
+      document_md: ""
+    });
+  });
+
+  it("rolls back baseline and document changes when update metadata write fails", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Login");
+    await store.requirements.submitRequirement(validSubmit(req.id));
+    (store.requirements as unknown as { testHooks?: { afterDocumentWrite?: () => Promise<void> } }).testHooks = {
+      async afterDocumentWrite() {
+        throw new Error("metadata write failed");
+      }
+    };
+
+    await expect(
+      store.requirements.updateRequirement({
+        requirement_id: req.id,
+        document_md: "# Login\nUpdated document",
+        pages: [{ page_id: `${req.id}-login`, name: "Updated Login", baseline_page: "login-updated" }],
+        expired_pages: [`${req.id}-login`],
+        navigation: []
+      })
+    ).rejects.toThrow("metadata write failed");
+
+    await expect(store.requirements.getRequirement({ requirement_id: req.id })).resolves.toMatchObject({
+      status: "submitted",
+      document_md: "# Login\nEmail password login",
+      pages: [expect.objectContaining({ page_id: `${req.id}-login`, baseline_page: "login" })]
+    });
+    const baseline = await store.baseline.getProductBaseline(product.id);
+    expect(baseline.pages).toEqual([expect.objectContaining({ id: "login", name: "登录页" })]);
+    expect(baseline.pages.map((page) => page.id)).not.toContain("login-updated");
+  });
+
   it("deduplicates baseline source requirements when the same requirement updates a page", async () => {
     const { store, product } = await createConfiguredStore();
     const req = await store.requirements.createEmptyRequirement(product.id, "Login");

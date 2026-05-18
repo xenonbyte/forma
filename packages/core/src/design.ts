@@ -60,6 +60,7 @@ export interface DesignValidator {
 
 export interface DesignExporter {
   exportPreview?(penPath: string, previewPath: string): Promise<void>;
+  exportAsset?(penPath: string, outputPath: string, format: "png" | "pdf"): Promise<void>;
 }
 
 export interface DesignServiceOptions {
@@ -88,6 +89,7 @@ interface CommittedDesignSave {
 }
 
 export class DesignService {
+  private readonly home: string;
   private readonly dataDir: string;
   private readonly products: ProductService;
   private readonly validator: DesignValidator;
@@ -95,6 +97,7 @@ export class DesignService {
   private testHooks: DesignServiceTestHooks;
 
   constructor(options: DesignServiceOptions) {
+    this.home = options.home;
     this.dataDir = join(options.home, "data");
     this.products = options.products;
     this.validator = options.validator ?? new PencilService({ home: options.home });
@@ -223,7 +226,8 @@ export class DesignService {
     const design = await this.readDesignById(designId);
     const safeNodeId = this.parseExportNodeId(nodeId, design.id);
     const safeFormat = this.parseExportFormat(format);
-    const node = (await this.getDesignAnnotations(design.id)).find((item) => item.id === safeNodeId);
+    const annotations = await this.getDesignAnnotations(design.id);
+    const node = annotations.find((item) => item.id === safeNodeId);
     if (!node) {
       throw new FormaError("NODE_NOT_FOUND", "Node not found", { design_id: design.id, node_id: safeNodeId });
     }
@@ -231,13 +235,13 @@ export class DesignService {
     const exportsDir = join(this.designDir(design), "exports");
     const output = join(exportsDir, `${safeNodeId}.${safeFormat}`);
     await mkdir(exportsDir, { recursive: true });
-    if (safeFormat === "png") {
-      await copyFileAtomic(join(this.designDir(design), "preview@2x.png"), output);
+    if (safeFormat === "svg") {
+      await writeTextAtomic(output, svgForNode(node, annotations));
     } else {
-      await writePlaceholderAtomic(output, `${safeFormat} export placeholder for ${design.id}/${safeNodeId}\n`);
+      await this.exportRasterNode(design, safeNodeId, output, safeFormat);
     }
 
-    return { design_id: design.id, node_id: safeNodeId, format: safeFormat, path: output, source: "preview" };
+    return { design_id: design.id, node_id: safeNodeId, format: safeFormat, path: output, source: "node" };
   }
 
   private async stageDesignSaves(requirement: Requirement, inputs: SaveDesignInput[], stageRoot: string): Promise<StagedDesignSave[]> {
@@ -347,7 +351,33 @@ export class DesignService {
   private async stageOutput(input: SaveDesignInput, stageDir: string): Promise<void> {
     await mkdir(stageDir, { recursive: true });
     await copyFileAtomic(input.penPath, join(stageDir, "design.pen"));
+    await validatePngFile(input.previewPath);
     await copyFileAtomic(input.previewPath, join(stageDir, "preview@2x.png"));
+  }
+
+  private async exportRasterNode(design: Design, nodeId: string, output: string, format: "png" | "pdf"): Promise<void> {
+    const sourcePenPath = join(this.designDir(design), "design.pen");
+    const pen = await this.readPenDocument(sourcePenPath);
+    const selectedNode = findPenNode(pen, nodeId);
+    if (!selectedNode) {
+      throw new FormaError("NODE_NOT_FOUND", "Node not found", { design_id: design.id, node_id: nodeId });
+    }
+
+    const tempDir = join(this.designDir(design), "exports", `.export-${randomBytes(8).toString("hex")}`);
+    const tempPen = join(tempDir, "node.pen");
+    await mkdir(tempDir, { recursive: true });
+    try {
+      await writeFile(tempPen, JSON.stringify({ ...copyPenContext(pen), children: [selectedNode] }, null, 2), "utf8");
+      if (this.exporter?.exportAsset) {
+        await this.exporter.exportAsset(tempPen, output, format);
+      } else if (format === "png" && this.exporter?.exportPreview) {
+        await this.exporter.exportPreview(tempPen, output);
+      } else {
+        await new PencilService({ home: this.home }).exportAsset(tempPen, output, format);
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }
 
   private async commitExistingDesignStage(stageDir: string, targetDir: string, design: Design): Promise<void> {
@@ -518,6 +548,25 @@ export class DesignService {
     }
   }
 
+  private async readPenDocument(penPath: string): Promise<Record<string, unknown>> {
+    try {
+      const parsed = JSON.parse(await readFile(penPath, "utf8"));
+      flattenStoredPen(parsed);
+      if (isRecord(parsed)) {
+        return parsed;
+      }
+    } catch (error) {
+      if (error instanceof FormaError) {
+        throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", { file: penPath, cause: error.message });
+      }
+      throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", {
+        file: penPath,
+        cause: error instanceof Error ? error.message : String(error)
+      });
+    }
+    throw new FormaError("PEN_FILE_INVALID", "Pen file is invalid", { file: penPath });
+  }
+
   private requirementDir(requirement: Requirement): string {
     return join(this.dataDir, requirement.product_id, requirement.id);
   }
@@ -617,7 +666,7 @@ async function copyFileAtomic(source: string, destination: string): Promise<void
   }
 }
 
-async function writePlaceholderAtomic(destination: string, content: string): Promise<void> {
+async function writeTextAtomic(destination: string, content: string): Promise<void> {
   const parentDir = dirname(destination);
   await mkdir(parentDir, { recursive: true });
   const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
@@ -628,6 +677,116 @@ async function writePlaceholderAtomic(destination: string, content: string): Pro
     await rm(tempFile, { force: true });
     throw error;
   }
+}
+
+async function validatePngFile(file: string): Promise<void> {
+  const bytes = await readFile(file).catch((error: unknown) => {
+    throw new FormaError("PEN_FILE_INVALID", "Preview file is invalid", {
+      file,
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  });
+  if (!hasPngSignature(bytes)) {
+    throw new FormaError("PEN_FILE_INVALID", "Preview file is invalid", { file });
+  }
+}
+
+function hasPngSignature(value: Buffer): boolean {
+  return (
+    value.length >= 8 &&
+    value[0] === 0x89 &&
+    value[1] === 0x50 &&
+    value[2] === 0x4e &&
+    value[3] === 0x47 &&
+    value[4] === 0x0d &&
+    value[5] === 0x0a &&
+    value[6] === 0x1a &&
+    value[7] === 0x0a
+  );
+}
+
+function findPenNode(pen: Record<string, unknown>, nodeId: string): Record<string, unknown> | undefined {
+  const roots = Array.isArray(pen.children) ? pen.children : [];
+  for (const root of roots) {
+    const found = findNodeInTree(root, nodeId);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+function findNodeInTree(node: unknown, nodeId: string): Record<string, unknown> | undefined {
+  if (!isRecord(node)) {
+    return undefined;
+  }
+  if (node.id === nodeId) {
+    return node;
+  }
+  const children = [
+    ...(Array.isArray(node.children) ? node.children : []),
+    ...(Array.isArray(node.layers) ? node.layers : [])
+  ];
+  for (const child of children) {
+    const found = findNodeInTree(child, nodeId);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+function copyPenContext(pen: Record<string, unknown>): Record<string, unknown> {
+  const context: Record<string, unknown> = {};
+  if (isRecord(pen.variables)) {
+    context.variables = pen.variables;
+  }
+  return context;
+}
+
+function svgForNode(root: AnnotationNode, annotations: AnnotationNode[]): string {
+  const nodes = annotations.filter((node) => node.id === root.id || isDescendant(node, root.id, annotations));
+  const width = Math.max(1, root.width);
+  const height = Math.max(1, root.height);
+  const body = nodes.map(svgElementForNode).join("\n  ");
+  return [
+    `<svg xmlns="http://www.w3.org/2000/svg" data-node-id="${escapeXml(root.id)}" data-node-name="${escapeXml(root.name)}" x="${root.x}" y="${root.y}" width="${width}" height="${height}" viewBox="${root.x} ${root.y} ${width} ${height}">`,
+    `  <title>${escapeXml(root.name)}</title>`,
+    `  ${body}`,
+    "</svg>\n"
+  ].join("\n");
+}
+
+function isDescendant(node: AnnotationNode, rootId: string, annotations: AnnotationNode[]): boolean {
+  let parentId = node.parent_id;
+  while (parentId) {
+    if (parentId === rootId) {
+      return true;
+    }
+    parentId = annotations.find((candidate) => candidate.id === parentId)?.parent_id;
+  }
+  return false;
+}
+
+function svgElementForNode(node: AnnotationNode): string {
+  const common = `data-node-id="${escapeXml(node.id)}" data-node-name="${escapeXml(node.name)}"`;
+  if (node.type === "text" || node.content) {
+    const fontSize = node.fontSize ?? 16;
+    return `<text ${common} x="${node.x}" y="${node.y + fontSize}" font-size="${fontSize}"${node.fill ? ` fill="${escapeXml(node.fill)}"` : ""}>${escapeXml(node.content ?? node.name)}</text>`;
+  }
+  return `<rect ${common} x="${node.x}" y="${node.y}" width="${Math.max(1, node.width)}" height="${Math.max(1, node.height)}"${node.fill ? ` fill="${escapeXml(node.fill)}"` : " fill=\"none\""}${node.stroke ? ` stroke="${escapeXml(node.stroke)}"` : ""} />`;
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function fileExists(file: string): Promise<boolean> {
