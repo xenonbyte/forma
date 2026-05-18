@@ -111,9 +111,13 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
 
   const handleSync = async () => {
     try {
-      await client.syncStyles();
-      const status = await client.getSyncStatus();
-      setSyncStatus(status);
+      const started = await client.syncStyles();
+      setSyncStatus({
+        progress: { current: 0, phase: "git_clone", total: 0 },
+        started_at: new Date().toISOString(),
+        status: started.status,
+        task_id: started.task_id
+      });
     } catch (error: unknown) {
       setSyncStatus({ error: { message: formatApiError(error).message, phase: "cleanup" }, status: "failed" });
     }
@@ -137,14 +141,6 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
     return (
       <StatePanel state="error" title="Style library unavailable">
         {state.error.error_code} - {state.error.message}
-      </StatePanel>
-    );
-  }
-
-  if (state.styles.length === 0) {
-    return (
-      <StatePanel state="empty" title="No styles">
-        Installed styles will appear here.
       </StatePanel>
     );
   }
@@ -202,7 +198,11 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
       {syncSummary(syncStatus) ? <p className="text-sm text-zinc-600">{syncSummary(syncStatus)}</p> : null}
       {syncStatus?.status === "failed" ? <p className="text-sm text-red-600">{syncStatus.error.message}</p> : null}
 
-      {filteredStyles.length === 0 ? (
+      {state.styles.length === 0 ? (
+        <StatePanel state="empty" title="No styles">
+          Installed styles will appear here.
+        </StatePanel>
+      ) : filteredStyles.length === 0 ? (
         <StatePanel state="empty" title="No styles match">
           Adjust search or variable filter.
         </StatePanel>
