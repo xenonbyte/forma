@@ -157,7 +157,25 @@ export function classifyStyle(markdown: string): Classification {
 }
 
 export function describeStyle(markdown: string): string {
-  for (const line of markdown.split(/\r?\n/)) {
+  const lines = markdown.split(/\r?\n/);
+  let bodyStart = 0;
+
+  if (lines[0]?.trim() === "---") {
+    for (let index = 1; index < lines.length; index += 1) {
+      const trimmed = lines[index].trim();
+      if (trimmed === "---") {
+        bodyStart = index + 1;
+        break;
+      }
+
+      const description = /^description:\s*(.+?)\s*$/.exec(trimmed);
+      if (description) {
+        return normalizeDescription(description[1]).slice(0, 50);
+      }
+    }
+  }
+
+  for (const line of lines.slice(bodyStart)) {
     const trimmed = line.trim();
     if (trimmed && !trimmed.startsWith("#")) {
       return trimmed.slice(0, 50);
@@ -214,4 +232,8 @@ function normalizeVariableValue(value: string, variableKey: keyof StyleVariables
     return unquoted.split(",")[0].trim();
   }
   return unquoted;
+}
+
+function normalizeDescription(value: string): string {
+  return value.replace(/^["']|["']$/g, "").trim();
 }

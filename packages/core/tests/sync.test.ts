@@ -111,6 +111,32 @@ spacing:
     expect(describeStyle("# Title\n\n123456789012345678901234567890123456789012345678901234567890")).toBe(
       "12345678901234567890123456789012345678901234567890"
     );
+    expect(
+      describeStyle(`---
+description: "A photography-first interface with immersive gallery controls and editorial spacing."
+colors:
+  primary: "#0066cc"
+---
+# Title
+
+Body copy should not win over front matter description.`)
+    ).toBe("A photography-first interface with immersive galle");
+    expect(
+      describeStyle(`---
+colors:
+  primary: "#0066cc"
+---
+# Title
+
+Body copy should be used after front matter.`)
+    ).toBe("Body copy should be used after front matter.");
+    expect(
+      describeStyle(`---
+colors:
+  primary: "#0066cc"
+---
+# Title`)
+    ).toBe("Style generated from DESIGN.md");
     expect(describeStyle("# Title")).toBe("Style generated from DESIGN.md");
   });
 
