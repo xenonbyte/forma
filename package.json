@@ -9,6 +9,7 @@
   "scripts": {
     "build": "pnpm --filter './packages/*' --filter '!@xenonbyte/forma-cli' -r --if-present build && pnpm --filter @xenonbyte/forma-cli build",
     "test": "vitest run",
+    "test:live": "pnpm --filter @xenonbyte/forma-core build && tsx scripts/live-style-sync.ts",
     "typecheck": "pnpm -r --if-present typecheck",
     "pack:cli": "pnpm --filter @xenonbyte/forma-cli pack",
     "dev:web": "pnpm --filter @xenonbyte/forma-web dev",
