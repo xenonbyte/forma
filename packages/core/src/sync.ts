@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { access, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { access, copyFile, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { z, ZodError } from "zod";
 import { FormaError } from "./errors.js";
 import type { PencilRunner, PencilService } from "./pencil.js";
@@ -55,9 +56,11 @@ export interface ScannedStyleDirectory {
   designMdPath: string;
 }
 
+type SyncPencilService = Pick<PencilService, "checkAvailability" | "withLock" | "validatePenFile" | "exportPreview">;
+
 export interface SyncServiceOptions {
   home: string;
-  pencilService: Pick<PencilService, "checkAvailability">;
+  pencilService: SyncPencilService;
   runner?: CommandRunner;
   autoRun?: boolean;
   now?: () => Date;
@@ -74,11 +77,36 @@ const defaultStyleVariables: StyleVariables = {
 };
 
 const syncStaleAfterMs = 10 * 60 * 1000;
+const styleRepoUrl = "https://github.com/VoltAgent/awesome-design-md.git";
+const previewBatchSize = 5;
+const lockRetryDelayMs = 2_000;
+const lockRetryCount = 15;
+
+type ScannedStyle = {
+  name: string;
+  designMdPath: string;
+  designMd: string;
+  description: string;
+  category: Classification;
+  variables: StyleVariables;
+  sha256: string;
+  status: "added" | "updated" | "unchanged";
+  previewSucceeded: boolean;
+};
+
+class SyncTaskFailure extends Error {
+  constructor(
+    public readonly phase: SyncPhase,
+    message: string
+  ) {
+    super(message);
+  }
+}
 
 export class SyncService {
   private readonly home: string;
   private readonly stateFile: string;
-  private readonly pencilService: Pick<PencilService, "checkAvailability">;
+  private readonly pencilService: SyncPencilService;
   private readonly runner?: CommandRunner;
   private readonly autoRun: boolean;
   private readonly now: () => Date;
@@ -149,12 +177,198 @@ export class SyncService {
     }
   }
 
-  private async runTask(taskId: string, _startedAt: string): Promise<void> {
+  private async runTask(taskId: string, startedAt: string): Promise<void> {
+    const tempRepoDir = join(tmpdir(), `forma-sync-${taskId}`);
+    const stylesDir = join(this.home, "styles");
+    let currentPhase: SyncPhase = "git_clone";
+
+    try {
+      if (!this.runner) {
+        throw new SyncTaskFailure("git_clone", "Git CLI not found");
+      }
+
+      await rm(tempRepoDir, { recursive: true, force: true });
+      await this.writeProgress(taskId, startedAt, "git_clone", 0, 0);
+      await this.runner.run("git", ["clone", "--depth", "1", styleRepoUrl, tempRepoDir], { timeoutMs: 60_000 });
+
+      currentPhase = "scanning";
+      await this.writeProgress(taskId, startedAt, "scanning", 0, 0);
+      const scanned = await scanStyleDirectories(tempRepoDir);
+      if (scanned.length === 0) {
+        throw new SyncTaskFailure("scanning", "Repository structure changed: no style directories found");
+      }
+
+      currentPhase = "extracting_variables";
+      await this.writeProgress(taskId, startedAt, "extracting_variables", 0, scanned.length);
+      const styles: ScannedStyle[] = [];
+      for (const style of scanned) {
+        const designMd = await readFile(style.designMdPath, "utf8");
+        const sha256 = sha256Hex(designMd);
+        const existingDesignMd = join(stylesDir, style.name, "DESIGN.md");
+        const status = await this.compareLocalStyle(existingDesignMd, sha256);
+        styles.push({
+          name: style.name,
+          designMdPath: style.designMdPath,
+          designMd,
+          description: describeStyle(designMd),
+          category: classifyStyle(designMd),
+          variables: extractVariablesFromDesignMd(designMd),
+          sha256,
+          status,
+          previewSucceeded: false
+        });
+        await this.writeProgress(taskId, startedAt, "extracting_variables", styles.length, scanned.length, style.name);
+      }
+
+      currentPhase = "rendering_previews";
+      await this.writeProgress(taskId, startedAt, "rendering_previews", 0, styles.length);
+      let stylesFailed = 0;
+      let rendered = 0;
+      for (const batch of chunk(styles, previewBatchSize)) {
+        const batchFailed = await this.renderPreviewBatchWithLock(batch, taskId, startedAt, rendered, styles.length);
+        stylesFailed += batchFailed;
+        rendered += batch.length;
+        await this.writeProgress(taskId, startedAt, "rendering_previews", rendered, styles.length, batch.at(-1)?.name);
+      }
+
+      currentPhase = "updating_index";
+      await this.writeProgress(taskId, startedAt, "updating_index", 0, styles.length);
+      for (const [index, style] of styles.entries()) {
+        await copyFileAtomic(style.designMdPath, join(stylesDir, style.name, "DESIGN.md"));
+        await this.writeProgress(taskId, startedAt, "updating_index", index + 1, styles.length, style.name);
+      }
+
+      const completedAt = this.now().toISOString();
+      await writeYamlAtomic(join(stylesDir, "styles.yaml"), {
+        last_synced: completedAt,
+        styles: styles.map((style) => ({
+          name: style.name,
+          description: style.description,
+          category: style.category,
+          design_md_path: `styles/${style.name}/DESIGN.md`,
+          sha256: style.sha256,
+          variables: style.variables
+        }))
+      });
+
+      await this.writeStatus({
+        status: "idle",
+        last_sync: {
+          completed_at: completedAt,
+          styles_total: styles.length,
+          styles_updated: styles.filter((style) => style.status === "updated").length,
+          styles_added: styles.filter((style) => style.status === "added").length,
+          styles_failed: stylesFailed,
+          duration_ms: Math.max(0, this.now().getTime() - new Date(startedAt).getTime())
+        }
+      });
+    } catch (error) {
+      const failure = error instanceof SyncTaskFailure ? error : new SyncTaskFailure(currentPhase, errorMessage(error));
+      await this.writeStatus({
+        status: "failed",
+        task_id: taskId,
+        error: { phase: failure.phase, message: failure.message }
+      });
+    } finally {
+      await rm(tempRepoDir, { recursive: true, force: true });
+    }
+  }
+
+  private async writeProgress(
+    taskId: string,
+    startedAt: string,
+    phase: SyncPhase,
+    current: number,
+    total: number,
+    currentStyle?: string
+  ): Promise<void> {
     await this.writeStatus({
-      status: "failed",
+      status: "running",
       task_id: taskId,
-      error: { phase: "cleanup", message: "Sync task execution stopped before clone" }
+      started_at: startedAt,
+      progress: {
+        phase,
+        current,
+        total,
+        ...(currentStyle ? { current_style: currentStyle } : {})
+      }
     });
+  }
+
+  private async compareLocalStyle(existingDesignMd: string, nextSha256: string): Promise<ScannedStyle["status"]> {
+    try {
+      const previous = await readFile(existingDesignMd, "utf8");
+      return sha256Hex(previous) === nextSha256 ? "unchanged" : "updated";
+    } catch (error) {
+      if (isEnoent(error)) {
+        return "added";
+      }
+      throw error;
+    }
+  }
+
+  private async renderPreviewBatchWithLock(
+    batch: ScannedStyle[],
+    taskId: string,
+    startedAt: string,
+    completedBeforeBatch: number,
+    total: number
+  ): Promise<number> {
+    for (let retry = 0; retry <= lockRetryCount; retry += 1) {
+      try {
+        return await this.pencilService.withLock({ operation: "style-sync", product_id: "styles" }, async () => {
+          let failed = 0;
+          for (const [index, style] of batch.entries()) {
+            try {
+              await this.renderStylePreview(style);
+              style.previewSucceeded = true;
+            } catch {
+              failed += 1;
+            }
+            await this.writeProgress(
+              taskId,
+              startedAt,
+              "rendering_previews",
+              completedBeforeBatch + index + 1,
+              total,
+              style.name
+            );
+          }
+          return failed;
+        });
+      } catch (error) {
+        if (!isPencilLockHeld(error)) {
+          return batch.length;
+        }
+        if (retry === lockRetryCount) {
+          return batch.length;
+        }
+        await delay(lockRetryDelayMs);
+      }
+    }
+    return batch.length;
+  }
+
+  private async renderStylePreview(style: ScannedStyle): Promise<void> {
+    const previewTempDir = join(tmpdir(), `forma-sync-preview-${randomBytes(8).toString("hex")}`);
+    try {
+      await mkdir(previewTempDir, { recursive: true });
+      const penPath = join(previewTempDir, `${style.name}.pen`);
+      const pngPath = join(previewTempDir, `${style.name}.png`);
+      if (!this.runner) {
+        throw new Error("Pencil runner unavailable");
+      }
+      await this.runner.run("pencil", ["--out", penPath, "--prompt", previewPrompt(style)]);
+      await this.pencilService.validatePenFile(penPath);
+      await this.pencilService.exportPreview(penPath, pngPath);
+      const output = await stat(pngPath);
+      if (output.size <= 0) {
+        throw new Error("Preview export is empty");
+      }
+      await copyFileAtomic(pngPath, join(this.home, "styles", style.name, "preview@2x.png"));
+    } finally {
+      await rm(previewTempDir, { recursive: true, force: true });
+    }
   }
 
   private async readStatus(): Promise<SyncStatus> {
@@ -212,6 +426,59 @@ const variableKeyMap: Record<string, keyof StyleVariables> = {
   md: "border-radius",
   xs: "spacing-unit"
 };
+
+function previewPrompt(style: ScannedStyle): string {
+  const variables = [
+    `--primary: ${style.variables.primary}`,
+    `--background: ${style.variables.background}`,
+    `--text-primary: ${style.variables["text-primary"]}`,
+    `--font-heading: ${style.variables["font-heading"]}`,
+    `--font-body: ${style.variables["font-body"]}`,
+    `--border-radius: ${style.variables["border-radius"]}`,
+    `--spacing-unit: ${style.variables["spacing-unit"]}`
+  ];
+
+  return [
+    "Generate a Forma style preview pen from the existing preview template.",
+    `Style name: ${style.name}`,
+    "Only update style variables. Do not add, remove, rename, resize, or reposition nodes.",
+    "Use these exact variable names and values:",
+    ...variables
+  ].join("\n");
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isPencilLockHeld(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "PENCIL_LOCK_HELD";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function copyFileAtomic(source: string, destination: string): Promise<void> {
+  const parentDir = dirname(destination);
+  await mkdir(parentDir, { recursive: true });
+  const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
+  try {
+    await copyFile(source, tempFile);
+    await rename(tempFile, destination);
+  } catch (error) {
+    await rm(tempFile, { force: true });
+    throw error;
+  }
+}
 
 type Classification = "AI 产品" | "工具类" | "电商" | "金融" | "社交" | "健康" | "其他";
 

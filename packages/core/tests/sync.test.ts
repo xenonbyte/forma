@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,8 +16,133 @@ import {
   syncStatusSchema
 } from "../src/index.js";
 
+const minimalPng = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
+  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00,
+  0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
+  0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
+]);
+
 async function tempDir() {
   return mkdtemp(join(tmpdir(), "forma-sync-test-"));
+}
+
+type RunnerCall = {
+  command: string;
+  args: string[];
+  options?: { cwd?: string; timeoutMs?: number };
+};
+
+type StyleFixture = {
+  name: string;
+  designMd: string;
+};
+
+function designMd(name: string, primary: string) {
+  return [
+    `# ${name}`,
+    "",
+    `${name} product interface.`,
+    `primary: ${primary}`,
+    "background: #ffffff",
+    "text-primary: #111827",
+    "heading-font: Inter",
+    "body-font: Inter",
+    "border-radius: 12px",
+    "spacing-unit: 8px",
+    ""
+  ].join("\n");
+}
+
+function createFakeRunner(styles: StyleFixture[], options: { failPencilFor?: string } = {}) {
+  const calls: RunnerCall[] = [];
+  const prompts: string[] = [];
+  const runner = {
+    async run(command: string, args: string[], runOptions?: { cwd?: string; timeoutMs?: number }) {
+      calls.push({ command, args, options: runOptions });
+
+      if (command === "git" && args[0] === "--version") {
+        return { stdout: "git version 2\n", stderr: "" };
+      }
+
+      if (command === "git" && args[0] === "clone") {
+        const target = args.at(-1);
+        if (!target) {
+          throw new Error("missing clone target");
+        }
+        await writeStyleRepo(target, styles);
+        return { stdout: "cloned\n", stderr: "" };
+      }
+
+      if (command === "pencil") {
+        const outIndex = args.indexOf("--out");
+        const promptIndex = args.indexOf("--prompt");
+        const out = outIndex >= 0 ? args[outIndex + 1] : undefined;
+        const prompt = promptIndex >= 0 ? args[promptIndex + 1] : "";
+        prompts.push(prompt);
+        if (options.failPencilFor && prompt.includes(`Style name: ${options.failPencilFor}`)) {
+          throw new Error(`pencil failed for ${options.failPencilFor}`);
+        }
+        if (!out) {
+          throw new Error("missing --out");
+        }
+        await writeFile(out, JSON.stringify({ children: [{ id: "root", type: "frame" }] }), "utf8");
+        return { stdout: "ok\n", stderr: "" };
+      }
+
+      return { stdout: "ok\n", stderr: "" };
+    }
+  };
+  return { runner, calls, prompts };
+}
+
+function createFakePencilService(options: { failExportFor?: string; lockHeld?: boolean } = {}) {
+  return {
+    async checkAvailability() {
+      return undefined;
+    },
+    async withLock<T>(_context: { operation: string; product_id: string }, fn: () => Promise<T>): Promise<T> {
+      if (options.lockHeld) {
+        const error = new Error("Pencil lock is held") as Error & { code: string };
+        error.code = "PENCIL_LOCK_HELD";
+        throw error;
+      }
+      return await fn();
+    },
+    async validatePenFile(filePath: string) {
+      JSON.parse(await readFile(filePath, "utf8"));
+    },
+    async exportPreview(inputPen: string, outputPng: string) {
+      if (options.failExportFor && inputPen.includes(options.failExportFor)) {
+        throw new Error(`export failed for ${options.failExportFor}`);
+      }
+      await writeFile(outputPng, minimalPng);
+    }
+  };
+}
+
+async function writeStyleRepo(root: string, styles: StyleFixture[]) {
+  await mkdir(root, { recursive: true });
+  for (const style of styles) {
+    const dir = join(root, style.name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "DESIGN.md"), style.designMd, "utf8");
+  }
+}
+
+async function waitForSync(service: SyncService, fakeTimers = false) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const status = await service.getStatus();
+    if (status.status !== "running") {
+      return status;
+    }
+    if (fakeTimers) {
+      await vi.advanceTimersByTimeAsync(2_000);
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw new Error("sync did not finish");
 }
 
 afterEach(() => {
@@ -426,5 +551,180 @@ describe("SyncService state, gates, and recovery", () => {
     });
 
     await expect(service.startSync()).rejects.toBeInstanceOf(FormaError);
+  });
+});
+
+describe("SyncService task execution", () => {
+  it("clones the design repository, renders previews, and writes the styles index", async () => {
+    const home = await tempDir();
+    const styles = [
+      { name: "alpha", designMd: designMd("alpha", "#0055cc") },
+      { name: "beta", designMd: designMd("beta", "#cc5500") }
+    ];
+    const { runner, calls, prompts } = createFakeRunner(styles);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+
+    expect(status).toEqual({
+      status: "idle",
+      last_sync: {
+        completed_at: "2026-05-18T00:00:00.000Z",
+        styles_total: 2,
+        styles_updated: 0,
+        styles_added: 2,
+        styles_failed: 0,
+        duration_ms: 0
+      }
+    });
+    const index = await readYaml<{ last_synced: string; styles: Array<{ name: string; design_md_path: string }> }>(
+      join(home, "styles", "styles.yaml")
+    );
+    expect(index.last_synced).toBe("2026-05-18T00:00:00.000Z");
+    expect(index.styles.map((style) => style.name)).toEqual(["alpha", "beta"]);
+    expect(index.styles.map((style) => style.design_md_path)).toEqual(["styles/alpha/DESIGN.md", "styles/beta/DESIGN.md"]);
+    for (const style of styles) {
+      await expect(readFile(join(home, "styles", style.name, "DESIGN.md"), "utf8")).resolves.toBe(style.designMd);
+      await expect(readFile(join(home, "styles", style.name, "preview@2x.png"))).resolves.toEqual(minimalPng);
+    }
+    expect(calls).toContainEqual({
+      command: "git",
+      args: ["clone", "--depth", "1", "https://github.com/VoltAgent/awesome-design-md.git", expect.any(String)],
+      options: { timeoutMs: 60_000 }
+    });
+    expect(prompts.join("\n")).toContain("--primary: #0055cc");
+    expect(prompts.join("\n")).toContain("--background: #ffffff");
+    expect(prompts.join("\n")).toContain("--text-primary: #111827");
+    expect(prompts.join("\n")).toContain("--font-heading: Inter");
+    expect(prompts.join("\n")).toContain("--font-body: Inter");
+    expect(prompts.join("\n")).toContain("--border-radius: 12");
+    expect(prompts.join("\n")).toContain("--spacing-unit: 8");
+  });
+
+  it("counts added and updated styles without counting unchanged styles as updated", async () => {
+    const home = await tempDir();
+    const unchanged = designMd("unchanged", "#111111");
+    const previousChanged = designMd("changed", "#222222");
+    const nextChanged = designMd("changed", "#333333");
+    await mkdir(join(home, "styles", "unchanged"), { recursive: true });
+    await mkdir(join(home, "styles", "changed"), { recursive: true });
+    await writeFile(join(home, "styles", "unchanged", "DESIGN.md"), unchanged, "utf8");
+    await writeFile(join(home, "styles", "changed", "DESIGN.md"), previousChanged, "utf8");
+    const { runner } = createFakeRunner([
+      { name: "changed", designMd: nextChanged },
+      { name: "new-style", designMd: designMd("new-style", "#444444") },
+      { name: "unchanged", designMd: unchanged }
+    ]);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+
+    expect(status).toMatchObject({
+      status: "idle",
+      last_sync: {
+        styles_total: 3,
+        styles_added: 1,
+        styles_updated: 1,
+        styles_failed: 0
+      }
+    });
+  });
+
+  it("keeps syncing metadata and other previews when one style preview fails", async () => {
+    const home = await tempDir();
+    const styles = [
+      { name: "broken", designMd: designMd("broken", "#990000") },
+      { name: "working", designMd: designMd("working", "#009900") }
+    ];
+    const { runner } = createFakeRunner(styles, { failPencilFor: "broken" });
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+
+    expect(status).toMatchObject({
+      status: "idle",
+      last_sync: {
+        styles_total: 2,
+        styles_added: 2,
+        styles_updated: 0,
+        styles_failed: 1
+      }
+    });
+    const index = await readYaml<{ styles: Array<{ name: string }> }>(join(home, "styles", "styles.yaml"));
+    expect(index.styles.map((style) => style.name)).toEqual(["broken", "working"]);
+    await expect(readFile(join(home, "styles", "broken", "DESIGN.md"), "utf8")).resolves.toBe(styles[0]!.designMd);
+    await expect(access(join(home, "styles", "broken", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(home, "styles", "working", "preview@2x.png"))).resolves.toEqual(minimalPng);
+  });
+
+  it("marks a locked preview batch as failed after exhausting lock retries", async () => {
+    vi.useFakeTimers();
+    const home = await tempDir();
+    const { runner } = createFakeRunner([
+      { name: "alpha", designMd: designMd("alpha", "#0055cc") },
+      { name: "beta", designMd: designMd("beta", "#cc5500") }
+    ]);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService({ lockHeld: true }),
+      runner,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service, true);
+
+    expect(status).toMatchObject({
+      status: "idle",
+      last_sync: {
+        styles_total: 2,
+        styles_added: 2,
+        styles_updated: 0,
+        styles_failed: 2
+      }
+    });
+    await expect(access(join(home, "styles", "alpha", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(join(home, "styles", "beta", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("fails the task during scanning when the cloned repository has no style directories", async () => {
+    const home = await tempDir();
+    const { runner } = createFakeRunner([]);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+
+    expect(status).toEqual({
+      status: "failed",
+      task_id: expect.stringMatching(/^sync-[a-f0-9]{16}$/),
+      error: {
+        phase: "scanning",
+        message: "Repository structure changed: no style directories found"
+      }
+    });
+    await expect(access(join(home, "styles", "styles.yaml"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
