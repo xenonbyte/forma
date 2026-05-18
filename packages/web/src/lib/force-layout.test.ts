@@ -31,6 +31,26 @@ describe("layoutNavigationGraph", () => {
     expect(layoutNavigationGraph(input)).toEqual(layoutNavigationGraph(input));
   });
 
+  it("preserves node order from the input", () => {
+    const input = {
+      nodes: [
+        { id: "settings", label: "Settings" },
+        { id: "home", label: "Home" },
+        { id: "billing", label: "Billing" },
+      ],
+      edges: [
+        { from: "home", to: "billing", label: "upgrade" },
+        { from: "settings", to: "home", label: "back" },
+      ],
+    };
+
+    expect(layoutNavigationGraph(input).nodes.map((node) => node.id)).toEqual([
+      "settings",
+      "home",
+      "billing",
+    ]);
+  });
+
   it("filters invalid edges while preserving valid edge order", () => {
     const result = layoutNavigationGraph({
       nodes: [
@@ -72,6 +92,21 @@ describe("layoutNavigationGraph", () => {
       expect(node.y).toBeGreaterThanOrEqual(node.radius);
       expect(node.y).toBeLessThanOrEqual(result.height - node.radius);
     }
+  });
+
+  it("bounds node radius between 24 and 44 from feature count", () => {
+    const result = layoutNavigationGraph({
+      nodes: [
+        { id: "none", label: "No features", featureCount: 0 },
+        { id: "many", label: "Many features", featureCount: 100 },
+      ],
+      edges: [],
+    });
+
+    expect(result.nodes[0]?.radius).toBeGreaterThanOrEqual(24);
+    expect(result.nodes[0]?.radius).toBe(24);
+    expect(result.nodes[1]?.radius).toBeLessThanOrEqual(44);
+    expect(result.nodes[1]?.radius).toBe(44);
   });
 
   it("returns an empty fixed-size graph for empty input", () => {
