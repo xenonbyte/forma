@@ -1,5 +1,7 @@
 .worktrees
 .worktrees/
+.DS_Store
+.playwright-mcp/
 node_modules/
 dist/
 coverage/
