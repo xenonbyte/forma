@@ -6,6 +6,7 @@ import { formatGenericErrorForLog, sanitizeGenericErrorForLog } from "./smoke-pe
 
 const pollIntervalMs = 2_000;
 const maxWaitMs = 5 * 60 * 1_000;
+const liveStyleLimit = 2;
 
 async function main(): Promise<void> {
   ensureHomebrewPencilOnPath();
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
     console.log(`preview_style=${result.preview.styleName}`);
     console.log(`preview@2x.png=${result.preview.path}`);
     console.log(`preview_bytes=${result.preview.bytes}`);
+    console.log(`live_style_limit=${liveStyleLimit}`);
   } catch (error) {
     console.error("Live style sync failed");
     console.error(`FORMA_HOME=${home}`);
@@ -35,7 +37,7 @@ async function runLiveSync(home: string): Promise<{
   lastSync: NonNullable<Extract<SyncStatus, { status: "idle" }>["last_sync"]>;
   preview: { styleName: string; path: string; bytes: number };
 }> {
-  const store = createFormaStore({ home, bundledStylesDir: resolve("styles") });
+  const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), syncStyleLimit: liveStyleLimit });
 
   const builtInStyles = await store.styles.installBuiltInStyles();
   invariant(builtInStyles.length > 0, "No built-in styles were installed");

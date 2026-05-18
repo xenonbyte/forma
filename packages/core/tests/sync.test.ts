@@ -683,6 +683,38 @@ describe("SyncService task execution", () => {
     });
   });
 
+  it("can limit scanned styles for bounded live checks", async () => {
+    const home = await tempDir();
+    await writePreviewTemplate(home);
+    const { runner } = createFakeRunner([
+      { name: "alpha", designMd: designMd("alpha", "#111111") },
+      { name: "beta", designMd: designMd("beta", "#222222") },
+      { name: "gamma", designMd: designMd("gamma", "#333333") }
+    ]);
+    const service = new SyncService({
+      home,
+      pencilService: createFakePencilService(),
+      runner,
+      styleLimit: 2,
+      now: () => new Date("2026-05-18T00:00:00.000Z")
+    });
+
+    await service.startSync();
+    const status = await waitForSync(service);
+    const index = await readYaml<{ styles: Array<{ name: string }> }>(join(home, "styles", "styles.yaml"));
+
+    expect(status).toMatchObject({
+      status: "idle",
+      last_sync: {
+        styles_total: 2,
+        styles_added: 2,
+        styles_updated: 0,
+        styles_failed: 0
+      }
+    });
+    expect(index.styles.map((style) => style.name)).toEqual(["alpha", "beta"]);
+  });
+
   it("keeps syncing metadata and other previews when one style preview fails", async () => {
     const home = await tempDir();
     await writePreviewTemplate(home);

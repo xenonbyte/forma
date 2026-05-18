@@ -10,6 +10,7 @@ import { SyncService } from "./sync.js";
 export interface FormaStoreOptions {
   home: string;
   bundledStylesDir?: string;
+  syncStyleLimit?: number;
 }
 
 export function createFormaStore(options: FormaStoreOptions) {
@@ -20,7 +21,7 @@ export function createFormaStore(options: FormaStoreOptions) {
   const baseline = new BaselineService({ home: options.home, products });
   const requirements = new RequirementService({ home: options.home, products, baseline });
   const designs = new DesignService({ home: options.home, products });
-  const sync = new SyncService({ home: options.home, pencilService: pencil, runner: defaultPencilRunner });
+  const sync = new SyncService({ home: options.home, pencilService: pencil, runner: defaultPencilRunner, styleLimit: options.syncStyleLimit });
 
   return {
     home: options.home,

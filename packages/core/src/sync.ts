@@ -63,6 +63,7 @@ export interface SyncServiceOptions {
   runner?: CommandRunner;
   autoRun?: boolean;
   now?: () => Date;
+  styleLimit?: number;
 }
 
 const defaultStyleVariables: StyleVariables = {
@@ -112,14 +113,19 @@ export class SyncService {
   private readonly runner?: CommandRunner;
   private readonly autoRun: boolean;
   private readonly now: () => Date;
+  private readonly styleLimit?: number;
 
   constructor(options: SyncServiceOptions) {
+    if (options.styleLimit !== undefined && (!Number.isInteger(options.styleLimit) || options.styleLimit < 1)) {
+      throw new Error("Sync styleLimit must be a positive integer");
+    }
     this.home = options.home;
     this.stateFile = join(options.home, "sync-state.yaml");
     this.pencilService = options.pencilService;
     this.runner = options.runner;
     this.autoRun = options.autoRun ?? true;
     this.now = options.now ?? (() => new Date());
+    this.styleLimit = options.styleLimit;
   }
 
   async getStatus(): Promise<SyncStatus> {
@@ -200,11 +206,12 @@ export class SyncService {
       if (scanned.length === 0) {
         throw new SyncTaskFailure("scanning", "Repository structure changed: no style directories found");
       }
+      const stylesToSync = this.styleLimit === undefined ? scanned : scanned.slice(0, this.styleLimit);
 
       currentPhase = "extracting_variables";
-      await this.writeProgress(taskId, startedAt, "extracting_variables", 0, scanned.length);
+      await this.writeProgress(taskId, startedAt, "extracting_variables", 0, stylesToSync.length);
       const styles: ScannedStyle[] = [];
-      for (const style of scanned) {
+      for (const style of stylesToSync) {
         const designMd = await readFile(style.designMdPath, "utf8");
         const sha256 = sha256Hex(designMd);
         const existingDesignMd = join(stylesDir, style.name, "DESIGN.md");
@@ -220,7 +227,7 @@ export class SyncService {
           status,
           previewSucceeded: false
         });
-        await this.writeProgress(taskId, startedAt, "extracting_variables", styles.length, scanned.length, style.name);
+        await this.writeProgress(taskId, startedAt, "extracting_variables", styles.length, stylesToSync.length, style.name);
       }
 
       currentPhase = "rendering_previews";

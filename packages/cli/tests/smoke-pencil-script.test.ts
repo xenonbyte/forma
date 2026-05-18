@@ -93,6 +93,14 @@ describe("live style sync script", () => {
     expect(script.toLowerCase()).not.toContain("skip");
   });
 
+  it("keeps the live GitHub and Pencil check bounded", async () => {
+    const script = await readLiveSyncScript();
+
+    expect(script).toContain("syncStyleLimit: liveStyleLimit");
+    expect(script).toContain("const liveStyleLimit = 2");
+    expect(script).toContain("const maxWaitMs = 5 * 60 * 1_000");
+  });
+
   it("terminates explicitly on failure instead of only setting an exit code", async () => {
     const script = await readLiveSyncScript();
 
