@@ -1,4 +1,11 @@
+---
+name: fm-refine-design
+description: Refine Forma page designs while preserving requirement copy and context.
+---
+
 # Forma route: fm-refine-design
+
+Codex route: `$fm-refine-design`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

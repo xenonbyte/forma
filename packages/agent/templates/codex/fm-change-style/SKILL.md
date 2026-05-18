@@ -1,4 +1,11 @@
+---
+name: fm-change-style
+description: Change a Forma product design style.
+---
+
 # Forma route: fm-change-style
+
+Codex route: `$fm-change-style`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

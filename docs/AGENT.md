@@ -8,6 +8,8 @@ forma install --platform claude,codex,gemini
 
 The installer also writes shared Forma guidance and MCP configuration for the selected platforms.
 
+Claude and Gemini expose routes as `/fm-*`. Codex exposes each route as a skill and uses `$fm-*`.
+
 ## Commands
 
 | Command | Purpose |

@@ -1,4 +1,11 @@
+---
+name: fm-status
+description: Report current Forma product, requirement, language, component, and design status.
+---
+
 # Forma route: fm-status
+
+Codex route: `$fm-status`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

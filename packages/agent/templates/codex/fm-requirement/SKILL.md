@@ -5,6 +5,8 @@ description: Add or modify a Forma requirement from any granularity of product i
 
 # Forma route: fm-requirement
 
+Codex route: `$fm-requirement`.
+
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Execution:

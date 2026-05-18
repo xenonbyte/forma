@@ -1,4 +1,11 @@
+---
+name: fm-rollback-design
+description: Roll back a Forma design version.
+---
+
 # Forma route: fm-rollback-design
+
+Codex route: `$fm-rollback-design`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

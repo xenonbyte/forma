@@ -60,7 +60,7 @@ Open the local URL to create and configure products, browse styles, manage requi
 
 ## Agent Integration
 
-Forma installs command templates for Claude, Codex, and Gemini. The current command set covers product selection, unified requirement capture, design generation/refinement, component refinement, style changes, rollback, and status checks.
+Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, unified requirement capture, design generation/refinement, component refinement, style changes, rollback, and status checks.
 
 See [docs/AGENT.md](docs/AGENT.md) for the command table and recommended first-time and iterative workflows.
 

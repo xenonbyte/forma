@@ -1,4 +1,11 @@
+---
+name: fm-refine-components
+description: Refine Forma product component libraries.
+---
+
 # Forma route: fm-refine-components
+
+Codex route: `$fm-refine-components`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

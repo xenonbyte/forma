@@ -37,7 +37,7 @@ export const formaAgentPlatformMetadata = {
     templateDir: "codex",
     templateFormat: "codex-skill",
     templateFilePattern: "codex/{command}/SKILL.md",
-    targetFilePattern: "~/.codex/prompts/skills/{command}/SKILL.md",
+    targetFilePattern: "~/.codex/skills/{command}/SKILL.md",
     mcpConfigPath: "~/.codex/config.toml"
   },
   gemini: {

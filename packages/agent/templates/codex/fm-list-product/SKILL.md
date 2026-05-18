@@ -1,4 +1,11 @@
+---
+name: fm-list-product
+description: List and select Forma products, including setup status and language fallback.
+---
+
 # Forma route: fm-list-product
+
+Codex route: `$fm-list-product`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

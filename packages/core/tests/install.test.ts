@@ -58,7 +58,7 @@ function commandTarget(userHome: string, platform: Platform, command: string): s
   if (platform === "gemini") {
     return join(userHome, ".gemini", "commands", `${command}.toml`);
   }
-  return join(userHome, ".codex", "prompts", "skills", command, "SKILL.md");
+  return join(userHome, ".codex", "skills", command, "SKILL.md");
 }
 
 function customCommandTarget(userHome: string, platform: Platform): string {
@@ -68,7 +68,11 @@ function customCommandTarget(userHome: string, platform: Platform): string {
   if (platform === "gemini") {
     return join(userHome, ".gemini", "commands", "custom.toml");
   }
-  return join(userHome, ".codex", "prompts", "skills", "custom", "SKILL.md");
+  return join(userHome, ".codex", "skills", "custom", "SKILL.md");
+}
+
+function oldCodexCommandTarget(userHome: string, command: string): string {
+  return join(userHome, ".codex", "prompts", "skills", command, "SKILL.md");
 }
 
 async function writeOldManifest(
@@ -106,13 +110,13 @@ describe("InstallService", () => {
         `# Forma route: ${command}`
       );
       await expect(
-        readFile(join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"), "utf8")
+        readFile(join(userHome, ".codex", "skills", command, "SKILL.md"), "utf8")
       ).resolves.toContain(`# Forma route: ${command}`);
     }
     for (const command of removedRequirementCommands) {
       await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
       await expect(exists(join(userHome, ".gemini", "commands", `${command}.toml`))).resolves.toBe(false);
-      await expect(exists(join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".codex", "skills", command, "SKILL.md"))).resolves.toBe(false);
     }
     await expect(readFile(join(formaHome, "skills", "forma", "SKILL.md"), "utf8")).resolves.toContain(
       "Forma shared guidance"
@@ -155,12 +159,12 @@ describe("InstallService", () => {
     expect(codex.installed_paths).toEqual(
       expect.arrayContaining([
         join(formaHome, "skills", "forma", "SKILL.md"),
-        ...commands.map((command) => join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"))
+        ...commands.map((command) => join(userHome, ".codex", "skills", command, "SKILL.md"))
       ])
     );
     for (const command of removedRequirementCommands) {
       expect(codex.installed_paths).not.toContain(
-        join(userHome, ".codex", "prompts", "skills", command, "SKILL.md")
+        join(userHome, ".codex", "skills", command, "SKILL.md")
       );
     }
     expect(codex.config_paths).toEqual([join(userHome, ".codex", "config.toml")]);
@@ -233,14 +237,47 @@ describe("InstallService", () => {
     await expect(readFile(oldCommand, "utf8")).resolves.toBe("# User upload shortcut\n");
   });
 
+  it("migrates Codex skills from the old prompts directory to the active skills directory", async () => {
+    const { formaHome, userHome, service } = await createService();
+    const oldCommand = oldCodexCommandTarget(userHome, "fm-design");
+    await mkdir(dirname(oldCommand), { recursive: true });
+    await writeFile(oldCommand, "# Forma route: fm-design\n", "utf8");
+    await writeOldManifest(formaHome, "codex", [oldCommand], []);
+
+    await service.installPlatforms(["codex"]);
+
+    await expect(exists(oldCommand)).resolves.toBe(false);
+    await expect(readFile(commandTarget(userHome, "codex", "fm-design"), "utf8")).resolves.toContain(
+      "# Forma route: fm-design"
+    );
+
+    const upgradedManifest = await readManifest(formaHome, "codex");
+    expect(upgradedManifest.installed_paths).toContain(commandTarget(userHome, "codex", "fm-design"));
+    expect(JSON.stringify(upgradedManifest)).not.toContain(oldCommand);
+  });
+
+  it("uninstalls legacy Codex skills recorded in old manifests", async () => {
+    const { formaHome, userHome, service } = await createService();
+    const oldCommand = oldCodexCommandTarget(userHome, "fm-design");
+    await mkdir(dirname(oldCommand), { recursive: true });
+    await writeFile(oldCommand, "# Forma route: fm-design\n", "utf8");
+    await writeOldManifest(formaHome, "codex", [oldCommand], []);
+
+    await service.uninstallPlatforms(["codex"]);
+
+    await expect(exists(oldCommand)).resolves.toBe(false);
+    await expect(exists(dirname(oldCommand))).resolves.toBe(false);
+    await expect(exists(join(formaHome, "manifests", "codex.manifest"))).resolves.toBe(false);
+  });
+
   it("uninstalls only manifest-owned files and preserves unrelated files and config entries", async () => {
     const { formaHome, userHome, service } = await createService();
     const unrelatedClaudeCommand = join(userHome, ".claude", "commands", "custom.md");
     const unrelatedGeminiCommand = join(userHome, ".gemini", "commands", "custom.toml");
-    const unrelatedCodexSkill = join(userHome, ".codex", "prompts", "skills", "custom", "SKILL.md");
+    const unrelatedCodexSkill = join(userHome, ".codex", "skills", "custom", "SKILL.md");
     await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
     await mkdir(join(userHome, ".gemini", "commands"), { recursive: true });
-    await mkdir(join(userHome, ".codex", "prompts", "skills", "custom"), { recursive: true });
+    await mkdir(join(userHome, ".codex", "skills", "custom"), { recursive: true });
     await writeFile(unrelatedClaudeCommand, "# Custom\n", "utf8");
     await writeFile(unrelatedGeminiCommand, "description = \"Custom\"\n", "utf8");
     await writeFile(unrelatedCodexSkill, "# Custom\n", "utf8");
@@ -265,7 +302,8 @@ describe("InstallService", () => {
     for (const command of commands) {
       await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
       await expect(exists(join(userHome, ".gemini", "commands", `${command}.toml`))).resolves.toBe(false);
-      await expect(exists(join(userHome, ".codex", "prompts", "skills", command, "SKILL.md"))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".codex", "skills", command, "SKILL.md"))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".codex", "skills", command))).resolves.toBe(false);
     }
     await expect(readFile(unrelatedClaudeCommand, "utf8")).resolves.toBe("# Custom\n");
     await expect(readFile(unrelatedGeminiCommand, "utf8")).resolves.toBe("description = \"Custom\"\n");

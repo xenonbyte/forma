@@ -1,4 +1,11 @@
+---
+name: fm-design
+description: Generate or update Forma page designs from UI-affecting requirements.
+---
+
 # Forma route: fm-design
+
+Codex route: `$fm-design`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 

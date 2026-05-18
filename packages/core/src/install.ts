@@ -1,7 +1,7 @@
 import { constants } from "node:fs";
-import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, rmdir, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readYaml, writeYamlAtomic } from "./yaml.js";
 
@@ -108,6 +108,9 @@ export class InstallService {
       } else {
         await rm(target, { force: true });
       }
+    }
+    for (const dir of this.codexSkillDirsFromManifests(selectedManifests)) {
+      await removeEmptyDirectory(dir);
     }
 
     for (const platform of selectedManifests.keys()) {
@@ -333,7 +336,36 @@ export class InstallService {
     if (platform === "gemini") {
       return join(this.userHome, ".gemini", "commands", `${command}.toml`);
     }
-    return join(this.userHome, ".codex", "prompts", "skills", command, "SKILL.md");
+    return join(this.userHome, ".codex", "skills", command, "SKILL.md");
+  }
+
+  private codexSkillDirsFromManifests(manifests: Map<AgentInstallPlatform, InstallManifest>): string[] {
+    const dirs: string[] = [];
+    for (const [platform, manifest] of manifests) {
+      if (platform !== "codex") {
+        continue;
+      }
+      for (const target of manifest.installed_paths) {
+        const dir = this.codexSkillDirForTarget(target);
+        if (dir) {
+          dirs.push(dir);
+        }
+      }
+    }
+    return unique(dirs).sort((left, right) => right.length - left.length);
+  }
+
+  private codexSkillDirForTarget(target: string): string | undefined {
+    if (basename(target) !== "SKILL.md") {
+      return undefined;
+    }
+
+    const dir = dirname(target);
+    const roots = [
+      join(this.userHome, ".codex", "skills"),
+      join(this.userHome, ".codex", "prompts", "skills")
+    ];
+    return roots.some((root) => pathIsWithin(root, dir)) ? dir : undefined;
   }
 
   private async writeManifest(
@@ -554,6 +586,22 @@ async function pathExists(file: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+function pathIsWithin(root: string, target: string): boolean {
+  const child = relative(resolve(root), resolve(target));
+  return child !== "" && !child.startsWith("..") && !isAbsolute(child);
+}
+
+async function removeEmptyDirectory(dir: string): Promise<void> {
+  try {
+    await rmdir(dir);
+  } catch (error) {
+    if (isNodeError(error) && ["ENOENT", "ENOTEMPTY", "EEXIST"].includes(error.code ?? "")) {
+      return;
+    }
+    throw error;
   }
 }
 

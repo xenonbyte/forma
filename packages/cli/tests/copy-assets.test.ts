@@ -25,6 +25,17 @@ const formaCommands = [
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
 
+const codexSkillDescriptions = {
+  "fm-list-product": "List and select Forma products, including setup status and language fallback.",
+  "fm-status": "Report current Forma product, requirement, language, component, and design status.",
+  "fm-requirement": "Add or modify a Forma requirement from any granularity of product input.",
+  "fm-design": "Generate or update Forma page designs from UI-affecting requirements.",
+  "fm-refine-design": "Refine Forma page designs while preserving requirement copy and context.",
+  "fm-refine-components": "Refine Forma product component libraries.",
+  "fm-change-style": "Change a Forma product design style.",
+  "fm-rollback-design": "Roll back a Forma design version."
+} as const;
+
 type AgentPlatform = "claude" | "codex" | "gemini";
 
 const agentTemplatesDir = new URL("../../../packages/agent/templates/", import.meta.url);
@@ -154,14 +165,16 @@ describe("agent template inventory", () => {
     }
   });
 
-  it("keeps Codex fm-requirement frontmatter exact", async () => {
-    const codexRequirement = await readFile(templateUrl("codex", "fm-requirement"), "utf8");
+  it("keeps every Codex command installable as a skill", async () => {
+    for (const command of formaCommands) {
+      const template = await readFile(templateUrl("codex", command), "utf8");
 
-    expect(
-      codexRequirement.startsWith(
-        "---\nname: fm-requirement\ndescription: Add or modify a Forma requirement from any granularity of product input.\n---\n"
-      )
-    ).toBe(true);
+      expect(
+        template.startsWith(`---\nname: ${command}\ndescription: ${codexSkillDescriptions[command]}\n---\n`)
+      ).toBe(true);
+      expect(template).toContain(`# Forma route: ${command}`);
+      expect(template).toContain(`Codex route: \`$${command}\``);
+    }
   });
 
   it("documents v0.3 language, structured copy, and no-UI behavior in route templates", async () => {
