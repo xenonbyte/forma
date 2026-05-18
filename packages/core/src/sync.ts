@@ -80,6 +80,8 @@ const styleRepoUrl = "https://github.com/VoltAgent/awesome-design-md.git";
 const previewBatchSize = 5;
 const lockRetryDelayMs = 2_000;
 const lockRetryCount = 15;
+const previewPencilModel = "claude-haiku-4-5";
+const previewRenderTimeoutMs = 90_000;
 
 type ScannedStyle = {
   name: string;
@@ -415,7 +417,11 @@ export class SyncService {
       throw new Error("Pencil runner unavailable");
     }
     await copyFile(templatePath, penPath);
-    await this.runner.run("pencil", ["--in", penPath, "--out", penPath, "--prompt", previewPrompt(style)]);
+    await this.runner.run(
+      "pencil",
+      ["--in", penPath, "--out", penPath, "--prompt", previewPrompt(style), "--model", previewPencilModel],
+      { timeoutMs: previewRenderTimeoutMs }
+    );
     await this.pencilService.validatePenFile(penPath);
     await this.pencilService.exportPreview(penPath, pngPath);
     const output = await stat(pngPath);

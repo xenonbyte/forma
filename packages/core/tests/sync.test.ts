@@ -635,6 +635,9 @@ describe("SyncService task execution", () => {
     expect(outputIndex).toBeGreaterThanOrEqual(0);
     expect(pencilCall!.args[inputIndex + 1]).toBe(pencilCall!.args[outputIndex + 1]);
     expect(pencilCall!.args[inputIndex + 1]).toBe(`/tmp/forma-sync-${started.task_id}/alpha.pen`);
+    expect(pencilCall!.args).toContain("--model");
+    expect(pencilCall!.args[pencilCall!.args.indexOf("--model") + 1]).toBe("claude-haiku-4-5");
+    expect(pencilCall!.options).toEqual({ timeoutMs: 90_000 });
     expect(prompts.join("\n")).toContain("--primary: #0055cc");
     expect(prompts.join("\n")).toContain("--background: #ffffff");
     expect(prompts.join("\n")).toContain("--text-primary: #111827");
