@@ -41,6 +41,15 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       penPath: "/tmp/components/components.lib.pen",
       libraryPath: "/tmp/forma/library/P-123abc.lib.pen"
     })),
+    generateAndSavePageDesign: vi.fn(async () => ({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      design_id: "D-12345678",
+      version: 1,
+      pen_path: "/tmp/forma/data/P-123abc/R-12345678/D-12345678/design.pen",
+      preview_path: "/tmp/forma/data/P-123abc/R-12345678/D-12345678/preview@2x.png"
+    })),
     baseline: {
       getProductBaseline: vi.fn(async () => ({ product_id: "P-123abc", pages: [], navigation: [] }))
     },
@@ -110,11 +119,18 @@ describe("MCP forma tools", () => {
     registerFormaTools(server, tools);
 
     expect(Object.keys(tools)).toEqual(formaToolNames);
-    expect(server.registerTool).toHaveBeenCalledTimes(27);
+    expect(server.registerTool).toHaveBeenCalledTimes(28);
     expect(server.registerTool.mock.calls.map((call) => call[0])).toEqual(formaToolNames);
     expect(server.registerTool.mock.calls.map((call) => call[1])).toEqual(
       expect.arrayContaining([expect.objectContaining({ inputSchema: expect.any(Object) })])
     );
+    const toolDescriptions = Object.fromEntries(
+      server.registerTool.mock.calls.map(([name, config]) => [name, config.description])
+    );
+    expect(toolDescriptions.generate_page_design).toContain("temporary");
+    expect(toolDescriptions.generate_page_design).toContain("save_designs");
+    expect(toolDescriptions.generate_and_save_page_design).toContain("Normal /design");
+    expect(toolDescriptions.generate_and_save_page_design).toContain("persist");
     expect(formaToolNames).not.toContain("submit_requirement");
     expect(formaToolNames).not.toContain("update_requirement");
     expect(formaToolNames).not.toContain("delete_requirement");
@@ -123,7 +139,8 @@ describe("MCP forma tools", () => {
       "get_product_rules",
       "get_page_copy",
       "update_page_copy",
-      "delete_product"
+      "delete_product",
+      "generate_and_save_page_design"
     ]));
     expect(formaToolNames).toContain("diff_designs");
   });
@@ -228,6 +245,13 @@ describe("MCP forma tools", () => {
     await tools.rollback_design({ design_id: "D-12345678" });
     await tools.diff_designs({ design_id: "D-12345678", v1: 1, v2: 2 });
     await tools.generate_page_design({ product_id: "P-123abc", prompt: "Create checkout", workspace: "/tmp/workspace" });
+    await tools.generate_and_save_page_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      prompt: "Create checkout",
+      workspace: "/tmp/workspace"
+    });
     await tools.get_design_annotations({ design_id: "D-12345678" });
 
     expect(store.designs.saveDesigns).toHaveBeenCalledWith("R-12345678", [
@@ -240,7 +264,52 @@ describe("MCP forma tools", () => {
       prompt: "Create checkout",
       workspace: "/tmp/workspace"
     });
+    expect(store.generateAndSavePageDesign).toHaveBeenCalledWith({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      prompt: "Create checkout",
+      workspace: "/tmp/workspace"
+    });
     expect(store.designs.getDesignAnnotations).toHaveBeenCalledWith("D-12345678");
+  });
+
+  it("returns a structured error when generate_and_save_page_design store support is unavailable", async () => {
+    const store = fakeStore({ generateAndSavePageDesign: undefined });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_and_save_page_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      prompt: "Create checkout",
+      workspace: "/tmp/workspace"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "STORE_METHOD_UNAVAILABLE",
+      message: expect.stringContaining("page design generation unavailable")
+    });
+  });
+
+  it("validates generate_and_save_page_design input before calling the store", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_and_save_page_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      prompt: "Create checkout"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "VALIDATION_ERROR",
+      details: { issues: expect.arrayContaining([expect.objectContaining({ path: ["workspace"] })]) }
+    });
+    expect(store.generateAndSavePageDesign).not.toHaveBeenCalled();
   });
 
   it("gates page design generation on languages and initialized components", async () => {
