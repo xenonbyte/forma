@@ -2,13 +2,30 @@
 
 Forma is a local product-design workspace for turning product requirements into Pencil-backed design assets. It keeps product configuration, requirements, structured copy, baselines, generated `.pen` files, previews, annotations, history, and design diffs in one local Forma home.
 
+## Install
+
+```bash
+npm install -g @xenonbyte/forma-cli
+forma version
+forma status
+```
+
+Install agent commands for your agent platform:
+
+```bash
+forma install --platform codex
+# or: forma install --platform claude,gemini
+```
+
+The published CLI bundles the agent command templates, built-in style assets, and Web admin assets. You only need to install `@xenonbyte/forma-cli`; npm installs its runtime packages automatically.
+
 ## Requirements
 
 - Node.js 22 or newer.
-- pnpm 10.33.0 or compatible via Corepack.
-- Pencil CLI installed and authenticated for real design generation and `pnpm smoke:pencil`.
+- Pencil CLI installed and authenticated for real design generation.
+- pnpm 10.33.0 or compatible via Corepack for local development.
 
-## Setup
+## Development Setup
 
 ```bash
 pnpm install
@@ -25,25 +42,25 @@ Run commands from the repository root during development. The root `bin/forma.js
 | `@xenonbyte/forma-mcp` | MCP tool surface used by agents for sessions, products, requirements, baselines, copy, styles, and design workflows. |
 | `@xenonbyte/forma-server` | Fastify API and static Web serving layer backed by core services. |
 | `@xenonbyte/forma-web` | React Web admin for products, requirements, baselines, multilingual copy, styles, designs, annotations, and diffs. |
-| `@xenonbyte/forma-agent` | Installable Claude, Codex, and Gemini command templates plus shared Forma agent guidance. |
+| `@xenonbyte/forma-agent` | Workspace-only Claude, Codex, and Gemini command templates that are bundled into the CLI package. |
 | `@xenonbyte/forma-cli` | User-facing `forma` CLI for status, serving, installation, packaging assets, and MCP startup. |
 
 ## Common CLI Commands
-
-```bash
-node bin/forma.js version
-node bin/forma.js status
-node bin/forma.js serve
-node bin/forma.js install --platform claude,codex,gemini
-```
-
-After packaging or installing the CLI, the same commands are available as:
 
 ```bash
 forma version
 forma status
 forma serve
 forma install --platform claude,codex,gemini
+```
+
+From a development checkout, the same commands are available through the root entrypoint:
+
+```bash
+node bin/forma.js version
+node bin/forma.js status
+node bin/forma.js serve
+node bin/forma.js install --platform claude,codex,gemini
 ```
 
 `forma status` reports the Forma data directory, installed agent platforms, Pencil CLI availability/authentication, and Web server state. `forma serve` starts the local Web admin, defaulting to `127.0.0.1:3000`.
@@ -53,7 +70,7 @@ forma install --platform claude,codex,gemini
 Start the local server:
 
 ```bash
-node bin/forma.js serve
+forma serve
 ```
 
 Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, review multilingual copy, open design previews, view annotations, and compare design versions.
@@ -75,7 +92,7 @@ See [docs/MCP.md](docs/MCP.md) for tool groups, v0.4 behavior changes, and the f
 The CLI and Web server use `~/.forma` by default. Override the root with `FORMA_HOME`:
 
 ```bash
-FORMA_HOME=/path/to/forma-home node bin/forma.js status
+FORMA_HOME=/path/to/forma-home forma status
 ```
 
 Runtime data lives under `$FORMA_HOME/data`, including products, requirements, baselines, design metadata, `.pen` files, preview PNGs, copy translations, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
