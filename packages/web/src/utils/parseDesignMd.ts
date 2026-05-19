@@ -184,7 +184,7 @@ function readScalar(rawValue: string, key: string, lineNumber: number, parsed: P
     return { skipChildren: true, status: "skipped" };
   }
 
-  if (rawValue.startsWith("[") || rawValue.startsWith("-")) {
+  if (rawValue.startsWith("[") || rawValue === "-" || rawValue.startsWith("- ")) {
     warn(parsed, lineNumber, "array value", key);
     return { skipChildren: false, status: "skipped" };
   }

@@ -200,13 +200,25 @@ describe("NavigationGraph", () => {
       fill: "#a1a1aa"
     });
 
-    const path = edge?.config.path as PathCommand[];
-    const arrowPath = arrow?.config.path as PathCommand[];
+    const path = pathCommandsFromConfig(edge?.config.path);
+    const arrowPath = pathCommandsFromConfig(arrow?.config.path);
     expect(path[0]?.[0]).toBe("M");
     expect(path[1]?.[0]).toBe("L");
     expect(pointInsideRect(commandPoint(path[0]), sourceNode?.config)).toBe(false);
     expect(pointInsideRect(commandPoint(path[1]), targetNode?.config)).toBe(false);
     expect(arrowTipSize(arrowPath)).toBeCloseTo(6, 1);
+  });
+
+  it("passes SVG path strings to Leafer Path elements", async () => {
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />);
+      await flushPromises();
+    });
+
+    expect(findElement("edge-home-checkout", "Path")?.config.path).toEqual(expect.any(String));
+    expect(findElement("edge-arrow-home-checkout", "Path")?.config.path).toEqual(expect.any(String));
   });
 
   it("draws self edges around the node without crossing its interior", async () => {
@@ -219,7 +231,7 @@ describe("NavigationGraph", () => {
 
     const edge = findElement("edge-home-home", "Path");
     const homeNode = findElement("node-home", "Rect");
-    const path = edge?.config.path as PathCommand[];
+    const path = pathCommandsFromConfig(edge?.config.path);
 
     expect(path.map((command) => command[0])).toEqual(["M", "L", "L", "L"]);
     expect(pathCrossesRectInterior(path, homeNode?.config)).toBe(false);
@@ -312,6 +324,32 @@ function findElement(name: string, kind?: MockElementKind) {
 
 function commandPoint(command: PathCommand | undefined): { x: number; y: number } {
   return { x: Number(command?.[1]), y: Number(command?.[2]) };
+}
+
+function pathCommandsFromConfig(path: unknown): PathCommand[] {
+  if (Array.isArray(path)) {
+    return path as PathCommand[];
+  }
+
+  if (typeof path !== "string") {
+    return [];
+  }
+
+  const tokens = path.match(/[A-Z]|-?\d+(?:\.\d+)?/g) ?? [];
+  const commands: PathCommand[] = [];
+  for (let index = 0; index < tokens.length; ) {
+    const command = tokens[index];
+    if (command === "M" || command === "L") {
+      commands.push([command, Number(tokens[index + 1]), Number(tokens[index + 2])]);
+      index += 3;
+    } else if (command === "Z") {
+      commands.push([command]);
+      index += 1;
+    } else {
+      index += 1;
+    }
+  }
+  return commands;
 }
 
 function arrowTipSize(path: PathCommand[]): number {

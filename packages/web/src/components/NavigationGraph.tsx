@@ -56,11 +56,12 @@ interface LeaferElement {
 }
 
 type GraphPoint = { x: number; y: number };
+type GraphPathCommand = readonly ["M" | "L", number, number] | readonly ["Z"];
 
 interface EdgeGeometry {
-  arrowPath: Array<Array<number | string>>;
+  arrowPath: GraphPathCommand[];
   labelPoint: GraphPoint;
-  path: Array<Array<number | string>>;
+  path: GraphPathCommand[];
 }
 
 const selectedStroke = "#d97706";
@@ -198,7 +199,7 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
         hitSelf: false,
         hittable: false,
         name: `edge-${edge.from}-${edge.to}`,
-        path: geometry.path,
+        path: pathToSvgData(geometry.path),
         stroke: edgeStroke,
         strokeWidth: 1.5
       });
@@ -207,7 +208,7 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
         hitSelf: false,
         hittable: false,
         name: `edge-arrow-${edge.from}-${edge.to}`,
-        path: geometry.arrowPath
+        path: pathToSvgData(geometry.arrowPath)
       });
 
       leafer.add(edgeLine);
@@ -362,7 +363,7 @@ function boxBoundaryPoint(from: ForceLayoutNode, toward: ForceLayoutNode, box: {
   };
 }
 
-function trianglePath(tip: { x: number; y: number }, tail: { x: number; y: number }, size: number) {
+function trianglePath(tip: { x: number; y: number }, tail: { x: number; y: number }, size: number): GraphPathCommand[] {
   const dx = tip.x - tail.x;
   const dy = tip.y - tail.y;
   const length = Math.max(Math.sqrt(dx * dx + dy * dy), 0.01);
@@ -379,6 +380,10 @@ function trianglePath(tip: { x: number; y: number }, tail: { x: number; y: numbe
     ["L", roundSceneValue(baseX - perpX), roundSceneValue(baseY - perpY)],
     ["Z"]
   ];
+}
+
+function pathToSvgData(path: GraphPathCommand[]): string {
+  return path.map((command) => (command[0] === "Z" ? "Z" : `${command[0]} ${command[1]} ${command[2]}`)).join(" ");
 }
 
 function registerEdgeElement(edgeElementsByNodeId: Map<string, LeaferElement[]>, nodeId: string, element: LeaferElement): void {

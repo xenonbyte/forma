@@ -71,6 +71,7 @@ typography:
     fontSize: 36px
     fontWeight: 400
     lineHeight: 1.2
+    letterSpacing: -0.28px
   body-md:
     fontFamily: Inter, system-ui, sans-serif
     fontSize: 16px
