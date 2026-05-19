@@ -12,6 +12,8 @@ import {
   type DeleteProductResult,
   type DesignService,
   type GeneratedComponents,
+  type GenerateAndSavePageDesignInput,
+  type GenerateAndSavePageDesignResult,
   type GenerateComponentsInput,
   type ProductService,
   type RequirementService,
@@ -42,6 +44,7 @@ export const formaToolNames = [
   "get_style",
   "save_requirement",
   "generate_page_design",
+  "generate_and_save_page_design",
   "generate_components",
   "save_designs",
   "rollback_design",
@@ -79,6 +82,7 @@ export interface FormaStore {
     DesignService,
     "saveDesigns" | "rollbackDesign" | "diffDesigns" | "getDesignAnnotations" | "getDesignMetadata" | "exportDesignAsset"
   >;
+  generateAndSavePageDesign?(input: GenerateAndSavePageDesignInput): Promise<GenerateAndSavePageDesignResult>;
   generateComponents?(input: GenerateComponentsInput): Promise<GeneratedComponents>;
   products: Pick<ProductService, "getProduct" | "initProductConfig" | "listProducts" | "markComponentsInitialized">;
   requirements: ToolRequirements;
@@ -202,6 +206,13 @@ const pencilGenerationSchema = z.object({
   prompt: z.string().min(1),
   workspace: z.string().min(1)
 }).strict();
+const generateAndSavePageDesignSchema = z.object({
+  product_id: z.string().min(1),
+  requirement_id: z.string().min(1),
+  page_id: z.string().min(1),
+  prompt: z.string().min(1),
+  workspace: z.string().min(1)
+}).strict();
 const componentGenerationSchema = z.object({
   product_id: z.string().min(1),
   prompt: z.string().min(1),
@@ -251,6 +262,7 @@ export const formaToolInputSchemas = {
   get_style: styleNameSchema,
   save_requirement: saveRequirementSchema,
   generate_page_design: pencilGenerationSchema,
+  generate_and_save_page_design: generateAndSavePageDesignSchema,
   generate_components: componentGenerationSchema,
   save_designs: saveDesignsSchema,
   rollback_design: designIdSchema,
@@ -280,7 +292,8 @@ const descriptions = {
   list_styles: "List installed styles.",
   get_style: "Read style metadata and design guidance.",
   save_requirement: "Create or update a requirement through the unified state machine.",
-  generate_page_design: "Generate a page design through Pencil.",
+  generate_page_design: "Generate temporary Pencil output only for a page design. Low-level callers must pass the returned pen_path and preview_path to save_designs; prefer generate_and_save_page_design for normal /design workflows.",
+  generate_and_save_page_design: "Normal /design workflow entrypoint: generate a page design and persist the resulting .pen and preview as the official design in one workflow.",
   generate_components: "Generate product components through Pencil.",
   save_designs: "Persist validated design outputs.",
   rollback_design: "Rollback a design to the previous version.",
@@ -339,6 +352,12 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
       const product = await store.products.getProduct(input.product_id);
       assertProductConfig(product, input.product_id, ["platform", "style", "languages", "components_initialized"]);
       return pencil.generatePageDesign(input);
+    }),
+    generate_and_save_page_design: tool("generate_and_save_page_design", async (input) => {
+      if (typeof store.generateAndSavePageDesign !== "function") {
+        throw new ToolError("STORE_METHOD_UNAVAILABLE", "Store page design generation unavailable", {});
+      }
+      return store.generateAndSavePageDesign(input);
     }),
     generate_components: tool("generate_components", async (input) => {
       if (typeof store.generateComponents !== "function") {
