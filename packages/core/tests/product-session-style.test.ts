@@ -806,6 +806,50 @@ describe("product session and style services", () => {
     expect(warnings[0]).toContain("cleanup unavailable");
   });
 
+  it("generateAndSavePageDesign cleans temp output when metadata fails after committed save", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const generated = await writeGeneratedPageDesignCandidate("metadata-fails");
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+      pageDesignGenerator: {
+        generatePageDesign: vi.fn(async () => generated)
+      }
+    });
+    const product = await seedDesignReadyProduct(store);
+    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
+    const saveDesignsLocked = vi.spyOn(store.designs, "saveDesignsLocked");
+    vi.spyOn(store.designs, "getDesignMetadata").mockRejectedValueOnce(
+      new FormaError("DESIGN_NOT_FOUND", "metadata missing", { design_id: "D-missing" })
+    );
+
+    await expect(
+      store.generateAndSavePageDesign({
+        product_id: product.id,
+        requirement_id: requirement.id,
+        page_id: "checkout",
+        prompt: "Create checkout page",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({
+      code: "DESIGN_NOT_FOUND",
+      details: { design_id: "D-missing" }
+    });
+
+    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
+      page_id: "checkout",
+      mode: "generate",
+      penPath: generated.penPath,
+      previewPath: generated.previewPath
+    }]);
+    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
+      status: "active",
+      pages: [expect.objectContaining({ page_id: "checkout", design_status: "done" })]
+    });
+    await expect(access(generated.tempDir)).rejects.toThrow();
+  });
+
   it("generateAndSavePageDesign preserves save failure when cleanup also fails", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
     const warnings: string[] = [];

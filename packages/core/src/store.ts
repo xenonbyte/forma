@@ -155,6 +155,12 @@ export function createFormaStore(options: FormaStoreOptions) {
       });
 
       let committed = false;
+      let cleanupDone = false;
+      const cleanupGenerated = async (outcome: GeneratedDesignCleanupOutcome): Promise<void> => {
+        if (cleanupDone) return;
+        cleanupDone = true;
+        await cleanupGeneratedDesignOutput(context, generatedDesignCleanup, generated.tempDir, outcome);
+      };
       try {
         const savedDesigns = await designs.saveDesignsLocked(input.requirement_id, [
           { page_id: input.page_id, mode, penPath: generated.penPath, previewPath: generated.previewPath }
@@ -170,7 +176,7 @@ export function createFormaStore(options: FormaStoreOptions) {
         }
 
         const metadata = await designs.getDesignMetadata(saved.id);
-        await cleanupGeneratedDesignOutput(context, generatedDesignCleanup, generated.tempDir, "committed");
+        await cleanupGenerated("committed");
         return {
           product_id: input.product_id,
           requirement_id: input.requirement_id,
@@ -181,9 +187,7 @@ export function createFormaStore(options: FormaStoreOptions) {
           preview_path: metadata.preview_path
         };
       } catch (error) {
-        if (!committed) {
-          await cleanupGeneratedDesignOutput(context, generatedDesignCleanup, generated.tempDir, "failed");
-        }
+        await cleanupGenerated(committed ? "committed" : "failed");
         throw error;
       }
     });
