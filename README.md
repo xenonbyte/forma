@@ -102,5 +102,5 @@ pnpm typecheck
 node bin/forma.js version
 node bin/forma.js status
 node scripts/copy-assets.ts --check
-pnpm pack:cli --dry-run
+pnpm pack:publish
 ```

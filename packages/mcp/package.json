@@ -1,9 +1,29 @@
 {
   "name": "@xenonbyte/forma-mcp",
   "version": "0.1.0",
+  "description": "MCP server tools for the Forma local design workspace.",
+  "license": "UNLICENSED",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xenonbyte/forma.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/xenonbyte/forma#readme",
+  "bugs": {
+    "url": "https://github.com/xenonbyte/forma/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"

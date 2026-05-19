@@ -1,6 +1,8 @@
 {
   "name": "@xenonbyte/forma-cli",
   "version": "0.1.0",
+  "description": "User-facing Forma CLI for local design workspace, MCP startup, web serving, and agent installation.",
+  "license": "UNLICENSED",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,6 +13,21 @@
     "bin",
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xenonbyte/forma.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/xenonbyte/forma#readme",
+  "bugs": {
+    "url": "https://github.com/xenonbyte/forma/issues"
+  },
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "forma": "./bin/forma.js"
   },
