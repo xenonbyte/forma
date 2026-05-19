@@ -30,6 +30,8 @@ Add a store-level method in `packages/core/src/store.ts`:
 generateAndSavePageDesign(input: GenerateAndSavePageDesignInput): Promise<GenerateAndSavePageDesignResult>
 ```
 
+Export `GenerateAndSavePageDesignInput` and `GenerateAndSavePageDesignResult` from core so MCP can import the same contract instead of redefining it locally.
+
 The method composes existing services:
 
 - `ProductService` validates product existence and required config fields.
@@ -79,6 +81,7 @@ Update `packages/mcp/src/tools.ts`:
 - Add `generate_and_save_page_design` to `formaToolNames`.
 - Add a `generateAndSavePageDesignSchema`.
 - Add `generate_and_save_page_design` to `formaToolInputSchemas`.
+- Import `GenerateAndSavePageDesignInput` and `GenerateAndSavePageDesignResult` from `@xenonbyte/forma-core` for the store interface.
 - Extend the `FormaStore` interface with optional `generateAndSavePageDesign`.
 - Add a description that marks it as the normal `/design` workflow entrypoint.
 - Update `generate_page_design` description to say it creates temporary output and is not the normal workflow.
@@ -93,6 +96,12 @@ Update these templates:
 - `packages/agent/templates/gemini/fm-design.toml`
 
 Normal `fm-design` must call `generate_and_save_page_design`. The templates should keep the component initialization retry behavior, but the retried call should be the new atomic tool.
+
+Template edits must preserve the existing non-persistence requirements:
+
+- If `ui_affected === false`, print `当前需求无 UI 调整，无需设计` and stop before design/refine MCP calls.
+- Design prompts must inject exact structured page copy from the requirement and must not improvise UI text.
+- The agent should still confirm the product, requirement, and pending or expired pages before generation.
 
 Update these docs:
 
@@ -118,7 +127,7 @@ export interface FormaStoreOptions {
 }
 ```
 
-`createFormaStore()` should default this generator to the existing `PencilService`, while tests can pass a fake generator that writes deterministic `page.pen` and `preview.png` files into a temporary directory. Keep the existing `pencilService?: ComponentGenerator` behavior for component generation compatibility; do not require component tests to implement page design generation.
+`createFormaStore()` should default this generator to the existing `PencilService`, while tests can pass a fake generator that writes deterministic `page.pen` and `preview.png` files into a temporary directory. The fake `page.pen` must be valid JSON with a non-empty `children` array, and the fake preview must include a valid PNG signature because `DesignService.stageOutput()` validates both files. Keep the existing `pencilService?: ComponentGenerator` behavior for component generation compatibility; do not require component tests to implement page design generation.
 
 ## Migration And Compatibility
 
@@ -147,6 +156,7 @@ Core tests should cover:
 - Save failure leaves no half-saved requirement page state.
 - Temporary directory cleanup runs after save success and save failure.
 - Cleanup failure after success returns the persisted result and emits a warning.
+- If `saveDesignsLocked()` fails and temporary directory cleanup also fails, the original save error is preserved and cleanup failure is emitted as a warning.
 
 MCP tests should cover:
 
@@ -160,6 +170,7 @@ Template/docs checks should cover:
 
 - `fm-design` templates use `generate_and_save_page_design` in default execution.
 - Default execution no longer requires manual `generate_page_design` plus `save_designs`.
+- Existing `ui_affected === false`, exact structured copy, and target-page confirmation rules remain in the templates.
 - Docs mark the new tool as recommended and the old generator as low-level temporary output.
 
 ## Acceptance Criteria
