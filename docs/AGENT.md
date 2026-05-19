@@ -46,9 +46,9 @@ Claude and Gemini expose routes as `/fm-*`. Codex exposes each route as a skill 
 5. Save through `save_requirement`.
 6. Run `fm-design` for new/rebuild work or `fm-refine-design` for patch/refinement work as applicable.
 
-`fm-design` must call `save_designs` after every successful `generate_page_design` result, using the returned `pen_path` and `preview_path` plus the target `requirement_id`, `page_id`, and mapped mode. `generate_page_design` alone only creates Pencil output; it leaves the page design status pending.
+`fm-design` must call `generate_and_save_page_design` with `product_id`, `requirement_id`, `page_id`, `prompt`, and `workspace` for each target page. It must report the returned `design_id`, `version`, `pen_path`, and `preview_path`. `generate_page_design` is a low-level temporary-output tool only; low-level callers must pass the returned paths to `save_designs`, otherwise the generated `.pen` can remain temporary and be lost.
 
-If `fm-design` reaches page design and the product is missing `components_initialized`, confirm the default language, call `generate_components`, call `complete_product_init`, then retry the original design operation once.
+If `fm-design` reaches page design and the product is missing `components_initialized`, confirm the default language, call `generate_components`, call `complete_product_init`, then retry the original `generate_and_save_page_design` call once.
 
 ## Product Deletion
 

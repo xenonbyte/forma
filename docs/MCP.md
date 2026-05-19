@@ -65,7 +65,8 @@ v0.3 `get_baseline_image` can resolve expired baseline pages when an existing pr
 
 ## Designs
 
-- `generate_page_design`: generates a page design through Pencil and returns output paths.
+- `generate_and_save_page_design`: generates a page design and persists the resulting `.pen` and preview as the official design in one workflow.
+- `generate_page_design`: generates temporary Pencil output for low-level debugging or compatibility workflows.
 - `generate_components`: generates product components through Pencil.
 - `save_designs`: persists validated design outputs and advances saved page design status.
 - `rollback_design`: rolls a design back to the previous version.
@@ -73,7 +74,7 @@ v0.3 `get_baseline_image` can resolve expired baseline pages when an existing pr
 - `get_design_annotations`: reads design annotations.
 - `export_design_asset`: exports a design node as `png`, `svg`, or `pdf`.
 
-Design generation checks product configuration. Page design requires initialized components; component generation requires product platform, style, and languages. `generate_page_design` only creates Pencil output; callers must pass the returned `pen_path` and `preview_path` to `save_designs` with `requirement_id`, `page_id`, and the mapped mode before the page leaves pending design status. `generate_components` is orchestrated by the store and runs under the product mutation lock, so concurrent product deletion or component generation for the same Forma home is serialized.
+Design generation checks product configuration. Page design requires initialized components; component generation requires product platform, style, and languages. Normal `/design` workflows should call `generate_and_save_page_design`, which persists the generated `.pen` and preview as the official page design. `generate_page_design` only creates temporary Pencil output; low-level callers using it must pass the returned `pen_path` and `preview_path` to `save_designs`, otherwise generated `.pen` files can remain temporary and be lost. Persisted design metadata, history, rollback, annotations, and preview serving use files under `$FORMA_HOME/data`. `generate_components` remains store-orchestrated and runs under the product mutation lock, so concurrent product deletion or component generation for the same Forma home is serialized.
 
 ## Styles
 

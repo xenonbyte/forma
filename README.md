@@ -83,7 +83,7 @@ See [docs/AGENT.md](docs/AGENT.md) for the command table and recommended first-t
 
 ## MCP Tools
 
-The MCP server exposes tool families for sessions, products, requirements, baselines, designs, styles, copy, utilities, and structured error reporting. v0.4 adds confirmed `delete_product` and runs store-orchestrated `generate_components` under the product mutation lock. Requirement changes remain centered on `save_requirement`; there is no requirement deletion MCP tool. Product rules use `get_product_rules`, and multilingual copy uses `get_page_copy` / `update_page_copy`.
+The MCP server exposes tool families for sessions, products, requirements, baselines, designs, styles, copy, utilities, and structured error reporting. v0.4 adds confirmed `delete_product`, makes `generate_and_save_page_design` the normal page design workflow tool that persists the result, and keeps `generate_page_design` as a low-level temporary-output tool that must be followed by `save_designs` if used directly. It also runs store-orchestrated `generate_components` under the product mutation lock. Requirement changes remain centered on `save_requirement`; there is no requirement deletion MCP tool. Product rules use `get_product_rules`, and multilingual copy uses `get_page_copy` / `update_page_copy`.
 
 See [docs/MCP.md](docs/MCP.md) for tool groups, v0.4 behavior changes, and the frontend development data path.
 
@@ -103,7 +103,7 @@ Runtime data lives under `$FORMA_HOME/data`, including products, requirements, b
 pnpm smoke:pencil
 ```
 
-This runs a real end-to-end Pencil smoke: installs built-in styles into a temporary Forma home, creates a product and requirement, generates components and a page design with the Pencil CLI, persists `design.pen` and `preview@2x.png`, reads annotations, and fetches the preview through the Web API.
+This runs a real end-to-end Pencil smoke: installs built-in styles into a temporary Forma home, creates a product and requirement, generates components and a page design with the Pencil CLI, persists `design.pen`, `preview@2x.png`, and persisted design metadata under `$FORMA_HOME/data`, reads annotations, and fetches the preview through the Web API.
 
 Run it only when the Pencil CLI is installed, on `PATH`, and authenticated. The default `pnpm test` suite does not require live Pencil access.
 
