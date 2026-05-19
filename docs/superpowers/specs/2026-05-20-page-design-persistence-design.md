@@ -110,6 +110,7 @@ Update these docs:
 - `README.md`
 
 Docs must state that `generate_page_design` returns temporary output and that normal workflows should use `generate_and_save_page_design`.
+They must also state that the Web backend, design history, rollback, annotations, and preview flows read persisted design metadata under `$FORMA_HOME/data`, not temporary Pencil output directories.
 Implementation must inspect `README.md` and update any design workflow wording that would become stale after the new atomic tool, including smoke-test or MCP tool summaries.
 
 ## Test Injection Strategy
@@ -128,6 +129,8 @@ export interface FormaStoreOptions {
 ```
 
 `createFormaStore()` should default this generator to the existing `PencilService`, while tests can pass a fake generator that writes deterministic `page.pen` and `preview.png` files into a temporary directory. The fake `page.pen` must be valid JSON with a non-empty `children` array, and the fake preview must include a valid PNG signature because `DesignService.stageOutput()` validates both files. Keep the existing `pencilService?: ComponentGenerator` behavior for component generation compatibility; do not require component tests to implement page design generation.
+
+Cleanup failure tests should not rely on chmod, platform-specific filesystem behavior, or real Pencil state. They should inject failure deterministically by mocking `node:fs/promises.rm` for the generated temp dir, or by adding a narrow store-local cleanup helper/test hook that can fail after generation.
 
 ## Migration And Compatibility
 
@@ -172,6 +175,7 @@ Template/docs checks should cover:
 - Default execution no longer requires manual `generate_page_design` plus `save_designs`.
 - Existing `ui_affected === false`, exact structured copy, and target-page confirmation rules remain in the templates.
 - Docs mark the new tool as recommended and the old generator as low-level temporary output.
+- Docs state that backend/history/rollback/annotations/preview flows use persisted design metadata, not temporary output paths.
 
 ## Acceptance Criteria
 
@@ -183,3 +187,4 @@ Template/docs checks should cover:
 - Docs and agent templates no longer present `generate_page_design` plus `save_designs` as the default `fm-design` workflow.
 - README, MCP docs, and agent docs agree that `generate_page_design` is a temporary-output tool and `generate_and_save_page_design` is the normal workflow tool.
 - Targeted core and MCP tests pass.
+- `pnpm --filter @xenonbyte/forma-core typecheck` and `pnpm --filter @xenonbyte/forma-mcp typecheck` pass.
