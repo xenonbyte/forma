@@ -3,6 +3,13 @@ import { join } from "node:path";
 import { z } from "zod";
 import { copyItemSchema, type CopyItem } from "./copy.js";
 import type { ProductService } from "./product.js";
+import {
+  defaultProductMutationWarningSink,
+  getProductMutationLock,
+  runProductMutationWithWarnings,
+  type ProductMutationContext,
+  type ProductMutationLock
+} from "./product-mutation-lock.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const baselinePageSchema = z.object({
@@ -45,15 +52,21 @@ export interface BaselineSourcePage {
 export interface BaselineServiceOptions {
   home: string;
   products: ProductService;
+  productMutationLock?: ProductMutationLock;
+  onProductMutationWarning?: (warning: string) => void;
 }
 
 export class BaselineService {
   private readonly dataDir: string;
   private readonly products: ProductService;
+  private readonly productMutationLock: ProductMutationLock;
+  private readonly onProductMutationWarning: (warning: string) => void;
 
   constructor(options: BaselineServiceOptions) {
     this.dataDir = join(options.home, "data");
     this.products = options.products;
+    this.productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
+    this.onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
   }
 
   async getProductBaseline(productId: string): Promise<ProductBaseline> {
@@ -68,6 +81,17 @@ export class BaselineService {
   }
 
   async updateFromRequirement(input: {
+    productId: string;
+    requirementId: string;
+    pages: BaselineSourcePage[];
+    navigation: BaselineNavigation[];
+  }): Promise<ProductBaseline> {
+    return this.runProductMutation({ operation: "update_baseline", product_id: input.productId }, async () =>
+      this.updateFromRequirementLocked(input)
+    );
+  }
+
+  async updateFromRequirementLocked(input: {
     productId: string;
     requirementId: string;
     pages: BaselineSourcePage[];
@@ -112,6 +136,18 @@ export class BaselineService {
 
   private baselineFile(productId: string): string {
     return join(this.dataDir, productId, "baseline", "baseline.yaml");
+  }
+
+  private async runProductMutation<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: ProductMutationContext) => Promise<T>
+  ): Promise<T> {
+    return runProductMutationWithWarnings(
+      this.productMutationLock,
+      input,
+      fn,
+      this.onProductMutationWarning
+    );
   }
 }
 

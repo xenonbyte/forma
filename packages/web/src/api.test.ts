@@ -322,6 +322,40 @@ describe("apiRequest", () => {
     ]);
   });
 
+  it("sends product deletion confirmation and parses cleanup result", async () => {
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
+      return jsonResponse({
+        product_id: "P-123abc",
+        deleted: true,
+        session_cleared: true,
+        cleanup_pending: false,
+        recovery_warnings: ["Recovered orphaned requirement index"]
+      });
+    });
+
+    await expect(client.deleteProduct("P-123abc", { confirm_product_id: "P-123abc" })).resolves.toEqual({
+      product_id: "P-123abc",
+      deleted: true,
+      session_cleared: true,
+      cleanup_pending: false,
+      recovery_warnings: ["Recovered orphaned requirement index"]
+    });
+
+    expect(requests).toEqual([
+      {
+        input: "/api/products/P-123abc",
+        method: "DELETE",
+        body: { confirm_product_id: "P-123abc" }
+      }
+    ]);
+  });
+
   it("builds typed design API routes", async () => {
     const requests: Array<[RequestInfo | URL, string | undefined]> = [];
     const client = createApiClient(async (input, init) => {

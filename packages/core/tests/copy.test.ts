@@ -3,6 +3,39 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CopyService } from "../src/copy.js";
+import { getProductMutationLock, type ProductMutationContext, type ProductMutationLock } from "../src/index.js";
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function nextTick(): Promise<void> {
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+}
+
+async function lockProbeDelay(): Promise<void> {
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+}
+
+function createRecordingLock(): ProductMutationLock & { calls: Array<{ operation: string; product_id?: string }> } {
+  const calls: Array<{ operation: string; product_id?: string }> = [];
+  return {
+    calls,
+    async run<T>(
+      input: { operation: string; product_id?: string },
+      fn: (context: ProductMutationContext) => Promise<T>
+    ): Promise<T> {
+      calls.push(input);
+      return fn({ ...input, warnings: [] });
+    }
+  };
+}
 
 async function fileExists(file: string): Promise<boolean> {
   try {
@@ -23,6 +56,85 @@ const productId = "P-123abc";
 const requirementId = "R-12345678";
 
 describe("CopyService", () => {
+  it("serializes direct saveTranslations writes with the default home lock", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-copy-lock-"));
+    const copy = new CopyService({ home });
+    const release = deferred();
+    const events: string[] = [];
+    const hold = getProductMutationLock(home).run({ operation: "test_hold" }, async () => {
+      events.push("hold-enter");
+      await release.promise;
+      events.push("hold-exit");
+    });
+    while (!events.includes("hold-enter")) {
+      await nextTick();
+    }
+
+    let completed = false;
+    const save = copy
+      .saveTranslations(productId, requirementId, [
+        { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] }
+      ])
+      .then(() => {
+        completed = true;
+      });
+    await lockProbeDelay();
+
+    expect(completed).toBe(false);
+    release.resolve();
+    await Promise.all([hold, save]);
+    expect(events).toEqual(["hold-enter", "hold-exit"]);
+    expect(completed).toBe(true);
+  });
+
+  it("uses stable operation names for direct copy mutations", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-copy-lock-"));
+    const productMutationLock = createRecordingLock();
+    const copy = new CopyService({ home, productMutationLock });
+
+    await copy.saveTranslations(productId, requirementId, [
+      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] }
+    ]);
+    await copy.updatePageTranslations(productId, requirementId, "login", [
+      { context: "submit_button", texts: { en: "Sign in" } }
+    ]);
+    await copy.mergeTranslations(
+      productId,
+      requirementId,
+      { login: [{ context: "submit_button", text: "Login" }] },
+      { login: [{ context: "submit_button", text: "Sign in" }] },
+      []
+    );
+
+    expect(productMutationLock.calls).toEqual([
+      { operation: "save_translations", product_id: productId },
+      { operation: "update_page_translations", product_id: productId },
+      { operation: "merge_translations", product_id: productId }
+    ]);
+  });
+
+  it("holds one lock for page translation read-merge-write and does not call public save", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-copy-lock-"));
+    const productMutationLock = createRecordingLock();
+    const copy = new CopyService({ home, productMutationLock });
+    await copy.saveTranslations(productId, requirementId, [
+      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] }
+    ]);
+    productMutationLock.calls.length = 0;
+    copy.saveTranslations = async () => {
+      throw new Error("public saveTranslations should not be called inside updatePageTranslations");
+    };
+
+    await copy.updatePageTranslations(productId, requirementId, "login", [
+      { context: "submit_button", texts: { en: "Sign in" } }
+    ]);
+
+    expect(productMutationLock.calls).toEqual([{ operation: "update_page_translations", product_id: productId }]);
+    await expect(copy.getTranslations(productId, requirementId)).resolves.toEqual([
+      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Sign in" } }] }
+    ]);
+  });
+
   it("returns empty translations when no copy-translations.yaml exists", async () => {
     const { copy } = await createCopyService();
 

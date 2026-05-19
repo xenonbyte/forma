@@ -1,7 +1,7 @@
-import { FormaError } from "@xenonbyte/forma-core";
+import { FormaError, createFormaStore } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFormaTools, formaToolNames, registerFormaTools } from "../src/index.js";
 
@@ -29,6 +29,18 @@ function sampleStyle() {
 function fakeStore(overrides: Record<string, unknown> = {}) {
   const store = {
     home: "/tmp/forma",
+    deleteProduct: vi.fn(async () => ({
+      product_id: "P-123abc",
+      deleted: true,
+      session_cleared: false,
+      cleanup_pending: false,
+      recovery_warnings: []
+    })),
+    generateComponents: vi.fn(async () => ({
+      tempDir: "/tmp/components",
+      penPath: "/tmp/components/components.lib.pen",
+      libraryPath: "/tmp/forma/library/P-123abc.lib.pen"
+    })),
     baseline: {
       getProductBaseline: vi.fn(async () => ({ product_id: "P-123abc", pages: [], navigation: [] }))
     },
@@ -98,18 +110,20 @@ describe("MCP forma tools", () => {
     registerFormaTools(server, tools);
 
     expect(Object.keys(tools)).toEqual(formaToolNames);
-    expect(server.registerTool).toHaveBeenCalledTimes(26);
+    expect(server.registerTool).toHaveBeenCalledTimes(27);
     expect(server.registerTool.mock.calls.map((call) => call[0])).toEqual(formaToolNames);
     expect(server.registerTool.mock.calls.map((call) => call[1])).toEqual(
       expect.arrayContaining([expect.objectContaining({ inputSchema: expect.any(Object) })])
     );
     expect(formaToolNames).not.toContain("submit_requirement");
     expect(formaToolNames).not.toContain("update_requirement");
+    expect(formaToolNames).not.toContain("delete_requirement");
     expect(formaToolNames).toEqual(expect.arrayContaining([
       "save_requirement",
       "get_product_rules",
       "get_page_copy",
-      "update_page_copy"
+      "update_page_copy",
+      "delete_product"
     ]));
     expect(formaToolNames).toContain("diff_designs");
   });
@@ -203,8 +217,7 @@ describe("MCP forma tools", () => {
   it("delegates representative tools to core and injected services", async () => {
     const store = fakeStore();
     const pencil = {
-      generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" })),
-      generateComponents: vi.fn(async () => ({ tempDir: "/tmp/components", penPath: "/tmp/components/components.lib.pen" }))
+      generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" }))
     };
     const tools = createFormaTools(store, { pencil });
 
@@ -232,8 +245,7 @@ describe("MCP forma tools", () => {
 
   it("gates page design generation on languages and initialized components", async () => {
     const pencil = {
-      generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" })),
-      generateComponents: vi.fn(async () => ({ tempDir: "/tmp/components", penPath: "/tmp/components/components.lib.pen" }))
+      generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" }))
     };
     const store = fakeStore({
       products: {
@@ -253,50 +265,164 @@ describe("MCP forma tools", () => {
     expect(pencil.generatePageDesign).not.toHaveBeenCalled();
   });
 
-  it("gates component generation on languages but not initialized components", async () => {
-    const pencil = {
+  it("delegates component generation to the store without pre-reading product config or using injected Pencil extras", async () => {
+    const pencilWithExtra = {
       generatePageDesign: vi.fn(async () => ({ tempDir: "/tmp/page", penPath: "/tmp/page/page.pen", previewPath: "/tmp/page/preview.png" })),
-      generateComponents: vi.fn(async () => ({ tempDir: "/tmp/components", penPath: "/tmp/components/components.lib.pen" }))
+      generateComponents: vi.fn(async () => ({ tempDir: "/tmp/bypass", penPath: "/tmp/bypass/components.lib.pen" }))
     };
     const store = fakeStore({
       products: {
         ...fakeStore().products,
-        getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo", platform: "web" }))
+        getProduct: vi.fn(async () => {
+          throw new Error("MCP should not pre-read product config for component generation");
+        })
       }
     });
-    const tools = createFormaTools(store, { pencil });
+    const tools = createFormaTools(store, { pencil: pencilWithExtra });
 
-    const missingLanguages = await tools.generate_components({ product_id: "P-123abc", prompt: "Create controls", workspace: "/tmp/workspace" });
-
-    expect(missingLanguages.isError).toBe(true);
-    expect(textPayload(missingLanguages)).toMatchObject({
-      error_code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { product_id: "P-123abc", missing: ["style", "languages"] }
+    const result = await tools.generate_components({
+      product_id: "P-123abc",
+      prompt: "Create controls",
+      workspace: "/tmp/workspace"
     });
-    expect(pencil.generateComponents).not.toHaveBeenCalled();
 
-    store.products.getProduct.mockResolvedValueOnce({
-      id: "P-123abc",
-      name: "App",
-      description: "Demo",
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({
+      tempDir: "/tmp/components",
+      penPath: "/tmp/components/components.lib.pen",
+      libraryPath: "/tmp/forma/library/P-123abc.lib.pen"
+    });
+    expect(store.products.getProduct).not.toHaveBeenCalled();
+    expect(store.generateComponents).toHaveBeenCalledWith({
+      product_id: "P-123abc",
+      prompt: "Create controls",
+      workspace: "/tmp/workspace"
+    });
+    expect(pencilWithExtra.generateComponents).not.toHaveBeenCalled();
+  });
+
+  it("delete_product returns the core result and delegates to store.deleteProduct", async () => {
+    const deleted = {
+      product_id: "P-123abc",
+      deleted: true,
+      session_cleared: true,
+      cleanup_pending: false,
+      recovery_warnings: []
+    };
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => deleted)
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual(deleted);
+    expect(store.deleteProduct).toHaveBeenCalledWith({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
+  });
+
+  it("delete_product rejects missing or mismatched confirmation without calling the store", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const missing = await tools.delete_product({ product_id: "P-123abc" });
+    const mismatch = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-other" });
+
+    expect(missing.isError).toBe(true);
+    expect(textPayload(missing)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+    expect(mismatch.isError).toBe(true);
+    expect(textPayload(mismatch)).toMatchObject({
+      error_code: "VALIDATION_ERROR",
+      details: { issues: expect.arrayContaining([expect.objectContaining({ path: ["confirm_product_id"] })]) }
+    });
+    expect(store.deleteProduct).not.toHaveBeenCalled();
+  });
+
+  it("delete_product passes through core product mutation lock errors", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held", {
+          operation: "delete_product",
+          product_id: "P-123abc"
+        });
+      })
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toEqual({
+      error_code: "PRODUCT_MUTATION_LOCKED",
+      message: "Product mutation lock is held",
+      details: { operation: "delete_product", product_id: "P-123abc" }
+    });
+  });
+
+  it("delete_product preserves recovery warnings in successful responses", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => ({
+        product_id: "P-123abc",
+        deleted: true,
+        session_cleared: false,
+        cleanup_pending: true,
+        recovery_warnings: ["cleanup was deferred"]
+      }))
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({
+      cleanup_pending: true,
+      recovery_warnings: ["cleanup was deferred"]
+    });
+  });
+
+  it("get_current_session never points to a product while delete_product is clearing or removing it", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-delete-session-"));
+    const observations: Array<{ phase: string; current_product: string | null }> = [];
+    let tools: ReturnType<typeof createFormaTools>;
+    const productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]> = {
+      afterPhasePersisted: async (state) => {
+        if (["session_written", "index_written", "moved"].includes(state.phase)) {
+          const session = textPayload(await tools.get_current_session({})) as { current_product: string | null };
+          expect(session.current_product).not.toBe(state.product_id);
+          observations.push({ phase: state.phase, current_product: session.current_product });
+        }
+      }
+    };
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productDeletionHooks
+    });
+    tools = createFormaTools(store);
+    const product = await store.products.createProduct({ name: "Delete Me", description: "Temporary" });
+    await store.products.initProductConfig(product.id, {
       platform: "web",
-      style: { name: "linear" },
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
+      style: {
+        name: "linear",
+        description: "Focused tool UI",
+        design_md_path: "styles/linear/DESIGN.md",
+        variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
+      }
     });
+    await store.sessions.setCurrentProduct(product.id);
 
-    const withoutComponentsInitialized = await tools.generate_components({
-      product_id: "P-123abc",
-      prompt: "Create controls",
-      workspace: "/tmp/workspace"
-    });
+    const result = await tools.delete_product({ product_id: product.id, confirm_product_id: product.id });
 
-    expect(withoutComponentsInitialized.isError).toBeUndefined();
-    expect(pencil.generateComponents).toHaveBeenCalledWith({
-      product_id: "P-123abc",
-      prompt: "Create controls",
-      workspace: "/tmp/workspace"
-    });
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ product_id: product.id, session_cleared: true });
+    expect(textPayload(await tools.get_current_session({}))).toEqual({ current_product: null });
+    expect(observations).toEqual([
+      { phase: "session_written", current_product: null },
+      { phase: "index_written", current_product: null },
+      { phase: "moved", current_product: null }
+    ]);
   });
 
   it("complete_product_init fails when no component library was persisted", async () => {

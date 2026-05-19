@@ -60,15 +60,15 @@ Open the local URL to create and configure products, browse styles, manage requi
 
 ## Agent Integration
 
-Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, unified requirement capture, design generation/refinement, component refinement, style changes, rollback, and status checks.
+Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, confirmed product deletion, unified requirement capture, design generation/refinement, component refinement, style changes, rollback, and status checks.
 
 See [docs/AGENT.md](docs/AGENT.md) for the command table and recommended first-time and iterative workflows.
 
 ## MCP Tools
 
-The MCP server exposes tool families for sessions, products, requirements, baselines, designs, styles, copy, utilities, and structured error reporting. v0.3 centers requirement changes on `save_requirement`, product rules through `get_product_rules`, and multilingual copy through `get_page_copy` / `update_page_copy`.
+The MCP server exposes tool families for sessions, products, requirements, baselines, designs, styles, copy, utilities, and structured error reporting. v0.4 adds confirmed `delete_product` and runs store-orchestrated `generate_components` under the product mutation lock. Requirement changes remain centered on `save_requirement`; there is no requirement deletion MCP tool. Product rules use `get_product_rules`, and multilingual copy uses `get_page_copy` / `update_page_copy`.
 
-See [docs/MCP.md](docs/MCP.md) for tool groups, v0.3 behavior changes, and the frontend development data path.
+See [docs/MCP.md](docs/MCP.md) for tool groups, v0.4 behavior changes, and the frontend development data path.
 
 ## Data Location
 

@@ -47,8 +47,14 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
     });
   });
 
-  void store.sync.recoverFromCrash().catch(() => undefined);
+  app.addHook("onReady", async () => {
+    const recovery = await store.recoverPendingProductDeletes();
+    for (const warning of recovery.warnings) {
+      app.log.warn({ warning }, "Forma product deletion recovery warning");
+    }
+  });
 
+  void store.sync.recoverFromCrash().catch(() => undefined);
   registerRoutes(app, store);
   return app;
 }
@@ -143,6 +149,9 @@ function statusForError(error: unknown): number {
   }
   if (error instanceof FormaError) {
     if (error.code === "SYNC_ALREADY_RUNNING") {
+      return 409;
+    }
+    if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
       return 409;
     }
     if (error.code === "SYNC_GIT_NOT_FOUND" || error.code.startsWith("PENCIL_")) {

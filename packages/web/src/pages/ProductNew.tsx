@@ -12,9 +12,10 @@ import {
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
+import { StylePickerDialog } from "../components/StylePickerDialog.js";
 
 export interface ProductNewProps {
-  client?: Pick<FormaApiClient, "configureProduct" | "createProduct" | "listStyles">;
+  client?: Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles">;
   navigate?: (pathname: string) => void;
 }
 
@@ -159,23 +160,18 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
                 ))}
               </select>
             </label>
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              {t("product.style")}
-              <select
-                className={`${inputClasses} disabled:cursor-not-allowed disabled:text-zinc-400`}
-                disabled={stylesLoading || !!styleError}
-                name="style"
-                onChange={(event) => setStyleName(event.target.value)}
-                value={styleName}
-              >
-                <option value="">{stylesLoading ? t("product.stylesLoading") : t("product.selectStyle")}</option>
-                {styles.map((style) => (
-                  <option key={style.name} value={style.name}>
-                    {style.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="grid gap-1 text-sm font-medium text-zinc-700">
+              <span>{t("product.style")}</span>
+              <input name="style" type="hidden" value={styleName} />
+              <StylePickerDialog
+                disabledReason={stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined}
+                getStyle={client.getStyle}
+                onConfirm={setStyleName}
+                platform={platform}
+                selectedStyleName={styleName}
+                styles={styles}
+              />
+            </div>
           </div>
 
           <fieldset className="grid gap-2">

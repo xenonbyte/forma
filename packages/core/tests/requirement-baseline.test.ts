@@ -4,13 +4,18 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   BaselineService,
+  CopyService,
+  ProductService,
   RequirementService,
   createFormaStore,
+  getProductMutationLock,
   readYaml,
   writeYamlAtomic,
   type CopyByPage,
-  type CopyService,
-  type PageTranslation
+  type CopyService as CopyServiceType,
+  type PageTranslation,
+  type ProductMutationContext,
+  type ProductMutationLock
 } from "../src/index.js";
 
 async function createConfiguredStore() {
@@ -73,7 +78,151 @@ async function markRequirementPagesDone(
   await writeYamlAtomic(requirementFile, { ...saved, pages });
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function nextTick(): Promise<void> {
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+}
+
+async function lockProbeDelay(): Promise<void> {
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+}
+
+function createRecordingLock(): ProductMutationLock & { calls: Array<{ operation: string; product_id?: string }> } {
+  const calls: Array<{ operation: string; product_id?: string }> = [];
+  return {
+    calls,
+    async run<T>(
+      input: { operation: string; product_id?: string },
+      fn: (context: ProductMutationContext) => Promise<T>
+    ): Promise<T> {
+      calls.push(input);
+      return fn({ ...input, warnings: [] });
+    }
+  };
+}
+
 describe("requirement and baseline services", () => {
+  it("serializes direct requirement writes with the default home lock", async () => {
+    const { store, product } = await createConfiguredStore();
+    const products = new ProductService({ home: store.home });
+    const baseline = new BaselineService({ home: store.home, products });
+    const copy = new CopyService({ home: store.home });
+    const requirements = new RequirementService({ home: store.home, products, baseline, copy });
+    const release = deferred();
+    const events: string[] = [];
+    const hold = getProductMutationLock(store.home).run({ operation: "test_hold" }, async () => {
+      events.push("hold-enter");
+      await release.promise;
+      events.push("hold-exit");
+    });
+    while (!events.includes("hold-enter")) {
+      await nextTick();
+    }
+
+    let completed = false;
+    const create = requirements.createEmptyRequirement(product.id, "Locked Requirement").then(() => {
+      completed = true;
+    });
+    await lockProbeDelay();
+
+    expect(completed).toBe(false);
+    release.resolve();
+    await Promise.all([hold, create]);
+    expect(events).toEqual(["hold-enter", "hold-exit"]);
+    expect(completed).toBe(true);
+  });
+
+  it("serializes direct baseline writes with the default home lock", async () => {
+    const { store, product } = await createConfiguredStore();
+    const products = new ProductService({ home: store.home });
+    const baseline = new BaselineService({ home: store.home, products });
+    const release = deferred();
+    const events: string[] = [];
+    const hold = getProductMutationLock(store.home).run({ operation: "test_hold" }, async () => {
+      events.push("hold-enter");
+      await release.promise;
+      events.push("hold-exit");
+    });
+    while (!events.includes("hold-enter")) {
+      await nextTick();
+    }
+
+    let completed = false;
+    const update = baseline
+      .updateFromRequirement({
+        productId: product.id,
+        requirementId: "R-12345678",
+        pages: [{ page_id: "login", name: "Login", baseline_page: "login" }],
+        navigation: []
+      })
+      .then(() => {
+        completed = true;
+      });
+    await lockProbeDelay();
+
+    expect(completed).toBe(false);
+    release.resolve();
+    await Promise.all([hold, update]);
+    expect(events).toEqual(["hold-enter", "hold-exit"]);
+    expect(completed).toBe(true);
+  });
+
+  it("uses stable operation names for direct requirement and baseline mutations without nested reacquire", async () => {
+    const { store, product } = await createConfiguredStore();
+    const productMutationLock = createRecordingLock();
+    const products = new ProductService({ home: store.home, productMutationLock });
+    const baseline = new BaselineService({ home: store.home, products, productMutationLock });
+    const copy = new CopyService({ home: store.home, productMutationLock });
+    const requirements = new RequirementService({ home: store.home, products, baseline, copy, productMutationLock });
+
+    await baseline.updateFromRequirement({
+      productId: product.id,
+      requirementId: "R-12345678",
+      pages: [{ page_id: "login", name: "Login", baseline_page: "login" }],
+      navigation: []
+    });
+    const requirement = await requirements.createEmptyRequirement(product.id, "Login");
+    await requirements.submitRequirement(validSubmit(requirement.id));
+    await markRequirementPagesDone(store.home, product.id, requirement.id, { [`${requirement.id}-login`]: "D-11111111" });
+    await requirements.saveRequirement({
+      requirement_id: requirement.id,
+      document_md: "# Login\nLogic-only update",
+      ui_affected: false,
+      pages: [],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+    await requirements.updateRequirement({
+      requirement_id: requirement.id,
+      document_md: "# Login\nUpdated",
+      pages: [{ page_id: `${requirement.id}-login`, name: "登录页", baseline_page: "login" }],
+      expired_pages: [],
+      navigation: []
+    });
+    await requirements.archiveRequirement(requirement.id);
+
+    expect(productMutationLock.calls).toEqual([
+      { operation: "update_baseline", product_id: product.id },
+      { operation: "create_requirement", product_id: product.id },
+      { operation: "submit_requirement", product_id: product.id },
+      { operation: "save_requirement", product_id: product.id },
+      { operation: "update_requirement", product_id: product.id },
+      { operation: "archive_requirement", product_id: product.id }
+    ]);
+  });
+
   it("submits an empty requirement and updates baseline", async () => {
     const { store, product } = await createConfiguredStore();
     const req = await store.requirements.createEmptyRequirement(product.id, "Login");
@@ -425,7 +574,7 @@ describe("requirement and baseline services", () => {
       products: store.products,
       copy: store.copy,
       baseline: {
-        updateFromRequirement: async () => {
+        updateFromRequirementLocked: async () => {
           throw new Error("baseline failed");
         }
       } as BaselineService
@@ -1413,7 +1562,7 @@ describe("requirement and baseline services", () => {
     }> = [];
     const saveCalls: PageTranslation[][] = [];
     const fakeCopy = {
-      async mergeTranslations(
+      async mergeTranslationsLocked(
         _productId: string,
         _requirementId: string,
         oldCopy: CopyByPage,
@@ -1424,11 +1573,11 @@ describe("requirement and baseline services", () => {
         mergeCalls.push({ oldCopy, newCopy, translations });
         return sentinelTranslations;
       },
-      async saveTranslations(_productId: string, _requirementId: string, translations: PageTranslation[]) {
+      async saveTranslationsLocked(_productId: string, _requirementId: string, translations: PageTranslation[]) {
         calls.push("saveTranslations");
         saveCalls.push(translations);
       }
-    } as unknown as CopyService;
+    } as unknown as CopyServiceType;
     const requirements = new RequirementService({
       home: store.home,
       products: store.products,
@@ -1536,15 +1685,15 @@ describe("requirement and baseline services", () => {
     const calls: string[] = [];
     const saveCalls: PageTranslation[][] = [];
     const fakeCopy = {
-      async mergeTranslations() {
+      async mergeTranslationsLocked() {
         calls.push("mergeTranslations");
         return [{ page_id: "unexpected", entries: [{ context: "unexpected", texts: { en: "Unexpected" } }] }];
       },
-      async saveTranslations(_productId: string, _requirementId: string, translations: PageTranslation[]) {
+      async saveTranslationsLocked(_productId: string, _requirementId: string, translations: PageTranslation[]) {
         calls.push("saveTranslations");
         saveCalls.push(translations);
       }
-    } as unknown as CopyService;
+    } as unknown as CopyServiceType;
     const requirements = new RequirementService({
       home: store.home,
       products: store.products,

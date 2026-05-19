@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { randomBytes } from "node:crypto";
 import { FormaError } from "./errors.js";
 
@@ -47,13 +47,12 @@ export interface GeneratedDesign {
   previewPath: string;
 }
 
-export interface GeneratedComponents {
+export interface GeneratedComponentCandidate {
   /**
    * Temporary directory ownership is transferred to the caller on success.
    */
   tempDir: string;
   penPath: string;
-  libraryPath: string;
 }
 
 export interface PencilServiceOptions {
@@ -165,18 +164,16 @@ export class PencilService {
     });
   }
 
-  async generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponents> {
+  async generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponentCandidate> {
     const productId = parseProductId(input.product_id);
     await this.checkAvailability();
     return await this.withLock({ operation: "components", product_id: productId }, async () => {
       const tempDir = await this.createTempDir();
       try {
         const penPath = join(tempDir, "components.lib.pen");
-        const libraryPath = this.componentLibraryPath(productId);
         await this.runner.run("pencil", ["--out", penPath, "--prompt", input.prompt]);
         await this.validatePenFile(penPath);
-        await copyFileAtomic(penPath, libraryPath);
-        return { penPath, tempDir, libraryPath };
+        return { penPath, tempDir };
       } catch (error) {
         await rm(tempDir, { recursive: true, force: true });
         throw error;
@@ -300,10 +297,6 @@ export class PencilService {
     await mkdir(tempDir, { recursive: true });
     return tempDir;
   }
-
-  private componentLibraryPath(productId: string): string {
-    return join(this.home, "library", `${parseProductId(productId)}.lib.pen`);
-  }
 }
 
 function defaultIsPidAlive(pid: number): boolean {
@@ -385,19 +378,6 @@ function hasPngSignature(value: Buffer): boolean {
 
 function hasPdfSignature(value: Buffer): boolean {
   return value.length >= 5 && value.subarray(0, 5).toString("ascii") === "%PDF-";
-}
-
-async function copyFileAtomic(source: string, destination: string): Promise<void> {
-  const parentDir = dirname(destination);
-  await mkdir(parentDir, { recursive: true });
-  const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
-  try {
-    await copyFile(source, tempFile);
-    await rename(tempFile, destination);
-  } catch (error) {
-    await rm(tempFile, { force: true });
-    throw error;
-  }
 }
 
 function handleInvalidLock(mode: InvalidLockMode): undefined {

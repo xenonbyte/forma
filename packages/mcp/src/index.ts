@@ -21,22 +21,32 @@ export {
 export interface CreateFormaMcpServerOptions extends CreateFormaToolsOptions {
   home?: string;
   bundledStylesDir?: string;
+  logger?: FormaMcpLogger;
+}
+
+export interface FormaMcpLogger {
+  warn(input: { warning: string }, message: string): void;
 }
 
 type StdioServerTransportConstructor = new () => Parameters<McpServer["connect"]>[0];
 
-export function createFormaMcpServer(options: CreateFormaMcpServerOptions = {}): McpServer {
+export async function createFormaMcpServer(options: CreateFormaMcpServerOptions = {}): Promise<McpServer> {
   const store = createFormaStore({
     home: options.home ?? defaultFormaHome(),
     bundledStylesDir: options.bundledStylesDir
   });
+  const recovery = await store.recoverPendingProductDeletes();
+  for (const warning of recovery.warnings) {
+    logRecoveryWarning(warning, options.logger);
+  }
+
   const server = new McpServer({ name: "forma", version: formaCoreVersion });
   registerFormaTools(server, createFormaTools(store, { pencil: options.pencil }));
   return server;
 }
 
 export async function main(options: CreateFormaMcpServerOptions = {}): Promise<void> {
-  const server = createFormaMcpServer(options);
+  const server = await createFormaMcpServer(options);
   const Transport = await loadStdioServerTransport();
   const transport = new Transport();
   await server.connect(transport);
@@ -46,6 +56,15 @@ export const start = main;
 
 function defaultFormaHome(): string {
   return process.env.FORMA_HOME ?? join(homedir(), ".forma");
+}
+
+function logRecoveryWarning(warning: string, logger?: FormaMcpLogger): void {
+  if (logger) {
+    logger.warn({ warning }, "Forma product deletion recovery warning");
+    return;
+  }
+
+  console.error(`Forma product deletion recovery warning: ${warning}`);
 }
 
 async function loadStdioServerTransport(): Promise<StdioServerTransportConstructor> {
@@ -64,7 +83,10 @@ async function loadStdioServerTransport(): Promise<StdioServerTransportConstruct
 }
 
 function isPackagePathNotExported(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED";
+  return error instanceof Error && (
+    ("code" in error && error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") ||
+    error.message.includes("Missing \"./stdio\" specifier")
+  );
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -17,11 +17,34 @@ Agents should read session state before route-specific work and should not infer
 
 - `list_products`: lists products.
 - `get_product`: reads a product, including v0.3 config fields when present.
+- `delete_product`: deletes a product after explicit ID confirmation.
 - `init_product_config`: writes platform, style, `languages`, and `default_language` for an existing product. v0.3 requires `languages` and `default_language`; `default_language` must be included in `languages`.
 - `update_product_config`: updates platform, style, `languages`, and `default_language`. v0.3 requires `languages` and `default_language`.
 - `complete_product_init`: marks product components as initialized after component generation.
 
-Product configuration is complete only when platform, style, languages/default language, and component initialization are present.
+Product selection/basic configuration is complete when platform, style, languages, and default language are present. This completeness check excludes component initialization. Page design still requires initialized components and returns `PRODUCT_CONFIG_INCOMPLETE` when components are missing.
+
+`delete_product` input is:
+
+```json
+{ "product_id": "P-123abc", "confirm_product_id": "P-123abc" }
+```
+
+`confirm_product_id` must match `product_id`; otherwise the tool returns a validation error and does not call the store. A successful response includes:
+
+```json
+{
+  "product_id": "P-123abc",
+  "deleted": true,
+  "session_cleared": true,
+  "cleanup_pending": false,
+  "recovery_warnings": []
+}
+```
+
+If `session_cleared` is true, agents should ask the user to select a product again. If `recovery_warnings` is non-empty, agents should summarize the warnings. Product deletion is lock-protected and can return `PRODUCT_MUTATION_LOCKED`; rollback/recovery failure returns `PRODUCT_DELETION_RECOVERY_FAILED`.
+
+There is no `delete_requirement` MCP tool. Requirement changes and removals remain part of the `save_requirement` state-machine contract.
 
 ## Requirements
 
@@ -50,7 +73,7 @@ v0.3 `get_baseline_image` can resolve expired baseline pages when an existing pr
 - `get_design_annotations`: reads design annotations.
 - `export_design_asset`: exports a design node as `png`, `svg`, or `pdf`.
 
-Design generation checks product configuration. Page design requires initialized components; component generation requires product platform, style, and languages.
+Design generation checks product configuration. Page design requires initialized components; component generation requires product platform, style, and languages. `generate_components` is orchestrated by the store and runs under the product mutation lock, so concurrent product deletion or component generation for the same Forma home is serialized.
 
 ## Styles
 
@@ -83,6 +106,8 @@ Use that order to load requirement intent, inspect the generated design, export 
 
 Core Forma errors include:
 
+- `PRODUCT_MUTATION_LOCKED`
+- `PRODUCT_DELETION_RECOVERY_FAILED`
 - `PRODUCT_CONFIG_INCOMPLETE`
 - `REQUIREMENT_STATUS_INVALID`
 - `DOCUMENT_EMPTY`

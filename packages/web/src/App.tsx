@@ -27,7 +27,7 @@ export function App() {
         routeContext={match.route.context}
         title={match.route.title(match.params)}
       >
-        <Page hash={match.hash} params={match.params} route={match.route} />
+        <Page hash={match.hash} navigationState={match.navigationState} params={match.params} route={match.route} />
       </Layout>
     </LocaleProvider>
   );

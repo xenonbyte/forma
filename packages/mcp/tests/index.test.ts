@@ -1,0 +1,241 @@
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  createFormaStore: vi.fn(),
+  serverInstances: [] as Array<{ registerTool: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn> }>,
+  transportInstances: [] as object[]
+}));
+
+vi.mock("@xenonbyte/forma-core", () => {
+  class FormaError extends Error {
+    constructor(
+      public readonly code: string,
+      message: string,
+      public readonly details: Record<string, unknown> = {}
+    ) {
+      super(message);
+      this.name = "FormaError";
+    }
+
+    toJSON() {
+      return { error_code: this.code, message: this.message, details: this.details };
+    }
+  }
+
+  return {
+    FormaError,
+    PencilService: class {
+      generatePageDesign = vi.fn();
+    },
+    assertProductConfig: vi.fn(),
+    createFormaStore: mocks.createFormaStore,
+    formaCoreVersion: "0.0.0-test",
+    languages: ["en", "zh-CN"],
+    platforms: ["web", "mobile"]
+  };
+});
+
+vi.mock("@modelcontextprotocol/server", () => {
+  class McpServer {
+    registerTool = vi.fn();
+    connect = vi.fn(async () => undefined);
+
+    constructor() {
+      mocks.serverInstances.push(this);
+    }
+  }
+
+  class StdioServerTransport {
+    constructor() {
+      mocks.transportInstances.push(this);
+    }
+  }
+
+  return { McpServer, StdioServerTransport };
+});
+
+function fakeStore(overrides: Record<string, unknown> = {}) {
+  return {
+    home: "/tmp/forma",
+    recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
+    deleteProduct: vi.fn(),
+    generateComponents: vi.fn(),
+    baseline: { getProductBaseline: vi.fn() },
+    copy: { getTranslations: vi.fn(), updatePageTranslations: vi.fn() },
+    designs: {
+      saveDesigns: vi.fn(),
+      rollbackDesign: vi.fn(),
+      diffDesigns: vi.fn(),
+      getDesignAnnotations: vi.fn(),
+      getDesignMetadata: vi.fn(),
+      exportDesignAsset: vi.fn()
+    },
+    products: {
+      getProduct: vi.fn(),
+      initProductConfig: vi.fn(),
+      listProducts: vi.fn(),
+      markComponentsInitialized: vi.fn()
+    },
+    requirements: {
+      getProductRules: vi.fn(),
+      getRequirement: vi.fn(),
+      getRequirementHistory: vi.fn(),
+      saveRequirement: vi.fn()
+    },
+    sessions: { getCurrentSession: vi.fn(), setCurrentProduct: vi.fn() },
+    styles: { getStyle: vi.fn(), listStyles: vi.fn() },
+    ...overrides
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function nextTick(): Promise<void> {
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+}
+
+async function importIndex() {
+  return import("../src/index.js");
+}
+
+function expectNoToolRegistrations(): void {
+  for (const server of mocks.serverInstances) {
+    expect(server.registerTool).not.toHaveBeenCalled();
+  }
+}
+
+function expectNoTransportConnections(): void {
+  for (const server of mocks.serverInstances) {
+    expect(server.connect).not.toHaveBeenCalled();
+  }
+}
+
+describe("MCP server startup", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    mocks.serverInstances.length = 0;
+    mocks.transportInstances.length = 0;
+    mocks.createFormaStore.mockReturnValue(fakeStore());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("createFormaMcpServer is async and waits for delete recovery before registering tools", async () => {
+    const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
+    const store = fakeStore({
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+    });
+    mocks.createFormaStore.mockReturnValue(store);
+    const { createFormaMcpServer } = await importIndex();
+
+    const serverPromise = createFormaMcpServer({ home: "/tmp/custom-home", bundledStylesDir: "/tmp/styles" });
+
+    expect(serverPromise).toBeInstanceOf(Promise);
+    await nextTick();
+    expect(mocks.createFormaStore).toHaveBeenCalledWith({ home: "/tmp/custom-home", bundledStylesDir: "/tmp/styles" });
+    expectNoToolRegistrations();
+
+    recovery.resolve({ recovered: 0, cleaned: 0, warnings: [] });
+    const server = await serverPromise;
+
+    expect(server).toBe(mocks.serverInstances[0]);
+    expect(store.recoverPendingProductDeletes).toHaveBeenCalledTimes(1);
+    expect(mocks.serverInstances[0]!.registerTool).toHaveBeenCalled();
+  });
+
+  it("logs recovery warnings to an injected logger", async () => {
+    const logger = { warn: vi.fn() };
+    mocks.createFormaStore.mockReturnValue(fakeStore({
+      recoverPendingProductDeletes: vi.fn(async () => ({
+        recovered: 1,
+        cleaned: 1,
+        warnings: ["rolled back deletion", "cleaned committed deletion"]
+      }))
+    }));
+    const { createFormaMcpServer } = await importIndex();
+
+    await createFormaMcpServer({ logger });
+
+    expect(logger.warn).toHaveBeenNthCalledWith(
+      1,
+      { warning: "rolled back deletion" },
+      "Forma product deletion recovery warning"
+    );
+    expect(logger.warn).toHaveBeenNthCalledWith(
+      2,
+      { warning: "cleaned committed deletion" },
+      "Forma product deletion recovery warning"
+    );
+  });
+
+  it("logs recovery warnings to stderr when no logger is provided", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.createFormaStore.mockReturnValue(fakeStore({
+      recoverPendingProductDeletes: vi.fn(async () => ({
+        recovered: 1,
+        cleaned: 0,
+        warnings: ["rollback warning"]
+      }))
+    }));
+    const { createFormaMcpServer } = await importIndex();
+
+    await createFormaMcpServer();
+
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("rollback warning"));
+  });
+
+  it("rejects the factory when delete recovery fails", async () => {
+    const recoveryError = new Error("recovery failed");
+    mocks.createFormaStore.mockReturnValue(fakeStore({
+      recoverPendingProductDeletes: vi.fn(async () => {
+        throw recoveryError;
+      })
+    }));
+    const { createFormaMcpServer } = await importIndex();
+
+    await expect(createFormaMcpServer()).rejects.toThrow("recovery failed");
+    expectNoToolRegistrations();
+  });
+
+  it("main connects stdio only after async factory recovery resolves", async () => {
+    const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
+    mocks.createFormaStore.mockReturnValue(fakeStore({
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+    }));
+    const { main } = await importIndex();
+
+    const mainPromise = main({ home: "/tmp/custom-home" });
+
+    await nextTick();
+    expectNoTransportConnections();
+
+    recovery.resolve({ recovered: 0, cleaned: 0, warnings: [] });
+    await mainPromise;
+
+    expect(mocks.transportInstances).toHaveLength(1);
+    expect(mocks.serverInstances[0]!.connect).toHaveBeenCalledWith(mocks.transportInstances[0]);
+  });
+
+  it("main does not connect stdio when recovery rejects", async () => {
+    mocks.createFormaStore.mockReturnValue(fakeStore({
+      recoverPendingProductDeletes: vi.fn(async () => {
+        throw new Error("recovery failed");
+      })
+    }));
+    const { main } = await importIndex();
+
+    await expect(main({ home: "/tmp/custom-home" })).rejects.toThrow("recovery failed");
+
+    expect(mocks.transportInstances).toHaveLength(0);
+    expectNoTransportConnections();
+  });
+});

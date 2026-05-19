@@ -8,6 +8,13 @@ import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
 import { PencilService } from "./pencil.js";
 import type { ProductService } from "./product.js";
+import {
+  defaultProductMutationWarningSink,
+  getProductMutationLock,
+  runProductMutationWithWarnings,
+  type ProductMutationContext,
+  type ProductMutationLock
+} from "./product-mutation-lock.js";
 import { requirementSchema, type Requirement, type RequirementPage } from "./requirement.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
@@ -77,6 +84,8 @@ export interface DesignServiceOptions {
   products: ProductService;
   validator?: DesignValidator;
   exporter?: DesignExporter;
+  productMutationLock?: ProductMutationLock;
+  onProductMutationWarning?: (warning: string) => void;
 }
 
 interface DesignServiceTestHooks {
@@ -103,6 +112,8 @@ export class DesignService {
   private readonly products: ProductService;
   private readonly validator: DesignValidator;
   private readonly exporter?: DesignExporter;
+  private readonly productMutationLock: ProductMutationLock;
+  private readonly onProductMutationWarning: (warning: string) => void;
   private testHooks: DesignServiceTestHooks;
 
   constructor(options: DesignServiceOptions) {
@@ -111,10 +122,16 @@ export class DesignService {
     this.products = options.products;
     this.validator = options.validator ?? new PencilService({ home: options.home });
     this.exporter = options.exporter;
+    this.productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
+    this.onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
     this.testHooks = {};
   }
 
   async saveDesigns(requirementId: string, inputs: SaveDesignInput[]): Promise<Design[]> {
+    return this.runProductMutation({ operation: "save_designs" }, async () => this.saveDesignsLocked(requirementId, inputs));
+  }
+
+  async saveDesignsLocked(requirementId: string, inputs: SaveDesignInput[]): Promise<Design[]> {
     const requirement = await this.readRequirementById(requirementId);
     const pagesById = new Map(requirement.pages.map((page) => [page.page_id, page]));
     const stageRoot = join(this.requirementDir(requirement), `.design-stage-${randomBytes(8).toString("hex")}`);
@@ -154,6 +171,10 @@ export class DesignService {
   }
 
   async rollbackDesign(designId: string): Promise<Design> {
+    return this.runProductMutation({ operation: "rollback_design" }, async () => this.rollbackDesignLocked(designId));
+  }
+
+  async rollbackDesignLocked(designId: string): Promise<Design> {
     const current = await this.readDesignById(designId);
     if (current.version <= 1) {
       throw new FormaError("VERSION_TOO_LOW", "Design version is too low", { design_id: current.id, version: current.version });
@@ -245,6 +266,12 @@ export class DesignService {
   }
 
   async exportDesignAsset(designId: string, nodeId: string, format: ExportedDesignAsset["format"]): Promise<ExportedDesignAsset> {
+    return this.runProductMutation({ operation: "export_design_asset" }, async () =>
+      this.exportDesignAssetLocked(designId, nodeId, format)
+    );
+  }
+
+  async exportDesignAssetLocked(designId: string, nodeId: string, format: ExportedDesignAsset["format"]): Promise<ExportedDesignAsset> {
     const design = await this.readDesignById(designId);
     const safeNodeId = this.parseExportNodeId(nodeId, design.id);
     const safeFormat = this.parseExportFormat(format);
@@ -599,6 +626,18 @@ export class DesignService {
 
   private designFile(design: Design): string {
     return join(this.designDir(design), "design.yaml");
+  }
+
+  private async runProductMutation<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: ProductMutationContext) => Promise<T>
+  ): Promise<T> {
+    return runProductMutationWithWarnings(
+      this.productMutationLock,
+      input,
+      fn,
+      this.onProductMutationWarning
+    );
   }
 
   private parseRequirementId(requirementId: string): string {

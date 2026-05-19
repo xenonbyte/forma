@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,12 +24,15 @@ interface TestState {
 }
 
 let states: TestState[] = [];
+const originalPath = process.env.PATH;
 
 beforeEach(() => {
   states = [];
+  process.env.PATH = originalPath;
 });
 
 afterEach(async () => {
+  process.env.PATH = originalPath;
   await Promise.all(states.map((state) => rm(state.tmp, { recursive: true, force: true })));
 });
 
@@ -467,6 +470,35 @@ describe("runCli", () => {
     expect(env.state.installServiceOptions[0]).toMatchObject({
       formaHome: env.state.formaHome,
       templatesDir: expect.stringMatching(/packages\/cli\/dist\/assets\/agent\/templates$/)
+    });
+  });
+
+  it("passes forma mcp as the install MCP command when forma is executable on PATH", async () => {
+    const env = await testEnv();
+    const binDir = join(env.state.tmp, "bin");
+    await mkdir(binDir, { recursive: true });
+    await writeFile(join(binDir, "forma"), "#!/bin/sh\nexit 0\n", "utf8");
+    await chmod(join(binDir, "forma"), 0o755);
+    process.env.PATH = binDir;
+
+    await expect(runCli(["install", "--platform", "claude"], env)).resolves.toMatchObject({ exitCode: 0 });
+
+    expect(env.state.installServiceOptions[0]).toMatchObject({
+      mcpCommand: { command: "forma", args: ["mcp"] }
+    });
+  });
+
+  it("passes the package CLI entrypoint as the install MCP command when forma is not on PATH", async () => {
+    const env = await testEnv();
+    process.env.PATH = join(env.state.tmp, "empty-bin");
+
+    await expect(runCli(["install", "--platform", "claude"], env)).resolves.toMatchObject({ exitCode: 0 });
+
+    expect(env.state.installServiceOptions[0]).toMatchObject({
+      mcpCommand: {
+        command: process.execPath,
+        args: [expect.stringMatching(/packages\/cli\/bin\/forma\.js$/), "mcp"]
+      }
     });
   });
 

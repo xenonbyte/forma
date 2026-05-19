@@ -2,6 +2,13 @@ import { access, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { productIdSchema } from "./product.js";
+import {
+  defaultProductMutationWarningSink,
+  getProductMutationLock,
+  runProductMutationWithWarnings,
+  type ProductMutationContext,
+  type ProductMutationLock
+} from "./product-mutation-lock.js";
 import { requirementIdSchema } from "./requirement.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
@@ -31,15 +38,21 @@ export type PageTranslation = z.infer<typeof pageTranslationSchema>;
 
 export interface CopyServiceOptions {
   home: string;
+  productMutationLock?: ProductMutationLock;
+  onProductMutationWarning?: (warning: string) => void;
 }
 
 export type CopyByPage = Record<string, CopyItem[]>;
 
 export class CopyService {
   private readonly dataDir: string;
+  private readonly productMutationLock: ProductMutationLock;
+  private readonly onProductMutationWarning: (warning: string) => void;
 
   constructor(options: CopyServiceOptions) {
     this.dataDir = join(options.home, "data");
+    this.productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
+    this.onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
   }
 
   async getTranslations(productId: string, requirementId: string): Promise<PageTranslation[]> {
@@ -52,6 +65,12 @@ export class CopyService {
   }
 
   async saveTranslations(productId: string, requirementId: string, translations: PageTranslation[]): Promise<void> {
+    return this.runProductMutation({ operation: "save_translations", product_id: productId }, async () =>
+      this.saveTranslationsLocked(productId, requirementId, translations)
+    );
+  }
+
+  async saveTranslationsLocked(productId: string, requirementId: string, translations: PageTranslation[]): Promise<void> {
     const file = this.translationsFile(productId, requirementId);
     const parsed = normalizeTranslations(translations);
     if (parsed.length === 0) {
@@ -63,6 +82,17 @@ export class CopyService {
   }
 
   async updatePageTranslations(
+    productId: string,
+    requirementId: string,
+    pageId: string,
+    translations: TranslationEntry[]
+  ): Promise<void> {
+    return this.runProductMutation({ operation: "update_page_translations", product_id: productId }, async () =>
+      this.updatePageTranslationsLocked(productId, requirementId, pageId, translations)
+    );
+  }
+
+  async updatePageTranslationsLocked(
     productId: string,
     requirementId: string,
     pageId: string,
@@ -87,10 +117,22 @@ export class CopyService {
     });
 
     const next = normalizeTranslations([...pagesById.values()]);
-    await this.saveTranslations(productId, requirementId, next);
+    await this.saveTranslationsLocked(productId, requirementId, next);
   }
 
   async mergeTranslations(
+    productId: string,
+    requirementId: string,
+    oldCopy: CopyByPage,
+    newCopy: CopyByPage,
+    newTranslations: PageTranslation[]
+  ): Promise<PageTranslation[]> {
+    return this.runProductMutation({ operation: "merge_translations", product_id: productId }, async () =>
+      this.mergeTranslationsLocked(productId, requirementId, oldCopy, newCopy, newTranslations)
+    );
+  }
+
+  async mergeTranslationsLocked(
     productId: string,
     requirementId: string,
     oldCopy: CopyByPage,
@@ -144,6 +186,18 @@ export class CopyService {
 
   private translationsFile(productId: string, requirementId: string): string {
     return join(this.dataDir, productIdSchema.parse(productId), requirementIdSchema.parse(requirementId), "copy-translations.yaml");
+  }
+
+  private async runProductMutation<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: ProductMutationContext) => Promise<T>
+  ): Promise<T> {
+    return runProductMutationWithWarnings(
+      this.productMutationLock,
+      input,
+      fn,
+      this.onProductMutationWarning
+    );
   }
 }
 

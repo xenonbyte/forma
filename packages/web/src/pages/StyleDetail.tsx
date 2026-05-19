@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 
 import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type StyleDetailPayload, type StylePreviewPayload } from "../api.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
+import { StylePreviewPanel } from "../components/StylePreviewPanel.js";
+import { useT } from "../LocaleContext.js";
 
 export interface StyleDetailProps {
   client?: Pick<FormaApiClient, "getStyle" | "getStylePreview">;
@@ -14,6 +16,7 @@ type StyleDetailState =
   | { preview?: StylePreviewPayload; previewError?: ApiErrorInfo; status: "ready"; style: StyleDetailPayload };
 
 export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
+  const tx = useT();
   const styleName = params.name ?? "";
   const [imageFailed, setImageFailed] = useState(false);
   const [state, setState] = useState<StyleDetailState>({ status: "loading" });
@@ -51,31 +54,21 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
 
   if (state.status === "loading") {
     return (
-      <StatePanel state="loading" title="Style detail">
-        Loading style metadata, preview metadata, and DESIGN.md.
+      <StatePanel state="loading" title={tx("style.detail.loadingTitle")}>
+        {tx("style.detail.loadingBody")}
       </StatePanel>
     );
   }
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href="/styles">Styles</PrimaryActionLink>} state="error" title="Style unavailable">
+      <StatePanel action={<PrimaryActionLink href="/styles">{tx("nav.styles")}</PrimaryActionLink>} state="error" title={tx("style.detail.unavailableTitle")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
   }
 
   const variables = Object.entries(state.style.metadata.variables ?? {});
-  const hasContent = state.style.designMd.trim().length > 0 || variables.length > 0;
-
-  if (!hasContent) {
-    return (
-      <StatePanel action={<PrimaryActionLink href="/styles">Styles</PrimaryActionLink>} state="empty" title="Empty style">
-        No variables or DESIGN.md content are stored for this style.
-      </StatePanel>
-    );
-  }
-
   const imageUrl = isStylePreviewImageUrl(state.preview?.image_url) ? state.preview?.image_url : undefined;
 
   return (
@@ -83,36 +76,48 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
       <div className="space-y-5">
         <div className="flex justify-start">
           <a className={secondaryLinkClasses} href="/styles">
-            Back to styles
+            {tx("action.backToStyles")}
           </a>
         </div>
 
-        <WorkSurface title="Preview">
-          {imageUrl && !imageFailed ? (
-            <img
-              alt={`${state.style.metadata.name} preview`}
-              className="aspect-[4/3] w-full rounded-md border border-zinc-200 bg-zinc-50 object-contain"
-              onError={() => setImageFailed(true)}
-              src={imageUrl}
-            />
-          ) : (
-            <div className="flex aspect-[4/3] items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-sm font-medium text-zinc-500">
-              Preview unavailable
-            </div>
-          )}
-          {state.previewError ? <p className="mt-3 text-sm text-red-700">{state.previewError.error_code} - Preview metadata unavailable</p> : null}
-        </WorkSurface>
+        <StylePreviewPanel designMd={state.style.designMd} metadata={state.style.metadata} previewType="web" />
 
-        <WorkSurface title="DESIGN.md">
+        {imageUrl ? (
+          <WorkSurface title={tx("style.detail.staticPreview")}>
+            {!imageFailed ? (
+              <img
+                alt={`${state.style.metadata.name} ${tx("style.detail.staticPreviewAlt")}`}
+                className="aspect-[4/3] w-full rounded-md border border-zinc-200 bg-zinc-50 object-contain"
+                onError={() => setImageFailed(true)}
+                src={imageUrl}
+              />
+            ) : (
+              <div className="flex aspect-[4/3] items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-sm font-medium text-zinc-500">
+                {tx("style.detail.staticPreviewUnavailable")}
+              </div>
+            )}
+            {state.previewError ? (
+              <p className="mt-3 text-sm text-red-700">
+                {state.previewError.error_code} - {tx("style.detail.previewMetadataUnavailable")}
+              </p>
+            ) : null}
+          </WorkSurface>
+        ) : state.previewError ? (
+          <p className="text-sm text-red-700">
+            {state.previewError.error_code} - {tx("style.detail.previewMetadataUnavailable")}
+          </p>
+        ) : null}
+
+        <WorkSurface title={tx("style.detail.designMd")}>
           <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
-            {state.style.designMd || "Empty"}
+            {state.style.designMd || tx("style.detail.designMdEmpty")}
           </pre>
         </WorkSurface>
       </div>
 
-      <WorkSurface title="Variables">
+      <WorkSurface title={tx("style.detail.variables")}>
         {variables.length === 0 ? (
-          <p className="text-sm text-zinc-500">No variables are defined.</p>
+          <p className="text-sm text-zinc-500">{tx("style.detail.emptyVariables")}</p>
         ) : (
           <div className="divide-y divide-zinc-200">
             {variables.map(([key, value]) => (

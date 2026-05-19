@@ -52,6 +52,14 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
 
   app.get<{ Params: { id: string } }>("/api/products/:id", async (request) => store.products.getProduct(request.params.id));
 
+  app.delete<{ Params: { id: string }; Body: unknown }>("/api/products/:id", async (request) => {
+    const body = objectBody(request.body);
+    return store.deleteProduct({
+      product_id: request.params.id,
+      confirm_product_id: requiredString(body, "confirm_product_id")
+    });
+  });
+
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/config", async (request) => {
     const body = objectBody(request.body);
     const style = await store.styles.getStyle(requiredString(body, "style"));

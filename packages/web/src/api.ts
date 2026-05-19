@@ -56,6 +56,14 @@ export interface Product extends ProductIndexEntry {
   style?: StyleMetadata;
 }
 
+export interface DeleteProductResult {
+  product_id: string;
+  deleted: true;
+  session_cleared: boolean;
+  cleanup_pending: boolean;
+  recovery_warnings: string[];
+}
+
 export interface BaselineNavigation {
   from: string;
   label?: string;
@@ -275,6 +283,7 @@ export interface FormaApiClient {
   createEmptyRequirement(productId: string, input: CreateEmptyRequirementInput): Promise<Requirement>;
   createProduct(input: Pick<ProductIndexEntry, "description" | "name">): Promise<Product>;
   createRequirement(productId: string, input: CreateRequirementInput): Promise<RequirementWithDocument>;
+  deleteProduct(productId: string, input: { confirm_product_id: string }): Promise<DeleteProductResult>;
   exportDesignAsset(designId: string, nodeId: string, format: DesignExportFormat): Promise<DesignExportPayload>;
   getBaseline(productId: string): Promise<ProductBaseline>;
   getDesignAnnotations(designId: string): Promise<AnnotationNode[]>;
@@ -397,6 +406,12 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
         }
       );
     },
+    deleteProduct: (productId, input) =>
+      apiRecord<DeleteProductResult>(`/api/products/${encodeURIComponent(productId)}`, {
+        ...requestOptions(fetcher),
+        body: { confirm_product_id: input.confirm_product_id },
+        method: "DELETE"
+      }),
     exportDesignAsset: (designId, nodeId, format) =>
       apiRecord<DesignExportPayload>(
         `/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: nodeId, format }).toString()}`,

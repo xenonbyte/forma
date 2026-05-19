@@ -35,14 +35,15 @@ async function exists(file: string): Promise<boolean> {
   }
 }
 
-async function createService() {
+async function createService(options: ConstructorParameters<typeof InstallService>[0] = {}) {
   const root = await mkdtemp(join(tmpdir(), "forma-install-"));
   const formaHome = join(root, ".forma");
   const userHome = join(root, "user");
   const service = new InstallService({
     formaHome,
     userHome,
-    templatesDir: resolve("packages/agent/templates")
+    templatesDir: resolve("packages/agent/templates"),
+    ...options
   });
   return { formaHome, userHome, service };
 }
@@ -486,13 +487,127 @@ describe("InstallService", () => {
     await expect(readFile(join(userHome, ".codex", "config.toml"), "utf8")).resolves.toBe("theme = \"dark\"\n");
   });
 
+  it("writes Claude and Gemini MCP config under mcpServers.forma without a top-level Claude forma entry", async () => {
+    const { userHome, service } = await createService();
+    await mkdir(join(userHome, ".claude"), { recursive: true });
+    await mkdir(join(userHome, ".gemini"), { recursive: true });
+    await writeFile(
+      join(userHome, ".claude", "mcp.json"),
+      JSON.stringify({ keep: true, forma: { command: "legacy-forma" } }, null, 2),
+      "utf8"
+    );
+    await writeFile(join(userHome, ".gemini", "settings.json"), JSON.stringify({ keep: true }, null, 2), "utf8");
+
+    await service.installPlatforms(["claude", "gemini"]);
+
+    expect(JSON.parse(await readFile(join(userHome, ".claude", "mcp.json"), "utf8"))).toEqual({
+      keep: true,
+      mcpServers: {
+        forma: { command: "forma", args: ["mcp"] }
+      }
+    });
+    expect(JSON.parse(await readFile(join(userHome, ".gemini", "settings.json"), "utf8"))).toEqual({
+      keep: true,
+      mcpServers: {
+        forma: { command: "forma", args: ["mcp"] }
+      }
+    });
+  });
+
+  it("cleans historical top-level Claude forma entries during reinstall and uninstall", async () => {
+    const { userHome, service } = await createService();
+    const claudeConfig = join(userHome, ".claude", "mcp.json");
+    await mkdir(join(userHome, ".claude"), { recursive: true });
+    await writeFile(claudeConfig, JSON.stringify({ keep: true, forma: { command: "legacy-forma" } }, null, 2), "utf8");
+
+    await service.installPlatforms(["claude"]);
+    await writeFile(
+      claudeConfig,
+      JSON.stringify(
+        {
+          ...(JSON.parse(await readFile(claudeConfig, "utf8")) as Record<string, unknown>),
+          forma: { command: "legacy-forma" }
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+    await service.installPlatforms(["claude"]);
+
+    expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
+      keep: true,
+      mcpServers: {
+        forma: { command: "forma", args: ["mcp"] }
+      }
+    });
+
+    await service.uninstallPlatforms(["claude"]);
+
+    expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({ keep: true });
+  });
+
+  it("sanitizes top-level Claude forma while restoring backup mcpServers.forma", async () => {
+    const { userHome, service } = await createService();
+    const claudeConfig = join(userHome, ".claude", "mcp.json");
+    const originalClaudeConfig = `${JSON.stringify(
+      {
+        keep: true,
+        forma: { command: "legacy-forma" },
+        mcpServers: { forma: { command: "user-forma" } }
+      },
+      null,
+      2
+    )}\n`;
+    await mkdir(join(userHome, ".claude"), { recursive: true });
+    await writeFile(claudeConfig, originalClaudeConfig, "utf8");
+
+    await service.installPlatforms(["claude"]);
+    await writeFile(
+      claudeConfig,
+      JSON.stringify(
+        {
+          ...(JSON.parse(await readFile(claudeConfig, "utf8")) as Record<string, unknown>),
+          forma: { command: "legacy-forma" },
+          postInstall: true
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    await service.uninstallPlatforms(["claude"]);
+
+    expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
+      keep: true,
+      mcpServers: { forma: { command: "user-forma" } },
+      postInstall: true
+    });
+  });
+
+  it("writes Codex MCP command and args from injected install options with JSON escaping", async () => {
+    const { userHome, service } = await createService({
+      mcpCommand: {
+        command: '/tmp/Forma "dev"/node',
+        args: ['/tmp/path with spaces/forma "cli".js', "mcp"]
+      }
+    });
+
+    await service.installPlatforms(["codex"]);
+
+    const codexConfig = await readFile(join(userHome, ".codex", "config.toml"), "utf8");
+    expect(codexConfig).toContain(`command = ${JSON.stringify('/tmp/Forma "dev"/node')}`);
+    expect(codexConfig).toContain(`args = ${JSON.stringify(['/tmp/path with spaces/forma "cli".js', "mcp"])}`);
+  });
+
   it("restores pre-existing user-owned Forma MCP config entries after reinstall and uninstall", async () => {
     const { userHome, service } = await createService();
     const claudeConfig = join(userHome, ".claude", "mcp.json");
     const geminiConfig = join(userHome, ".gemini", "settings.json");
     const codexConfig = join(userHome, ".codex", "config.toml");
     const originalClaudeConfig = `${JSON.stringify(
-      { forma: { command: "user-forma" }, keep: true },
+      { mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
       2
     )}\n`;
@@ -535,7 +650,7 @@ args = ["mcp"]
     await mkdir(join(userHome, ".codex"), { recursive: true });
     await writeFile(
       claudeConfig,
-      `${JSON.stringify({ forma: { command: "user-forma" }, keep: true }, null, 2)}\n`,
+      `${JSON.stringify({ mcpServers: { forma: { command: "user-forma" } }, keep: true }, null, 2)}\n`,
       "utf8"
     );
     await writeFile(
@@ -612,7 +727,9 @@ post_install = true
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
     expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
-      forma: { command: "user-forma" },
+      mcpServers: {
+        forma: { command: "user-forma" }
+      },
       keep: true,
       postInstall: true
     });
@@ -637,7 +754,16 @@ post_install = true
     const claudeConfig = join(userHome, ".claude", "mcp.json");
     const geminiConfig = join(userHome, ".gemini", "settings.json");
     const codexConfig = join(userHome, ".codex", "config.toml");
-    const originalClaudeConfig = `${JSON.stringify({ forma: { command: "user-forma" }, keep: true }, null, 2)}\n`;
+    const originalClaudeConfig = `${JSON.stringify(
+      { forma: { command: "legacy-forma" }, mcpServers: { forma: { command: "user-forma" } }, keep: true },
+      null,
+      2
+    )}\n`;
+    const sanitizedClaudeConfig = `${JSON.stringify(
+      { mcpServers: { forma: { command: "user-forma" } }, keep: true },
+      null,
+      2
+    )}\n`;
     const originalGeminiConfig = `${JSON.stringify(
       { mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
@@ -663,7 +789,7 @@ args = ["mcp"]
 
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
-    await expect(readFile(claudeConfig, "utf8")).resolves.toBe(originalClaudeConfig);
+    await expect(readFile(claudeConfig, "utf8")).resolves.toBe(sanitizedClaudeConfig);
     await expect(readFile(geminiConfig, "utf8")).resolves.toBe(originalGeminiConfig);
     await expect(readFile(codexConfig, "utf8")).resolves.toBe(originalCodexConfig);
   });

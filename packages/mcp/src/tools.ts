@@ -1,12 +1,30 @@
 import { access } from "node:fs/promises";
 import { join } from "node:path";
-import { assertProductConfig, FormaError, languages, PencilService, platforms, type createFormaStore } from "@xenonbyte/forma-core";
+import {
+  assertProductConfig,
+  FormaError,
+  languages,
+  PencilService,
+  platforms,
+  type BaselineService,
+  type CopyService,
+  type DeleteProductInput,
+  type DeleteProductResult,
+  type DesignService,
+  type GeneratedComponents,
+  type GenerateComponentsInput,
+  type ProductService,
+  type RequirementService,
+  type SessionService,
+  type StyleService
+} from "@xenonbyte/forma-core";
 import * as z from "zod/v4";
 
 export const formaToolNames = [
   "help",
   "list_products",
   "get_product",
+  "delete_product",
   "get_product_baseline",
   "get_baseline_page",
   "get_baseline_image",
@@ -47,11 +65,29 @@ export interface FormaToolResult {
 
 export type FormaToolHandler = (args: unknown) => Promise<FormaToolResult>;
 export type FormaTools = Record<FormaToolName, FormaToolHandler>;
-export type FormaStore = ReturnType<typeof createFormaStore>;
+type ToolRequirements = Pick<
+  RequirementService,
+  "getProductRules" | "getRequirement" | "getRequirementHistory" | "saveRequirement"
+> & Partial<Pick<RequirementService, "getLatestRequirement">>;
+
+export interface FormaStore {
+  home: string;
+  baseline: Pick<BaselineService, "getProductBaseline">;
+  copy: Pick<CopyService, "getTranslations" | "updatePageTranslations">;
+  deleteProduct(input: DeleteProductInput): Promise<DeleteProductResult>;
+  designs: Pick<
+    DesignService,
+    "saveDesigns" | "rollbackDesign" | "diffDesigns" | "getDesignAnnotations" | "getDesignMetadata" | "exportDesignAsset"
+  >;
+  generateComponents?(input: GenerateComponentsInput): Promise<GeneratedComponents>;
+  products: Pick<ProductService, "getProduct" | "initProductConfig" | "listProducts" | "markComponentsInitialized">;
+  requirements: ToolRequirements;
+  sessions: Pick<SessionService, "getCurrentSession" | "setCurrentProduct">;
+  styles: Pick<StyleService, "getStyle" | "listStyles">;
+}
 
 export interface FormaPencilService {
   generatePageDesign(input: { product_id: string; prompt: string; workspace: string }): Promise<unknown>;
-  generateComponents(input: { product_id: string; prompt: string; workspace: string }): Promise<unknown>;
 }
 
 export interface CreateFormaToolsOptions {
@@ -64,6 +100,13 @@ export interface FormaMcpServerLike {
 
 const emptySchema = z.object({}).strict();
 const productIdSchema = z.object({ product_id: z.string().min(1) }).strict();
+const deleteProductSchema = z.object({
+  product_id: z.string().min(1),
+  confirm_product_id: z.string().min(1)
+}).strict().refine((input) => input.confirm_product_id === input.product_id, {
+  message: "confirm_product_id must match product_id",
+  path: ["confirm_product_id"]
+});
 const requirementIdSchema = z.object({ requirement_id: z.string().min(1) }).strict();
 const designIdSchema = z.object({ design_id: z.string().min(1) }).strict();
 const baselinePageSchema = z.object({ product_id: z.string().min(1), page_id: z.string().min(1) }).strict();
@@ -190,6 +233,7 @@ export const formaToolInputSchemas = {
   help: emptySchema,
   list_products: emptySchema,
   get_product: productIdSchema,
+  delete_product: deleteProductSchema,
   get_product_baseline: productIdSchema,
   get_baseline_page: baselinePageSchema,
   get_baseline_image: baselinePageSchema,
@@ -219,6 +263,7 @@ const descriptions = {
   help: "List available Forma MCP tools.",
   list_products: "List Forma products.",
   get_product: "Read a product.",
+  delete_product: "Delete a product after explicit id confirmation.",
   get_product_baseline: "Read a product functional baseline.",
   get_baseline_page: "Read one baseline page.",
   get_baseline_image: "Read deterministic metadata for the latest preview backing a baseline page.",
@@ -267,6 +312,7 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
     })),
     list_products: tool("list_products", async () => store.products.listProducts()),
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),
+    delete_product: tool("delete_product", async (input) => store.deleteProduct(input)),
     get_product_baseline: tool("get_product_baseline", async (input) => store.baseline.getProductBaseline(input.product_id)),
     get_baseline_page: tool("get_baseline_page", async (input) => getBaselinePage(store, input.product_id, input.page_id)),
     get_baseline_image: tool("get_baseline_image", async (input) => getBaselineImage(store, input.product_id, input.page_id)),
@@ -295,9 +341,10 @@ export function createFormaTools(store: FormaStore, options: CreateFormaToolsOpt
       return pencil.generatePageDesign(input);
     }),
     generate_components: tool("generate_components", async (input) => {
-      const product = await store.products.getProduct(input.product_id);
-      assertProductConfig(product, input.product_id, ["platform", "style", "languages"]);
-      return pencil.generateComponents(input);
+      if (typeof store.generateComponents !== "function") {
+        throw new ToolError("STORE_METHOD_UNAVAILABLE", "Store component generation is unavailable", {});
+      }
+      return store.generateComponents(input);
     }),
     save_designs: tool("save_designs", async (input) => store.designs.saveDesigns(
       input.requirement_id,
@@ -441,9 +488,7 @@ async function getProductRequirement(store: FormaStore, productId: string, requi
 }
 
 async function getLatestNonArchivedRequirement(store: FormaStore, productId: string) {
-  const requirements = store.requirements as typeof store.requirements & {
-    getLatestRequirement?: (productId: string) => ReturnType<typeof store.requirements.getLatestRequirement>;
-  };
+  const requirements = store.requirements;
   if (typeof requirements.getLatestRequirement === "function") {
     return requirements.getLatestRequirement(productId);
   }

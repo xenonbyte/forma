@@ -5,6 +5,7 @@ import {
   formatApiError,
   languageOptions,
   type ApiErrorInfo,
+  type DeleteProductResult,
   type FormaApiClient,
   type Language,
   type Platform,
@@ -14,17 +15,34 @@ import {
   type StyleMetadata
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
+import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
+import { SkeletonDetail } from "../components/Skeleton.js";
 import { StatusBadge, type ConfigStatus } from "../components/StatusBadge.js";
 import { deriveDefaultLanguage } from "./ProductNew.js";
 
 export interface ProductDetailProps {
   client?: Pick<
     FormaApiClient,
-    "archiveRequirement" | "configureProduct" | "createEmptyRequirement" | "getBaseline" | "getProduct" | "listRequirements" | "listStyles"
+    | "archiveRequirement"
+    | "configureProduct"
+    | "createEmptyRequirement"
+    | "deleteProduct"
+    | "getBaseline"
+    | "getProduct"
+    | "listRequirements"
+    | "listStyles"
   >;
   hash?: string;
+  onNavigate?: (path: string, state?: ProductDeleteNavigationState) => void;
   params: Record<string, string>;
+}
+
+export interface ProductDeleteNavigationState {
+  cleanupPending: boolean;
+  productId: string;
+  recoveryWarnings: string[];
+  sessionCleared: boolean;
 }
 
 export type BaselineSummaryState =
@@ -40,12 +58,15 @@ type ProductDetailState =
   | { status: "loading" }
   | { baselineState: BaselineSummaryState; product: Product; requirementState: RequirementListState; status: "ready" };
 
-export function ProductDetail({ client = apiClient, hash = "", params }: ProductDetailProps) {
+export function ProductDetail({ client = apiClient, hash = "", onNavigate, params }: ProductDetailProps) {
   const t = useT();
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleteError, setDeleteError] = useState<ApiErrorInfo | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [state, setState] = useState<ProductDetailState>({ status: "loading" });
   const [title, setTitle] = useState("");
@@ -123,10 +144,37 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
     }
   }
 
+  async function handleDelete(confirmProductId: string) {
+    setDeleting(true);
+    setDeleteError(null);
+    setActionError(null);
+    try {
+      const result = await client.deleteProduct(productId, { confirm_product_id: confirmProductId });
+      navigateAfterDelete("/products", toDeleteNavigationState(result));
+    } catch (error: unknown) {
+      const nextError = formatApiError(error);
+      setDeleteError(nextError);
+      setActionError(nextError);
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function navigateAfterDelete(path: string, deleteState: ProductDeleteNavigationState) {
+    if (onNavigate) {
+      onNavigate(path, deleteState);
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.location.assign(path);
+    }
+  }
+
   if (state.status === "loading") {
     return (
       <StatePanel state="loading" title={t("product.workspace")}>
-        {t("product.workspaceLoading")}
+        <SkeletonDetail />
       </StatePanel>
     );
   }
@@ -180,8 +228,15 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
           {state.requirementState.error.error_code} - {state.requirementState.error.message}
         </StatePanel>
       ) : state.requirementState.requirements.length === 0 ? (
-        <StatePanel state="empty" title={t("requirement.noRequirements")}>
-          {t("requirement.noRequirementsHelp")}
+        <StatePanel
+          action={<PrimaryActionLink href="#new-requirement">{t("action.createRequirement")}</PrimaryActionLink>}
+          state="empty"
+          title={t("requirement.noRequirements")}
+        >
+          <div className="flex items-center gap-3">
+            <EmptyRequirementsIllustration label={t("requirement.emptyIllustration")} />
+            <p>{t("requirement.noRequirementsHelp")}</p>
+          </div>
         </StatePanel>
       ) : (
         <WorkSurface title={t("requirement.list")}>
@@ -240,7 +295,59 @@ export function ProductDetail({ client = apiClient, hash = "", params }: Product
           </form>
         </WorkSurface>
       </div>
+
+      <WorkSurface title={t("product.dangerZone")}>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm leading-6 text-zinc-600">{t("product.dangerZoneHelp")}</p>
+          <button className={dangerButtonClasses} data-product-detail-delete="true" onClick={() => setDeleteOpen(true)} type="button">
+            {t("action.deleteProduct")}
+          </button>
+        </div>
+        {deleteError ? <p className="mt-3 text-sm text-red-700">{deleteError.error_code} - {deleteError.message}</p> : null}
+      </WorkSurface>
+
+      <ConfirmDeleteDialog
+        busy={deleting}
+        error={deleteError}
+        onCancel={() => {
+          if (!deleting) {
+            setDeleteOpen(false);
+            setDeleteError(null);
+          }
+        }}
+        onConfirm={(nextProductId) => void handleDelete(nextProductId)}
+        open={deleteOpen}
+        product={{ id: state.product.id, name: state.product.name }}
+      />
     </div>
+  );
+}
+
+function toDeleteNavigationState(result: DeleteProductResult): ProductDeleteNavigationState {
+  return {
+    cleanupPending: result.cleanup_pending,
+    productId: result.product_id,
+    recoveryWarnings: result.recovery_warnings,
+    sessionCleared: result.session_cleared
+  };
+}
+
+function EmptyRequirementsIllustration({ label }: { label: string }) {
+  return (
+    <svg
+      aria-label={label}
+      className="h-14 w-14 shrink-0 text-amber-600"
+      data-empty-illustration="requirements"
+      fill="none"
+      role="img"
+      viewBox="0 0 56 56"
+    >
+      <rect className="text-amber-50" fill="currentColor" height="44" rx="10" width="44" x="6" y="6" />
+      <path d="M18 18h16M18 27h20M18 36h12" stroke="currentColor" strokeLinecap="round" strokeWidth="2.5" />
+      <path d="M38 34l4 4 7-8" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.4" />
+      <path d="M14 12h24l6 6v26H14z" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" />
+      <path d="M38 12v7h6" stroke="currentColor" strokeLinejoin="round" strokeWidth="2" />
+    </svg>
   );
 }
 
@@ -608,6 +715,8 @@ const primaryButtonClasses =
   "inline-flex items-center justify-center rounded-md bg-amber-500 px-3 py-2 text-sm font-semibold text-zinc-950 shadow-sm transition hover:bg-amber-400 active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-200 disabled:text-zinc-500 disabled:shadow-none disabled:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 const secondaryButtonClasses =
   "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 disabled:cursor-not-allowed disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400 disabled:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+const dangerButtonClasses =
+  "inline-flex items-center justify-center rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 hover:text-red-800 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500";
 const summaryPanelClasses = "rounded-lg border border-zinc-200 bg-white p-4 shadow-sm";
 const textLinkClasses =
   "inline-flex rounded-md text-sm font-semibold text-zinc-950 underline-offset-4 hover:underline active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";

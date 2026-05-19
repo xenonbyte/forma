@@ -20,10 +20,16 @@ export const formaInstallCommands = [
 
 export type FormaInstallCommand = (typeof formaInstallCommands)[number];
 
+export interface FormaMcpCommand {
+  command: string;
+  args: string[];
+}
+
 export interface InstallServiceOptions {
   formaHome?: string;
   userHome?: string;
   templatesDir?: string;
+  mcpCommand?: FormaMcpCommand;
 }
 
 export interface InstallBackupRecord {
@@ -48,17 +54,19 @@ interface InstallRecord {
 
 const codexMcpStart = "# BEGIN Forma managed mcp server";
 const codexMcpEnd = "# END Forma managed mcp server";
-const formaMcpConfig = { command: "forma", args: ["mcp"] };
+const defaultFormaMcpCommand: FormaMcpCommand = { command: "forma", args: ["mcp"] };
 
 export class InstallService {
   readonly formaHome: string;
   readonly userHome: string;
   readonly templatesDir: string;
+  readonly mcpCommand: FormaMcpCommand;
 
   constructor(options: InstallServiceOptions = {}) {
     this.userHome = resolve(options.userHome ?? homedir());
     this.formaHome = resolve(options.formaHome ?? join(this.userHome, ".forma"));
     this.templatesDir = resolve(options.templatesDir ?? defaultTemplatesDir());
+    this.mcpCommand = options.mcpCommand ?? defaultFormaMcpCommand;
   }
 
   async installPlatforms(platforms: AgentInstallPlatform[]): Promise<void> {
@@ -153,8 +161,11 @@ export class InstallService {
   private async installMcpConfig(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
     if (platform === "claude") {
       await this.writeJsonConfig(platform, join(this.userHome, ".claude", "mcp.json"), (config) => ({
-        ...config,
-        forma: formaMcpConfig
+        ...withoutTopLevelForma(config),
+        mcpServers: {
+          ...asRecord(config.mcpServers),
+          forma: this.mcpCommand
+        }
       }), record);
       return;
     }
@@ -164,7 +175,7 @@ export class InstallService {
         ...config,
         mcpServers: {
           ...asRecord(config.mcpServers),
-          forma: formaMcpConfig
+          forma: this.mcpCommand
         }
       }), record);
       return;
@@ -188,7 +199,11 @@ export class InstallService {
     if (!(await pathExists(configPath))) {
       if (backup && hasBackup) {
         await mkdir(dirname(configPath), { recursive: true });
-        await copyFile(backup, configPath);
+        if (platform === "claude") {
+          await writeFile(configPath, sanitizeClaudeConfigBackup(await readFile(backup, "utf8"), configPath), "utf8");
+        } else {
+          await copyFile(backup, configPath);
+        }
       }
       return;
     }
@@ -200,7 +215,7 @@ export class InstallService {
 
     if (platform === "claude") {
       const config = await readJsonObject(configPath);
-      delete config.forma;
+      removeJsonMcpServer(config, true);
       if (Object.keys(config).length > 0) {
         await writeJsonObject(configPath, config);
       } else {
@@ -276,7 +291,7 @@ export class InstallService {
     record: InstallRecord
   ): Promise<void> {
     const existing = await readOptionalText(configPath);
-    const next = appendCodexManagedSection(removeCodexManagedSection(existing ?? ""));
+    const next = appendCodexManagedSection(removeCodexManagedSection(existing ?? ""), this.mcpCommand);
     await this.writeTextTarget(platform, configPath, next, record.backups);
     record.configPaths.push(configPath);
   }
@@ -624,9 +639,22 @@ async function writeJsonObject(file: string, value: Record<string, unknown>): Pr
 function mergeClaudeConfigBackup(currentContent: string, backupContent: string, file: string): string {
   const current = parseJsonObject(currentContent, file);
   const backup = parseJsonObject(backupContent, file);
-  const currentWithoutForma = { ...current };
-  delete currentWithoutForma.forma;
-  return formatJsonLikeBackup({ ...backup, ...currentWithoutForma }, backupContent);
+  const currentWithoutForma = removeJsonMcpServer({ ...current }, true);
+  const backupWithoutTopLevelForma = withoutTopLevelForma(backup);
+  const backupMcpServers = asRecord(backupWithoutTopLevelForma.mcpServers);
+  const currentMcpServers = asRecord(currentWithoutForma.mcpServers);
+  const merged = { ...backupWithoutTopLevelForma, ...currentWithoutForma };
+  const mergedMcpServers = { ...backupMcpServers, ...currentMcpServers };
+  if (Object.keys(mergedMcpServers).length > 0) {
+    merged.mcpServers = mergedMcpServers;
+  } else {
+    delete merged.mcpServers;
+  }
+  return formatJsonLikeBackup(merged, backupContent);
+}
+
+function sanitizeClaudeConfigBackup(backupContent: string, file: string): string {
+  return formatJsonLikeBackup(withoutTopLevelForma(parseJsonObject(backupContent, file)), backupContent);
 }
 
 function mergeGeminiConfigBackup(currentContent: string, backupContent: string, file: string): string {
@@ -660,12 +688,32 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function appendCodexManagedSection(content: string): string {
+function withoutTopLevelForma(config: Record<string, unknown>): Record<string, unknown> {
+  const next = { ...config };
+  delete next.forma;
+  return next;
+}
+
+function removeJsonMcpServer(config: Record<string, unknown>, removeTopLevelForma = false): Record<string, unknown> {
+  if (removeTopLevelForma) {
+    delete config.forma;
+  }
+  const mcpServers = asRecord(config.mcpServers);
+  delete mcpServers.forma;
+  if (Object.keys(mcpServers).length > 0) {
+    config.mcpServers = mcpServers;
+  } else {
+    delete config.mcpServers;
+  }
+  return config;
+}
+
+function appendCodexManagedSection(content: string, mcpCommand: FormaMcpCommand): string {
   const trimmed = content.trimEnd();
   const section = `${codexMcpStart}
 [mcp_servers.forma]
-command = "forma"
-args = ["mcp"]
+command = ${JSON.stringify(mcpCommand.command)}
+args = ${JSON.stringify(mcpCommand.args)}
 ${codexMcpEnd}
 `;
   return trimmed ? `${trimmed}\n\n${section}` : section;

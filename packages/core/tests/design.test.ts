@@ -2,7 +2,15 @@ import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createFormaStore, DesignService, readYaml, writeYamlAtomic } from "../src/index.js";
+import {
+  createFormaStore,
+  DesignService,
+  getProductMutationLock,
+  readYaml,
+  writeYamlAtomic,
+  type ProductMutationContext,
+  type ProductMutationLock
+} from "../src/index.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -69,7 +77,96 @@ async function writeDesignOutput(home: string, name: string, pen: unknown = samp
   return { penPath, previewPath };
 }
 
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+async function nextTick(): Promise<void> {
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+}
+
+async function lockProbeDelay(): Promise<void> {
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+}
+
+function createRecordingLock(): ProductMutationLock & { calls: Array<{ operation: string; product_id?: string }> } {
+  const calls: Array<{ operation: string; product_id?: string }> = [];
+  return {
+    calls,
+    async run<T>(
+      input: { operation: string; product_id?: string },
+      fn: (context: ProductMutationContext) => Promise<T>
+    ): Promise<T> {
+      calls.push(input);
+      return fn({ ...input, warnings: [] });
+    }
+  };
+}
+
 describe("DesignService", () => {
+  it("serializes direct design writes with the default home lock", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const designs = new DesignService({ home, products: store.products });
+    const output = await writeDesignOutput(home, "locked-generate");
+    const release = deferred();
+    const events: string[] = [];
+    const hold = getProductMutationLock(home).run({ operation: "test_hold" }, async () => {
+      events.push("hold-enter");
+      await release.promise;
+      events.push("hold-exit");
+    });
+    while (!events.includes("hold-enter")) {
+      await nextTick();
+    }
+
+    let completed = false;
+    const save = designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]).then(() => {
+      completed = true;
+    });
+    await lockProbeDelay();
+
+    expect(completed).toBe(false);
+    release.resolve();
+    await Promise.all([hold, save]);
+    expect(events).toEqual(["hold-enter", "hold-exit"]);
+    expect(completed).toBe(true);
+  });
+
+  it("uses stable operation names for direct design mutations", async () => {
+    const { home, requirement, store } = await createDesignStore();
+    const productMutationLock = createRecordingLock();
+    const designs = new DesignService({
+      home,
+      products: store.products,
+      productMutationLock,
+      exporter: {
+        async exportAsset(_penPath, outputPath) {
+          await writeFile(outputPath, "asset", "utf8");
+        }
+      }
+    });
+    const first = await writeDesignOutput(home, "operation-first");
+    const second = await writeDesignOutput(home, "operation-second");
+
+    const [design] = await designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...first }]);
+    await designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...second }]);
+    await designs.rollbackDesign(design.id);
+    await designs.exportDesignAsset(design.id, "button", "png");
+
+    expect(productMutationLock.calls).toEqual([
+      { operation: "save_designs" },
+      { operation: "save_designs" },
+      { operation: "rollback_design" },
+      { operation: "export_design_asset" }
+    ]);
+  });
+
   it("saving a generated design changes the page status to done", async () => {
     const { home, requirement, store } = await createDesignStore();
     const output = await writeDesignOutput(home, "generated");

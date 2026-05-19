@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { ProductNew } from "./ProductNew.js";
 import * as productNew from "./ProductNew.js";
-import { ApiError, type FormaApiClient, type Language, type Product, type StyleMetadata } from "../api.js";
+import { ApiError, type FormaApiClient, type Language, type Product, type StyleDetailPayload, type StyleMetadata } from "../api.js";
 import { localeStorageKey, setLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -42,6 +42,25 @@ const styles: StyleMetadata[] = [
     }
   }
 ];
+
+const detailByName: Record<string, StyleDetailPayload> = {
+  linear: {
+    metadata: styles[0]!,
+    designMd: `---
+colors:
+  primary: "#5E6AD2"
+---
+`
+  },
+  retail: {
+    metadata: styles[1]!,
+    designMd: `---
+colors:
+  primary: "#14b8a6"
+---
+`
+  }
+};
 
 const createdProduct: Product = {
   id: "P-123abc",
@@ -83,6 +102,97 @@ describe("deriveDefaultLanguage", () => {
 });
 
 describe("ProductNew", () => {
+  it("uses the style picker instead of the old native style select", async () => {
+    const client = createClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductNew client={client} navigate={vi.fn()} />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector('select[name="style"]')).toBeNull();
+    const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
+    expect(trigger.disabled).toBe(true);
+    expect(trigger.textContent).toContain("Select a platform before choosing a style");
+
+    await act(async () => {
+      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      await flushPromises();
+    });
+
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.textContent).toContain("Select style");
+
+    await chooseStyle(container, "linear");
+
+    expect(trigger.textContent).toContain("Selected style: linear");
+    expect(required(container.querySelector<HTMLInputElement>('input[name="style"]'), "style hidden input").value).toBe("linear");
+  });
+
+  it("updates the style preview type when platform changes without clearing the selected style", async () => {
+    const client = createClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductNew client={client} navigate={vi.fn()} />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      await flushPromises();
+    });
+    await chooseStyle(container, "linear");
+    await openStylePicker(container);
+
+    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("web");
+
+    await act(async () => {
+      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "desktop");
+      await flushPromises();
+    });
+
+    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("desktop");
+    expect(required(container.querySelector<HTMLInputElement>('input[name="style"]'), "style hidden input").value).toBe("linear");
+  });
+
+  it("requests each style detail once while the picker cache is warm", async () => {
+    const client = createClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductNew client={client} navigate={vi.fn()} />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      await flushPromises();
+    });
+    await openStylePicker(container);
+
+    expect(client.getStyle).toHaveBeenCalledTimes(1);
+    expect(client.getStyle).toHaveBeenCalledWith("linear");
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>('[data-style-picker-option="retail"]'), "retail option").click();
+      await flushPromises();
+    });
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'), "linear option").click();
+      await flushPromises();
+    });
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
+      await flushPromises();
+    });
+    await openStylePicker(container);
+
+    expect(client.getStyle).toHaveBeenCalledTimes(2);
+    expect(client.getStyle).toHaveBeenNthCalledWith(2, "retail");
+  });
+
   it("updates static form text when the persisted locale changes", async () => {
     const client = createClient();
     const { container, root } = createTestRoot();
@@ -130,9 +240,12 @@ describe("ProductNew", () => {
         "Mobile checkout workbench"
       );
       setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
       await flushPromises();
     });
+
+    expect(submit.disabled).toBe(true);
+
+    await chooseStyle(container, "linear");
 
     expect(submit.disabled).toBe(true);
 
@@ -161,7 +274,12 @@ describe("ProductNew", () => {
         " Mobile checkout workbench "
       );
       setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
+      await flushPromises();
+    });
+
+    await chooseStyle(container, "linear");
+
+    await act(async () => {
       required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
       required(container.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
       await flushPromises();
@@ -275,7 +393,7 @@ describe("ProductNew", () => {
     expect(navigate).toHaveBeenCalledWith("/products/P-123abc");
   });
 
-  it("disables style selection and submit when styles fail to load", async () => {
+  it("disables the style picker and submit when styles fail to load", async () => {
     const client = createClient();
     client.listStyles.mockRejectedValueOnce(new Error("style catalog unavailable"));
     const { container, root } = createTestRoot();
@@ -285,7 +403,8 @@ describe("ProductNew", () => {
       await flushPromises();
     });
 
-    expect(required(container.querySelector<HTMLSelectElement>('select[name="style"]'), "style select").disabled).toBe(true);
+    expect(container.querySelector('select[name="style"]')).toBeNull();
+    expect(required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger").disabled).toBe(true);
     expect(required(container.querySelector<HTMLButtonElement>('button[type="submit"]'), "submit button").disabled).toBe(true);
     expect(container.textContent).toContain("style catalog unavailable");
   });
@@ -356,8 +475,9 @@ function createClient() {
       languages: input.languages,
       default_language: input.default_language
     })),
+    getStyle: vi.fn(async (name: string) => detailByName[name] ?? detailByName.linear),
     listStyles: vi.fn(async () => styles)
-  } satisfies Pick<FormaApiClient, "configureProduct" | "createProduct" | "listStyles">;
+  } satisfies Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles">;
 }
 
 function createTestRoot() {
@@ -377,8 +497,32 @@ async function fillValidProductForm(container: HTMLElement) {
       " Mobile checkout workbench "
     );
     setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
-    setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
+    await flushPromises();
+  });
+
+  await chooseStyle(container, "linear");
+
+  await act(async () => {
     required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
+    await flushPromises();
+  });
+}
+
+async function chooseStyle(container: HTMLElement, name: string) {
+  await openStylePicker(container);
+  await act(async () => {
+    required(container.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} style option`).click();
+    await flushPromises();
+  });
+  await act(async () => {
+    required(container.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "style confirm button").click();
+    await flushPromises();
+  });
+}
+
+async function openStylePicker(container: HTMLElement) {
+  await act(async () => {
+    required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger").click();
     await flushPromises();
   });
 }

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
 import { BaselineView } from "./pages/BaselineView.js";
 import { DesignView } from "./pages/DesignView.js";
-import { ProductDetail } from "./pages/ProductDetail.js";
+import { ProductDetail, type ProductDeleteNavigationState } from "./pages/ProductDetail.js";
 import { ProductList } from "./pages/ProductList.js";
 import { ProductNew } from "./pages/ProductNew.js";
 import { RequirementDetail } from "./pages/RequirementDetail.js";
@@ -12,6 +12,7 @@ import { StyleLibrary } from "./pages/StyleLibrary.js";
 
 export interface RoutePageProps {
   hash: string;
+  navigationState?: unknown;
   params: Record<string, string>;
   route: RouteDefinition;
 }
@@ -27,6 +28,7 @@ export interface RouteDefinition {
 export interface RouteMatch {
   found: boolean;
   hash: string;
+  navigationState?: unknown;
   params: Record<string, string>;
   pathname: string;
   route: RouteDefinition;
@@ -34,9 +36,14 @@ export interface RouteMatch {
 
 const navigationEvent = "forma:navigation";
 
+interface BrowserLocationSnapshot {
+  navigationState?: unknown;
+  pathname: string;
+}
+
 export const routeTable: RouteDefinition[] = [
   {
-    component: ProductList,
+    component: ProductListRoute,
     context: "Products",
     navGroup: "products",
     path: "/products",
@@ -50,7 +57,7 @@ export const routeTable: RouteDefinition[] = [
     title: () => "New product"
   },
   {
-    component: ProductDetail,
+    component: ProductDetailRoute,
     context: "Product",
     navGroup: "products",
     path: "/products/:productId",
@@ -142,16 +149,19 @@ export function useCurrentRoute(): RouteMatch {
     };
   }, []);
 
-  return useMemo(() => matchRoute(location), [location]);
+  return useMemo(() => {
+    const match = matchRoute(location.pathname);
+    return { ...match, navigationState: location.navigationState };
+  }, [location]);
 }
 
-export function navigateTo(pathname: string) {
+export function navigateTo(pathname: string, navigationState?: unknown) {
   if (!canUseDom()) {
     return;
   }
 
   const url = new URL(pathname, window.location.href);
-  window.history.pushState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  window.history.pushState(navigationState ?? {}, "", `${url.pathname}${url.search}${url.hash}`);
   window.dispatchEvent(new Event(navigationEvent));
 }
 
@@ -163,15 +173,30 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
   for (const route of routes) {
     const params = matchPath(route.path, pathnameToMatch);
     if (params) {
-      return { found: true, hash, params, pathname: pathnameToMatch, route };
+      return { found: true, hash, navigationState: undefined, params, pathname: pathnameToMatch, route };
     }
   }
 
-  return { found: false, hash, params: {}, pathname, route: notFoundRoute };
+  return { found: false, hash, navigationState: undefined, params: {}, pathname, route: notFoundRoute };
+}
+
+function ProductListRoute(props: RoutePageProps) {
+  return <ProductList {...props} />;
 }
 
 function ProductNewRoute() {
   return <ProductNew navigate={navigateTo} />;
+}
+
+function ProductDetailRoute(props: RoutePageProps) {
+  return (
+    <ProductDetail
+      {...props}
+      onNavigate={(pathname: string, deleteState?: ProductDeleteNavigationState) => {
+        navigateTo(pathname, deleteState ? { productDelete: deleteState } : undefined);
+      }}
+    />
+  );
 }
 
 function StyleLibraryRoute() {
@@ -217,8 +242,13 @@ function normalizePathname(rawPathname: string): string {
   return withLeadingSlash.length > 1 ? withLeadingSlash.replace(/\/+$/, "") : withLeadingSlash;
 }
 
-function readCurrentLocation(): string {
-  return canUseDom() ? `${window.location.pathname}${window.location.search}${window.location.hash}` : "/products";
+function readCurrentLocation(): BrowserLocationSnapshot {
+  return canUseDom()
+    ? {
+        navigationState: window.history.state,
+        pathname: `${window.location.pathname}${window.location.search}${window.location.hash}`
+      }
+    : { pathname: "/products" };
 }
 
 function canUseDom(): boolean {

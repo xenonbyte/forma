@@ -362,6 +362,9 @@ describe("PencilService", () => {
 
   it("generateComponents runs expected pencil command and returns temp paths", async () => {
     const home = await createHome("components");
+    const finalLibraryPath = join(home, "library", "P-c0ffee.lib.pen");
+    await mkdir(dirname(finalLibraryPath), { recursive: true });
+    await writeFile(finalLibraryPath, "sentinel component library");
     const fakeRunner = createFakeRunner(async (_command, args) => {
       if (args[0] === "status") return { stdout: "active", stderr: "" };
       if (args.includes("--out")) {
@@ -379,8 +382,9 @@ describe("PencilService", () => {
     });
 
     await expect(access(result.penPath)).resolves.toBeUndefined();
-    await expect(access(join(home, "library", "P-c0ffee.lib.pen"))).resolves.toBeUndefined();
+    expect(result).toEqual({ tempDir: result.tempDir, penPath: result.penPath });
     expect(result.penPath.endsWith("components.lib.pen")).toBe(true);
+    expect(await readFile(finalLibraryPath, "utf8")).toBe("sentinel component library");
     expect(fakeRunner.calls.find((call) => call.args.includes("--prompt"))?.args).toEqual([
       "--out",
       result.penPath,

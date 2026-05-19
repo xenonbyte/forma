@@ -154,6 +154,20 @@ describe("ProductDetailSummaryPanels", () => {
 });
 
 describe("ProductDetail", () => {
+  it("renders skeleton detail layout while loading instead of plain loading copy", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    client.getProduct.mockImplementationOnce(() => new Promise<Product>(() => {}));
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector('[data-skeleton="detail"]')).not.toBeNull();
+    expect(container.textContent).not.toContain("Loading product record and requirement history.");
+  });
+
   it("updates visible static text when the locale switches to Chinese", async () => {
     const client = createClient({ product: configuredProduct, requirements: [] });
     const { container, root } = createTestRoot();
@@ -181,6 +195,20 @@ describe("ProductDetail", () => {
     expect(container.textContent).toContain("新建需求");
     expect(container.textContent).not.toContain("Product configuration");
     expect(container.textContent).not.toContain("New requirement");
+  });
+
+  it("renders empty requirement action and inline illustration markup", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector('[data-empty-illustration="requirements"]')).not.toBeNull();
+    expect(container.querySelector('[aria-label="Requirement empty state"]')).not.toBeNull();
+    expect(container.querySelector('a[href="#new-requirement"]')?.textContent).toContain("Create requirement");
   });
 
   it("creates title-only requirements and reloads the requirement list", async () => {
@@ -277,6 +305,65 @@ describe("ProductDetail", () => {
       default_language: "zh-CN"
     });
   });
+
+  it("deletes the product and passes cleanup warnings to navigation", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const onNavigate = vi.fn();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} onNavigate={onNavigate} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Danger zone");
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'), "detail delete action").click();
+      await flushPromises();
+    });
+
+    const input = required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input");
+    await act(async () => {
+      setInputValue(input, "P-123abc");
+      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      await flushPromises();
+    });
+
+    expect(client.deleteProduct).toHaveBeenCalledWith("P-123abc", { confirm_product_id: input.value });
+    expect(onNavigate).toHaveBeenCalledWith("/products", {
+      cleanupPending: true,
+      productId: "P-123abc",
+      recoveryWarnings: ["Recovered orphaned requirement index"],
+      sessionCleared: true
+    });
+  });
+
+  it("shows product deletion errors without navigating", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    client.deleteProduct.mockRejectedValueOnce(new ApiError("DELETE_FAILED", "Deletion denied", {}, 409));
+    const onNavigate = vi.fn();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} onNavigate={onNavigate} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'), "detail delete action").click();
+      await flushPromises();
+    });
+
+    await act(async () => {
+      setInputValue(required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"), "P-123abc");
+      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("DELETE_FAILED - Deletion denied");
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
 });
 
 function createClient({ product, requirements }: { product: Product; requirements: RequirementWithDocument[] }) {
@@ -294,6 +381,13 @@ function createClient({ product, requirements }: { product: Product; requirement
       title: input.title
     })),
     createRequirement: vi.fn(async () => activeRequirement),
+    deleteProduct: vi.fn(async () => ({
+      product_id: product.id,
+      deleted: true as const,
+      session_cleared: true,
+      cleanup_pending: true,
+      recovery_warnings: ["Recovered orphaned requirement index"]
+    })),
     getBaseline: vi.fn(async () => baseline),
     getProduct: vi.fn(async () => product),
     listRequirements: vi.fn(async () => requirements),
@@ -304,6 +398,7 @@ function createClient({ product, requirements }: { product: Product; requirement
     | "configureProduct"
     | "createEmptyRequirement"
     | "createRequirement"
+    | "deleteProduct"
     | "getBaseline"
     | "getProduct"
     | "listRequirements"

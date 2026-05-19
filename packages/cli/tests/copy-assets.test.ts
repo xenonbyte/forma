@@ -180,9 +180,17 @@ describe("agent template inventory", () => {
   it("documents v0.3 language, structured copy, and no-UI behavior in route templates", async () => {
     for (const platform of ["claude", "codex", "gemini"] as const) {
       const listProduct = await readFile(templateUrl(platform, "fm-list-product"), "utf8");
-      expect(listProduct).toContain("missing languages");
-      expect(listProduct).toContain("confirm default language");
-      expect(listProduct).toContain("default language in component-generation prompt");
+      expect(listProduct).toContain("list_products");
+      expect(listProduct).toContain("numbered list");
+      expect(listProduct).toContain("product name and product ID");
+      expect(listProduct).toContain("choose by number");
+      expect(listProduct).toContain("set_current_session");
+      expect(listProduct).toContain("basic config is incomplete");
+      expect(listProduct).toContain("init_product_config");
+      expect(listProduct).toContain("update_product_config");
+      expect(listProduct).toContain("retry `set_current_session` once");
+      expect(listProduct).toContain("latest requirement");
+      expect(listProduct).not.toContain("component-generation prompt");
 
       const status = await readFile(templateUrl(platform, "fm-status"), "utf8");
       expect(status).toContain("languages and default_language");
@@ -199,13 +207,77 @@ describe("agent template inventory", () => {
       expect(design).toContain("new -> generate");
       expect(design).toContain("patch -> refine");
       expect(design).toContain("rebuild -> update");
+      expect(design).toContain("PRODUCT_CONFIG_INCOMPLETE");
+      expect(design).toContain("components_initialized");
+      expect(design).toContain("confirm default language");
+      expect(design).toContain("generate_components");
+      expect(design).toContain("complete_product_init");
+      expect(design).toContain("Retry original design generation once");
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");
     expect(shared).toContain("language config");
+    expect(shared).toContain("Product selection completeness excludes `components_initialized`");
+    expect(shared).toContain("collect missing platform, style, languages, and default_language");
+    expect(shared).toContain("Do not generate components during product selection");
+    expect(shared).toContain("Design routes own missing component initialization");
     expect(shared).toContain("structured copy");
     expect(shared).toContain("ui_affected=false");
     expect(shared).toContain("stable MCP usage");
+  });
+
+  it("copies v0.4 agent guidance for product selection, design init fallback, and deletion", async () => {
+    const cliAssetsDir = fileURLToPath(new URL("../../../packages/cli/dist/assets/", import.meta.url));
+    await mkdir(cliAssetsDir, { recursive: true });
+    const copiedAssetsRoot = await mkdtemp(join(cliAssetsDir, "agent-test-v0.4-"));
+    const copiedTemplatesDir = join(copiedAssetsRoot, "templates");
+
+    try {
+      await copyAssets([
+        {
+          label: "agent templates",
+          source: fileURLToPath(agentTemplatesDir),
+          target: copiedTemplatesDir
+        }
+      ]);
+
+      const shared = await readFile(join(copiedTemplatesDir, "shared", "SKILL.md"), "utf8");
+      expect(shared).toContain("Product selection completeness excludes `components_initialized`");
+      expect(shared).toContain("collect missing platform, style, languages, and default_language");
+      expect(shared).toContain("Do not generate components during product selection");
+      expect(shared).toContain("confirm the default language");
+      expect(shared).toContain("generate_components");
+      expect(shared).toContain("complete_product_init");
+      expect(shared).toContain("retry design once");
+      expect(shared).toContain("Only when the user explicitly asks to delete a product");
+      expect(shared).toContain("repeat the product name and product ID");
+      expect(shared).toContain("describe deletion scope");
+      expect(shared).toContain("user must type the exact product ID");
+      expect(shared).toContain("use the typed ID as `confirm_product_id`");
+      expect(shared).toContain("Do not auto-fill `confirm_product_id` from context");
+      expect(shared).toContain("confirm_product_id");
+      expect(shared).toContain("session_cleared");
+      expect(shared).toContain("recovery_warnings");
+      expect(shared).not.toContain("delete_requirement");
+
+      for (const platform of ["claude", "codex", "gemini"] as const) {
+        const listProduct = await readCopiedTemplate(copiedTemplatesDir, platform, "fm-list-product");
+        expect(listProduct).toContain("basic config does not include components_initialized");
+        expect(listProduct).toContain("Deletion branch");
+        expect(listProduct).toContain("Only when the user explicitly asks");
+        expect(listProduct).toContain("repeat the product name and product ID");
+        expect(listProduct).toContain("describe deletion scope");
+        expect(listProduct).toContain("user must type the exact product ID");
+        expect(listProduct).toContain("use the typed ID as `confirm_product_id`");
+        expect(listProduct).toContain("Do not auto-fill `confirm_product_id` from context");
+        expect(listProduct).toContain("session_cleared");
+        expect(listProduct).toContain("run `fm-list-product` again");
+        expect(listProduct).toContain("recovery_warnings");
+        expect(listProduct).not.toContain("delete_requirement");
+      }
+    } finally {
+      await rm(copiedAssetsRoot, { recursive: true, force: true });
+    }
   });
 });
 
@@ -288,6 +360,16 @@ function templateUrl(platform: AgentPlatform, command: string): URL {
     return new URL(`gemini/${command}.toml`, agentTemplatesDir);
   }
   return new URL(`codex/${command}/SKILL.md`, agentTemplatesDir);
+}
+
+function readCopiedTemplate(root: string, platform: AgentPlatform, command: string): Promise<string> {
+  if (platform === "claude") {
+    return readFile(join(root, "claude", `${command}.md`), "utf8");
+  }
+  if (platform === "gemini") {
+    return readFile(join(root, "gemini", `${command}.toml`), "utf8");
+  }
+  return readFile(join(root, "codex", command, "SKILL.md"), "utf8");
 }
 
 async function pathExists(path: URL): Promise<boolean> {

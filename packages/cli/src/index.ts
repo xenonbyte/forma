@@ -1,9 +1,9 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, openSync, readFileSync, rmSync } from "node:fs";
+import { accessSync, closeSync, constants, openSync, readFileSync, rmSync } from "node:fs";
 import { access, appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   InstallService,
@@ -11,6 +11,7 @@ import {
   formaCoreVersion,
   readYaml,
   type AgentInstallPlatform,
+  type FormaMcpCommand,
   type InstallManifest,
   type InstallServiceOptions
 } from "@xenonbyte/forma-core";
@@ -54,7 +55,7 @@ export interface CliInstallService {
   uninstallPlatforms(platforms: AgentInstallPlatform[]): Promise<void>;
 }
 
-export type CliInstallServiceOptions = Pick<InstallServiceOptions, "formaHome" | "templatesDir">;
+export type CliInstallServiceOptions = Pick<InstallServiceOptions, "formaHome" | "templatesDir" | "mcpCommand">;
 
 export type CliPencilStatus =
   | { available: true; authenticated: true; message?: string }
@@ -474,7 +475,7 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
   const launchWebServer = env.startWebServer ?? ((options: { home: string; bundledStylesDir?: string; webAssetsDir?: string }) => startWebServer(options));
   const bundledStylesDir = packageBundledStylesDir();
   const webAssetsDir = packageWebAssetsDir();
-  const installServiceOptions = { formaHome, templatesDir: packageAgentTemplatesDir() };
+  const installServiceOptions = { formaHome, templatesDir: packageAgentTemplatesDir(), mcpCommand: resolveInstallMcpCommand() };
   const runtimeEnv: RuntimeCliEnv = {
     formaHome,
     currentPid,
@@ -815,6 +816,27 @@ function defaultFormaHome(): string {
 
 function packageCliEntrypoint(): string {
   return join(packageRoot(), "bin", "forma.js");
+}
+
+function resolveInstallMcpCommand(): FormaMcpCommand {
+  return executableOnPath("forma")
+    ? { command: "forma", args: ["mcp"] }
+    : { command: process.execPath, args: [packageCliEntrypoint(), "mcp"] };
+}
+
+function executableOnPath(command: string): boolean {
+  for (const pathDir of (process.env.PATH ?? "").split(delimiter)) {
+    if (!pathDir) {
+      continue;
+    }
+    try {
+      accessSync(join(pathDir, command), constants.X_OK);
+      return true;
+    } catch {
+      // Keep scanning PATH.
+    }
+  }
+  return false;
 }
 
 function packageRoot(): string {

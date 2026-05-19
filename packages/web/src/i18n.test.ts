@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { getInitialLocale, getLocale, setLocale, t } from "./i18n.js";
+import { getInitialLocale, getLocale, messages, setLocale, t, translate, type Locale } from "./i18n.js";
 
 afterEach(() => {
   setLocale("en");
@@ -67,6 +67,82 @@ describe("i18n", () => {
         Object.defineProperty(globalThis, "window", previousWindowDescriptor);
       } else {
         delete (globalThis as { window?: unknown }).window;
+      }
+    }
+  });
+
+  it("defines StyleDetail, StylePreview, and StylePicker copy for both locales", () => {
+    const keys = [
+      "action.backToStyles",
+      "action.cancel",
+      "action.close",
+      "action.confirm",
+      "style.detail.designMd",
+      "style.detail.designMdEmpty",
+      "style.detail.emptyVariables",
+      "style.detail.loadingBody",
+      "style.detail.loadingTitle",
+      "style.detail.previewMetadataUnavailable",
+      "style.detail.staticPreview",
+      "style.detail.staticPreviewAlt",
+      "style.detail.staticPreviewUnavailable",
+      "style.detail.unavailableTitle",
+      "style.detail.variables",
+      "style.preview.live",
+      "style.preview.mockAction",
+      "style.preview.mockBody",
+      "style.preview.mockNav",
+      "style.preview.mockTitle",
+      "style.preview.palette",
+      "style.preview.radius",
+      "style.preview.spacing",
+      "style.preview.type",
+      "style.preview.warnings",
+      "stylePicker.candidateList",
+      "stylePicker.detailUnavailable",
+      "stylePicker.loadingDetail",
+      "stylePicker.noResults",
+      "stylePicker.platformRequired",
+      "stylePicker.searchLabel",
+      "stylePicker.searchPlaceholder",
+      "stylePicker.selectStyle",
+      "stylePicker.selectedSummary",
+      "stylePicker.title"
+    ];
+
+    for (const locale of ["en", "zh"] satisfies Locale[]) {
+      for (const key of keys) {
+        expect(messages[locale][key], `${locale} ${key}`).toBeTypeOf("string");
+        expect(translate(key, locale), `${locale} ${key}`).not.toBe(key);
+      }
+    }
+  });
+
+  it("defines web admin polish copy for both locales", () => {
+    const keys = [
+      "action.delete",
+      "action.deleteProduct",
+      "action.deleting",
+      "deleteDialog.confirmLabel",
+      "deleteDialog.description",
+      "deleteDialog.scope",
+      "deleteDialog.title",
+      "deleteDialog.typeProductId",
+      "product.deleteCleanupPending",
+      "product.deleteError",
+      "product.deleteRecoveryWarnings",
+      "product.deleteSessionCleared",
+      "product.deleteSuccess",
+      "product.dangerZone",
+      "product.dangerZoneHelp",
+      "product.emptyIllustration",
+      "requirement.emptyIllustration"
+    ];
+
+    for (const locale of ["en", "zh"] satisfies Locale[]) {
+      for (const key of keys) {
+        expect(messages[locale][key], `${locale} ${key}`).toBeTypeOf("string");
+        expect(translate(key, locale), `${locale} ${key}`).not.toBe(key);
       }
     }
   });

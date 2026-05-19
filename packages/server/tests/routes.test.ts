@@ -1,5 +1,5 @@
-import { createFormaStore, FormaError } from "@xenonbyte/forma-core";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { createFormaStore, FormaError, type ProductDeletionState } from "@xenonbyte/forma-core";
+import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,6 +10,14 @@ const apps: FormaServer[] = [];
 afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
+
+function deferred<T = void>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
 
 function fakeStore(overrides: Record<string, unknown> = {}) {
   const baseStore = {
@@ -34,6 +42,13 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     copy: {
       getTranslations: vi.fn(async () => [])
     },
+    deleteProduct: vi.fn(async (input: { product_id: string; confirm_product_id: string }) => ({
+      product_id: input.product_id,
+      deleted: true,
+      session_cleared: true,
+      cleanup_pending: false,
+      recovery_warnings: []
+    })),
     designs: {
       diffDesigns: vi.fn(async () => ({ added: [], removed: [], modified: [] })),
       exportDesignAsset: vi.fn(async () => ({
@@ -77,6 +92,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     sessions: {
       getCurrentSession: vi.fn(async () => ({ current_product: "P-123abc" }))
     },
+    recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
     sync: {
       recoverFromCrash: vi.fn(async () => undefined),
       startSync: vi.fn(async () => ({
@@ -120,6 +136,50 @@ async function appWith(store = fakeStore()) {
   apps.push(app);
   await app.ready();
   return app;
+}
+
+function createStoreWithDeletionHooks(
+  home: string,
+  productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]>
+) {
+  return createFormaStore({
+    home,
+    bundledStylesDir: resolve("styles"),
+    productDeletionHooks
+  });
+}
+
+async function seedReadyProduct(store: ReturnType<typeof createFormaStore>, name = "Shop App") {
+  const product = await store.products.createProduct({ name, description: "Mobile shop" });
+  await store.products.initProductConfig(product.id, {
+    platform: "mobile",
+    languages: ["en"],
+    default_language: "en",
+    style: {
+      name: "linear",
+      description: "Focused tool UI",
+      design_md_path: "styles/linear/DESIGN.md",
+      variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
+    }
+  });
+  return product;
+}
+
+async function writeComponentLibrary(home: string, productId: string) {
+  await mkdir(join(home, "library"), { recursive: true });
+  await writeFile(join(home, "library", `${productId}.lib.pen`), JSON.stringify({ children: [{ id: "button", type: "component" }] }), "utf8");
+}
+
+async function pathExists(file: string): Promise<boolean> {
+  try {
+    await access(file);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
 }
 
 async function webAssetsDir() {
@@ -270,6 +330,100 @@ describe("Fastify API routes", () => {
     });
     expect(store.products.createProduct).toHaveBeenCalledWith({ name: "App", description: "Demo" });
     expect(store.designs.diffDesigns).toHaveBeenCalledWith("D-12345678", 1, 2);
+  });
+
+  it("deletes a product with confirmation and returns the core result", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      product_id: "P-123abc",
+      deleted: true,
+      session_cleared: true,
+      cleanup_pending: false,
+      recovery_warnings: []
+    });
+    expect(store.deleteProduct).toHaveBeenCalledWith({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
+  });
+
+  it("rejects missing delete confirmation without calling core delete", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: {}
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    expect(store.deleteProduct).not.toHaveBeenCalled();
+  });
+
+  it("maps mismatched delete confirmations from core INVALID_INPUT to 400", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("INVALID_INPUT", "confirm_product_id must match product_id", {
+          product_id: "P-123abc",
+          confirm_product_id: "P-other1"
+        });
+      })
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-other1" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    expect(store.deleteProduct).toHaveBeenCalledWith({ product_id: "P-123abc", confirm_product_id: "P-other1" });
+  });
+
+  it("maps product mutation locks from deleteProduct to 409", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held");
+      })
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error_code: "PRODUCT_MUTATION_LOCKED" });
+  });
+
+  it("maps product deletion recovery failures from deleteProduct to 409", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
+      })
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error_code: "PRODUCT_DELETION_RECOVERY_FAILED" });
   });
 
   it("initializes product config with style metadata, platform, languages, and default language", async () => {
@@ -426,6 +580,60 @@ describe("Fastify API routes", () => {
     await Promise.resolve();
 
     expect(store.sync.recoverFromCrash).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for pending product delete recovery before app.ready resolves", async () => {
+    const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
+    const store = fakeStore({
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+    });
+    const app = buildServer({ store: store as never });
+    apps.push(app);
+    let readyResolved = false;
+
+    const ready = app.ready().then(() => {
+      readyResolved = true;
+    });
+    for (let attempt = 0; attempt < 10 && store.recoverPendingProductDeletes.mock.calls.length === 0 && !readyResolved; attempt += 1) {
+      await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+    }
+
+    expect(store.recoverPendingProductDeletes).toHaveBeenCalledTimes(1);
+    expect(readyResolved).toBe(false);
+
+    recovery.resolve({ recovered: 0, cleaned: 0, warnings: [] });
+    await ready;
+    expect(readyResolved).toBe(true);
+  });
+
+  it("logs pending product delete recovery warnings during startup", async () => {
+    const store = fakeStore({
+      recoverPendingProductDeletes: vi.fn(async () => ({
+        recovered: 1,
+        cleaned: 0,
+        warnings: ["rolled back pending delete", "cleaned stale operation"]
+      }))
+    });
+    const app = buildServer({ store: store as never });
+    apps.push(app);
+    const warn = vi.spyOn(app.log, "warn");
+
+    await app.ready();
+
+    expect(warn).toHaveBeenCalledWith({ warning: "rolled back pending delete" }, "Forma product deletion recovery warning");
+    expect(warn).toHaveBeenCalledWith({ warning: "cleaned stale operation" }, "Forma product deletion recovery warning");
+  });
+
+  it("rejects app.ready when pending product delete recovery rejects", async () => {
+    const store = fakeStore({
+      recoverPendingProductDeletes: vi.fn(async () => {
+        throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
+      })
+    });
+    const app = buildServer({ store: store as never });
+    apps.push(app);
+
+    await expect(app.ready()).rejects.toMatchObject({ code: "PRODUCT_DELETION_RECOVERY_FAILED" });
   });
 
   it("maps requirement archive invalid status to 409", async () => {
@@ -962,6 +1170,110 @@ describe("Fastify API routes", () => {
     expect(image.json()).toMatchObject({ error_code: "DESIGN_NOT_FOUND" });
     expect(history.statusCode).toBe(404);
     expect(history.json()).toMatchObject({ error_code: "DESIGN_NOT_FOUND" });
+  });
+
+  it("keeps product route reads and session visibility consistent while deletion progresses", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-delete-consistency-"));
+    const observations: Array<{
+      label: string;
+      listIds: string[];
+      detailStatus: number;
+      detailError?: string;
+      currentProduct: string | null;
+      productFileExists: boolean;
+    }> = [];
+    let app!: FormaServer;
+    let productId = "";
+    const capture = async (label: string, state: ProductDeletionState) => {
+      if (state.product_id !== productId) {
+        return;
+      }
+
+      const [list, detail, session, productFileExists] = await Promise.all([
+        app.inject({ method: "GET", url: "/api/products" }),
+        app.inject({ method: "GET", url: `/api/products/${productId}` }),
+        store.sessions.getCurrentSession(),
+        pathExists(join(home, "data", productId, "product.yaml"))
+      ]);
+      observations.push({
+        label,
+        listIds: list.json().map((product: { id: string }) => product.id),
+        detailStatus: detail.statusCode,
+        detailError: detail.statusCode === 200 ? undefined : detail.json().error_code,
+        currentProduct: session.current_product,
+        productFileExists
+      });
+    };
+    const store = createStoreWithDeletionHooks(home, {
+      afterPhasePersisted: async (state) => {
+        if (state.phase === "backed_up" || state.phase === "session_written" || state.phase === "index_written" || state.phase === "moved") {
+          await capture(state.phase, state);
+        }
+      },
+      beforeMovePath: async (entry, state) => {
+        if (entry.kind === "product_data") {
+          await capture("before_first_move", state);
+        }
+      }
+    });
+    const product = await seedReadyProduct(store);
+    productId = product.id;
+    await store.sessions.setCurrentProduct(product.id);
+    await writeComponentLibrary(home, product.id);
+    app = buildServer({ store: store as never });
+    apps.push(app);
+    await app.ready();
+
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: `/api/products/${product.id}`,
+      payload: { confirm_product_id: product.id }
+    });
+
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({ product_id: product.id, deleted: true, session_cleared: true });
+    expect(observations).toEqual([
+      {
+        label: "backed_up",
+        listIds: [product.id],
+        detailStatus: 200,
+        detailError: undefined,
+        currentProduct: product.id,
+        productFileExists: true
+      },
+      {
+        label: "session_written",
+        listIds: [product.id],
+        detailStatus: 200,
+        detailError: undefined,
+        currentProduct: null,
+        productFileExists: true
+      },
+      {
+        label: "index_written",
+        listIds: [],
+        detailStatus: 404,
+        detailError: "PRODUCT_NOT_FOUND",
+        currentProduct: null,
+        productFileExists: true
+      },
+      {
+        label: "before_first_move",
+        listIds: [],
+        detailStatus: 404,
+        detailError: "PRODUCT_NOT_FOUND",
+        currentProduct: null,
+        productFileExists: true
+      },
+      {
+        label: "moved",
+        listIds: [],
+        detailStatus: 404,
+        detailError: "PRODUCT_NOT_FOUND",
+        currentProduct: null,
+        productFileExists: false
+      }
+    ]);
   });
 
   it("returns 404 when no baseline source design has an existing preview", async () => {

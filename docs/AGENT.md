@@ -14,7 +14,7 @@ Claude and Gemini expose routes as `/fm-*`. Codex exposes each route as a skill 
 
 | Command | Purpose |
 | --- | --- |
-| `fm-list-product` | List products, show configuration status, select the current product, and handle missing language config clearly. |
+| `fm-list-product` | List products, select the current product, complete basic product config, and guide confirmed product deletion. |
 | `fm-requirement` | Add or modify a requirement from product input, merge with current context, validate pages/copy/navigation/rules, resolve conflicts, and save through `save_requirement`. |
 | `fm-design` | Generate or update page designs from the latest UI-affecting requirement using exact structured copy. |
 | `fm-refine-design` | Refine current designs while preserving requirement copy and design context. |
@@ -33,8 +33,9 @@ Claude and Gemini expose routes as `/fm-*`. Codex exposes each route as a skill 
 
 2. Use `fm-list-product` or the Web admin to select/create a product.
 3. Configure the product with platform, style, `languages`, and `default_language`.
-4. Generate components through the agent/MCP flow when needed, then call `complete_product_init` through the MCP/agent route after components are generated.
-5. Use `fm-status` to confirm platform, style, language config, default language, and component initialization.
+4. Product selection is complete after platform, style, `languages`, and `default_language`; it does not require `components_initialized`.
+5. Generate components through the agent/MCP flow when page design needs them, then call `complete_product_init` through the MCP/agent route after components are generated.
+6. Use `fm-status` to confirm platform, style, language config, default language, and component initialization.
 
 ## Iterative Requirement Flow
 
@@ -44,6 +45,16 @@ Claude and Gemini expose routes as `/fm-*`. Codex exposes each route as a skill 
 4. Confirm conflict overrides or deletions. Confirmed overrides become `replaces_rule_id`; confirmed deletions become `remove_rule_ids`.
 5. Save through `save_requirement`.
 6. Run `fm-design` for new/rebuild work or `fm-refine-design` for patch/refinement work as applicable.
+
+If `fm-design` reaches page design and the product is missing `components_initialized`, confirm the default language, call `generate_components`, call `complete_product_init`, then retry the original design operation once.
+
+## Product Deletion
+
+Agents must only enter product deletion when the user explicitly asks to delete a product. Show the product name, product ID, and deletion scope, then require the user to type the exact product ID. Call `delete_product` with the selected ID as `product_id` and use the typed ID as `confirm_product_id`; the values must match. Do not auto-fill `confirm_product_id` from context or treat a generic yes as confirmation.
+
+After deletion, surface `session_cleared` and `recovery_warnings`: if `session_cleared` is true, tell the user to run `fm-list-product` again; if warnings are present, summarize them.
+
+Agents must not suggest `delete_requirement`; requirement removals are expressed through `save_requirement` inputs such as `remove_page_ids` and `remove_rule_ids`.
 
 ## No-UI Requirements
 
@@ -61,6 +72,7 @@ Document and rule content remain part of the requirement; only design actions ar
 
 - Product setup must include `languages` and `default_language`.
 - `fm-list-product` and `fm-status` show language configuration and call out old products with missing language config.
+- `fm-list-product` completes only basic config: platform, style, `languages`, and `default_language`.
 - Requirement pages use structured copy arrays such as `{ context, text }`.
 - `fm-design` and `fm-refine-design` prompts use exact copy from the requirement and must not improvise UI text.
 - Translators and localization agents can use `get_page_copy` and `update_page_copy` to read source copy and update translations without rewriting the requirement document.

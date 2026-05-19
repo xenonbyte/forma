@@ -3,6 +3,13 @@ import { join } from "node:path";
 import { z } from "zod";
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
+import {
+  defaultProductMutationWarningSink,
+  getProductMutationLock,
+  runProductMutationWithWarnings,
+  type ProductMutationContext,
+  type ProductMutationLock
+} from "./product-mutation-lock.js";
 import { languages, platforms } from "./schemas.js";
 import { styleMetadataSchema } from "./styles.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
@@ -81,20 +88,30 @@ export type ProductConfigField = "platform" | "style" | "languages" | "component
 
 export interface ProductServiceOptions {
   home: string;
+  productMutationLock?: ProductMutationLock;
+  onProductMutationWarning?: (warning: string) => void;
 }
 
 export class ProductService {
   private readonly home: string;
   private readonly dataDir: string;
   private readonly indexFile: string;
+  private readonly productMutationLock: ProductMutationLock;
+  private readonly onProductMutationWarning: (warning: string) => void;
 
   constructor(options: ProductServiceOptions) {
     this.home = options.home;
     this.dataDir = join(options.home, "data");
     this.indexFile = join(this.dataDir, "products.yaml");
+    this.productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
+    this.onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
   }
 
   async createProduct(input: { name: string; description: string }): Promise<Product> {
+    return this.runProductMutation({ operation: "create_product" }, async () => this.createProductLocked(input));
+  }
+
+  async createProductLocked(input: { name: string; description: string }): Promise<Product> {
     const product = productSchema.parse({
       id: createId("product"),
       name: input.name,
@@ -112,6 +129,12 @@ export class ProductService {
   }
 
   async initProductConfig(productId: string, config: ProductConfig): Promise<Product> {
+    return this.runProductMutation({ operation: "init_product_config", product_id: productId }, async () =>
+      this.initProductConfigLocked(productId, config)
+    );
+  }
+
+  async initProductConfigLocked(productId: string, config: ProductConfig): Promise<Product> {
     const product = await this.getProduct(productId);
     const next = productSchema.parse({
       ...product,
@@ -123,6 +146,12 @@ export class ProductService {
   }
 
   async markComponentsInitialized(productId: string): Promise<Product> {
+    return this.runProductMutation({ operation: "mark_components_initialized", product_id: productId }, async () =>
+      this.markComponentsInitializedLocked(productId)
+    );
+  }
+
+  async markComponentsInitializedLocked(productId: string): Promise<Product> {
     const product = await this.getProduct(productId);
     const libraryFile = this.componentLibraryFile(product.id);
     if (!(await fileExists(libraryFile))) {
@@ -144,6 +173,11 @@ export class ProductService {
 
   async getProduct(productId: string): Promise<Product> {
     const parsedProductId = this.parseProductId(productId);
+    const index = await this.readProductIndex();
+    if (!index.products.some((product) => product.id === parsedProductId)) {
+      throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: parsedProductId });
+    }
+
     const file = this.productFile(parsedProductId);
     if (!(await fileExists(file))) {
       throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: parsedProductId });
@@ -175,6 +209,18 @@ export class ProductService {
     }
 
     return parsed.data;
+  }
+
+  private async runProductMutation<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: ProductMutationContext) => Promise<T>
+  ): Promise<T> {
+    return runProductMutationWithWarnings(
+      this.productMutationLock,
+      input,
+      fn,
+      this.onProductMutationWarning
+    );
   }
 }
 

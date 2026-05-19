@@ -10,7 +10,7 @@ const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visibl
 export function StyleCard({ href, style }: StyleCardProps) {
   const variables = style.variables ?? {};
   const variableEntries = Object.entries(variables);
-  const accent = variables.primary ?? variables["text-primary"] ?? "#71717a";
+  const preview = stylePreviewTokens(variables);
   const variableLabel = `${variableEntries.length} ${variableEntries.length === 1 ? "variable" : "variables"}`;
 
   return (
@@ -23,17 +23,58 @@ export function StyleCard({ href, style }: StyleCardProps) {
           <h3 className="truncate text-sm font-semibold tracking-normal text-zinc-950">{style.name}</h3>
           <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600">{style.description}</p>
         </div>
-        <span
-          aria-label={`Primary color ${accent}`}
-          className="h-8 w-8 shrink-0 rounded-md border border-zinc-200 shadow-inner"
-          style={{ backgroundColor: accent }}
-        />
+        <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500">{variableLabel}</span>
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
-        <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">{variableLabel}</span>
-        <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1">{accent}</span>
+      <div
+        className="mt-4"
+        data-background={preview.background}
+        data-body-font={preview.bodyFont}
+        data-heading-font={preview.headingFont}
+        data-primary={preview.primary}
+        data-radius={preview.radius}
+        data-spacing={preview.spacing}
+        data-style-preview-strip="true"
+        data-text-color={preview.textColor}
+      >
+        <div className="grid h-9 grid-cols-[1fr_1fr_1fr] overflow-hidden border border-zinc-200 shadow-inner" style={{ borderRadius: preview.radius }}>
+          <span aria-label={`Background color ${preview.background}`} style={{ backgroundColor: preview.background }} />
+          <span aria-label={`Primary color ${preview.primary}`} style={{ backgroundColor: preview.primary }} />
+          <span aria-label={`Text color ${preview.textColor}`} style={{ backgroundColor: preview.textColor }} />
+        </div>
+        <div className="mt-3 flex min-h-9 items-center justify-between border-t border-zinc-100 pt-3 text-xs text-zinc-500" style={{ gap: preview.spacing }}>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-zinc-950" style={{ fontFamily: preview.headingFont }}>
+              Aa Heading
+            </p>
+            <p className="mt-0.5 truncate" style={{ fontFamily: preview.bodyFont }}>
+              Body text
+            </p>
+          </div>
+          <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-medium text-zinc-600">{preview.radius}</span>
+        </div>
       </div>
     </a>
   );
+}
+
+function stylePreviewTokens(variables: Partial<StyleMetadata["variables"]>) {
+  return {
+    background: tokenValue(variables.background, "#ffffff"),
+    primary: tokenValue(variables.primary ?? variables["text-primary"], "#71717a"),
+    textColor: tokenValue(variables["text-primary"], "#111827"),
+    headingFont: tokenValue(variables["font-heading"], "Inter"),
+    bodyFont: tokenValue(variables["font-body"] ?? variables["font-heading"], "Inter"),
+    radius: cssLength(tokenValue(variables["border-radius"], "8px")),
+    spacing: cssLength(tokenValue(variables["spacing-unit"], "8px"))
+  };
+}
+
+function tokenValue(value: string | undefined, fallback: string): string {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : fallback;
+}
+
+function cssLength(value: string): string {
+  return /^-?\d+(?:\.\d+)?$/.test(value) && value !== "0" ? `${value}px` : value;
 }

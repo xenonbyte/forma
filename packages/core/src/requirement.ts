@@ -7,6 +7,13 @@ import { copyItemSchema, type CopyByPage, type CopyService, type PageTranslation
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
 import type { ProductService } from "./product.js";
+import {
+  defaultProductMutationWarningSink,
+  getProductMutationLock,
+  runProductMutationWithWarnings,
+  type ProductMutationContext,
+  type ProductMutationLock
+} from "./product-mutation-lock.js";
 import { requirementStatuses, designStatuses } from "./schemas.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
@@ -114,6 +121,8 @@ export interface RequirementServiceOptions {
   products: ProductService;
   baseline: BaselineService;
   copy: CopyService;
+  productMutationLock?: ProductMutationLock;
+  onProductMutationWarning?: (warning: string) => void;
 }
 
 interface RequirementServiceTestHooks {
@@ -128,6 +137,8 @@ export class RequirementService {
   private readonly products: ProductService;
   private readonly baseline: BaselineService;
   private readonly copy: CopyService;
+  private readonly productMutationLock: ProductMutationLock;
+  private readonly onProductMutationWarning: (warning: string) => void;
   private testHooks: RequirementServiceTestHooks;
 
   constructor(options: RequirementServiceOptions) {
@@ -135,6 +146,8 @@ export class RequirementService {
     this.products = options.products;
     this.baseline = options.baseline;
     this.copy = options.copy;
+    this.productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
+    this.onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
     this.testHooks = {};
   }
 
@@ -143,6 +156,12 @@ export class RequirementService {
   }
 
   async createEmptyRequirement(productId: string, title: string): Promise<Requirement> {
+    return this.runProductMutation({ operation: "create_requirement", product_id: productId }, async () =>
+      this.createEmptyRequirementLocked(productId, title)
+    );
+  }
+
+  async createEmptyRequirementLocked(productId: string, title: string): Promise<Requirement> {
     await this.products.getProduct(productId);
 
     const now = new Date().toISOString();
@@ -163,6 +182,13 @@ export class RequirementService {
   }
 
   async saveRequirement(input: SaveRequirementInput): Promise<Requirement> {
+    const productId = await this.productIdForRequirement(input.requirement_id);
+    return this.runProductMutation({ operation: "save_requirement", product_id: productId }, async () =>
+      this.saveRequirementLocked(input)
+    );
+  }
+
+  async saveRequirementLocked(input: SaveRequirementInput): Promise<Requirement> {
     const parsed = saveRequirementInputSchema.parse(input);
     const current = await this.readRequirementById(parsed.requirement_id);
     if (current.status === "archived") {
@@ -192,6 +218,13 @@ export class RequirementService {
   }
 
   async submitRequirement(input: SubmitRequirementInput): Promise<Requirement> {
+    const productId = await this.productIdForRequirement(input.requirement_id);
+    return this.runProductMutation({ operation: "submit_requirement", product_id: productId }, async () =>
+      this.submitRequirementLocked(input)
+    );
+  }
+
+  async submitRequirementLocked(input: SubmitRequirementInput): Promise<Requirement> {
     const current = await this.readRequirementById(input.requirement_id);
     if (current.status !== "empty") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
@@ -216,6 +249,13 @@ export class RequirementService {
   }
 
   async updateRequirement(input: UpdateRequirementInput): Promise<Requirement> {
+    const productId = await this.productIdForRequirement(input.requirement_id);
+    return this.runProductMutation({ operation: "update_requirement", product_id: productId }, async () =>
+      this.updateRequirementLocked(input)
+    );
+  }
+
+  async updateRequirementLocked(input: UpdateRequirementInput): Promise<Requirement> {
     const current = await this.readRequirementById(input.requirement_id);
     if (current.status !== "submitted" && current.status !== "active") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
@@ -250,6 +290,13 @@ export class RequirementService {
   }
 
   async archiveRequirement(requirementId: string): Promise<Requirement> {
+    const productId = await this.productIdForRequirement(requirementId);
+    return this.runProductMutation({ operation: "archive_requirement", product_id: productId }, async () =>
+      this.archiveRequirementLocked(requirementId)
+    );
+  }
+
+  async archiveRequirementLocked(requirementId: string): Promise<Requirement> {
     const current = await this.readRequirementById(requirementId);
     if (current.status !== "active") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
@@ -481,7 +528,7 @@ export class RequirementService {
     const snapshots = await snapshotFiles(files);
 
     try {
-      await this.baseline.updateFromRequirement({
+      await this.baseline.updateFromRequirementLocked({
         productId: requirement.product_id,
         requirementId: requirement.id,
         pages: requirement.pages,
@@ -514,14 +561,14 @@ export class RequirementService {
     const snapshots = await snapshotFiles(files);
 
     try {
-      await this.baseline.updateFromRequirement({
+      await this.baseline.updateFromRequirementLocked({
         productId: requirement.product_id,
         requirementId: requirement.id,
         pages: requirement.pages,
         navigation: mapNavigationToBaseline(requirement.pages, requirement.navigation)
       });
       await this.testHooks.afterBaselineUpdate?.();
-      await this.copy.saveTranslations(requirement.product_id, requirement.id, mergedTranslations);
+      await this.copy.saveTranslationsLocked(requirement.product_id, requirement.id, mergedTranslations);
       await this.testHooks.afterTranslationsWrite?.();
       await writeDocumentAtomic(this.documentFile(requirement.product_id, requirement.id), input.document_md);
       await this.testHooks.afterDocumentWrite?.();
@@ -578,7 +625,11 @@ export class RequirementService {
 
     const oldCopy = copyByPageId(current.pages);
     const newCopy = copyByPageId(requirement.pages);
-    return this.copy.mergeTranslations(requirement.product_id, requirement.id, oldCopy, newCopy, translations);
+    return this.copy.mergeTranslationsLocked(requirement.product_id, requirement.id, oldCopy, newCopy, translations);
+  }
+
+  private async productIdForRequirement(requirementId: string): Promise<string> {
+    return (await this.readRequirementById(requirementId)).product_id;
   }
 
   private parseRequirementId(requirementId: string): string {
@@ -588,6 +639,18 @@ export class RequirementService {
     }
 
     return parsed.data;
+  }
+
+  private async runProductMutation<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: ProductMutationContext) => Promise<T>
+  ): Promise<T> {
+    return runProductMutationWithWarnings(
+      this.productMutationLock,
+      input,
+      fn,
+      this.onProductMutationWarning
+    );
   }
 }
 
