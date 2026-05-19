@@ -584,6 +584,271 @@ describe("product session and style services", () => {
     });
   });
 
+  it("generateAndSavePageDesign rejects incomplete config before calling the generator", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const productMutationLock = createRecordingLock();
+    const pageDesignGenerator = {
+      generatePageDesign: vi.fn(async () => writeGeneratedPageDesignCandidate("unused-incomplete"))
+    };
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock,
+      pageDesignGenerator
+    });
+    const product = await seedReadyProduct(store);
+    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
+    productMutationLock.calls.length = 0;
+
+    await expect(
+      store.generateAndSavePageDesign({
+        product_id: product.id,
+        requirement_id: requirement.id,
+        page_id: "checkout",
+        prompt: "Create checkout page",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({
+      code: "PRODUCT_CONFIG_INCOMPLETE",
+      details: { product_id: product.id, missing: ["components_initialized"] }
+    });
+
+    expect(productMutationLock.calls).toEqual([{ operation: "generate_and_save_page_design", product_id: product.id }]);
+    expect(pageDesignGenerator.generatePageDesign).not.toHaveBeenCalled();
+  });
+
+  it("generateAndSavePageDesign rejects a requirement outside the product before calling the generator", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const pageDesignGenerator = {
+      generatePageDesign: vi.fn(async () => writeGeneratedPageDesignCandidate("unused-product"))
+    };
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+      pageDesignGenerator
+    });
+    const productA = await seedDesignReadyProduct(store, "Shop App A");
+    const productB = await seedDesignReadyProduct(store, "Shop App B");
+    const requirement = await submitSinglePageRequirement(store, productA.id, "checkout");
+
+    await expect(
+      store.generateAndSavePageDesign({
+        product_id: productB.id,
+        requirement_id: requirement.id,
+        page_id: "checkout",
+        prompt: "Create checkout page",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({
+      code: "PAGE_NOT_OWNED",
+      details: {
+        product_id: productB.id,
+        requirement_id: requirement.id,
+        requirement_product_id: productA.id
+      }
+    });
+
+    expect(pageDesignGenerator.generatePageDesign).not.toHaveBeenCalled();
+  });
+
+  it("generateAndSavePageDesign rejects a page outside the requirement before calling the generator", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const pageDesignGenerator = {
+      generatePageDesign: vi.fn(async () => writeGeneratedPageDesignCandidate("unused-page"))
+    };
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+      pageDesignGenerator
+    });
+    const product = await seedDesignReadyProduct(store);
+    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
+
+    await expect(
+      store.generateAndSavePageDesign({
+        product_id: product.id,
+        requirement_id: requirement.id,
+        page_id: "settings",
+        prompt: "Create settings page",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({
+      code: "PAGE_NOT_OWNED",
+      details: {
+        product_id: product.id,
+        requirement_id: requirement.id,
+        page_id: "settings"
+      }
+    });
+
+    expect(pageDesignGenerator.generatePageDesign).not.toHaveBeenCalled();
+  });
+
+  it("generateAndSavePageDesign maps patch and rebuild modes to existing design saves", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const generatedInitial = await writeGeneratedPageDesignCandidate("initial");
+    const generatedPatch = await writeGeneratedPageDesignCandidate("patch");
+    const generatedRebuild = await writeGeneratedPageDesignCandidate("rebuild");
+    const pageDesignGenerator = {
+      generatePageDesign: vi.fn()
+        .mockResolvedValueOnce(generatedInitial)
+        .mockResolvedValueOnce(generatedPatch)
+        .mockResolvedValueOnce(generatedRebuild)
+    };
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+      pageDesignGenerator
+    });
+    const product = await seedDesignReadyProduct(store);
+    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
+    const saveDesignsLocked = vi.spyOn(store.designs, "saveDesignsLocked");
+
+    const initial = await store.generateAndSavePageDesign({
+      product_id: product.id,
+      requirement_id: requirement.id,
+      page_id: "checkout",
+      prompt: "Create checkout page",
+      workspace: "/tmp/workspace"
+    });
+
+    expect(initial).toMatchObject({ design_id: initial.design_id, version: 1 });
+
+    await store.requirements.saveRequirement({
+      requirement_id: requirement.id,
+      document_md: "# Checkout\nPatch checkout",
+      ui_affected: true,
+      pages: [{ page_id: "checkout", name: "Checkout", baseline_page: "checkout", change_type: "patch" }],
+      navigation: []
+    });
+
+    const patched = await store.generateAndSavePageDesign({
+      product_id: product.id,
+      requirement_id: requirement.id,
+      page_id: "checkout",
+      prompt: "Patch checkout page",
+      workspace: "/tmp/workspace"
+    });
+
+    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
+      page_id: "checkout",
+      mode: "refine",
+      penPath: generatedPatch.penPath,
+      previewPath: generatedPatch.previewPath
+    }]);
+    expect(patched).toMatchObject({ design_id: initial.design_id, version: 2 });
+
+    await store.requirements.saveRequirement({
+      requirement_id: requirement.id,
+      document_md: "# Checkout\nRebuild checkout",
+      ui_affected: true,
+      pages: [{ page_id: "checkout", name: "Checkout", baseline_page: "checkout", change_type: "rebuild" }],
+      navigation: []
+    });
+
+    const rebuilt = await store.generateAndSavePageDesign({
+      product_id: product.id,
+      requirement_id: requirement.id,
+      page_id: "checkout",
+      prompt: "Rebuild checkout page",
+      workspace: "/tmp/workspace"
+    });
+
+    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
+      page_id: "checkout",
+      mode: "update",
+      penPath: generatedRebuild.penPath,
+      previewPath: generatedRebuild.previewPath
+    }]);
+    expect(rebuilt).toMatchObject({ design_id: initial.design_id, version: 3 });
+  });
+
+  it("generateAndSavePageDesign warns when cleanup fails after committed save", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const warnings: string[] = [];
+    const generated = await writeGeneratedPageDesignCandidate("cleanup-committed");
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+      pageDesignGenerator: {
+        generatePageDesign: vi.fn(async () => generated)
+      },
+      generatedDesignCleanup: vi.fn(async () => {
+        throw new Error("cleanup unavailable");
+      }),
+      onProductMutationWarning: (warning) => warnings.push(warning)
+    });
+    const product = await seedDesignReadyProduct(store);
+    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
+
+    const result = await store.generateAndSavePageDesign({
+      product_id: product.id,
+      requirement_id: requirement.id,
+      page_id: "checkout",
+      prompt: "Create checkout page",
+      workspace: "/tmp/workspace"
+    });
+
+    expect(result).toMatchObject({
+      product_id: product.id,
+      requirement_id: requirement.id,
+      page_id: "checkout",
+      version: 1
+    });
+    expect(warnings).toEqual([
+      expect.stringContaining("after committed")
+    ]);
+    expect(warnings[0]).toContain(generated.tempDir);
+    expect(warnings[0]).toContain("cleanup unavailable");
+  });
+
+  it("generateAndSavePageDesign preserves save failure when cleanup also fails", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
+    const warnings: string[] = [];
+    const generated = await writeGeneratedPageDesignCandidate("cleanup-failed");
+    await writeFile(generated.previewPath, "not a png", "utf8");
+    const store = createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+      pageDesignGenerator: {
+        generatePageDesign: vi.fn(async () => generated)
+      },
+      generatedDesignCleanup: vi.fn(async () => {
+        throw new Error("cleanup unavailable");
+      }),
+      onProductMutationWarning: (warning) => warnings.push(warning)
+    });
+    const product = await seedDesignReadyProduct(store);
+    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
+
+    await expect(
+      store.generateAndSavePageDesign({
+        product_id: product.id,
+        requirement_id: requirement.id,
+        page_id: "checkout",
+        prompt: "Create checkout page",
+        workspace: "/tmp/workspace"
+      })
+    ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+
+    expect(warnings).toEqual([
+      expect.stringContaining("after failed")
+    ]);
+    expect(warnings[0]).toContain(generated.tempDir);
+    expect(warnings[0]).toContain("cleanup unavailable");
+    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
+      status: "submitted",
+      pages: [expect.objectContaining({ page_id: "checkout", design_status: "pending" })]
+    });
+    const stored = await store.requirements.getRequirement({ requirement_id: requirement.id });
+    expect(stored.pages[0]).not.toHaveProperty("design_id");
+  });
+
   it("generateComponents rejects incomplete product config before calling the generator", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-components-"));
     const productMutationLock = createRecordingLock();
