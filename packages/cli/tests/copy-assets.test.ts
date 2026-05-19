@@ -204,9 +204,18 @@ describe("agent template inventory", () => {
       }
 
       const design = await readFile(templateUrl(platform, "fm-design"), "utf8");
+      const generatePageDesignIndex = design.indexOf("generate_page_design");
+      const saveDesignsIndex = design.indexOf("save_designs");
       expect(design).toContain("new -> generate");
       expect(design).toContain("patch -> refine");
       expect(design).toContain("rebuild -> update");
+      expect(generatePageDesignIndex).toBeGreaterThanOrEqual(0);
+      expect(saveDesignsIndex).toBeGreaterThan(generatePageDesignIndex);
+      expect(design).toContain("pen_path");
+      expect(design).toContain("preview_path");
+      expect(design).toContain("requirement_id");
+      expect(design).toContain("page_id");
+      expect(design).toContain("mode");
       expect(design).toContain("PRODUCT_CONFIG_INCOMPLETE");
       expect(design).toContain("components_initialized");
       expect(design).toContain("confirm default language");
