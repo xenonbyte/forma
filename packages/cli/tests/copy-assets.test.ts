@@ -204,24 +204,25 @@ describe("agent template inventory", () => {
       }
 
       const design = await readFile(templateUrl(platform, "fm-design"), "utf8");
+      const generateAndSavePageDesignIndex = design.indexOf("generate_and_save_page_design");
       const generatePageDesignIndex = design.indexOf("generate_page_design");
       const saveDesignsIndex = design.indexOf("save_designs");
-      expect(design).toContain("new -> generate");
-      expect(design).toContain("patch -> refine");
-      expect(design).toContain("rebuild -> update");
+      expect(generateAndSavePageDesignIndex).toBeGreaterThanOrEqual(0);
       expect(generatePageDesignIndex).toBeGreaterThanOrEqual(0);
+      expect(generatePageDesignIndex).toBeGreaterThan(generateAndSavePageDesignIndex);
       expect(saveDesignsIndex).toBeGreaterThan(generatePageDesignIndex);
+      expect(design).toContain("low-level temporary-output tool only");
       expect(design).toContain("pen_path");
       expect(design).toContain("preview_path");
       expect(design).toContain("requirement_id");
       expect(design).toContain("page_id");
-      expect(design).toContain("mode");
       expect(design).toContain("PRODUCT_CONFIG_INCOMPLETE");
       expect(design).toContain("components_initialized");
       expect(design).toContain("confirm default language");
       expect(design).toContain("generate_components");
       expect(design).toContain("complete_product_init");
-      expect(design).toContain("Retry original design generation once");
+      expect(design).toContain("retry the original `generate_and_save_page_design` call once");
+      expect(design).toContain("persisted `design_id`, `version`, `pen_path`, and `preview_path`");
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");

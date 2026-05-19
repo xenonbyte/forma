@@ -14,8 +14,9 @@ Execution:
 2. Fetch latest requirement.
 3. If `ui_affected === false`, print `当前需求无 UI 调整，无需设计` and stop. Do not call design/refine MCP tools for no-UI requirements.
 4. Inject exact structured page copy into design prompts. Pencil/design generation must use exact structured page copy and must not improvise text.
-5. Map `change_type` as `new -> generate`, `patch -> refine`, and `rebuild -> update`.
-6. Confirm operation with product, requirement, and pending or expired pages. For each target page, call `generate_page_design` with the mapped `mode`; after a successful result, immediately call `save_designs` with `requirement_id`, `page_id`, returned `pen_path`, returned `preview_path`, and the same `mode`.
-7. Treat `generate_page_design` as generation only: it does not persist the design, advance page design status, or approve the page until `save_designs` succeeds.
-8. If design generation returns `PRODUCT_CONFIG_INCOMPLETE` with missing `components_initialized`, confirm default language, call `generate_components` with product config and default language in prompt, call `complete_product_init`, and Retry original design generation once before `save_designs`.
-9. Report stable error codes when returned.
+5. Confirm operation with product, requirement, and pending or expired pages.
+6. For each target page, call `generate_and_save_page_design` with `product_id`, `requirement_id`, `page_id`, `prompt`, and `workspace`.
+7. Treat `generate_page_design` as a low-level temporary-output tool only. Do not use it as the normal `fm-design` workflow entrypoint. If a debugging or compatibility workflow uses it, immediately pass the returned `pen_path` and `preview_path` to `save_designs`; otherwise the generated `.pen` can be lost.
+8. If design generation returns `PRODUCT_CONFIG_INCOMPLETE` with missing `components_initialized`, confirm default language, call `generate_components` with product config and default language in prompt, call `complete_product_init`, and retry the original `generate_and_save_page_design` call once.
+9. Report persisted `design_id`, `version`, `pen_path`, and `preview_path` from `generate_and_save_page_design`.
+10. Report stable error codes when returned.
