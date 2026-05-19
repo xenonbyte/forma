@@ -98,9 +98,44 @@ Update these docs:
 
 - `docs/MCP.md`
 - `docs/AGENT.md`
-- `README.md` only if it currently describes the old two-step page design workflow.
+- `README.md`
 
 Docs must state that `generate_page_design` returns temporary output and that normal workflows should use `generate_and_save_page_design`.
+Implementation must inspect `README.md` and update any design workflow wording that would become stale after the new atomic tool, including smoke-test or MCP tool summaries.
+
+## Test Injection Strategy
+
+Core tests must not call the real Pencil CLI. Add a dedicated store option for page design generation:
+
+```typescript
+export interface PageDesignGenerator {
+  generatePageDesign(input: GeneratePageDesignInput): Promise<GeneratedDesign>;
+}
+
+export interface FormaStoreOptions {
+  // existing fields
+  pageDesignGenerator?: PageDesignGenerator;
+}
+```
+
+`createFormaStore()` should default this generator to the existing `PencilService`, while tests can pass a fake generator that writes deterministic `page.pen` and `preview.png` files into a temporary directory. Keep the existing `pencilService?: ComponentGenerator` behavior for component generation compatibility; do not require component tests to implement page design generation.
+
+## Migration And Compatibility
+
+- Existing persisted designs need no migration because the formal storage layout remains unchanged.
+- Existing agents can still call `generate_page_design` followed by `save_designs`; that path remains supported as a low-level compatibility workflow.
+- Updated `fm-design` templates must use `generate_and_save_page_design` by default.
+- Temporary `.pen` files created by older runs without a matching `save_designs` call are not migrated. If those temp files have already been removed, the generated design cannot be recovered.
+- `generate_page_design` documentation and descriptions must make the temporary-output behavior explicit so low-level callers understand the persistence risk.
+
+## Rollback Plan
+
+If the new atomic tool causes a release issue:
+
+- Restore agent templates to the previous `generate_page_design` plus `save_designs` default flow.
+- Keep any designs already saved through `generate_and_save_page_design`; they use the same `DesignService` persistence structure.
+- Hide or disable the MCP handler for `generate_and_save_page_design` while leaving `generate_page_design` and `save_designs` available.
+- No data migration or deletion is required under `$FORMA_HOME/data`.
 
 ## Testing
 
@@ -134,4 +169,6 @@ Template/docs checks should cover:
 - The returned `preview_path` points under `$FORMA_HOME/data/.../preview@2x.png`.
 - Refreshing requirement metadata shows the saved design id and version.
 - Old low-level tools still work for compatibility.
+- Docs and agent templates no longer present `generate_page_design` plus `save_designs` as the default `fm-design` workflow.
+- README, MCP docs, and agent docs agree that `generate_page_design` is a temporary-output tool and `generate_and_save_page_design` is the normal workflow tool.
 - Targeted core and MCP tests pass.
