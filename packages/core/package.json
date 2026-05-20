@@ -1,6 +1,6 @@
 {
   "name": "@xenonbyte/forma-core",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Core services and persistence for the Forma local design workspace.",
   "license": "UNLICENSED",
   "type": "module",
