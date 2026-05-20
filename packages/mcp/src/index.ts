@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { McpServer } from "@modelcontextprotocol/server";
+import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
 import { createFormaStore, formaCoreVersion } from "@xenonbyte/forma-core";
 import { createFormaTools, registerFormaTools, type CreateFormaToolsOptions } from "./tools.js";
 
@@ -28,8 +28,6 @@ export interface FormaMcpLogger {
   warn(input: { warning: string }, message: string): void;
 }
 
-type StdioServerTransportConstructor = new () => Parameters<McpServer["connect"]>[0];
-
 export async function createFormaMcpServer(options: CreateFormaMcpServerOptions = {}): Promise<McpServer> {
   const store = createFormaStore({
     home: options.home ?? defaultFormaHome(),
@@ -47,8 +45,7 @@ export async function createFormaMcpServer(options: CreateFormaMcpServerOptions 
 
 export async function main(options: CreateFormaMcpServerOptions = {}): Promise<void> {
   const server = await createFormaMcpServer(options);
-  const Transport = await loadStdioServerTransport();
-  const transport = new Transport();
+  const transport = new StdioServerTransport();
   await server.connect(transport);
 }
 
@@ -65,28 +62,6 @@ function logRecoveryWarning(warning: string, logger?: FormaMcpLogger): void {
   }
 
   console.error(`Forma product deletion recovery warning: ${warning}`);
-}
-
-async function loadStdioServerTransport(): Promise<StdioServerTransportConstructor> {
-  const docsPath = "@modelcontextprotocol/server/stdio";
-  try {
-    const module = await import(docsPath);
-    return (module as { StdioServerTransport: StdioServerTransportConstructor }).StdioServerTransport;
-  } catch (error) {
-    if (!isPackagePathNotExported(error)) {
-      throw error;
-    }
-    console.error("@modelcontextprotocol/server/stdio is not exported by the installed MCP server package; using root export.");
-    const module = await import("@modelcontextprotocol/server");
-    return (module as { StdioServerTransport: StdioServerTransportConstructor }).StdioServerTransport;
-  }
-}
-
-function isPackagePathNotExported(error: unknown): boolean {
-  return error instanceof Error && (
-    ("code" in error && error.code === "ERR_PACKAGE_PATH_NOT_EXPORTED") ||
-    error.message.includes("Missing \"./stdio\" specifier")
-  );
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

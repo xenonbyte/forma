@@ -225,6 +225,16 @@ describe("MCP server startup", () => {
     expect(mocks.serverInstances[0]!.connect).toHaveBeenCalledWith(mocks.transportInstances[0]);
   });
 
+  it("main uses the root stdio transport without fallback warnings", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { main } = await importIndex();
+
+    await main({ home: "/tmp/custom-home" });
+
+    expect(mocks.transportInstances).toHaveLength(1);
+    expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("server/stdio is not exported"));
+  });
+
   it("main does not connect stdio when recovery rejects", async () => {
     mocks.createFormaStore.mockReturnValue(fakeStore({
       recoverPendingProductDeletes: vi.fn(async () => {
