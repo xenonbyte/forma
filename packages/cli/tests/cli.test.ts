@@ -40,7 +40,7 @@ describe("runCli", () => {
   it("prints version", async () => {
     const result = await runCli(["version"], await testEnv());
 
-    expect(result).toEqual({ stdout: "forma 0.1.3\n", stderr: "", exitCode: 0 });
+    expect(result).toEqual({ stdout: "forma 0.1.4\n", stderr: "", exitCode: 0 });
   });
 
   it("routes mcp to the injected MCP starter", async () => {

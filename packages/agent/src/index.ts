@@ -31,7 +31,7 @@ export const formaAgentPlatformMetadata = {
     templateFormat: "markdown-frontmatter",
     templateFilePattern: "claude/{command}.md",
     targetFilePattern: "~/.claude/commands/{command}.md",
-    mcpConfigPath: "~/.claude/mcp.json"
+    mcpConfigPath: "~/.claude.json"
   },
   codex: {
     templateDir: "codex",

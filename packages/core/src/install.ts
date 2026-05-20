@@ -160,7 +160,7 @@ export class InstallService {
 
   private async installMcpConfig(platform: AgentInstallPlatform, record: InstallRecord): Promise<void> {
     if (platform === "claude") {
-      await this.writeJsonConfig(platform, join(this.userHome, ".claude", "mcp.json"), (config) => ({
+      await this.writeJsonConfig(platform, join(this.userHome, ".claude.json"), (config) => ({
         ...withoutTopLevelForma(config),
         mcpServers: {
           ...asRecord(config.mcpServers),
