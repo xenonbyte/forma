@@ -314,6 +314,37 @@ describe("NavigationGraph", () => {
     expect(container.textContent).not.toContain("card");
     expect(container.textContent).not.toContain("complete order");
   });
+
+  it("supports graph pan zoom controls and keyboard alternatives", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<NavigationGraph navigation={[]} pages={pages} />);
+      await flushPromises();
+    });
+
+    const region = container.querySelector('[role="application"]') as HTMLElement;
+    expect(region).not.toBeNull();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Zoom in graph"]')?.click();
+      region.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
+      region.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown", shiftKey: true }));
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Zoom 125%");
+    expect(container.textContent).toContain("Pan 48, 240");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="100% graph zoom"]')?.click();
+      container.querySelector<HTMLButtonElement>('button[aria-label="Fit graph"]')?.click();
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("Zoom 100%");
+    expect(container.textContent).toContain("Fit graph");
+  });
 });
 
 type PathCommand = [string, number?, number?];

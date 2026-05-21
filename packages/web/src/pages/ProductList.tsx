@@ -409,7 +409,7 @@ function getConfigStatus(product: Product | undefined): ConfigStatus {
   }
 
   if (isListConfigurationComplete(product)) {
-    return product.components_initialized ? "initialized" : "configured";
+    return "configured";
   }
 
   return "configuration_incomplete";

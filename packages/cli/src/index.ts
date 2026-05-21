@@ -9,7 +9,10 @@ import {
   InstallService,
   PencilService,
   formaCoreVersion,
+  normalizeFormaHomeForV6,
+  recoverV6NormalizationJournal,
   readYaml,
+  restoreV6NormalizationBackup,
   type AgentInstallPlatform,
   type FormaMcpCommand,
   type InstallManifest,
@@ -164,6 +167,22 @@ export async function runCli(argv: string[] = process.argv.slice(2), env: CliEnv
       return await runServe(args, runtimeEnv, output);
     }
 
+    if (command === "schema-normalization-dry-run") {
+      return await runSchemaNormalizationDryRun(args, runtimeEnv, output);
+    }
+
+    if (command === "v6-schema-cutover") {
+      return await runV6SchemaCutoverCommand(args, runtimeEnv, output);
+    }
+
+    if (command === "recover-v6-normalization-journal") {
+      return await runRecoverV6NormalizationJournal(args, runtimeEnv, output);
+    }
+
+    if (command === "restore-v6-normalization-backup") {
+      return await runRestoreV6NormalizationBackup(args, runtimeEnv, output);
+    }
+
     if (command === "install") {
       return await runInstall(args, runtimeEnv, output);
     }
@@ -270,6 +289,43 @@ async function runUninstall(args: string[], env: RuntimeCliEnv, output: CliOutpu
   await env.createInstallService().uninstallPlatforms(platforms);
   output.stdout(`Uninstalled Forma commands for ${formatPlatforms(platforms)}\n`);
   return output.result(0);
+}
+
+async function runSchemaNormalizationDryRun(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  const options = parseNormalizationArgs(args, { backupDir: false, confirm: false });
+  const home = options.home ?? env.formaHome;
+  const report = await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: env.now().toISOString() });
+  output.stdout(`Schema normalization dry-run report: ${report.report_file}\n`);
+  output.stdout(`Status: ${report.status}\n`);
+  return output.result(report.status === "passed" || report.status === "failed" ? 0 : 1);
+}
+
+async function runV6SchemaCutoverCommand(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  const options = parseNormalizationArgs(args, { backupDir: false, confirm: false });
+  const home = options.home ?? env.formaHome;
+  const result = await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: env.now().toISOString(), reportPath: options.report });
+  if (result.status !== "committed") {
+    output.stderr(`${result.code ?? "SCHEMA_NORMALIZATION_CUTOVER_FAILED"}: ${result.message}\n`);
+    return output.result(1);
+  }
+  output.stdout(`Schema normalization cutover committed: ${result.backup_dir}\n`);
+  return output.result(0);
+}
+
+async function runRecoverV6NormalizationJournal(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  const options = parseNormalizationArgs(args, { backupDir: true, confirm: false });
+  const home = options.home ?? env.formaHome;
+  const result = await recoverV6NormalizationJournal(home, options.backupDir!);
+  output.stdout(`Schema normalization journal ${result.status}: ${result.restore_status}\n`);
+  return output.result(result.status === "restored" ? 0 : 1);
+}
+
+async function runRestoreV6NormalizationBackup(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  const options = parseNormalizationArgs(args, { backupDir: true, confirm: true });
+  const home = options.home ?? env.formaHome;
+  const result = await restoreV6NormalizationBackup(home, options.backupDir!, { confirm: options.confirm ?? "" });
+  output.stdout(`Schema normalization backup ${result.status}: ${result.restore_status}\n`);
+  return output.result(result.status === "restored" ? 0 : 1);
 }
 
 async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
@@ -459,6 +515,44 @@ function parsePlatformArgs(args: string[]): AgentInstallPlatform[] {
     }
   }
   return selected;
+}
+
+function parseNormalizationArgs(
+  args: string[],
+  required: { backupDir: boolean; confirm: boolean }
+): { home?: string; backupDir?: string; confirm?: string; report?: string } {
+  const options: { home?: string; backupDir?: string; confirm?: string; report?: string } = {};
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--home") {
+      options.home = requireOptionValue(args, index, arg);
+      index += 1;
+      continue;
+    }
+    if (arg === "--backup-dir") {
+      options.backupDir = requireOptionValue(args, index, arg);
+      index += 1;
+      continue;
+    }
+    if (arg === "--confirm") {
+      options.confirm = requireOptionValue(args, index, arg);
+      index += 1;
+      continue;
+    }
+    if (arg === "--preflight-report" || arg === "--report") {
+      options.report = requireOptionValue(args, index, arg);
+      index += 1;
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg}`);
+  }
+  if (required.backupDir && !options.backupDir) {
+    throw new Error("Missing value for --backup-dir");
+  }
+  if (required.confirm && options.confirm !== "restore_v6_backup") {
+    throw new Error("Missing required confirmation: --confirm restore_v6_backup");
+  }
+  return options;
 }
 
 function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
@@ -781,6 +875,10 @@ function usage(): string {
     "Commands:",
     "  mcp",
     "  serve [start|stop]",
+    "  schema-normalization-dry-run [--home path]",
+    "  v6-schema-cutover [--home path] [--preflight-report path]",
+    "  recover-v6-normalization-journal [--home path] --backup-dir path",
+    "  restore-v6-normalization-backup [--home path] --backup-dir path --confirm restore_v6_backup",
     "  install [--platform claude,codex,gemini]",
     "  uninstall [--platform claude,codex,gemini]",
     "  status",

@@ -1,78 +1,78 @@
-import { useState } from "react";
-
-import type { AnnotationNode } from "../api.js";
-import type { NodeSpacingMeasurement, SpacingAxisMeasurement } from "./AnnotationCanvas.js";
+import type { RequirementDesignSceneNode } from "../api.js";
+import { useT } from "../LocaleContext.js";
 
 export interface PropertyPanelProps {
-  designId?: string;
-  hoveredNode?: AnnotationNode | null;
-  nodes?: AnnotationNode[];
-  selectedNode?: AnnotationNode | null;
-  selectedNodes?: AnnotationNode[];
-  spacing?: NodeSpacingMeasurement | null;
+  hoveredNodeId?: string | null;
+  nodes: RequirementDesignSceneNode[];
+  productId: string;
+  requirementId: string;
+  selectedNodeIds?: string[];
 }
 
-type CopyState = { label: string; status: "copied" | "error" } | null;
+export interface SceneNodeSpacingMeasurement {
+  fromCenter: ScenePoint;
+  fromId: string;
+  horizontal: SpacingAxisMeasurement;
+  toCenter: ScenePoint;
+  toId: string;
+  vertical: SpacingAxisMeasurement;
+}
+
+export interface SpacingAxisMeasurement {
+  mode: "center-delta" | "edge-gap";
+  value: number;
+}
+
+interface ScenePoint {
+  x: number;
+  y: number;
+}
 
 const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
-const copyButtonClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 " +
+const exportLinkClasses =
+  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium uppercase text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 " +
   focusClasses;
 
-export function PropertyPanel({ designId, hoveredNode, nodes = [], selectedNode, selectedNodes, spacing }: PropertyPanelProps) {
-  const [copyState, setCopyState] = useState<CopyState>(null);
-  const selectedList = selectedNodes ?? (selectedNode ? [selectedNode] : []);
-  const activeNode = selectedList[0] ?? hoveredNode ?? null;
+export function PropertyPanel({ hoveredNodeId, nodes, productId, requirementId, selectedNodeIds = [] }: PropertyPanelProps) {
+  const t = useT();
+  const selectedNodes = selectedNodeIds.map((id) => nodes.find((node) => node.id === id)).filter((node): node is RequirementDesignSceneNode => Boolean(node));
+  const hoveredNode = hoveredNodeId ? nodes.find((node) => node.id === hoveredNodeId) ?? null : null;
+  const activeNode = selectedNodes[0] ?? hoveredNode ?? null;
+  const spacing = selectedNodes.length === 2 ? calculateSceneNodeSpacing(selectedNodes[0], selectedNodes[1]) : null;
 
   if (!activeNode) {
     return (
       <div className="space-y-3 text-sm">
-        <p className="text-zinc-600">Select a canvas node to inspect its dimensions, style, and export metadata.</p>
-        <div className="rounded-md border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-zinc-500">No node selected</div>
+        <p className="text-zinc-600">{t("design.emptySelection")}</p>
+        <div className="rounded-md border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-zinc-500">{t("design.emptySelection")}</div>
       </div>
     );
   }
 
-  const rows = propertyRows(activeNode, nodes);
-  const copyAvailable = canUseClipboard();
+  const rows = propertyRows(activeNode, nodes, t);
 
   return (
     <div className="space-y-4">
       <div className="min-w-0">
-        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{selectedList.length > 0 ? "Selected node" : "Hovered node"}</p>
-        <h2 className="mt-1 truncate text-base font-semibold text-zinc-950">{activeNode.name}</h2>
-        <p className="mt-1 truncate font-mono text-xs text-zinc-500">{activeNode.id}</p>
+        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("design.selectedNode")}</p>
+        <h2 className="mt-1 truncate text-base font-semibold text-zinc-950">{activeNode.name ?? activeNode.id}</h2>
+        <p className="mt-1 truncate font-mono text-xs text-zinc-500">node_id {activeNode.id}</p>
       </div>
 
       <div className="divide-y divide-zinc-200 rounded-md border border-zinc-200">
         {rows.map((row) => (
-          <div className="grid grid-cols-[7rem_minmax(0,1fr)_4.25rem] items-center gap-2 px-3 py-2 text-sm" key={row.label}>
+          <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-center gap-2 px-3 py-2 text-sm" key={row.label}>
             <span className="text-zinc-500">{row.label}</span>
             <span className="min-w-0 truncate font-mono text-xs text-zinc-800">{row.value}</span>
-            <button
-              aria-label={`Copy ${row.label}`}
-              className={copyButtonClasses}
-              disabled={!copyAvailable}
-              onClick={() => void copyValue(row.label, row.value, setCopyState)}
-              type="button"
-            >
-              Copy
-            </button>
           </div>
         ))}
       </div>
 
-      {copyState ? (
-        <p className={copyState.status === "copied" ? "text-xs font-medium text-emerald-700" : "text-xs font-medium text-red-700"}>
-          {copyState.status === "copied" ? `${copyState.label} copied` : "Clipboard unavailable"}
-        </p>
-      ) : null}
-
-      {spacing && selectedList.length === 2 ? (
+      {spacing ? (
         <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm">
-          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Spacing</p>
+          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("design.spacing")}</p>
           <p className="mt-1 truncate text-zinc-700">
-            {selectedList[0].name} to {selectedList[1].name}
+            {(selectedNodes[0].name ?? selectedNodes[0].id)} to {(selectedNodes[1].name ?? selectedNodes[1].id)}
           </p>
           <dl className="mt-3 grid gap-2">
             <SpacingFact label="Horizontal" measurement={spacing.horizontal} />
@@ -81,46 +81,56 @@ export function PropertyPanel({ designId, hoveredNode, nodes = [], selectedNode,
         </div>
       ) : null}
 
-      {designId && activeNode && selectedList.length > 0 ? (
-        <div className="space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">Export metadata</p>
-          <div className="flex flex-wrap gap-2">
-            {(["png", "svg"] as const).map((format) => (
-              <a
-                className={`inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium uppercase text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 ${focusClasses}`}
-                href={`/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: activeNode.id, format }).toString()}`}
-                key={format}
-              >
-                {format}
-              </a>
+      {activeNode.unsupported_properties.length > 0 ? (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+          <p className="text-xs font-semibold uppercase tracking-normal">{t("design.unsupportedProperties")}</p>
+          <ul className="mt-2 list-disc space-y-1 pl-4">
+            {activeNode.unsupported_properties.map((property) => (
+              <li key={property}>{property}</li>
             ))}
-          </div>
+          </ul>
         </div>
       ) : null}
+
+      <div className="space-y-2">
+        <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("design.export")}</p>
+        <div className="flex flex-wrap gap-2">
+          {(["png", "svg"] as const).map((format) => (
+            <a
+              className={exportLinkClasses}
+              href={`/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/design/export?${new URLSearchParams({ node_id: activeNode.id, format }).toString()}`}
+              key={format}
+            >
+              {format}
+            </a>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-function propertyRows(node: AnnotationNode, nodes: AnnotationNode[]): Array<{ label: string; value: string }> {
+function propertyRows(node: RequirementDesignSceneNode, nodes: RequirementDesignSceneNode[], t: (key: string) => string): Array<{ label: string; value: string }> {
   return [
-    { label: "ID", value: node.id },
-    { label: "Path", value: buildNodePath(node, nodes) },
-    { label: "Type", value: node.type },
-    { label: "Parent", value: node.parent_id ?? "None" },
-    { label: "Position", value: `${node.x}, ${node.y}` },
-    { label: "Size", value: `${node.width} x ${node.height}` },
-    { label: "Fill", value: node.fill ?? "None" },
-    { label: "Stroke", value: node.stroke ?? "None" },
-    { label: "Font", value: [node.fontFamily, node.fontSize ? `${node.fontSize}px` : undefined].filter(Boolean).join(" ") || "None" },
-    { label: "Content", value: node.content ?? "None" }
+    { label: t("design.pencilPath"), value: buildSceneNodePath(node, nodes) },
+    { label: "node_id", value: node.id },
+    { label: "Type", value: node.type ?? "none" },
+    { label: t("design.geometry"), value: formatGeometry(node) },
+    { label: "Text", value: node.text ?? "none" },
+    { label: "Image", value: node.image ?? "none" },
+    { label: "Fill", value: node.fill ?? "none" },
+    { label: "Stroke", value: node.stroke ?? "none" },
+    { label: "Component", value: node.component_key ?? "none" },
+    { label: "Ref", value: node.ref_target ?? "none" },
+    { label: t("design.usageIndex"), value: formatUnknownRecord(node.usage_index) }
   ];
 }
 
-export function buildNodePath(node: AnnotationNode, nodes: AnnotationNode[]): string {
+export function buildSceneNodePath(node: RequirementDesignSceneNode, nodes: RequirementDesignSceneNode[]): string {
   const byId = new Map(nodes.map((item) => [item.id, item]));
-  const chain: AnnotationNode[] = [];
+  const chain: RequirementDesignSceneNode[] = [];
   const seen = new Set<string>();
-  let current: AnnotationNode | undefined = node;
+  let current: RequirementDesignSceneNode | undefined = node;
 
   while (current && !seen.has(current.id)) {
     chain.push(current);
@@ -132,6 +142,61 @@ export function buildNodePath(node: AnnotationNode, nodes: AnnotationNode[]): st
     .reverse()
     .map((item) => item.name || item.id)
     .join(" / ");
+}
+
+export function calculateSceneNodeSpacing(from: RequirementDesignSceneNode, to: RequirementDesignSceneNode): SceneNodeSpacingMeasurement {
+  const fromRect = nodeRect(from);
+  const toRect = nodeRect(to);
+  const fromCenter = centerOf(fromRect);
+  const toCenter = centerOf(toRect);
+  return {
+    fromCenter,
+    fromId: from.id,
+    horizontal: axisSpacing(fromRect.x, fromRect.x + fromRect.width, toRect.x, toRect.x + toRect.width, fromCenter.x, toCenter.x),
+    toCenter,
+    toId: to.id,
+    vertical: axisSpacing(fromRect.y, fromRect.y + fromRect.height, toRect.y, toRect.y + toRect.height, fromCenter.y, toCenter.y)
+  };
+}
+
+function axisSpacing(fromStart: number, fromEnd: number, toStart: number, toEnd: number, fromCenter: number, toCenter: number): SpacingAxisMeasurement {
+  if (fromEnd <= toStart) {
+    return { mode: "edge-gap", value: roundMeasurement(toStart - fromEnd) };
+  }
+  if (toEnd <= fromStart) {
+    return { mode: "edge-gap", value: roundMeasurement(fromStart - toEnd) };
+  }
+  return { mode: "center-delta", value: roundMeasurement(toCenter - fromCenter) };
+}
+
+function centerOf(rect: { height: number; width: number; x: number; y: number }): ScenePoint {
+  return {
+    x: rect.x + rect.width / 2,
+    y: rect.y + rect.height / 2
+  };
+}
+
+function nodeRect(node: RequirementDesignSceneNode): { height: number; width: number; x: number; y: number } {
+  return {
+    height: Math.max(0, node.height ?? 0),
+    width: Math.max(0, node.width ?? 0),
+    x: node.x ?? 0,
+    y: node.y ?? 0
+  };
+}
+
+function formatGeometry(node: RequirementDesignSceneNode): string {
+  const rect = nodeRect(node);
+  return `${rect.x}, ${rect.y} / ${rect.width} x ${rect.height}`;
+}
+
+function formatUnknownRecord(value: Record<string, unknown> | undefined): string {
+  if (!value || Object.keys(value).length === 0) {
+    return "none";
+  }
+  return Object.entries(value)
+    .map(([key, item]) => `${key}:${String(item)}`)
+    .join(" ");
 }
 
 function SpacingFact({ label, measurement }: { label: string; measurement: SpacingAxisMeasurement }) {
@@ -147,20 +212,6 @@ function formatSpacing(measurement: SpacingAxisMeasurement): string {
   return `${measurement.value}px ${measurement.mode === "edge-gap" ? "edge gap" : "center delta"}`;
 }
 
-async function copyValue(label: string, value: string, setCopyState: (state: CopyState) => void): Promise<void> {
-  if (!canUseClipboard()) {
-    setCopyState({ label, status: "error" });
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(value);
-    setCopyState({ label, status: "copied" });
-  } catch {
-    setCopyState({ label, status: "error" });
-  }
-}
-
-function canUseClipboard(): boolean {
-  return typeof navigator !== "undefined" && Boolean(navigator.clipboard?.writeText);
+function roundMeasurement(value: number): number {
+  return Math.round(value * 100) / 100;
 }

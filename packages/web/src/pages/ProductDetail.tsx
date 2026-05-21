@@ -634,10 +634,6 @@ function configStatus(product: Product): ConfigStatus {
     return "configuration_incomplete";
   }
 
-  if (product.components_initialized) {
-    return "initialized";
-  }
-
   return "configured";
 }
 

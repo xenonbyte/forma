@@ -211,14 +211,15 @@ function parseStyleIndex(source: string): BuiltInStyleAsset[] {
     if (!current) {
       return;
     }
-    if (!current.name || !current.description || !current.designMdPath) {
-      throw new Error(`Incomplete built-in style entry in styles.yaml: ${JSON.stringify(current)}`);
+    const entry = current;
+    if (!entry.name || !entry.description || !entry.designMdPath) {
+      throw new Error(`Incomplete built-in style entry in styles.yaml: ${JSON.stringify(entry)}`);
     }
-    const missingVariables = requiredStyleVariableKeys.filter((key) => !current.variableKeys.has(key));
+    const missingVariables = requiredStyleVariableKeys.filter((key) => !entry.variableKeys.has(key));
     if (missingVariables.length > 0) {
-      throw new Error(`Built-in style ${current.name} is missing required variables: ${missingVariables.join(", ")}`);
+      throw new Error(`Built-in style ${entry.name} is missing required variables: ${missingVariables.join(", ")}`);
     }
-    styles.push({ name: current.name, description: current.description, designMdPath: current.designMdPath });
+    styles.push({ name: entry.name, description: entry.description, designMdPath: entry.designMdPath });
   };
 
   for (const line of source.split(/\r?\n/)) {

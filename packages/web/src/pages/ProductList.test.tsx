@@ -33,7 +33,6 @@ const configuredProduct: Product = {
   style,
   languages: ["en"],
   default_language: "en",
-  components_initialized: true
 };
 
 const roots: Root[] = [];
@@ -177,7 +176,6 @@ describe("ProductListContent", () => {
               description: "Mobile checkout workbench",
               platform: "web",
               style,
-              components_initialized: true
             }
           }
         }}
@@ -202,7 +200,6 @@ describe("ProductListContent", () => {
               style,
               languages: ["en", "zh-CN"],
               default_language: "en",
-              components_initialized: false
             }
           }
         }}

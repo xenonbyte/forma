@@ -26,7 +26,9 @@ const minimalPng = Buffer.from([
 const oldPreviewPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x6f, 0x6c, 0x64]);
 
 async function tempDir() {
-  return mkdtemp(join(tmpdir(), "forma-sync-test-"));
+  const home = await mkdtemp(join(tmpdir(), "forma-sync-test-"));
+  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
+  return home;
 }
 
 type RunnerCall = {
@@ -400,7 +402,7 @@ colors:
 });
 
 describe("SyncService state, gates, and recovery", () => {
-  it("starts a sync after Pencil and Git gates when autoRun is false", async () => {
+  it("starts a sync after the Git gate when autoRun is false", async () => {
     const home = await tempDir();
     const calls: Array<{ command: string; args: string[]; options?: { timeoutMs?: number } }> = [];
     const runner = {
@@ -421,14 +423,10 @@ describe("SyncService state, gates, and recovery", () => {
       started_at: started.started_at,
       progress: { phase: "git_clone", current: 0, total: 0 }
     });
-    expect(calls).toEqual([
-      { command: "pencil", args: ["version"], options: undefined },
-      { command: "pencil", args: ["status"], options: undefined },
-      { command: "git", args: ["--version"], options: { timeoutMs: 5_000 } }
-    ]);
+    expect(calls).toEqual([{ command: "git", args: ["--version"], options: { timeoutMs: 5_000 } }]);
   });
 
-  it("runs Pencil availability before Git gate when starting", async () => {
+  it("does not require Pencil availability for metadata-only style sync", async () => {
     const home = await tempDir();
     const calls: string[] = [];
     const runner = {
@@ -447,7 +445,7 @@ describe("SyncService state, gates, and recovery", () => {
 
     await service.startSync();
 
-    expect(calls).toEqual(["pencil version", "pencil status", "git --version 5000"]);
+    expect(calls).toEqual(["git --version 5000"]);
   });
 
   it("rejects duplicate starts while a non-stale sync is running", async () => {
@@ -560,7 +558,7 @@ describe("SyncService state, gates, and recovery", () => {
   });
 
   it("exposes sync service from the forma store", async () => {
-    const store = createFormaStore({ home: await tempDir(), bundledStylesDir: join(await tempDir(), "styles") });
+    const store = await createFormaStore({ home: await tempDir(), bundledStylesDir: join(await tempDir(), "styles") });
 
     expect(store.sync).toBeInstanceOf(SyncService);
     await expect(store.sync.getStatus()).resolves.toEqual({ status: "idle" });
@@ -583,7 +581,7 @@ describe("SyncService state, gates, and recovery", () => {
 });
 
 describe("SyncService task execution", () => {
-  it("clones the design repository, renders previews, and writes the styles index", async () => {
+  it("clones the design repository and writes style metadata without Pencil previews", async () => {
     const home = await tempDir();
     await writePreviewTemplate(home);
     const styles = [
@@ -620,31 +618,15 @@ describe("SyncService task execution", () => {
     expect(index.styles.map((style) => style.design_md_path)).toEqual(["styles/alpha/DESIGN.md", "styles/beta/DESIGN.md"]);
     for (const style of styles) {
       await expect(readFile(join(home, "styles", style.name, "DESIGN.md"), "utf8")).resolves.toBe(style.designMd);
-      await expect(readFile(join(home, "styles", style.name, "preview@2x.png"))).resolves.toEqual(minimalPng);
+      await expect(access(join(home, "styles", style.name, "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
     }
     expect(calls).toContainEqual({
       command: "git",
       args: ["clone", "--depth", "1", "https://github.com/VoltAgent/awesome-design-md.git", `/tmp/forma-sync-${started.task_id}`],
       options: { timeoutMs: 60_000 }
     });
-    const pencilCall = calls.find((call) => call.command === "pencil" && call.args.includes("--prompt"));
-    expect(pencilCall).toBeDefined();
-    const inputIndex = pencilCall!.args.indexOf("--in");
-    const outputIndex = pencilCall!.args.indexOf("--out");
-    expect(inputIndex).toBeGreaterThanOrEqual(0);
-    expect(outputIndex).toBeGreaterThanOrEqual(0);
-    expect(pencilCall!.args[inputIndex + 1]).toBe(pencilCall!.args[outputIndex + 1]);
-    expect(pencilCall!.args[inputIndex + 1]).toBe(`/tmp/forma-sync-${started.task_id}/alpha.pen`);
-    expect(pencilCall!.args).toContain("--model");
-    expect(pencilCall!.args[pencilCall!.args.indexOf("--model") + 1]).toBe("claude-haiku-4-5");
-    expect(pencilCall!.options).toEqual({ timeoutMs: 90_000 });
-    expect(prompts.join("\n")).toContain("--primary: #0055cc");
-    expect(prompts.join("\n")).toContain("--background: #ffffff");
-    expect(prompts.join("\n")).toContain("--text-primary: #111827");
-    expect(prompts.join("\n")).toContain("--font-heading: Inter");
-    expect(prompts.join("\n")).toContain("--font-body: Inter");
-    expect(prompts.join("\n")).toContain("--border-radius: 12");
-    expect(prompts.join("\n")).toContain("--spacing-unit: 8");
+    expect(calls.filter((call) => call.command === "pencil")).toEqual([]);
+    expect(prompts).toEqual([]);
   });
 
   it("counts added and updated styles without counting unchanged styles as updated", async () => {
@@ -715,7 +697,7 @@ describe("SyncService task execution", () => {
     expect(index.styles.map((style) => style.name)).toEqual(["alpha", "beta"]);
   });
 
-  it("keeps syncing metadata and other previews when one style preview fails", async () => {
+  it("keeps existing static previews as untouched resources while syncing metadata", async () => {
     const home = await tempDir();
     await writePreviewTemplate(home);
     await mkdir(join(home, "styles", "broken"), { recursive: true });
@@ -741,17 +723,17 @@ describe("SyncService task execution", () => {
         styles_total: 2,
         styles_added: 2,
         styles_updated: 0,
-        styles_failed: 1
+        styles_failed: 0
       }
     });
     const index = await readYaml<{ styles: Array<{ name: string }> }>(join(home, "styles", "styles.yaml"));
     expect(index.styles.map((style) => style.name)).toEqual(["broken", "working"]);
     await expect(readFile(join(home, "styles", "broken", "DESIGN.md"), "utf8")).resolves.toBe(styles[0]!.designMd);
     await expect(readFile(join(home, "styles", "broken", "preview@2x.png"))).resolves.toEqual(oldPreviewPng);
-    await expect(readFile(join(home, "styles", "working", "preview@2x.png"))).resolves.toEqual(minimalPng);
+    await expect(access(join(home, "styles", "working", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("marks a locked preview batch as failed after exhausting lock retries", async () => {
+  it("does not acquire Pencil locks for metadata-only style sync", async () => {
     vi.useFakeTimers();
     const home = await tempDir();
     const { runner, calls } = createFakeRunner([
@@ -775,16 +757,16 @@ describe("SyncService task execution", () => {
         styles_total: 2,
         styles_added: 2,
         styles_updated: 0,
-        styles_failed: 2
+        styles_failed: 0
       }
     });
-    expect(pencilService.lockCalls).toBe(16);
+    expect(pencilService.lockCalls).toBe(0);
     expect(calls.filter((call) => call.command === "pencil")).toEqual([]);
     await expect(access(join(home, "styles", "alpha", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
     await expect(access(join(home, "styles", "beta", "preview@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("keeps metadata when the preview template is missing and counts previews as failed", async () => {
+  it("keeps metadata when the preview template is missing", async () => {
     const home = await tempDir();
     const styles = [
       { name: "alpha", designMd: designMd("alpha", "#0055cc") },
@@ -807,7 +789,7 @@ describe("SyncService task execution", () => {
         styles_total: 2,
         styles_added: 2,
         styles_updated: 0,
-        styles_failed: 2
+        styles_failed: 0
       }
     });
     const index = await readYaml<{ styles: Array<{ name: string }> }>(join(home, "styles", "styles.yaml"));

@@ -9,7 +9,6 @@ export interface FormaPaths {
   manifestsDir: string;
   productsDir: string;
   requirementsDir: string;
-  designsDir: string;
   skillsDir: string;
   commandsDir: string;
   libraryDir: string;
@@ -27,7 +26,6 @@ export function getFormaPaths(rootDir = join(process.cwd(), ".forma")): FormaPat
     manifestsDir: join(rootDir, "manifests"),
     productsDir: join(dataDir, "products"),
     requirementsDir: join(dataDir, "requirements"),
-    designsDir: join(dataDir, "designs"),
     skillsDir: join(rootDir, "skills"),
     commandsDir: join(rootDir, "commands"),
     libraryDir: join(rootDir, "library"),

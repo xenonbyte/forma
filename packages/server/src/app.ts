@@ -2,24 +2,48 @@ import { homedir } from "node:os";
 import { access, readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
-import { createFormaStore, FormaError } from "@xenonbyte/forma-core";
-import { registerRoutes, RouteHttpError, type FormaStore } from "./routes.js";
+import { createFormaStore, FormaError, isSchemaNormalizationStartupError, type SchemaNormalizationRecoveryState } from "@xenonbyte/forma-core";
+import {
+  registerPreflightOnlyRoutes,
+  registerRecoveryOnlyRoutes,
+  registerRoutes,
+  RouteHttpError,
+  sendNormalizationBlocked,
+  type FormaRoutesStore
+} from "./routes.js";
 
 export interface BuildServerOptions {
-  store?: FormaStore;
+  store?: FormaServerStore;
   home?: string;
   bundledStylesDir?: string;
   webAssetsDir?: string;
 }
 
 export type FormaServer = FastifyInstance;
+export interface FormaServerStore extends FormaRoutesStore {
+  recoverPendingProductDeletes(): Promise<{ warnings: string[] }>;
+  sync: FormaRoutesStore["sync"] & {
+    recoverFromCrash(): Promise<unknown>;
+  };
+}
 
-export function buildServer(options: BuildServerOptions = {}): FormaServer {
+export async function buildServer(options: BuildServerOptions = {}): Promise<FormaServer> {
   const app = Fastify();
-  const store = (options.store ?? createFormaStore({
-    home: options.home ?? defaultFormaHome(),
-    bundledStylesDir: options.bundledStylesDir
-  })) as FormaStore;
+  let store: FormaServerStore | undefined = options.store;
+  let limitedState: SchemaNormalizationRecoveryState | undefined;
+  if (!store) {
+    try {
+      store = await createFormaStore({
+        home: options.home ?? defaultFormaHome(),
+        bundledStylesDir: options.bundledStylesDir
+      });
+    } catch (error) {
+      if (!isSchemaNormalizationStartupError(error)) {
+        throw error;
+      }
+      limitedState = error.state;
+    }
+  }
 
   app.setErrorHandler((error, _request, reply) => {
     const payload = toErrorPayload(error);
@@ -27,6 +51,11 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
   });
 
   app.setNotFoundHandler(async (request, reply) => {
+    if (limitedState && isApiRequest(request.url)) {
+      sendNormalizationBlocked(reply, limitedState);
+      return;
+    }
+
     if (options.webAssetsDir && canServeWebAsset(request.method, request.url)) {
       if (pathname(request.url) === "/favicon.ico") {
         reply.status(204).send();
@@ -47,21 +76,51 @@ export function buildServer(options: BuildServerOptions = {}): FormaServer {
     });
   });
 
-  app.addHook("onReady", async () => {
-    const recovery = await store.recoverPendingProductDeletes();
-    for (const warning of recovery.warnings) {
-      app.log.warn({ warning }, "Forma product deletion recovery warning");
+  if (limitedState) {
+    if (limitedState.mode === "recovery_only") {
+      registerRecoveryOnlyRoutes(app, limitedState);
+    } else {
+      registerPreflightOnlyRoutes(app, limitedState);
     }
-  });
+    return app;
+  }
+
+  if (!store) {
+    throw new Error("Forma store was not initialized");
+  }
+
+  void store.recoverPendingProductDeletes()
+    .then((recovery) => {
+      for (const warning of recovery.warnings) {
+        app.log.warn({ warning }, "Forma product deletion recovery warning");
+      }
+    })
+    .catch((error: unknown) => {
+      app.log.warn({ error }, "Forma product deletion recovery failed");
+    });
 
   void store.sync.recoverFromCrash().catch(() => undefined);
   registerRoutes(app, store);
   return app;
 }
 
+function isApiRequest(url: string): boolean {
+  const requestPath = pathname(url);
+  return requestPath === "/api" || requestPath.startsWith("/api/");
+}
+
 function canServeWebAsset(method: string, url: string): boolean {
   const requestPath = pathname(url);
-  return (method === "GET" || method === "HEAD") && requestPath !== "/api" && !requestPath.startsWith("/api/");
+  return (
+    (method === "GET" || method === "HEAD") &&
+    requestPath !== "/api" &&
+    !requestPath.startsWith("/api/") &&
+    !isRemovedLegacyDesignDetailPath(requestPath)
+  );
+}
+
+function isRemovedLegacyDesignDetailPath(requestPath: string): boolean {
+  return /^\/products\/[^/]+\/requirements\/[^/]+\/designs\/[^/]+\/?$/.test(requestPath);
 }
 
 async function readWebAsset(webAssetsDir: string, url: string): Promise<{ content: Buffer; contentType: string } | undefined> {
@@ -151,7 +210,7 @@ function statusForError(error: unknown): number {
     if (error.code === "SYNC_ALREADY_RUNNING") {
       return 409;
     }
-    if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
+    if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PENCIL_LOCK_HELD" || error.code === "LOCK_CORRUPT" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
       return 409;
     }
     if (error.code === "SYNC_GIT_NOT_FOUND" || error.code.startsWith("PENCIL_")) {
@@ -168,6 +227,9 @@ function statusForError(error: unknown): number {
       error.code === "DESIGN_MODE_INVALID" ||
       error.code === "VERSION_TOO_LOW"
     ) {
+      return 409;
+    }
+    if (error.code.startsWith("COMPONENT_LIBRARY_") || error.code === "COMPONENT_SEED_REQUIRED" || error.code === "MANUAL_EDIT_DETECTED" || error.code === "DESIGN_CANVAS_CHANGED" || error.code === "DESIGN_COMMIT_RECOVERY_REQUIRED") {
       return 409;
     }
     return 400;

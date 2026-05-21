@@ -51,7 +51,6 @@ const product: Product = {
   style,
   languages: ["en"],
   default_language: "en",
-  components_initialized: true
 };
 
 const baseline: ProductBaseline = {

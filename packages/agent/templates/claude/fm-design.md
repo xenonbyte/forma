@@ -7,13 +7,18 @@ description: Generate a Forma design from the latest requirement.
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Execution:
-1. Read current session through MCP.
-2. Fetch latest requirement.
-3. If `ui_affected === false`, print `当前需求无 UI 调整，无需设计` and stop. Do not call design/refine MCP tools for no-UI requirements.
-4. Inject exact structured page copy into design prompts. Pencil/design generation must use exact structured page copy and must not improvise text.
-5. Confirm operation with product, requirement, and pending or expired pages.
-6. For each target page, call `generate_and_save_page_design` with `product_id`, `requirement_id`, `page_id`, `prompt`, and `workspace`.
-7. Treat `generate_page_design` as a low-level temporary-output tool only. Do not use it as the normal `fm-design` workflow entrypoint. If a debugging or compatibility workflow uses it, immediately pass the returned `pen_path` and `preview_path` to `save_designs`; otherwise the generated `.pen` can be lost.
-8. If design generation returns `PRODUCT_CONFIG_INCOMPLETE` with missing `components_initialized`, confirm default language, call `generate_components` with product config and default language in prompt, call `complete_product_init`, and retry the original `generate_and_save_page_design` call once.
-9. Report persisted `design_id`, `version`, `pen_path`, and `preview_path` from `generate_and_save_page_design`.
-10. Report stable error codes when returned.
+1. Read `get_current_session`, `get_product`, `get_requirement`, `get_product_rules`, and `get_page_copy` as needed. If `ui_affected === false`, print `当前需求无 UI 调整，无需设计` and stop. Do not call design/refine MCP tools for no-UI requirements.
+2. Call `get_requirement_design_canvas`. Handle `index_status`: `missing` may generate only when no canonical design file exists; `incomplete` and `stale` must call `index_requirement_design_canvas`; `recovery_required` is a hard stop; `complete` may proceed.
+3. Call `get_product_component_library`. If a library is missing or invalid and design work must start, run the route-level `generate_components` macro from shared guidance. This macro is not an MCP one-shot write tool.
+4. Decide the action: `generate`, `refine`, `rebuild`, or `component_refresh`. Component refresh means linked component snapshot updates only; it must not become redesign or add business capability.
+5. Design changes visual design only. If the user asks for new product capability, page, entry, field, action, navigation, component, or business copy, return `REQUIREMENT_UPDATE_REQUIRED` and instruct the user to run `fm-requirement`.
+6. If semantic contract coverage is insufficient for the requested visual work, return `SEMANTIC_CONTRACT_REQUIRED` and instruct the user to run `fm-requirement`. Do not infer fields/actions/components from free text.
+7. Before opening Pencil, show target page/action/component scope/semantic coverage/quality strategy. Inject exact structured page copy into any design planning text. Design work must use exact structured page copy and must not improvise UI text.
+8. Call `begin_requirement_design_session`. On `PENCIL_APP_REQUIRED`, stop hard; no headless fallback, no raw Pencil write request.
+9. Use only session-scoped Pencil wrappers for context: `session_get_editor_state`, `session_get_guidelines`, `session_get_variables`, `session_batch_get`, `session_snapshot_layout`, `session_get_screenshot`, and `session_export_nodes`. Never pass file paths, or raw Pencil write payloads.
+10. For unmanaged import pages, call `plan_import_metadata_normalization`, apply returned metadata-only operations through `apply_requirement_design_operations` with `intent: "import_metadata_normalization"`, rerun quality, and stop on stable blockers.
+11. Submit all writes through `apply_requirement_design_operations` with allowed v6 intents. Do not call removed page-level design MCP tools. The requirement-level v6 design session flow replaces those tools.
+12. Run `validate_requirement_design_quality`. If it returns a repair plan, apply one bounded `quality_repair` retry, then validate once more. Hard quality blockers stop and leave formal files unchanged.
+13. For component updates, first call `index_component_usages`; stop on unlinked usage, missing metadata, unmapped library, contract change, override conflict, or explicit non-done page. Then begin with `operation: "component_refresh"`, call `refresh_requirement_components`, apply returned operations, and commit with `ai_visual_reviews[]` when available.
+14. Call `commit_requirement_design_session`. AI screenshot review is warning-only metadata; absence is `skipped/not_requested`.
+15. Report returned kind, formal canvas file, preview file or affected pages, quality status, and component usage changes. Report stable error codes exactly when returned.

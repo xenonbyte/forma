@@ -1,9 +1,10 @@
-import { createFormaStore, FormaError, type ProductDeletionState } from "@xenonbyte/forma-core";
-import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { createFormaStore, FormaError, normalizeFormaHomeForV6, readYamlUnknown, writeYamlAtomic, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
+import { access, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildServer, type FormaServer } from "../src/app.js";
+import { buildServer, type FormaServer, type FormaServerStore } from "../src/app.js";
 
 const apps: FormaServer[] = [];
 
@@ -13,13 +14,22 @@ afterEach(async () => {
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
-function fakeStore(overrides: Record<string, unknown> = {}) {
+async function flushMicrotasks() {
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
+type V6RouteMocks = Record<string, ReturnType<typeof vi.fn>>;
+
+function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore {
   const baseStore = {
     home: "/tmp/forma",
     baseline: {
@@ -49,17 +59,6 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       cleanup_pending: false,
       recovery_warnings: []
     })),
-    designs: {
-      diffDesigns: vi.fn(async () => ({ added: [], removed: [], modified: [] })),
-      exportDesignAsset: vi.fn(async () => ({
-        design_id: "D-12345678",
-        node_id: "root",
-        format: "png",
-        path: "/tmp/root.png",
-        source: "preview"
-      })),
-      getDesignAnnotations: vi.fn(async () => [{ id: "root", name: "Root", type: "frame", x: 0, y: 0, width: 100, height: 100 }])
-    },
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
       getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
@@ -80,8 +79,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
             {
               page_id: "checkout-page",
               baseline_page: "checkout",
-              design_status: "done",
-              design_id: "D-12345678"
+              design_status: "done"
             }
           ]
         }
@@ -123,7 +121,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       })),
       listStyles: vi.fn(async () => [{ name: "linear", description: "Focused tool UI" }])
     }
-  };
+  } satisfies FormaServerStore;
 
   return {
     ...baseStore,
@@ -132,16 +130,23 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
 }
 
 async function appWith(store = fakeStore()) {
-  const app = buildServer({ store: store as never });
+  const app = await buildServer({ store });
   apps.push(app);
   await app.ready();
   return app;
 }
 
-function createStoreWithDeletionHooks(
+async function appWithV6(v6: V6RouteMocks, home = "/tmp/forma") {
+  const store = fakeStore({ home }) as FormaServerStore & { v6: V6RouteMocks };
+  store.v6 = v6;
+  return appWith(store);
+}
+
+async function createStoreWithDeletionHooks(
   home: string,
   productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]>
 ) {
+  await markNormalizationCommitted(home);
   return createFormaStore({
     home,
     bundledStylesDir: resolve("styles"),
@@ -149,7 +154,7 @@ function createStoreWithDeletionHooks(
   });
 }
 
-async function seedReadyProduct(store: ReturnType<typeof createFormaStore>, name = "Shop App") {
+async function seedReadyProduct(store: FormaStore, name = "Shop App") {
   const product = await store.products.createProduct({ name, description: "Mobile shop" });
   await store.products.initProductConfig(product.id, {
     platform: "mobile",
@@ -190,11 +195,445 @@ async function webAssetsDir() {
   return root;
 }
 
+async function markNormalizationCommitted(home: string): Promise<void> {
+  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
+}
+
+async function writeLegacyRuntimeYaml(home: string): Promise<void> {
+  await mkdir(join(home, "data"), { recursive: true });
+  await writeFile(join(home, "data", "products.yaml"), "products: []\n", "utf8");
+}
+
+async function seedLegacyRuntime(
+  home: string,
+  options: { productPatch?: Record<string, unknown>; pagePatch?: Record<string, unknown> } = {}
+): Promise<void> {
+  const createdAt = "2026-05-21T00:00:00.000Z";
+  await writeYamlAtomic(join(home, "data", "products.yaml"), {
+    products: [{ id: "P-123abc", name: "Shop", description: "Shop app" }]
+  });
+  await writeYamlAtomic(join(home, "data", "P-123abc", "product.yaml"), {
+    id: "P-123abc",
+    name: "Shop",
+    description: "Shop app",
+    ...options.productPatch
+  });
+  await writeYamlAtomic(join(home, "data", "P-123abc", "R-11111111", "requirement.yaml"), {
+    id: "R-11111111",
+    product_id: "P-123abc",
+    title: "Login",
+    status: "submitted",
+    ui_affected: true,
+    created_at: createdAt,
+    updated_at: createdAt,
+    pages: [
+      {
+        page_id: "login",
+        name: "Login",
+        baseline_page: "login",
+        design_status: "pending",
+        copy: [{ context: "cta", text: "Sign in" }],
+        ...options.pagePatch
+      }
+    ],
+    navigation: []
+  });
+  await writeYamlAtomic(join(home, "data", "P-123abc", "baseline", "baseline.yaml"), {
+    product_id: "P-123abc",
+    pages: [
+      {
+        id: "login",
+        name: "Login",
+        features: "",
+        copy: [{ context: "cta", text: "Sign in" }],
+        fields: "free-text field notes",
+        interactions: "free-text interaction notes",
+        source_requirements: ["R-11111111"]
+      }
+    ],
+    navigation: []
+  });
+}
+
+async function rewriteManifestEntryHash(home: string, backupDir: string, runtimePath: string, content: string): Promise<void> {
+  const manifestFile = join(backupDir, "manifest.yaml");
+  const manifest = await readYamlUnknown(manifestFile) as Record<string, unknown>;
+  const files = manifest.files as Array<Record<string, unknown>>;
+  for (const file of files) {
+    if (file.runtime_path === runtimePath) {
+      file.sha256 = sha256Text(content);
+      file.file_size = Buffer.byteLength(content);
+    }
+  }
+  manifest.manifest_hash = hashUnknownForTest({ files, normalizer_version: manifest.normalizer_version });
+  await writeYamlAtomic(manifestFile, manifest);
+  const journalFile = join(backupDir, "normalization-journal.yaml");
+  const journal = await readYamlUnknown(journalFile) as Record<string, unknown>;
+  journal.manifest_hash = manifest.manifest_hash;
+  await writeYamlAtomic(journalFile, journal);
+}
+
+function sha256Text(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function hashUnknownForTest(value: unknown): string {
+  return `sha256:${createHash("sha256").update(stableStringifyForTest(value)).digest("hex")}`;
+}
+
+function stableStringifyForTest(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringifyForTest(item)).join(",")}]`;
+  }
+  if (typeof value === "object" && value !== null) {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringifyForTest(record[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+describe("schema normalization limited startup", () => {
+  it("starts normally after explicit committed normalization state", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-normal-startup-"));
+    await markNormalizationCommitted(home);
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const response = await app.inject({ method: "GET", url: "/api/products" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual([]);
+  });
+
+  it("preflight-only startup serves status without constructing normal route handlers", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-preflight-startup-"));
+    await writeLegacyRuntimeYaml(home);
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const status = await app.inject({ method: "GET", url: "/api/status" });
+    const blocked = await app.inject({ method: "GET", url: "/api/products" });
+    const blockedDesignMutation = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
+      payload: { operation: "generate" }
+    });
+
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      schema_normalization: {
+        mode: "preflight_only",
+        code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
+        preflight_status: "missing",
+        preflight_reason: "report_missing"
+      }
+    });
+    for (const response of [blocked, blockedDesignMutation]) {
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error_code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
+        message: "Schema normalization preflight required",
+        details: status.json().schema_normalization
+      });
+    }
+  });
+
+  it("recovery-only startup serves status and validates recovery write payloads", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-startup-"));
+    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const status = await app.inject({ method: "GET", url: "/api/status" });
+    const recovery = await app.inject({ method: "GET", url: "/api/recovery/schema-normalization" });
+    const recoverJournal = await app.inject({ method: "POST", url: "/api/recovery/schema-normalization/recover-journal", payload: {} });
+    const restoreBackup = await app.inject({ method: "POST", url: "/api/recovery/schema-normalization/restore-backup", payload: {} });
+    const blocked = await app.inject({ method: "GET", url: "/api/products" });
+    const blockedComponentMutation = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/component-library/session/begin",
+      payload: { operation: "generate", seed_components: [{ component_key: "button-primary" }] }
+    });
+
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      schema_normalization: {
+        mode: "recovery_only",
+        code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+        active_marker_file: ".v6-schema-cutover-active",
+        recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"]
+      }
+    });
+    expect(recovery.statusCode).toBe(200);
+    expect(recovery.json()).toEqual(status.json().schema_normalization);
+    for (const response of [recoverJournal, restoreBackup]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    }
+    for (const response of [blocked, blockedComponentMutation]) {
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error_code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+        message: "Schema normalization recovery required",
+        details: status.json().schema_normalization
+      });
+    }
+  });
+
+  it("recovery routes recover journals, restore backups, and reject path escapes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-routes-"));
+    await seedLegacyRuntime(home, { productPatch: { components_initialized: true } });
+    await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: "2026-05-21T00:00:00.000Z" });
+    await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: "2026-05-21T01:00:00.000Z" });
+    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
+    const backupRoot = join(home, "normalization-backups");
+    const backupDir = join(backupRoot, (await readdir(backupRoot))[0]!);
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const escape = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: { backup_dir: join(home, "normalization-backups", "..") }
+    });
+    const recover = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: { backup_dir: backupDir }
+    });
+    const missingConfirm = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/restore-backup",
+      payload: { backup_dir: backupDir }
+    });
+    const restore = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/restore-backup",
+      payload: { backup_dir: backupDir, confirm: "restore_v6_backup" }
+    });
+
+    expect(escape.statusCode).toBe(400);
+    expect(escape.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    expect(recover.statusCode).toBe(200);
+    expect(recover.json()).toMatchObject({ status: "restored" });
+    expect(missingConfirm.statusCode).toBe(400);
+    expect(missingConfirm.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    expect(restore.statusCode).toBe(200);
+    expect(restore.json()).toMatchObject({ status: "restored" });
+    const product = await readYamlUnknown(join(home, "data", "P-123abc", "product.yaml")) as Record<string, unknown>;
+    expect(product).toHaveProperty("components_initialized", true);
+  });
+
+  it("resolves relative backup_dir payloads from the current Forma home", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-relative-backup-"));
+    await seedLegacyRuntime(home, { productPatch: { components_initialized: true } });
+    await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: "2026-05-21T00:00:00.000Z" });
+    await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: "2026-05-21T01:00:00.000Z" });
+    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
+    const backupRoot = join(home, "normalization-backups");
+    const relativeBackupDir = `normalization-backups/${(await readdir(backupRoot))[0]!}`;
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const recover = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: { backup_dir: relativeBackupDir }
+    });
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: { backup_dir: "../normalization-backups/v6-2026-05-21T01:00:00.000Z" }
+    });
+
+    expect(recover.statusCode).toBe(200);
+    expect(recover.json()).toMatchObject({ status: "restored", backup_dir: relativeBackupDir });
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+  });
+
+  it("serves requirement and baseline routes after cutover adds semantic contracts", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-post-cutover-read-"));
+    await seedLegacyRuntime(home, { productPatch: { components_initialized: true } });
+    await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: "2026-05-21T00:00:00.000Z" });
+    await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: "2026-05-21T01:00:00.000Z" });
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const requirement = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/requirements/R-11111111"
+    });
+    const baseline = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/baseline"
+    });
+
+    expect(requirement.statusCode).toBe(200);
+    expect(requirement.json()).toMatchObject({
+      pages: [
+        expect.objectContaining({
+          page_id: "login",
+          semantic_contract_coverage: "minimal",
+          semantic_contract: expect.objectContaining({ fields: [], actions: [], navigation: [], component_keys: [] })
+        })
+      ]
+    });
+    expect(baseline.statusCode).toBe(200);
+    expect(baseline.json()).toMatchObject({
+      pages: [
+        expect.objectContaining({
+          id: "login",
+          semantic_contract_coverage: "minimal",
+          semantic_contract: expect.objectContaining({ fields: [], actions: [], navigation: [], component_keys: [] })
+        })
+      ]
+    });
+  });
+
+  it("recovery route returns recovery-required details for manifest hash mismatch", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-manifest-mismatch-"));
+    await seedLegacyRuntime(home, { productPatch: { components_initialized: true } });
+    await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: "2026-05-21T00:00:00.000Z" });
+    await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: "2026-05-21T01:00:00.000Z" });
+    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
+    const backupRoot = join(home, "normalization-backups");
+    const backupDir = join(backupRoot, (await readdir(backupRoot))[0]!);
+    await writeYamlAtomic(join(backupDir, "manifest.yaml"), {
+      manifest_hash: "sha256:wrong",
+      normalizer_version: "v6-stage-01",
+      files: []
+    });
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: { backup_dir: backupDir }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error_code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+      details: {
+        restore_status: "manifest_unavailable",
+        failed_files: [
+          expect.objectContaining({
+            reason: expect.stringContaining("manifest hash mismatch")
+          })
+        ]
+      }
+    });
+  });
+
+  it("restore route returns recovery-required details for old-schema smoke failures", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-old-schema-smoke-"));
+    await seedLegacyRuntime(home, { productPatch: { components_initialized: true } });
+    await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: "2026-05-21T00:00:00.000Z" });
+    await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: "2026-05-21T01:00:00.000Z" });
+    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
+    const backupRoot = join(home, "normalization-backups");
+    const backupDir = join(backupRoot, (await readdir(backupRoot))[0]!);
+    const backupProduct = join(backupDir, "data", "P-123abc", "product.yaml");
+    await writeFile(backupProduct, "id: 123\nname: false\n", "utf8");
+    await rewriteManifestEntryHash(home, backupDir, "data/P-123abc/product.yaml", "id: 123\nname: false\n");
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/restore-backup",
+      payload: { backup_dir: backupDir, confirm: "restore_v6_backup" }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error_code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+      details: {
+        restore_status: "restore_failed",
+        failed_files: [
+          expect.objectContaining({
+            reason: expect.stringContaining("old schema smoke")
+          })
+        ]
+      }
+    });
+  });
+
+  it("recovery route returns recovery-required details for corrupt journals", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-corrupt-journal-"));
+    await seedLegacyRuntime(home, { productPatch: { components_initialized: true } });
+    await normalizeFormaHomeForV6(home, { mode: "preflight", createdAt: "2026-05-21T00:00:00.000Z" });
+    await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: "2026-05-21T01:00:00.000Z" });
+    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
+    const backupRoot = join(home, "normalization-backups");
+    const backupDir = join(backupRoot, (await readdir(backupRoot))[0]!);
+    await writeFile(join(backupDir, "normalization-journal.yaml"), "[\n", "utf8");
+    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
+    apps.push(app);
+    await app.ready();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: { backup_dir: backupDir }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error_code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+      details: {
+        restore_status: "manifest_unavailable",
+        failed_files: [
+          expect.objectContaining({
+            reason: expect.stringContaining("journal")
+          })
+        ]
+      }
+    });
+  });
+
+  it("does not swallow unrelated fatal startup errors", async () => {
+    const root = await mkdtemp(join(tmpdir(), "forma-server-fatal-startup-"));
+    const home = join(root, "home-file");
+    await writeFile(home, "not a directory", "utf8");
+
+    await expect(buildServer({ home, bundledStylesDir: resolve("styles") })).rejects.toThrow();
+  });
+});
+
 async function homeWithPreview(files: string[] = ["preview@2x.png", "preview.v1@2x.png"]) {
   const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
-  await writeDesignYaml(home, { version: 1, history: [] });
+  await mkdir(join(home, "data", "P-123abc", "R-12345678", "previews"), { recursive: true });
+  await writeFile(join(home, "data", "P-123abc", "R-12345678", "design.pen"), "canvas");
+  await writeFile(
+    join(home, "data", "P-123abc", "R-12345678", "design.yaml"),
+    [
+      "schema_version: 1",
+      "product_id: P-123abc",
+      "requirement_id: R-12345678",
+      "canvas_file: design.pen",
+      "canvas_version: 1",
+      "pages:",
+      "  - page_id: checkout-page",
+      "    status: done",
+      "    preview_file: previews/checkout-page@2x.png",
+      "    page_version: 1",
+      "history: []",
+      ""
+    ].join("\n")
+  );
   for (const file of files) {
-    const previewPath = join(home, "data", "P-123abc", "R-12345678", "D-12345678", file);
+    const previewPath = join(home, "data", "P-123abc", "R-12345678", "previews", file === "preview@2x.png" ? "checkout-page@2x.png" : file);
     await mkdir(dirname(previewPath), { recursive: true });
     await writeFile(previewPath, "preview");
   }
@@ -252,11 +691,15 @@ async function writeDesignFile(home: string, file: string, content: string) {
 
 describe("Fastify API routes", () => {
   it("serves packaged Web assets and falls back to the SPA for app routes", async () => {
-    const app = buildServer({ store: fakeStore() as never, webAssetsDir: await webAssetsDir() });
+    const app = await buildServer({ store: fakeStore(), webAssetsDir: await webAssetsDir() });
     apps.push(app);
     await app.ready();
 
     const appRoute = await app.inject({ method: "GET", url: "/products" });
+    const removedDesignDetailRoute = await app.inject({
+      method: "GET",
+      url: "/products/P-123abc/requirements/R-12345678/designs/D-12345678"
+    });
     const asset = await app.inject({ method: "GET", url: "/assets/app.js" });
     const assetHead = await app.inject({ method: "HEAD", url: "/assets/app.js" });
     const missingAssetWithoutExtension = await app.inject({ method: "GET", url: "/assets/missing" });
@@ -271,6 +714,13 @@ describe("Fastify API routes", () => {
     expect(appRoute.statusCode).toBe(200);
     expect(appRoute.headers["content-type"]).toContain("text/html");
     expect(appRoute.body).toContain("Forma Web");
+    expect(removedDesignDetailRoute.statusCode).toBe(404);
+    expect(removedDesignDetailRoute.headers["content-type"]).toContain("application/json");
+    expect(removedDesignDetailRoute.json()).toEqual({
+      error_code: "NOT_FOUND",
+      message: "Route not found",
+      details: {}
+    });
     expect(asset.statusCode).toBe(200);
     expect(asset.headers["content-type"]).toContain("text/javascript");
     expect(asset.body).toContain("forma");
@@ -299,7 +749,7 @@ describe("Fastify API routes", () => {
     expect(apiNotFound.json()).toMatchObject({ error_code: "NOT_FOUND" });
   });
 
-  it("registers representative product, style, annotation, and diff routes", async () => {
+  it("registers representative product and style routes", async () => {
     const store = fakeStore();
     const app = await appWith(store);
 
@@ -310,26 +760,12 @@ describe("Fastify API routes", () => {
       payload: { name: "App", description: "Demo" }
     });
     const style = await app.inject({ method: "GET", url: "/api/styles/linear" });
-    const annotations = await app.inject({ method: "GET", url: "/api/designs/D-12345678/annotations" });
-    const diff = await app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1&v2=2" });
 
     expect(products.statusCode).toBe(200);
     expect(products.json()).toEqual([{ id: "P-123abc", name: "App", description: "Demo" }]);
     expect(created.statusCode).toBe(200);
     expect(style.statusCode).toBe(200);
-    expect(annotations.statusCode).toBe(200);
-    expect(diff.statusCode).toBe(200);
-    expect(diff.json()).toMatchObject({
-      added: [],
-      removed: [],
-      modified: [],
-      visual: {
-        from_image_url: "/api/designs/D-12345678/image/file?version=1",
-        to_image_url: "/api/designs/D-12345678/image/file?version=2"
-      }
-    });
     expect(store.products.createProduct).toHaveBeenCalledWith({ name: "App", description: "Demo" });
-    expect(store.designs.diffDesigns).toHaveBeenCalledWith("D-12345678", 1, 2);
   });
 
   it("deletes a product with confirmation and returns the core result", async () => {
@@ -486,15 +922,345 @@ describe("Fastify API routes", () => {
       app.inject({ method: "GET", url: "/api/products/P-123abc/baseline" }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/image" }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/baseline/pages/checkout/annotations" }),
-      app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=1" }),
-      app.inject({ method: "GET", url: "/api/designs/D-12345678/image/file?version=1" }),
-      app.inject({ method: "GET", url: "/api/designs/D-12345678/history" }),
-      app.inject({ method: "GET", url: "/api/designs/D-12345678/export?node_id=root&format=png" }),
       app.inject({ method: "GET", url: "/api/styles" }),
       app.inject({ method: "GET", url: "/api/styles/linear/preview" })
     ]);
 
     expect(responses.map((response) => response.statusCode)).toEqual(Array(responses.length).fill(200));
+  });
+
+  it("registers v6 requirement design and product component route families", async () => {
+    const v6: V6RouteMocks = {
+      getRequirementDesign: vi.fn(async (home, productId, requirementId) => ({ service: "getRequirementDesign", home, productId, requirementId })),
+      indexRequirementDesignCanvas: vi.fn(async (input) => ({ service: "indexRequirementDesignCanvas", input })),
+      getRequirementDesignScene: vi.fn(async (input) => ({ service: "getRequirementDesignScene", input })),
+      getRequirementDesignHistory: vi.fn(async (input) => ({ service: "getRequirementDesignHistory", input })),
+      exportRequirementDesignAsset: vi.fn(async (input) => ({ service: "exportRequirementDesignAsset", input })),
+      diffRequirementDesignVersions: vi.fn(async (input) => ({ service: "diffRequirementDesignVersions", input })),
+      beginRequirementDesignSession: vi.fn(async (input) => ({ service: "beginRequirementDesignSession", input })),
+      applyRequirementDesignOperations: vi.fn(async (input) => ({ service: "applyRequirementDesignOperations", input })),
+      runDesignQualityPipeline: vi.fn(async (input) => ({ service: "runDesignQualityPipeline", input })),
+      refreshRequirementComponents: vi.fn(async (input) => ({ service: "refreshRequirementComponents", input })),
+      planImportMetadataNormalization: vi.fn(async (input) => ({ service: "planImportMetadataNormalization", input })),
+      rollbackRequirementDesign: vi.fn(async (input) => ({ service: "rollbackRequirementDesign", input })),
+      commitRequirementDesignSession: vi.fn(async (input) => ({ service: "commitRequirementDesignSession", input })),
+      discardRequirementDesignSession: vi.fn(async (input) => ({ service: "discardRequirementDesignSession", input })),
+      getProductComponentLibrary: vi.fn(async (home, productId) => ({ service: "getProductComponentLibrary", home, productId })),
+      beginProductComponentSession: vi.fn(async (input) => ({ service: "beginProductComponentSession", input })),
+      applyProductComponentOperations: vi.fn(async (input) => ({ service: "applyProductComponentOperations", input })),
+      commitProductComponentSession: vi.fn(async (input) => ({ service: "commitProductComponentSession", input })),
+      discardProductComponentSession: vi.fn(async (input) => ({ service: "discardProductComponentSession", input })),
+      recoverDesignCommitJournal: vi.fn(async (input) => ({ service: "recoverDesignCommitJournal", input }))
+    };
+    const app = await appWithV6(v6);
+    const sessionId = "S-1234567890abcdef";
+
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678/design/canvas" }),
+      app.inject({ method: "POST", url: "/api/products/P-123abc/requirements/R-12345678/design/index" }),
+      app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678/design/scene" }),
+      app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678/design/history?page_id=checkout-page" }),
+      app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678/design/export?node_id=frame-1&format=png" }),
+      app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678/design/diff?page_id=checkout-page&from_page_version=1&to_page_version=2" }),
+      app.inject({
+        method: "POST",
+        url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
+        payload: { operation: "generate", page_id: "checkout-page" }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/operations`,
+        payload: { operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }] }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/quality`,
+        payload: { page_id: "checkout-page", frame_id: "frame-1" }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/component-refresh/plan`,
+        payload: { version: "latest", scope: "all_pages" }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/import-metadata-normalization/plan`,
+        payload: { page_id: "checkout-page", frame_id: "frame-1" }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/rollback/plan`,
+        payload: { canvas_version: 1 }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/commit`,
+        payload: {
+          page_id: "checkout-page",
+          frame_id: "frame-1",
+          quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] }
+        }
+      }),
+      app.inject({ method: "POST", url: `/api/products/P-123abc/requirements/R-12345678/design/session/${sessionId}/discard` }),
+      app.inject({ method: "GET", url: "/api/products/P-123abc/component-library" }),
+      app.inject({
+        method: "POST",
+        url: "/api/products/P-123abc/component-library/session/begin",
+        payload: { operation: "generate", seed_components: [{ component_key: "button-primary" }] }
+      }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/component-library/session/${sessionId}/operations`,
+        payload: { operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }] }
+      }),
+      app.inject({ method: "POST", url: `/api/products/P-123abc/component-library/session/${sessionId}/commit` }),
+      app.inject({ method: "POST", url: `/api/products/P-123abc/component-library/session/${sessionId}/discard` }),
+      app.inject({
+        method: "POST",
+        url: `/api/products/P-123abc/design/session/${sessionId}/recover-commit-journal`,
+        payload: { scope: "requirement_canvas" }
+      })
+    ]);
+
+    expect(responses.map((response) => response.statusCode)).toEqual(Array(responses.length).fill(200));
+    expect(v6.getRequirementDesign).toHaveBeenCalledWith("/tmp/forma", "P-123abc", "R-12345678");
+    expect(v6.indexRequirementDesignCanvas).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678" });
+    expect(v6.getRequirementDesignHistory).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout-page"
+    });
+    expect(v6.exportRequirementDesignAsset).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      node_id: "frame-1",
+      format: "png"
+    });
+    expect(v6.diffRequirementDesignVersions).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout-page",
+      from_page_version: 1,
+      to_page_version: 2
+    });
+    expect(v6.beginRequirementDesignSession).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      operation: "generate",
+      page_id: "checkout-page"
+    });
+    expect(v6.applyRequirementDesignOperations).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId,
+      operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }]
+    });
+    expect(v6.runDesignQualityPipeline).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId,
+      page_id: "checkout-page",
+      frame_id: "frame-1"
+    });
+    expect(v6.refreshRequirementComponents).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId,
+      version: "latest",
+      scope: "all_pages"
+    });
+    expect(v6.planImportMetadataNormalization).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId,
+      page_id: "checkout-page",
+      frame_id: "frame-1"
+    });
+    expect(v6.rollbackRequirementDesign).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId,
+      canvas_version: 1
+    });
+    expect(v6.commitRequirementDesignSession).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId,
+      page_id: "checkout-page",
+      frame_id: "frame-1",
+      quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] }
+    });
+    expect(v6.discardRequirementDesignSession).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: sessionId
+    });
+    expect(v6.getProductComponentLibrary).toHaveBeenCalledWith("/tmp/forma", "P-123abc");
+    expect(v6.beginProductComponentSession).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      operation: "generate",
+      seed_components: [{ component_key: "button-primary" }]
+    });
+    expect(v6.applyProductComponentOperations).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      session_id: sessionId,
+      operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }]
+    });
+    expect(v6.commitProductComponentSession).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", session_id: sessionId });
+    expect(v6.discardProductComponentSession).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", session_id: sessionId });
+    expect(v6.recoverDesignCommitJournal).toHaveBeenCalledWith({
+      home: "/tmp/forma",
+      product_id: "P-123abc",
+      session_id: sessionId,
+      scope: "requirement_canvas"
+    });
+  });
+
+  it("serves requirement-level design preview files from v6 metadata", async () => {
+    const home = await homeWithPreview();
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/requirements/R-12345678/design/preview/checkout-page/file"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("image/png");
+    expect(response.body).toBe("preview");
+  });
+
+  it("returns active product and requirement design session leases", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-v6-active-session-"));
+    await mkdir(join(home, "data", "P-123abc", "sessions"), { recursive: true });
+    await mkdir(join(home, "data", "P-123abc", "R-12345678", "sessions"), { recursive: true });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"), {
+      session_id: "S-1234567890abcdef",
+      scope: "requirement_canvas",
+      owner_path: "data/P-123abc/R-12345678/sessions/active.yaml",
+      local_active_path: "data/P-123abc/R-12345678/sessions/active.yaml",
+      canvas_path: "data/P-123abc/R-12345678/design.pen",
+      staging_path: "data/P-123abc/R-12345678/sessions/S-1234567890abcdef/staging.design.pen",
+      operation: "generate",
+      page_id: "checkout-page",
+      pencil_binding_id: "binding-1",
+      pid: 12345,
+      status: "running",
+      updated_at: "2026-05-21T00:00:00.000Z"
+    });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "R-12345678", "sessions", "active.yaml"), {
+      session_id: "S-1234567890abcdef",
+      scope: "requirement_canvas",
+      canvas_path: "data/P-123abc/R-12345678/design.pen",
+      staging_path: "data/P-123abc/R-12345678/sessions/S-1234567890abcdef/staging.design.pen",
+      operation: "generate",
+      page_id: "checkout-page",
+      status: "running",
+      updated_at: "2026-05-21T00:00:00.000Z"
+    });
+    const app = await appWith(fakeStore({ home }));
+
+    const productLease = await app.inject({ method: "GET", url: "/api/products/P-123abc/design/session/active" });
+    const requirementLease = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/requirements/R-12345678/design/session/active"
+    });
+
+    expect(productLease.statusCode).toBe(200);
+    expect(productLease.json()).toMatchObject({
+      product_id: "P-123abc",
+      session_id: "S-1234567890abcdef",
+      scope: "requirement_canvas",
+      status: "running",
+      canvas_path: "data/P-123abc/R-12345678/design.pen",
+      staging_path: "data/P-123abc/R-12345678/sessions/S-1234567890abcdef/staging.design.pen"
+    });
+    expect(productLease.json().elapsed_ms).toEqual(expect.any(Number));
+    expect(requirementLease.statusCode).toBe(200);
+    expect(requirementLease.json()).toMatchObject({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      session_id: "S-1234567890abcdef",
+      status: "running"
+    });
+  });
+
+  it("rejects forbidden path fields in v6 mutation payloads before calling services", async () => {
+    const forbiddenPathFields = ["canvas_path", "staging_path", "path", "outputDir", "pen_path", "preview_path"];
+    const v6: V6RouteMocks = {
+      applyRequirementDesignOperations: vi.fn(async (input) => ({ service: "applyRequirementDesignOperations", input }))
+    };
+    const app = await appWithV6(v6);
+
+    for (const field of forbiddenPathFields) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/operations",
+        payload: {
+          operations: [
+            {
+              tool: "batch_design",
+              args: { node_id: "frame-1", [field]: "/tmp/agent-owned" },
+              intent: "generate"
+            }
+          ]
+        }
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({
+        error_code: "FORBIDDEN_PATH_PARAMETER",
+        details: { parameter: `operations.0.args.${field}` }
+      });
+    }
+    expect(v6.applyRequirementDesignOperations).not.toHaveBeenCalled();
+  });
+
+  it("rejects v6 body and path id mismatches before calling services", async () => {
+    const v6: V6RouteMocks = {
+      beginRequirementDesignSession: vi.fn(async (input) => ({ service: "beginRequirementDesignSession", input })),
+      applyRequirementDesignOperations: vi.fn(async (input) => ({ service: "applyRequirementDesignOperations", input }))
+    };
+    const app = await appWithV6(v6);
+
+    const productMismatch = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
+      payload: { product_id: "P-other1", requirement_id: "R-12345678", operation: "generate" }
+    });
+    const requirementMismatch = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
+      payload: { product_id: "P-123abc", requirement_id: "R-deadbeef", operation: "generate" }
+    });
+    const sessionMismatch = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/operations",
+      payload: {
+        session_id: "S-fedcba0987654321",
+        operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }]
+      }
+    });
+
+    for (const response of [productMismatch, requirementMismatch, sessionMismatch]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error_code: "INVALID_INPUT" });
+    }
+    expect(v6.beginRequirementDesignSession).not.toHaveBeenCalled();
+    expect(v6.applyRequirementDesignOperations).not.toHaveBeenCalled();
   });
 
   it("starts style sync and returns an accepted task response", async () => {
@@ -575,65 +1341,72 @@ describe("Fastify API routes", () => {
   it("triggers async sync crash recovery when building the server", async () => {
     const store = fakeStore();
 
-    const app = buildServer({ store: store as never });
+    const app = await buildServer({ store });
     apps.push(app);
     await Promise.resolve();
 
     expect(store.sync.recoverFromCrash).toHaveBeenCalledTimes(1);
   });
 
-  it("waits for pending product delete recovery before app.ready resolves", async () => {
+  it("does not wait for pending product delete recovery before app.ready resolves", async () => {
+    const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
+    let recoveryResolved = false;
+    void recovery.promise.then(() => {
+      recoveryResolved = true;
+    });
+    const store = fakeStore({
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+    });
+    const app = await buildServer({ store });
+    apps.push(app);
+
+    await app.ready();
+
+    expect(store.recoverPendingProductDeletes).toHaveBeenCalledTimes(1);
+    expect(recoveryResolved).toBe(false);
+
+    recovery.resolve({ recovered: 0, cleaned: 0, warnings: [] });
+    await recovery.promise;
+  });
+
+  it("logs pending product delete recovery warnings during startup", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
       recoverPendingProductDeletes: vi.fn(() => recovery.promise)
     });
-    const app = buildServer({ store: store as never });
-    apps.push(app);
-    let readyResolved = false;
-
-    const ready = app.ready().then(() => {
-      readyResolved = true;
-    });
-    for (let attempt = 0; attempt < 10 && store.recoverPendingProductDeletes.mock.calls.length === 0 && !readyResolved; attempt += 1) {
-      await new Promise((resolveTick) => setTimeout(resolveTick, 0));
-    }
-
-    expect(store.recoverPendingProductDeletes).toHaveBeenCalledTimes(1);
-    expect(readyResolved).toBe(false);
-
-    recovery.resolve({ recovered: 0, cleaned: 0, warnings: [] });
-    await ready;
-    expect(readyResolved).toBe(true);
-  });
-
-  it("logs pending product delete recovery warnings during startup", async () => {
-    const store = fakeStore({
-      recoverPendingProductDeletes: vi.fn(async () => ({
-        recovered: 1,
-        cleaned: 0,
-        warnings: ["rolled back pending delete", "cleaned stale operation"]
-      }))
-    });
-    const app = buildServer({ store: store as never });
+    const app = await buildServer({ store });
     apps.push(app);
     const warn = vi.spyOn(app.log, "warn");
 
     await app.ready();
+    recovery.resolve({
+      recovered: 1,
+      cleaned: 0,
+      warnings: ["rolled back pending delete", "cleaned stale operation"]
+    });
+    await recovery.promise;
+    await flushMicrotasks();
 
     expect(warn).toHaveBeenCalledWith({ warning: "rolled back pending delete" }, "Forma product deletion recovery warning");
     expect(warn).toHaveBeenCalledWith({ warning: "cleaned stale operation" }, "Forma product deletion recovery warning");
   });
 
-  it("rejects app.ready when pending product delete recovery rejects", async () => {
+  it("logs pending product delete recovery failures without rejecting app.ready", async () => {
+    const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
-      recoverPendingProductDeletes: vi.fn(async () => {
-        throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
-      })
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
     });
-    const app = buildServer({ store: store as never });
+    const app = await buildServer({ store });
     apps.push(app);
+    const warn = vi.spyOn(app.log, "warn");
+    const error = new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
 
-    await expect(app.ready()).rejects.toMatchObject({ code: "PRODUCT_DELETION_RECOVERY_FAILED" });
+    await app.ready();
+    recovery.reject(error);
+    await recovery.promise.catch(() => undefined);
+    await flushMicrotasks();
+
+    expect(warn).toHaveBeenCalledWith({ error }, "Forma product deletion recovery failed");
   });
 
   it("maps requirement archive invalid status to 409", async () => {
@@ -835,18 +1608,12 @@ describe("Fastify API routes", () => {
     expect(requirements.getRequirement).toHaveBeenLastCalledWith({ requirement_id: "R-12345678" });
   });
 
-  it("maps not found, invalid input, and Pencil unavailable errors", async () => {
+  it("maps not found and invalid input errors", async () => {
     const store = fakeStore({
       products: {
         ...fakeStore().products,
         getProduct: vi.fn(async () => {
           throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: "P-missing" });
-        })
-      },
-      designs: {
-        ...fakeStore().designs,
-        getDesignAnnotations: vi.fn(async () => {
-          throw new FormaError("PENCIL_CLI_NOT_FOUND", "Pencil CLI not found");
         })
       }
     });
@@ -854,17 +1621,11 @@ describe("Fastify API routes", () => {
 
     const notFound = await app.inject({ method: "GET", url: "/api/products/P-missing" });
     const invalidBody = await app.inject({ method: "POST", url: "/api/products", payload: { name: "Missing description" } });
-    const invalidQuery = await app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1" });
-    const pencilUnavailable = await app.inject({ method: "GET", url: "/api/designs/D-12345678/annotations" });
 
     expect(notFound.statusCode).toBe(404);
     expect(notFound.json()).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
     expect(invalidBody.statusCode).toBe(400);
     expect(invalidBody.json()).toMatchObject({ error_code: "INVALID_INPUT" });
-    expect(invalidQuery.statusCode).toBe(400);
-    expect(invalidQuery.json()).toMatchObject({ error_code: "INVALID_INPUT" });
-    expect(pencilUnavailable.statusCode).toBe(503);
-    expect(pencilUnavailable.json()).toMatchObject({ error_code: "PENCIL_CLI_NOT_FOUND" });
   });
 
   it("hides unexpected errors behind a safe 500 payload", async () => {
@@ -1055,10 +1816,10 @@ describe("Fastify API routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       page_id: "checkout",
-      default_language_copy: [{ context: "title", text: "结账" }],
-      translations: [{ context: "title", texts: { en: "Checkout" } }]
+      default_language_copy: [{ context: "title", text: "BBB 结账" }],
+      translations: []
     });
-    expect(copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-aaa1111");
+    expect(copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-bbb2222");
   });
 
   it("does not match baseline page copy by a requirement page id that points to another baseline page", async () => {
@@ -1153,23 +1914,27 @@ describe("Fastify API routes", () => {
     expect(copy.getTranslations).not.toHaveBeenCalled();
   });
 
-  it("returns 404 for unknown design image and history routes", async () => {
-    const app = await appWith(
-      fakeStore({
-        requirements: {
-          ...fakeStore().requirements,
-          getRequirementHistory: vi.fn(async () => [])
-        }
-      })
-    );
+  it("returns default 404 for removed legacy design API routes without calling design handlers", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
 
-    const image = await app.inject({ method: "GET", url: "/api/designs/D-missing1/image" });
-    const history = await app.inject({ method: "GET", url: "/api/designs/D-missing1/history" });
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/annotations" }),
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/image" }),
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/image/file" }),
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/history" }),
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1&v2=2" }),
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/export?node_id=root&format=png" })
+    ]);
 
-    expect(image.statusCode).toBe(404);
-    expect(image.json()).toMatchObject({ error_code: "DESIGN_NOT_FOUND" });
-    expect(history.statusCode).toBe(404);
-    expect(history.json()).toMatchObject({ error_code: "DESIGN_NOT_FOUND" });
+    for (const response of responses) {
+      expect(response.statusCode).toBe(404);
+      expect(response.json()).toEqual({
+        error_code: "NOT_FOUND",
+        message: "Route not found",
+        details: {}
+      });
+    }
   });
 
   it("keeps product route reads and session visibility consistent while deletion progresses", async () => {
@@ -1204,7 +1969,7 @@ describe("Fastify API routes", () => {
         productFileExists
       });
     };
-    const store = createStoreWithDeletionHooks(home, {
+    const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state) => {
         if (state.phase === "backed_up" || state.phase === "session_written" || state.phase === "index_written" || state.phase === "moved") {
           await capture(state.phase, state);
@@ -1220,7 +1985,7 @@ describe("Fastify API routes", () => {
     productId = product.id;
     await store.sessions.setCurrentProduct(product.id);
     await writeComponentLibrary(home, product.id);
-    app = buildServer({ store: store as never });
+    app = await buildServer({ store });
     apps.push(app);
     await app.ready();
 
@@ -1286,7 +2051,7 @@ describe("Fastify API routes", () => {
     expect(response.json()).toMatchObject({ error_code: "BASELINE_IMAGE_NOT_FOUND" });
   });
 
-  it("returns baseline image metadata for an expired source page when its preview still exists", async () => {
+  it("returns baseline image metadata from requirement-level design metadata", async () => {
     const home = await homeWithPreview();
     const requirements = {
       ...fakeStore().requirements,
@@ -1300,8 +2065,7 @@ describe("Fastify API routes", () => {
             {
               page_id: "checkout-page",
               baseline_page: "checkout",
-              design_status: "expired",
-              design_id: "D-12345678"
+              design_status: "done"
             }
           ]
         }
@@ -1317,59 +2081,13 @@ describe("Fastify API routes", () => {
       baseline_page_id: "checkout",
       requirement_id: "R-12345678",
       requirement_page_id: "checkout-page",
-      design_id: "D-12345678",
-      image_url: "/api/designs/D-12345678/image/file",
-      preview_path: join(home, "data", "P-123abc", "R-12345678", "D-12345678", "preview@2x.png")
+      preview_url: "/api/products/P-123abc/baseline/pages/checkout/image",
+      preview_path: join(home, "data", "P-123abc", "R-12345678", "previews", "checkout-page@2x.png"),
+      canvas_path: join(home, "data", "P-123abc", "R-12345678", "design.pen"),
+      page_version: 1,
+      canvas_version: 1
     });
-  });
-
-  it("returns 404 when a requested historical design preview is missing", async () => {
-    const home = await homeWithPreview(["preview@2x.png"]);
-    const app = await appWith(fakeStore({ home }));
-
-    const response = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=2" });
-
-    expect(response.statusCode).toBe(404);
-    expect(response.json()).toMatchObject({ error_code: "HISTORY_FILE_MISSING" });
-  });
-
-  it("uses design metadata for current image, history, and diff visual URLs", async () => {
-    const home = await homeWithTwoVersionDesign();
-    const app = await appWith(fakeStore({ home }));
-
-    const history = await app.inject({ method: "GET", url: "/api/designs/D-12345678/history" });
-    const currentImage = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image?version=2" });
-    const currentImageFile = await app.inject({ method: "GET", url: "/api/designs/D-12345678/image/file?version=2" });
-    const diff = await app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1&v2=2" });
-    const diffBody = diff.json();
-    const fromImage = await app.inject({ method: "GET", url: diffBody.visual.from_image_url });
-    const toImage = await app.inject({ method: "GET", url: diffBody.visual.to_image_url });
-
-    expect(history.statusCode).toBe(200);
-    expect(history.json()).toMatchObject({
-      design_id: "D-12345678",
-      versions: [
-        { version: 1, image_url: "/api/designs/D-12345678/image/file?version=1", current: false },
-        { version: 2, image_url: "/api/designs/D-12345678/image/file?version=2", current: true }
-      ]
-    });
-    expect(currentImage.statusCode).toBe(200);
-    expect(currentImage.json()).toMatchObject({
-      design_id: "D-12345678",
-      version: 2,
-      image_url: "/api/designs/D-12345678/image/file?version=2",
-      preview_path: join(home, "data", "P-123abc", "R-12345678", "D-12345678", "preview@2x.png")
-    });
-    expect(currentImageFile.statusCode).toBe(200);
-    expect(currentImageFile.headers["content-type"]).toContain("image/png");
-    expect(currentImageFile.body).toBe("current preview");
-    expect(diff.statusCode).toBe(200);
-    expect(fromImage.statusCode).toBe(200);
-    expect(fromImage.headers["content-type"]).toContain("image/png");
-    expect(fromImage.body).toBe("old preview");
-    expect(toImage.statusCode).toBe(200);
-    expect(toImage.headers["content-type"]).toContain("image/png");
-    expect(toImage.body).toBe("current preview");
+    expect(response.json()).not.toHaveProperty("design_id");
   });
 
   it("exposes style preview metadata and image through separate endpoints", async () => {
@@ -1392,11 +2110,12 @@ describe("Fastify API routes", () => {
 
   it("auto-installs built-in styles for GET /api/styles on a fresh home", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-server-styles-"));
+    await markNormalizationCommitted(home);
     const store = {
-      ...createFormaStore({ home, bundledStylesDir: resolve("styles") }),
+      ...(await createFormaStore({ home, bundledStylesDir: resolve("styles") })),
       sync: fakeStore().sync
     };
-    const app = buildServer({ store: store as never });
+    const app = await buildServer({ store });
     apps.push(app);
     await app.ready();
 

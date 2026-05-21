@@ -9,13 +9,13 @@ const commands = [
   "fm-status",
   "fm-requirement",
   "fm-design",
-  "fm-refine-design",
   "fm-refine-components",
   "fm-change-style",
   "fm-rollback-design"
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
+const removedLegacyCommands = ["fm-refine-design"] as const;
 
 type Platform = "claude" | "codex" | "gemini";
 
@@ -93,9 +93,10 @@ async function writeOldManifest(
 }
 
 describe("InstallService", () => {
-  it("uses the v0.3 unified requirement command list", () => {
+  it("uses the v6 public command list without removed legacy design routes", () => {
     expect(formaInstallCommands).toEqual(commands);
     expect(formaInstallCommands).not.toEqual(expect.arrayContaining(removedRequirementCommands));
+    expect(formaInstallCommands).not.toEqual(expect.arrayContaining(removedLegacyCommands));
   });
 
   it("installs all platform command templates and shared skill", async () => {
@@ -115,6 +116,11 @@ describe("InstallService", () => {
       ).resolves.toContain(`# Forma route: ${command}`);
     }
     for (const command of removedRequirementCommands) {
+      await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".gemini", "commands", `${command}.toml`))).resolves.toBe(false);
+      await expect(exists(join(userHome, ".codex", "skills", command, "SKILL.md"))).resolves.toBe(false);
+    }
+    for (const command of removedLegacyCommands) {
       await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
       await expect(exists(join(userHome, ".gemini", "commands", `${command}.toml`))).resolves.toBe(false);
       await expect(exists(join(userHome, ".codex", "skills", command, "SKILL.md"))).resolves.toBe(false);
@@ -140,6 +146,9 @@ describe("InstallService", () => {
     for (const command of removedRequirementCommands) {
       expect(claude.installed_paths).not.toContain(join(userHome, ".claude", "commands", `${command}.md`));
     }
+    for (const command of removedLegacyCommands) {
+      expect(claude.installed_paths).not.toContain(join(userHome, ".claude", "commands", `${command}.md`));
+    }
     expect(claude.config_paths).toEqual([join(userHome, ".claude.json")]);
 
     const gemini = await readManifest(formaHome, "gemini");
@@ -151,6 +160,9 @@ describe("InstallService", () => {
       ])
     );
     for (const command of removedRequirementCommands) {
+      expect(gemini.installed_paths).not.toContain(join(userHome, ".gemini", "commands", `${command}.toml`));
+    }
+    for (const command of removedLegacyCommands) {
       expect(gemini.installed_paths).not.toContain(join(userHome, ".gemini", "commands", `${command}.toml`));
     }
     expect(gemini.config_paths).toEqual([join(userHome, ".gemini", "settings.json")]);
@@ -168,18 +180,22 @@ describe("InstallService", () => {
         join(userHome, ".codex", "skills", command, "SKILL.md")
       );
     }
+    for (const command of removedLegacyCommands) {
+      expect(codex.installed_paths).not.toContain(join(userHome, ".codex", "skills", command, "SKILL.md"));
+    }
     expect(codex.config_paths).toEqual([join(userHome, ".codex", "config.toml")]);
   });
 
   it("removes stale command files from old manifests during install upgrade", async () => {
     for (const platform of ["claude", "codex", "gemini"] satisfies Platform[]) {
       const { formaHome, userHome, service } = await createService();
-      const oldCommandPaths = removedRequirementCommands.map((command) => commandTarget(userHome, platform, command));
+      const oldCommands = [...removedRequirementCommands, ...removedLegacyCommands];
+      const oldCommandPaths = oldCommands.map((command) => commandTarget(userHome, platform, command));
       const unrelatedCommand = customCommandTarget(userHome, platform);
 
       for (const [index, commandPath] of oldCommandPaths.entries()) {
         await mkdir(dirname(commandPath), { recursive: true });
-        await writeFile(commandPath, `# Forma route: ${removedRequirementCommands[index]}\n`, "utf8");
+        await writeFile(commandPath, `# Forma route: ${oldCommands[index]}\n`, "utf8");
       }
       await mkdir(dirname(unrelatedCommand), { recursive: true });
       await writeFile(unrelatedCommand, "# Custom\n", "utf8");
@@ -214,6 +230,19 @@ describe("InstallService", () => {
       }
       await expect(exists(commandTarget(userHome, platform, "fm-requirement"))).resolves.toBe(false);
       await expect(readFile(unrelatedCommand, "utf8")).resolves.toBe("# Custom\n");
+    }
+  });
+
+  it("preserves non-managed user fm-refine-design files during install", async () => {
+    for (const platform of ["claude", "codex", "gemini"] satisfies Platform[]) {
+      const { userHome, service } = await createService();
+      const userCommand = commandTarget(userHome, platform, "fm-refine-design");
+      await mkdir(dirname(userCommand), { recursive: true });
+      await writeFile(userCommand, "# User-owned refine shortcut\n", "utf8");
+
+      await service.installPlatforms([platform]);
+
+      await expect(readFile(userCommand, "utf8")).resolves.toBe("# User-owned refine shortcut\n");
     }
   });
 

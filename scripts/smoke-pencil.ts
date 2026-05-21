@@ -1,15 +1,11 @@
-import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildServer } from "@xenonbyte/forma-server";
-import { createFormaStore, FormaError, PencilService, type Design } from "@xenonbyte/forma-core";
+import { beginProductComponentSession, createFormaStore, discardProductComponentSession, FormaError } from "@xenonbyte/forma-core";
 import { formatGenericErrorForLog } from "./smoke-pencil-error.js";
 
 const smokePrompt =
   "Create a simple mobile login page with title, email input, password input, primary login button, and forgot password link. Use the product design style variables.";
-
-const componentPrompt =
-  "Create a concise mobile component library using the product design style variables. Include text input, password input, primary button, text link, and page title components.";
 
 async function main(): Promise<void> {
   ensureHomebrewPencilOnPath();
@@ -21,11 +17,7 @@ async function main(): Promise<void> {
     console.log(`FORMA_HOME=${home}`);
     console.log(`product_id=${result.productId}`);
     console.log(`requirement_id=${result.requirementId}`);
-    console.log(`design_id=${result.designId}`);
-    console.log(`design.pen=${result.persistedPenPath}`);
-    console.log(`preview@2x.png=${result.persistedPreviewPath}`);
-    console.log(`annotation_count=${result.annotationCount}`);
-    console.log(`fetched_preview_bytes=${result.fetchedPreviewBytes}`);
+    console.log(`component_session=${result.componentSessionId}`);
   } catch (error) {
     console.error("Pencil smoke failed");
     console.error(`FORMA_HOME=${home}`);
@@ -37,16 +29,11 @@ async function main(): Promise<void> {
 async function runSmoke(home: string): Promise<{
   productId: string;
   requirementId: string;
-  designId: string;
-  persistedPenPath: string;
-  persistedPreviewPath: string;
-  annotationCount: number;
-  fetchedPreviewBytes: number;
+  componentSessionId: string;
 }> {
-  const store = createFormaStore({ home, bundledStylesDir: resolve("styles") });
-  const pencil = new PencilService({ home });
-  let components: Awaited<ReturnType<PencilService["generateComponents"]>> | undefined;
-  let pageDesign: Awaited<ReturnType<PencilService["generatePageDesign"]>> | undefined;
+  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
+  const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+  let componentSession: Awaited<ReturnType<typeof beginProductComponentSession>> | undefined;
 
   try {
     const styles = await store.styles.installBuiltInStyles();
@@ -59,16 +46,30 @@ async function runSmoke(home: string): Promise<{
     });
     const product = await store.products.initProductConfig(createdProduct.id, {
       platform: "mobile",
-      style
+      style,
+      languages: ["en"],
+      default_language: "en"
     });
 
-    components = await pencil.generateComponents({
+    componentSession = await beginProductComponentSession({
+      home,
       product_id: product.id,
-      prompt: componentPrompt,
-      workspace: home
+      operation: "generate",
+      newly_required_component_keys: ["input.text"],
+      seed_components: [
+        {
+          component_key: "input.text",
+          name: "Text input",
+          semantic_contract_hash: "sha256:smoke-input-text",
+          source: "smoke:pencil",
+          required_by: []
+        }
+      ]
     });
-    await assertFileExists(components.penPath, "Generated components pen does not exist");
-    await store.products.markComponentsInitialized(product.id);
+    await assertFileExists(componentSession.staging_path, "Component staging pen does not exist");
+    await discardProductComponentSession({ home, session_id: componentSession.session_id });
+    const componentSessionId = componentSession.session_id;
+    componentSession = undefined;
 
     const emptyRequirement = await store.requirements.createEmptyRequirement(product.id, "Mobile Login");
     const requirement = await store.requirements.submitRequirement({
@@ -80,7 +81,7 @@ async function runSmoke(home: string): Promise<{
           name: "Login",
           baseline_page: "login",
           features: "Mobile authentication entry page",
-          copy: "Title, email input, password input, login button, and forgot password link",
+          copy: [{ context: "summary", text: "Title, email input, password input, login button, and forgot password link" }],
           fields: "email, password",
           interactions: "Submit credentials and open password recovery"
         }
@@ -90,66 +91,18 @@ async function runSmoke(home: string): Promise<{
     const persistedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
     invariant(persistedRequirement.document_md.includes(smokePrompt), "Persisted requirement document does not contain the smoke prompt");
 
-    pageDesign = await pencil.generatePageDesign({
-      product_id: product.id,
-      prompt: smokePrompt,
-      workspace: components.tempDir
-    });
-
-    const [design] = await store.designs.saveDesigns(requirement.id, [
-      {
-        page_id: "login",
-        penPath: pageDesign.penPath,
-        previewPath: pageDesign.previewPath
-      }
-    ]);
-    invariant(design, "Design persistence did not return a design");
-
-    const persistedPenPath = designPath(home, design, "design.pen");
-    const persistedPreviewPath = designPath(home, design, "preview@2x.png");
-    await assertFileExists(persistedPenPath, "Persisted design.pen does not exist");
-    await assertFileExists(persistedPreviewPath, "Persisted preview@2x.png does not exist");
-    await assertPngFile(persistedPreviewPath, "Persisted preview@2x.png is not a PNG");
-
-    const annotations = await store.designs.getDesignAnnotations(design.id);
-    invariant(annotations.length > 0, "Persisted design has no annotations");
-
-    const fetchedPreview = await fetchPreviewThroughServer(store, design.id);
-
     return {
       productId: product.id,
       requirementId: requirement.id,
-      designId: design.id,
-      persistedPenPath,
-      persistedPreviewPath,
-      annotationCount: annotations.length,
-      fetchedPreviewBytes: fetchedPreview.length
+      componentSessionId
     };
   } finally {
-    await cleanupPencilTempDir(pageDesign?.tempDir);
-    await cleanupPencilTempDir(components?.tempDir);
+    if (componentSession) {
+      await discardProductComponentSession({ home, session_id: componentSession.session_id }).catch((error: unknown) => {
+        console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
+      });
+    }
   }
-}
-
-async function fetchPreviewThroughServer(store: ReturnType<typeof createFormaStore>, designId: string): Promise<Buffer> {
-  const app = buildServer({ store });
-  try {
-    await app.ready();
-    const response = await app.inject({
-      method: "GET",
-      url: `/api/designs/${encodeURIComponent(designId)}/image/file?version=1`
-    });
-    invariant(response.statusCode === 200, `Preview image route returned ${response.statusCode}`);
-    invariant(headerIncludes(response.headers["content-type"], "image/png"), "Preview image route did not return image/png");
-    invariant(hasPngSignature(response.rawPayload), "Preview image route did not return PNG bytes");
-    return response.rawPayload;
-  } finally {
-    await app.close();
-  }
-}
-
-function designPath(home: string, design: Design, filename: string): string {
-  return join(home, "data", design.product_id, design.requirement_id, design.id, filename);
 }
 
 async function assertFileExists(filePath: string, message: string): Promise<void> {
@@ -158,35 +111,6 @@ async function assertFileExists(filePath: string, message: string): Promise<void
   } catch {
     throw new Error(`${message}: ${filePath}`);
   }
-}
-
-async function assertPngFile(filePath: string, message: string): Promise<void> {
-  const bytes = await readFile(filePath);
-  invariant(hasPngSignature(bytes), `${message}: ${filePath}`);
-}
-
-function hasPngSignature(value: Buffer): boolean {
-  return (
-    value.length >= 8 &&
-    value[0] === 0x89 &&
-    value[1] === 0x50 &&
-    value[2] === 0x4e &&
-    value[3] === 0x47 &&
-    value[4] === 0x0d &&
-    value[5] === 0x0a &&
-    value[6] === 0x1a &&
-    value[7] === 0x0a
-  );
-}
-
-function headerIncludes(header: number | string | string[] | undefined, value: string): boolean {
-  if (typeof header === "string") {
-    return header.toLowerCase().includes(value);
-  }
-  if (Array.isArray(header)) {
-    return header.some((item) => item.toLowerCase().includes(value));
-  }
-  return false;
 }
 
 function invariant(condition: unknown, message: string): asserts condition {
@@ -227,7 +151,6 @@ function safeFormaDetails(details: Record<string, unknown>): Record<string, stri
     "product_id",
     "requirement_id",
     "page_id",
-    "design_id",
     "version",
     "mode",
     "status",
@@ -239,17 +162,6 @@ function safeFormaDetails(details: Record<string, unknown>): Record<string, stri
         safeKeys.has(entry[0]) && ["string", "number", "boolean"].includes(typeof entry[1])
     )
   );
-}
-
-async function cleanupPencilTempDir(tempDir: string | undefined): Promise<void> {
-  if (!tempDir) {
-    return;
-  }
-  try {
-    await rm(tempDir, { recursive: true, force: true });
-  } catch (error) {
-    console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
-  }
 }
 
 await main();

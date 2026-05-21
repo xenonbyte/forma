@@ -356,81 +356,195 @@ describe("apiRequest", () => {
     ]);
   });
 
-  it("builds typed design API routes", async () => {
-    const requests: Array<[RequestInfo | URL, string | undefined]> = [];
+  it("does not expose removed legacy design API client methods", () => {
+    const client = createApiClient();
+
+    for (const method of [
+      "exportDesignAsset",
+      "getDesignAnnotations",
+      "getDesignDiff",
+      "getDesignHistory",
+      "getDesignImage"
+    ]) {
+      expect(method in client).toBe(false);
+    }
+  });
+
+  it("builds v6 requirement design API routes without design ids", async () => {
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
     const client = createApiClient(async (input, init) => {
-      requests.push([input, init?.method]);
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
       const path = input.toString();
-      if (path.endsWith("/annotations")) {
-        return jsonResponse([{ id: "root", name: "Root", type: "frame", x: 0, y: 0, width: 100, height: 100 }]);
-      }
-      if (path.endsWith("/history")) {
+      if (path.endsWith("/design/canvas")) {
         return jsonResponse({
-          design_id: "D 123",
+          index_status: "complete",
           product_id: "P-123abc",
           requirement_id: "R-12345678",
-          page_id: "checkout",
-          current_version: 2,
-          versions: [
-            {
-              version: 1,
-              file: "design.v1.pen",
-              preview_file: "preview.v1@2x.png",
-              created_at: "2026-05-17T01:00:00.000Z",
-              current: false,
-              image_url: "/api/designs/D%20123/image/file?version=1"
-            }
-          ]
+          pages: [{ page_id: "checkout-page", status: "done", frame_id: "frame-1" }]
         });
       }
-      if (path.includes("/diff?")) {
+      if (path.endsWith("/design/scene")) {
         return jsonResponse({
-          added: [],
-          removed: [],
-          modified: [],
-          visual: {
-            from_image_url: "/api/designs/D%20123/image/file?version=1",
-            to_image_url: "/api/designs/D%20123/image/file?version=2"
-          }
+          schema_version: 1,
+          product_id: "P-123abc",
+          requirement_id: "R-12345678",
+          canvas: { file: "design.pen", version: 1 },
+          pages: [{ page_id: "checkout-page", frame_id: "frame-1", preview: { status: "exported", file: "previews/checkout-page@2x.png" }, nodes: [] }],
+          unsupported_properties: []
         });
       }
-      if (path.includes("/image?")) {
-        return jsonResponse({
-          design_id: "D 123",
-          version: 2,
-          image_url: "/api/designs/D%20123/image/file?version=2",
-          preview_path: "/tmp/preview@2x.png"
-        });
+      if (path.includes("/design/history")) {
+        return jsonResponse([{ version: 1, file: "history/canvas/canvas.c1.pen" }]);
       }
-      if (path.includes("/export?")) {
-        return jsonResponse({
-          design_id: "D 123",
-          node_id: "node 1",
-          format: "svg",
-          path: "/tmp/node.svg",
-          source: "preview"
-        });
+      if (path.includes("/design/export")) {
+        return jsonResponse({ path: "data/P-123abc/R-12345678/design.pen", revision: "sha256:abc" });
       }
-      return jsonResponse({}, { status: 404 });
+      if (path.includes("/design/diff")) {
+        return jsonResponse({ changed: false, from_canvas_version: 1, to_canvas_version: 2 });
+      }
+      if (path.endsWith("/design/session/active")) {
+        return jsonResponse({ status: "none", product_id: "P-123abc", requirement_id: "R-12345678" });
+      }
+      return jsonResponse({ session_id: "S-1234567890abcdef", status: "running" });
     });
+    const sessionId = "S-1234567890abcdef";
 
-    await expect(client.getDesignAnnotations("D 123")).resolves.toHaveLength(1);
-    await expect(client.getDesignHistory("D 123")).resolves.toMatchObject({ current_version: 2 });
-    await expect(client.getDesignDiff("D 123", 1, 2)).resolves.toMatchObject({
-      visual: {
-        from_image_url: "/api/designs/D%20123/image/file?version=1",
-        to_image_url: "/api/designs/D%20123/image/file?version=2"
-      }
+    await expect(client.getRequirementDesignCanvas("P-123abc", "R-12345678")).resolves.toMatchObject({ index_status: "complete" });
+    await expect(client.indexRequirementDesignCanvas("P-123abc", "R-12345678")).resolves.toMatchObject({ session_id: sessionId });
+    await expect(client.getRequirementDesignScene("P-123abc", "R-12345678")).resolves.toMatchObject({ schema_version: 1 });
+    await expect(client.getRequirementDesignHistory("P-123abc", "R-12345678", "checkout-page")).resolves.toEqual([
+      { version: 1, file: "history/canvas/canvas.c1.pen" }
+    ]);
+    await expect(client.exportRequirementDesignAsset("P-123abc", "R-12345678", { node_id: "frame-1", format: "png" })).resolves.toMatchObject({
+      revision: "sha256:abc"
     });
-    await expect(client.getDesignImage("D 123", 2)).resolves.toMatchObject({ version: 2 });
-    await expect(client.exportDesignAsset("D 123", "node 1", "svg")).resolves.toMatchObject({ format: "svg", node_id: "node 1" });
+    await expect(client.getRequirementDesignDiff("P-123abc", "R-12345678", {
+      page_id: "checkout-page",
+      from_page_version: 1,
+      to_page_version: 2
+    })).resolves.toMatchObject({ changed: false });
+    await expect(client.beginRequirementDesignSession("P-123abc", "R-12345678", { operation: "generate", page_id: "checkout-page" })).resolves.toMatchObject({
+      session_id: sessionId
+    });
+    await expect(client.applyRequirementDesignOperations("P-123abc", "R-12345678", sessionId, {
+      operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }]
+    })).resolves.toMatchObject({ status: "running" });
+    await expect(client.validateRequirementDesignQuality("P-123abc", "R-12345678", sessionId, {
+      page_id: "checkout-page",
+      frame_id: "frame-1"
+    })).resolves.toMatchObject({ status: "running" });
+    await expect(client.planRequirementComponentRefresh("P-123abc", "R-12345678", sessionId, {
+      version: "latest",
+      scope: "all_pages"
+    })).resolves.toMatchObject({ status: "running" });
+    await expect(client.planImportMetadataNormalization("P-123abc", "R-12345678", sessionId, {
+      page_id: "checkout-page",
+      frame_id: "frame-1"
+    })).resolves.toMatchObject({ status: "running" });
+    await expect(client.planRequirementDesignRollback("P-123abc", "R-12345678", sessionId, { canvas_version: 1 })).resolves.toMatchObject({
+      status: "running"
+    });
+    await expect(client.commitRequirementDesignSession("P-123abc", "R-12345678", sessionId, {
+      page_id: "checkout-page",
+      frame_id: "frame-1",
+      quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] }
+    })).resolves.toMatchObject({ status: "running" });
+    await expect(client.discardRequirementDesignSession("P-123abc", "R-12345678", sessionId)).resolves.toMatchObject({ status: "running" });
+    await expect(client.getActiveRequirementDesignSession("P-123abc", "R-12345678")).resolves.toMatchObject({ status: "none" });
 
     expect(requests).toEqual([
-      ["/api/designs/D%20123/annotations", undefined],
-      ["/api/designs/D%20123/history", undefined],
-      ["/api/designs/D%20123/diff?v1=1&v2=2", undefined],
-      ["/api/designs/D%20123/image?version=2", undefined],
-      ["/api/designs/D%20123/export?node_id=node+1&format=svg", undefined]
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/canvas", method: undefined, body: undefined },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/index", method: "POST", body: undefined },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/scene", method: undefined, body: undefined },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/history?page_id=checkout-page", method: undefined, body: undefined },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/export?node_id=frame-1&format=png", method: undefined, body: undefined },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/diff?page_id=checkout-page&from_page_version=1&to_page_version=2", method: undefined, body: undefined },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/session/begin", method: "POST", body: { operation: "generate", page_id: "checkout-page" } },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/operations",
+        method: "POST",
+        body: { operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }] }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/quality",
+        method: "POST",
+        body: { page_id: "checkout-page", frame_id: "frame-1" }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/component-refresh/plan",
+        method: "POST",
+        body: { version: "latest", scope: "all_pages" }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/import-metadata-normalization/plan",
+        method: "POST",
+        body: { page_id: "checkout-page", frame_id: "frame-1" }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/rollback/plan",
+        method: "POST",
+        body: { canvas_version: 1 }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/commit",
+        method: "POST",
+        body: { page_id: "checkout-page", frame_id: "frame-1", quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] } }
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/discard",
+        method: "POST",
+        body: undefined
+      },
+      { input: "/api/products/P-123abc/requirements/R-12345678/design/session/active", method: undefined, body: undefined }
+    ]);
+    expect(JSON.stringify(requests)).not.toContain("design_id");
+  });
+
+  it("builds v6 product component API routes", async () => {
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
+      return jsonResponse({ product_id: "P-123abc", session_id: "S-1234567890abcdef", status: "running", components: [] });
+    });
+
+    await client.getProductComponentLibrary("P-123abc");
+    await client.beginProductComponentSession("P-123abc", { operation: "generate", seed_components: [{ component_key: "button-primary" }] });
+    await client.applyProductComponentOperations("P-123abc", "S-1234567890abcdef", {
+      operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }]
+    });
+    await client.commitProductComponentSession("P-123abc", "S-1234567890abcdef");
+    await client.discardProductComponentSession("P-123abc", "S-1234567890abcdef");
+    await client.recoverDesignCommitJournal("P-123abc", "S-1234567890abcdef", { scope: "product_component_library" });
+    await client.getActiveProductDesignSession("P-123abc");
+
+    expect(requests).toEqual([
+      { input: "/api/products/P-123abc/component-library", method: undefined, body: undefined },
+      {
+        input: "/api/products/P-123abc/component-library/session/begin",
+        method: "POST",
+        body: { operation: "generate", seed_components: [{ component_key: "button-primary" }] }
+      },
+      {
+        input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/operations",
+        method: "POST",
+        body: { operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }] }
+      },
+      { input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/commit", method: "POST", body: undefined },
+      { input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/discard", method: "POST", body: undefined },
+      {
+        input: "/api/products/P-123abc/design/session/S-1234567890abcdef/recover-commit-journal",
+        method: "POST",
+        body: { scope: "product_component_library" }
+      },
+      { input: "/api/products/P-123abc/design/session/active", method: undefined, body: undefined }
     ]);
   });
 

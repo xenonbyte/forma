@@ -37,7 +37,6 @@ const configuredProduct: Product = {
   style,
   languages: ["en"],
   default_language: "en",
-  components_initialized: true
 };
 
 const incompleteProduct: Product = {

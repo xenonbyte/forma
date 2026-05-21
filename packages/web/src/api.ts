@@ -1,5 +1,3 @@
-import type { AnnotationNode, DesignDiff, ExportedDesignAsset } from "@xenonbyte/forma-core";
-
 export type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export type Platform = "mobile" | "desktop" | "tablet" | "web";
@@ -49,7 +47,6 @@ export interface ProductIndexEntry {
 }
 
 export interface Product extends ProductIndexEntry {
-  components_initialized?: boolean;
   default_language?: Language;
   languages?: Language[];
   platform?: Platform;
@@ -97,13 +94,30 @@ export interface RequirementPage {
   change_summary?: string;
   change_type?: RequirementChangeType;
   copy?: CopyItem[];
-  design_id?: string;
   design_status: DesignStatus;
+  declared_actions?: SemanticContractItem[];
+  declared_component_keys?: string[];
+  declared_fields?: SemanticContractItem[];
   features?: string;
   fields?: string;
   interactions?: string;
   name: string;
   page_id: string;
+  semantic_contract?: SemanticContract;
+  semantic_contract_coverage?: "explicit" | "minimal";
+}
+
+export interface SemanticContractItem {
+  key: string;
+  label: string;
+}
+
+export interface SemanticContract {
+  actions: SemanticContractItem[];
+  allowed_copy: string[];
+  component_keys: string[];
+  fields: SemanticContractItem[];
+  navigation: Array<{ target_page_id: string; label?: string }>;
 }
 
 export interface Requirement {
@@ -188,6 +202,8 @@ export interface BaselinePage {
   id: string;
   interactions: string;
   name: string;
+  semantic_contract?: SemanticContract;
+  semantic_contract_coverage?: "explicit" | "minimal";
   source_requirements: string[];
 }
 
@@ -241,66 +257,197 @@ export interface SyncStartedPayload {
   task_id: string;
 }
 
-export interface DesignHistoryVersion {
-  created_at: string;
-  current: boolean;
-  file: string;
-  image_url: string;
-  preview_file?: string;
-  version: number;
+export type RequirementDesignIndexStatus = "missing" | "incomplete" | "recovery_required" | "complete" | "stale";
+
+export interface RequirementDesignCanvasPage {
+  frame_id?: string;
+  page_id: string;
+  page_version?: number;
+  preview_path?: string;
+  status?: DesignStatus;
 }
 
-export interface DesignHistoryPayload {
-  current_version: number;
-  design_id: string;
-  page_id: string;
+export interface RequirementDesignCanvas {
+  canvas_revision?: string;
+  canvas_version?: number;
+  component_library_version?: number;
+  history?: RequirementDesignHistoryEntry[];
+  index_status?: RequirementDesignIndexStatus;
+  pages: RequirementDesignCanvasPage[];
   product_id: string;
   requirement_id: string;
-  versions: DesignHistoryVersion[];
+  status?: "missing" | "complete" | "invalid";
 }
 
-export interface DesignImageMetadata {
-  design_id: string;
-  image_url: string;
-  preview_path: string;
-  version: number;
+export interface RequirementDesignSceneNode {
+  component_key?: string;
+  corner_radius?: number;
+  cornerRadius?: number;
+  fill?: string;
+  height?: number;
+  id: string;
+  image?: string;
+  kind?: string;
+  name?: string;
+  opacity?: number;
+  parent_id?: string;
+  ref_target?: string;
+  rotation?: number;
+  semantic?: Record<string, unknown>;
+  stroke?: string;
+  stroke_width?: number;
+  strokeWidth?: number;
+  text?: string;
+  transform?: unknown;
+  type?: string;
+  unsupported_properties: string[];
+  usage_index?: Record<string, unknown>;
+  width?: number;
+  x?: number;
+  y?: number;
 }
 
-export interface DesignDiffPayload extends DesignDiff {
-  visual: {
-    from_image_url: string;
-    to_image_url: string;
-  };
+export interface RequirementDesignScenePage {
+  frame_id?: string;
+  nodes: RequirementDesignSceneNode[];
+  page_id: string;
+  preview: { file?: string; status: "exported" | "missing" };
 }
 
-export type DesignExportFormat = ExportedDesignAsset["format"];
-export type DesignExportPayload = ExportedDesignAsset;
-export type { AnnotationNode, DesignDiff };
+export interface RequirementDesignScene {
+  canvas: { file: "design.pen"; revision?: string; version: number };
+  pages: RequirementDesignScenePage[];
+  product_id: string;
+  requirement_id: string;
+  schema_version: 1;
+  unsupported_properties: Array<{ node_id: string; property: string }>;
+}
+
+export interface RequirementDesignHistoryEntry {
+  audit_link?: string;
+  created_at?: string;
+  file?: string;
+  session_id?: string;
+  version?: number;
+}
+
+export interface RequirementDesignDiff {
+  changed: boolean;
+  from_canvas_version?: number;
+  from_hash?: string;
+  to_canvas_version?: number;
+  to_hash?: string;
+}
+
+export interface RequirementDesignAssetExport {
+  path: string;
+  revision: string;
+}
+
+export type RequirementDesignOperationIntent =
+  | "generate"
+  | "refine"
+  | "rebuild"
+  | "rollback"
+  | "component_refresh"
+  | "quality_repair"
+  | "import_metadata_normalization";
+
+export interface RequirementDesignOperationInput {
+  args: Record<string, unknown>;
+  intent: RequirementDesignOperationIntent;
+  target_node_ids?: string[];
+  tool: "batch_design";
+}
+
+export interface RequirementDesignSessionResult {
+  [key: string]: unknown;
+  session_id: string;
+  status?: string;
+}
+
+export interface ActiveDesignSession {
+  [key: string]: unknown;
+  product_id: string;
+  requirement_id?: string;
+  session_id?: string;
+  status: string;
+}
+
+export interface ComponentSeedInput {
+  component_key: string;
+  name?: string;
+  required_by?: Array<{ page_id?: string; requirement_id: string }>;
+  semantic_contract_hash?: string;
+  source?: string;
+}
+
+export interface ProductComponentLibrary {
+  components: Array<{ description?: string; key: string; name?: string }>;
+  current_version?: number;
+  product_id: string;
+  status: string;
+}
+
+export interface ProductComponentOperationInput {
+  args: Record<string, unknown>;
+  intent: string;
+  target_node_ids?: string[];
+  tool: "batch_design" | "set_variables";
+}
 
 export interface FormaApiClient {
   archiveRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
+  applyProductComponentOperations(productId: string, sessionId: string, input: { operations: ProductComponentOperationInput[] }): Promise<RequirementDesignSessionResult>;
+  applyRequirementDesignOperations(productId: string, requirementId: string, sessionId: string, input: { operations: RequirementDesignOperationInput[] }): Promise<RequirementDesignSessionResult>;
+  beginProductComponentSession(productId: string, input: {
+    newly_required_component_keys?: string[];
+    operation: "generate" | "refine" | "change_style";
+    seed_components?: ComponentSeedInput[];
+  }): Promise<RequirementDesignSessionResult>;
+  beginRequirementDesignSession(productId: string, requirementId: string, input: {
+    operation: "generate" | "refine" | "rebuild" | "rollback" | "component_refresh";
+    page_id?: string;
+  }): Promise<RequirementDesignSessionResult>;
+  commitProductComponentSession(productId: string, sessionId: string): Promise<RequirementDesignSessionResult>;
+  commitRequirementDesignSession(productId: string, requirementId: string, sessionId: string, input: {
+    frame_id?: string;
+    page_id?: string;
+    quality_report?: Record<string, unknown>;
+  }): Promise<RequirementDesignSessionResult>;
   configureProduct(productId: string, input: ProductConfigInput): Promise<Product>;
   createEmptyRequirement(productId: string, input: CreateEmptyRequirementInput): Promise<Requirement>;
   createProduct(input: Pick<ProductIndexEntry, "description" | "name">): Promise<Product>;
   createRequirement(productId: string, input: CreateRequirementInput): Promise<RequirementWithDocument>;
   deleteProduct(productId: string, input: { confirm_product_id: string }): Promise<DeleteProductResult>;
-  exportDesignAsset(designId: string, nodeId: string, format: DesignExportFormat): Promise<DesignExportPayload>;
+  discardProductComponentSession(productId: string, sessionId: string): Promise<RequirementDesignSessionResult>;
+  discardRequirementDesignSession(productId: string, requirementId: string, sessionId: string): Promise<RequirementDesignSessionResult>;
+  exportRequirementDesignAsset(productId: string, requirementId: string, input: { format?: string; node_id: string }): Promise<RequirementDesignAssetExport>;
+  getActiveProductDesignSession(productId: string): Promise<ActiveDesignSession>;
+  getActiveRequirementDesignSession(productId: string, requirementId: string): Promise<ActiveDesignSession>;
   getBaseline(productId: string): Promise<ProductBaseline>;
-  getDesignAnnotations(designId: string): Promise<AnnotationNode[]>;
-  getDesignDiff(designId: string, fromVersion: number, toVersion: number): Promise<DesignDiffPayload>;
-  getDesignHistory(designId: string): Promise<DesignHistoryPayload>;
-  getDesignImage(designId: string, version?: number): Promise<DesignImageMetadata>;
   getPageCopy(productId: string, pageId: string, requirementId?: string): Promise<PageCopyPayload>;
   getProduct(productId: string): Promise<Product>;
+  getProductComponentLibrary(productId: string): Promise<ProductComponentLibrary>;
   getRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
+  getRequirementDesignCanvas(productId: string, requirementId: string): Promise<RequirementDesignCanvas>;
+  getRequirementDesignDiff(productId: string, requirementId: string, input: { from_page_version: number; page_id?: string; to_page_version: number }): Promise<RequirementDesignDiff>;
+  getRequirementDesignHistory(productId: string, requirementId: string, pageId?: string): Promise<RequirementDesignHistoryEntry[]>;
+  getRequirementDesignScene(productId: string, requirementId: string): Promise<RequirementDesignScene>;
   getStyle(name: string): Promise<StyleDetailPayload>;
   getStylePreview(name: string): Promise<StylePreviewPayload>;
   getSyncStatus(): Promise<SyncStatusPayload>;
+  indexRequirementDesignCanvas(productId: string, requirementId: string): Promise<RequirementDesignSessionResult>;
   listProducts(): Promise<ProductIndexEntry[]>;
   listRequirements(productId: string): Promise<RequirementWithDocument[]>;
   listStyles(): Promise<StyleMetadata[]>;
+  planImportMetadataNormalization(productId: string, requirementId: string, sessionId: string, input: { frame_id: string; page_id: string }): Promise<RequirementDesignSessionResult>;
+  planRequirementComponentRefresh(productId: string, requirementId: string, sessionId: string, input: { scope?: "all_pages" | { component_keys?: string[]; page_ids?: string[] }; version?: "latest" | number }): Promise<RequirementDesignSessionResult>;
+  planRequirementDesignRollback(productId: string, requirementId: string, sessionId: string, input: { canvas_version: number }): Promise<RequirementDesignSessionResult>;
+  recoverDesignCommitJournal(productId: string, sessionId: string, input: { scope: "requirement_canvas" | "product_component_library" }): Promise<RequirementDesignSessionResult>;
   saveRequirement(productId: string, requirementId: string, input: SaveRequirementInput): Promise<RequirementWithDocument>;
   syncStyles(): Promise<SyncStartedPayload>;
+  validateRequirementDesignQuality(productId: string, requirementId: string, sessionId: string, input: { frame_id: string; page_id: string }): Promise<RequirementDesignSessionResult>;
 }
 
 export interface ApiRequestOptions {
@@ -361,6 +508,41 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
         ...requestOptions(fetcher),
         method: "PUT"
       }),
+    applyProductComponentOperations: (productId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${productComponentSessionPath(productId, sessionId)}/operations`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    applyRequirementDesignOperations: (productId, requirementId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/operations`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    beginProductComponentSession: (productId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${productComponentPath(productId)}/session/begin`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    beginRequirementDesignSession: (productId, requirementId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignPath(productId, requirementId)}/session/begin`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    commitProductComponentSession: (productId, sessionId) =>
+      apiRecord<RequirementDesignSessionResult>(`${productComponentSessionPath(productId, sessionId)}/commit`, {
+        ...requestOptions(fetcher),
+        method: "POST"
+      }),
+    commitRequirementDesignSession: (productId, requirementId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/commit`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
     configureProduct: (productId, input) =>
       apiRecord<Product>(`/api/products/${encodeURIComponent(productId)}/config`, {
         ...requestOptions(fetcher),
@@ -412,27 +594,29 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
         body: { confirm_product_id: input.confirm_product_id },
         method: "DELETE"
       }),
-    exportDesignAsset: (designId, nodeId, format) =>
-      apiRecord<DesignExportPayload>(
-        `/api/designs/${encodeURIComponent(designId)}/export?${new URLSearchParams({ node_id: nodeId, format }).toString()}`,
-        requestOptions(fetcher)
-      ),
-    getBaseline: (productId) => apiRecord<ProductBaseline>(`/api/products/${encodeURIComponent(productId)}/baseline`, requestOptions(fetcher)),
-    getDesignAnnotations: (designId) =>
-      apiArray<AnnotationNode>(`/api/designs/${encodeURIComponent(designId)}/annotations`, requestOptions(fetcher)),
-    getDesignDiff: (designId, fromVersion, toVersion) =>
-      apiRecord<DesignDiffPayload>(
-        `/api/designs/${encodeURIComponent(designId)}/diff?${new URLSearchParams({
-          v1: String(fromVersion),
-          v2: String(toVersion)
+    discardProductComponentSession: (productId, sessionId) =>
+      apiRecord<RequirementDesignSessionResult>(`${productComponentSessionPath(productId, sessionId)}/discard`, {
+        ...requestOptions(fetcher),
+        method: "POST"
+      }),
+    discardRequirementDesignSession: (productId, requirementId, sessionId) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/discard`, {
+        ...requestOptions(fetcher),
+        method: "POST"
+      }),
+    exportRequirementDesignAsset: (productId, requirementId, input) =>
+      apiRecord<RequirementDesignAssetExport>(
+        `${requirementDesignPath(productId, requirementId)}/export?${new URLSearchParams({
+          node_id: input.node_id,
+          ...(input.format ? { format: input.format } : {})
         }).toString()}`,
         requestOptions(fetcher)
       ),
-    getDesignHistory: (designId) => apiRecord<DesignHistoryPayload>(`/api/designs/${encodeURIComponent(designId)}/history`, requestOptions(fetcher)),
-    getDesignImage: (designId, version) => {
-      const query = version === undefined ? "" : `?${new URLSearchParams({ version: String(version) }).toString()}`;
-      return apiRecord<DesignImageMetadata>(`/api/designs/${encodeURIComponent(designId)}/image${query}`, requestOptions(fetcher));
-    },
+    getActiveProductDesignSession: (productId) =>
+      apiRecord<ActiveDesignSession>(`/api/products/${encodeURIComponent(productId)}/design/session/active`, requestOptions(fetcher)),
+    getActiveRequirementDesignSession: (productId, requirementId) =>
+      apiRecord<ActiveDesignSession>(`${requirementDesignPath(productId, requirementId)}/session/active`, requestOptions(fetcher)),
+    getBaseline: (productId) => apiRecord<ProductBaseline>(`/api/products/${encodeURIComponent(productId)}/baseline`, requestOptions(fetcher)),
     getPageCopy: (productId, pageId, requirementId) => {
       const query = requirementId ? `?${new URLSearchParams({ requirement_id: requirementId }).toString()}` : "";
       return apiRecord<PageCopyPayload>(
@@ -441,18 +625,69 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       );
     },
     getProduct: (productId) => apiRecord<Product>(`/api/products/${encodeURIComponent(productId)}`, requestOptions(fetcher)),
+    getProductComponentLibrary: (productId) =>
+      apiRecord<ProductComponentLibrary>(productComponentPath(productId), requestOptions(fetcher)),
     getRequirement: (productId, requirementId) =>
       apiRecord<RequirementWithDocument>(
         `/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`,
         requestOptions(fetcher)
       ),
+    getRequirementDesignCanvas: (productId, requirementId) =>
+      apiRecord<RequirementDesignCanvas>(`${requirementDesignPath(productId, requirementId)}/canvas`, requestOptions(fetcher)),
+    getRequirementDesignDiff: (productId, requirementId, input) =>
+      apiRecord<RequirementDesignDiff>(
+        `${requirementDesignPath(productId, requirementId)}/diff?${new URLSearchParams({
+          ...(input.page_id ? { page_id: input.page_id } : {}),
+          from_page_version: String(input.from_page_version),
+          to_page_version: String(input.to_page_version)
+        }).toString()}`,
+        requestOptions(fetcher)
+      ),
+    getRequirementDesignHistory: (productId, requirementId, pageId) => {
+      const query = pageId ? `?${new URLSearchParams({ page_id: pageId }).toString()}` : "";
+      return apiArray<RequirementDesignHistoryEntry>(`${requirementDesignPath(productId, requirementId)}/history${query}`, requestOptions(fetcher));
+    },
+    getRequirementDesignScene: (productId, requirementId) =>
+      apiRecord<RequirementDesignScene>(`${requirementDesignPath(productId, requirementId)}/scene`, requestOptions(fetcher)),
     getStyle: (name) => apiRecord<StyleDetailPayload>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
     getStylePreview: (name) => apiRecord<StylePreviewPayload>(`/api/styles/${encodeURIComponent(name)}/preview`, requestOptions(fetcher)),
     getSyncStatus: () => apiRecord<SyncStatusPayload>("/api/styles/sync/status", requestOptions(fetcher)),
+    indexRequirementDesignCanvas: (productId, requirementId) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignPath(productId, requirementId)}/index`, {
+        ...requestOptions(fetcher),
+        method: "POST"
+      }),
     listProducts: () => apiArray<ProductIndexEntry>("/api/products", requestOptions(fetcher)),
     listRequirements: (productId) =>
       apiArray<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements`, requestOptions(fetcher)),
     listStyles: () => apiArray<StyleMetadata>("/api/styles", requestOptions(fetcher)),
+    planImportMetadataNormalization: (productId, requirementId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/import-metadata-normalization/plan`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    planRequirementComponentRefresh: (productId, requirementId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/component-refresh/plan`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    planRequirementDesignRollback: (productId, requirementId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/rollback/plan`, {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "POST"
+      }),
+    recoverDesignCommitJournal: (productId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(
+        `/api/products/${encodeURIComponent(productId)}/design/session/${encodeURIComponent(sessionId)}/recover-commit-journal`,
+        {
+          ...requestOptions(fetcher),
+          body: input,
+          method: "POST"
+        }
+      ),
     saveRequirement: (productId, requirementId, input) =>
       apiRecord<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/save`, {
         ...requestOptions(fetcher),
@@ -462,6 +697,12 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     syncStyles: () =>
       apiRecord<SyncStartedPayload>("/api/styles/sync", {
         ...requestOptions(fetcher),
+        method: "POST"
+      }),
+    validateRequirementDesignQuality: (productId, requirementId, sessionId, input) =>
+      apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/quality`, {
+        ...requestOptions(fetcher),
+        body: input,
         method: "POST"
       })
   };
@@ -503,6 +744,22 @@ function normalizeApiPath(path: string): string {
 
 function requestOptions(fetcher: Fetcher | undefined): Pick<ApiRequestOptions, "fetcher"> {
   return fetcher ? { fetcher } : {};
+}
+
+function requirementDesignPath(productId: string, requirementId: string): string {
+  return `/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/design`;
+}
+
+function requirementDesignSessionPath(productId: string, requirementId: string, sessionId: string): string {
+  return `${requirementDesignPath(productId, requirementId)}/session/${encodeURIComponent(sessionId)}`;
+}
+
+function productComponentPath(productId: string): string {
+  return `/api/products/${encodeURIComponent(productId)}/component-library`;
+}
+
+function productComponentSessionPath(productId: string, sessionId: string): string {
+  return `${productComponentPath(productId)}/session/${encodeURIComponent(sessionId)}`;
 }
 
 function normalizeCreateRequirementPage(page: CreateRequirementPageInput): SaveRequirementPageInput {

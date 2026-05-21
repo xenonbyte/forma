@@ -15,22 +15,45 @@ import {
   type ProductMutationLock
 } from "./product-mutation-lock.js";
 import { requirementStatuses, designStatuses } from "./schemas.js";
+import { buildSemanticContractForPage } from "./semantic-contract.js";
+import { semanticContractCoverageSchema, semanticContractSchema } from "./semantic-contract-schema.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const requirementIdSchema = z.string().regex(/^R-[a-f0-9]{8}$/);
+
+const forbiddenPersistedField = z.unknown().optional().superRefine((value, context) => {
+  if (value !== undefined) {
+    context.addIssue({ code: "custom", message: "field is not supported in v6 runtime schema" });
+  }
+});
+const forbiddenDesignIdField = z.string().optional().superRefine((value, context) => {
+  if (value !== undefined) {
+    context.addIssue({ code: "custom", message: "design_id is not supported in v6 runtime schema" });
+  }
+});
 
 export const requirementPageSchema = z.object({
   page_id: z.string().min(1),
   name: z.string().min(1),
   baseline_page: z.string().min(1),
   design_status: z.enum(designStatuses),
-  design_id: z.string().regex(/^D-[a-f0-9]{8}$/).optional(),
+  design_id: forbiddenDesignIdField,
+  design_metadata: forbiddenPersistedField,
+  pen_path: forbiddenPersistedField,
+  preview_path: forbiddenPersistedField,
+  preview_file: forbiddenPersistedField,
+  preview_url: forbiddenPersistedField,
   change_type: z.enum(["new", "patch", "rebuild"]).optional(),
   change_summary: z.string().optional(),
   features: z.string().optional(),
   copy: z.array(z.lazy(() => copyItemSchema)).optional(),
   fields: z.string().optional(),
-  interactions: z.string().optional()
+  interactions: z.string().optional(),
+  declared_fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+  declared_actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+  declared_component_keys: z.array(z.string().min(1)).optional(),
+  semantic_contract: semanticContractSchema,
+  semantic_contract_coverage: semanticContractCoverageSchema
 }).strict();
 
 export const requirementSchema = z.object({
@@ -53,6 +76,11 @@ const requirementPageInputSchema = z.object({
   copy: z.array(z.lazy(() => copyItemSchema)).optional(),
   fields: z.string().optional(),
   interactions: z.string().optional(),
+  declared_fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+  declared_actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+  declared_component_keys: z.array(z.string().min(1)).optional(),
+  semantic_contract: semanticContractSchema.optional(),
+  semantic_contract_coverage: semanticContractCoverageSchema.optional(),
   change_type: z.enum(["new", "patch", "rebuild"]),
   change_summary: z.string().optional()
 }).strict();
@@ -63,6 +91,12 @@ const ruleInputSchema = z.object({
   given: z.string().min(1),
   when: z.string().min(1),
   then: z.string().min(1),
+  semantic: z.object({
+    fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+    actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+    component_keys: z.array(z.string().min(1)).optional(),
+    allowed_copy: z.array(z.string()).optional()
+  }).strict().optional(),
   replaces_rule_id: z.string().optional()
 }).strict();
 
@@ -108,7 +142,23 @@ type ParsedSaveRequirementInput = z.infer<typeof saveRequirementInputSchema>;
 export interface SubmitRequirementInput {
   requirement_id: string;
   document_md: string;
-  pages: Array<Omit<RequirementPage, "design_status"> & { design_status?: RequirementPage["design_status"] }>;
+  pages: Array<{
+    page_id: string;
+    name: string;
+    baseline_page: string;
+    design_status?: RequirementPage["design_status"];
+    change_type?: RequirementPage["change_type"];
+    change_summary?: string;
+    features?: string;
+    copy?: RequirementPage["copy"];
+    fields?: string;
+    interactions?: string;
+    declared_fields?: RequirementPage["declared_fields"];
+    declared_actions?: RequirementPage["declared_actions"];
+    declared_component_keys?: RequirementPage["declared_component_keys"];
+    semantic_contract?: RequirementPage["semantic_contract"];
+    semantic_contract_coverage?: RequirementPage["semantic_contract_coverage"];
+  }>;
   navigation: z.infer<typeof baselineNavigationSchema>[];
 }
 
@@ -235,7 +285,7 @@ export class RequirementService {
     assertDocument(input.document_md);
     assertPages(input.pages);
 
-    const pages = input.pages.map((page) => requirementPageSchema.parse({ ...page, design_status: "pending" }));
+    const pages = input.pages.map((page) => resolveSubmittedPage({ ...page, design_status: "pending" }));
     const next = requirementSchema.parse({
       ...current,
       status: "submitted",
@@ -271,7 +321,7 @@ export class RequirementService {
     const nextActivePages = input.pages.map((page) => {
       const currentPage = currentPagesById.get(page.page_id);
       const designStatus = expiredIds.has(page.page_id) ? "expired" : (currentPage?.design_status ?? "pending");
-      return requirementPageSchema.parse({ ...page, design_status: designStatus });
+      return resolveSubmittedPage({ ...page, design_status: designStatus }, currentPage);
     });
     const nextActiveIds = new Set(nextActivePages.map((page) => page.page_id));
     const expiredPages = current.pages
@@ -306,7 +356,23 @@ export class RequirementService {
     }
 
     const next = requirementSchema.parse({ ...current, status: "archived", updated_at: new Date().toISOString() });
-    await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
+    const files = [
+      this.requirementFile(next.product_id, next.id),
+      this.baselineFile(next.product_id)
+    ];
+    const snapshots = await snapshotFiles(files);
+    try {
+      await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
+      await this.baseline.updateFromRequirementLocked({
+        productId: next.product_id,
+        requirementId: next.id,
+        pages: [],
+        navigation: []
+      });
+    } catch (error) {
+      await restoreSnapshots(snapshots);
+      throw error;
+    }
     return next;
   }
 
@@ -672,11 +738,10 @@ function resolveSavedPage(
   currentPage?: RequirementPage
 ): RequirementPage {
   if (page.change_type === "new") {
-    const { design_id: _designId, ...pageWithoutDesign } = { ...currentPage, ...page };
-    return requirementPageSchema.parse({ ...pageWithoutDesign, design_status: "pending" });
+    return resolveSubmittedPage({ ...currentPage, ...page, design_status: "pending" }, currentPage);
   }
 
-  if (!currentPage?.design_id) {
+  if (currentPage?.design_status !== "done") {
     throw new FormaError("PAGE_NOT_DONE", "Page is not done", {
       requirement_id: requirementId,
       page_id: page.page_id,
@@ -685,11 +750,36 @@ function resolveSavedPage(
     });
   }
 
-  return requirementPageSchema.parse({
+  return resolveSubmittedPage({
     ...currentPage,
     ...page,
-    design_id: currentPage.design_id,
     design_status: "expired"
+  }, currentPage);
+}
+
+function resolveSubmittedPage(
+  page: Record<string, unknown> & {
+    page_id: string;
+    name?: string;
+    copy?: Array<{ text?: string }>;
+    design_status?: RequirementPage["design_status"];
+    semantic_contract?: RequirementPage["semantic_contract"];
+    semantic_contract_coverage?: RequirementPage["semantic_contract_coverage"];
+  },
+  currentPage?: RequirementPage
+): RequirementPage {
+  const built = buildSemanticContractForPage({
+    page: {
+      ...page,
+      semantic_contract: page.semantic_contract ?? currentPage?.semantic_contract,
+      semantic_contract_coverage: page.semantic_contract_coverage ?? currentPage?.semantic_contract_coverage
+    }
+  });
+  return requirementPageSchema.parse({
+    ...page,
+    design_status: page.design_status ?? "pending",
+    semantic_contract: built.semantic_contract,
+    semantic_contract_coverage: built.semantic_contract_coverage
   });
 }
 

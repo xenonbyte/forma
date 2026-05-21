@@ -12,7 +12,6 @@ export const formaInstallCommands = [
   "fm-status",
   "fm-requirement",
   "fm-design",
-  "fm-refine-design",
   "fm-refine-components",
   "fm-change-style",
   "fm-rollback-design"
