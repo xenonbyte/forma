@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readYamlUnknown, writeYamlAtomic, type AgentInstallPlatform, type InstallServiceOptions } from "@xenonbyte/forma-core";
+import {
+  formaCoreVersion,
+  readYamlUnknown,
+  writeYamlAtomic,
+  type AgentInstallPlatform,
+  type InstallServiceOptions
+} from "@xenonbyte/forma-core";
 import { runCli, type CliEnv } from "../src/index.js";
 
 interface TestState {
@@ -40,7 +46,7 @@ describe("runCli", () => {
   it("prints version", async () => {
     const result = await runCli(["version"], await testEnv());
 
-    expect(result).toEqual({ stdout: "forma 0.1.5\n", stderr: "", exitCode: 0 });
+    expect(result).toEqual({ stdout: `forma ${formaCoreVersion}\n`, stderr: "", exitCode: 0 });
   });
 
   it("routes mcp to the injected MCP starter", async () => {
