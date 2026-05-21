@@ -17,20 +17,28 @@ const formaCommands = [
   "fm-status",
   "fm-requirement",
   "fm-design",
-  "fm-refine-design",
   "fm-refine-components",
   "fm-change-style",
   "fm-rollback-design"
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
+const removedLegacyDesignTools = [
+  "complete_product_init",
+  "generate_page_design",
+  "save_designs",
+  "generate_and_save_page_design",
+  "rollback_design",
+  "diff_designs",
+  "get_design_annotations",
+  "export_design_asset"
+] as const;
 
 const codexSkillDescriptions = {
   "fm-list-product": "List and select Forma products, including setup status and language fallback.",
   "fm-status": "Report current Forma product, requirement, language, component, and design status.",
   "fm-requirement": "Add or modify a Forma requirement from any granularity of product input.",
   "fm-design": "Generate or update Forma page designs from UI-affecting requirements.",
-  "fm-refine-design": "Refine Forma page designs while preserving requirement copy and context.",
   "fm-refine-components": "Refine Forma product component libraries.",
   "fm-change-style": "Change a Forma product design style.",
   "fm-rollback-design": "Roll back a Forma design version."
@@ -195,7 +203,7 @@ describe("agent template inventory", () => {
       const status = await readFile(templateUrl(platform, "fm-status"), "utf8");
       expect(status).toContain("languages and default_language");
 
-      for (const command of ["fm-design", "fm-refine-design"] as const) {
+      for (const command of ["fm-design"] as const) {
         const template = await readFile(templateUrl(platform, command), "utf8");
         expect(template).toContain("当前需求无 UI 调整，无需设计");
         expect(template).toContain("ui_affected === false");
@@ -204,36 +212,86 @@ describe("agent template inventory", () => {
       }
 
       const design = await readFile(templateUrl(platform, "fm-design"), "utf8");
-      const generateAndSavePageDesignIndex = design.indexOf("generate_and_save_page_design");
-      const generatePageDesignIndex = design.indexOf("generate_page_design");
-      const saveDesignsIndex = design.indexOf("save_designs");
-      expect(generateAndSavePageDesignIndex).toBeGreaterThanOrEqual(0);
-      expect(generatePageDesignIndex).toBeGreaterThanOrEqual(0);
-      expect(generatePageDesignIndex).toBeGreaterThan(generateAndSavePageDesignIndex);
-      expect(saveDesignsIndex).toBeGreaterThan(generatePageDesignIndex);
-      expect(design).toContain("low-level temporary-output tool only");
-      expect(design).toContain("pen_path");
-      expect(design).toContain("preview_path");
-      expect(design).toContain("requirement_id");
-      expect(design).toContain("page_id");
-      expect(design).toContain("PRODUCT_CONFIG_INCOMPLETE");
-      expect(design).toContain("components_initialized");
-      expect(design).toContain("confirm default language");
-      expect(design).toContain("generate_components");
-      expect(design).toContain("complete_product_init");
-      expect(design).toContain("retry the original `generate_and_save_page_design` call once");
-      expect(design).toContain("persisted `design_id`, `version`, `pen_path`, and `preview_path`");
+      expect(design).toContain("Do not call removed page-level design MCP tools");
+      expect(design).toContain("requirement-level v6 design session flow");
+      expect(design).not.toContain("generate_and_save_page_design");
+      expect(design).not.toContain("generate_page_design");
+      expect(design).not.toContain("save_designs");
+      expect(design).not.toContain("complete_product_init");
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");
     expect(shared).toContain("language config");
-    expect(shared).toContain("Product selection completeness excludes `components_initialized`");
+    expect(shared).toContain("Product selection completeness excludes legacy component-initialization flags");
     expect(shared).toContain("collect missing platform, style, languages, and default_language");
     expect(shared).toContain("Do not generate components during product selection");
-    expect(shared).toContain("Design routes own missing component initialization");
+    expect(shared).toContain("Design routes must not call removed page-level design MCP tools");
     expect(shared).toContain("structured copy");
     expect(shared).toContain("ui_affected=false");
     expect(shared).toContain("stable MCP usage");
+  });
+
+  it("documents v6 agent template workflows and rejects legacy design routes", async () => {
+    for (const platform of ["claude", "codex", "gemini"] as const) {
+      const design = await readFile(templateUrl(platform, "fm-design"), "utf8");
+      const rollback = await readFile(templateUrl(platform, "fm-rollback-design"), "utf8");
+      const requirement = await readFile(templateUrl(platform, "fm-requirement"), "utf8");
+      const changeStyle = await readFile(templateUrl(platform, "fm-change-style"), "utf8");
+      const refineComponents = await readFile(templateUrl(platform, "fm-refine-components"), "utf8");
+      const allTemplateText = [design, rollback, requirement, changeStyle, refineComponents].join("\n");
+
+      for (const removedToolName of removedLegacyDesignTools) {
+        expect(allTemplateText).not.toContain(removedToolName);
+      }
+
+      for (const requiredTool of [
+        "get_requirement_design_canvas",
+        "begin_requirement_design_session",
+        "apply_requirement_design_operations",
+        "validate_requirement_design_quality",
+        "commit_requirement_design_session"
+      ]) {
+        expect(design).toContain(requiredTool);
+      }
+      expect(design).toContain("SEMANTIC_CONTRACT_REQUIRED");
+      expect(design).toContain("REQUIREMENT_UPDATE_REQUIRED");
+      expect(design).toContain("PENCIL_APP_REQUIRED");
+      expect(design).toContain("no headless fallback");
+      expect(design).toContain("component_refresh");
+      expect(design).toContain("plan_import_metadata_normalization");
+      expect(design).toContain("quality_repair");
+
+      for (const semanticSnippet of [
+        "declared_fields",
+        "declared_actions",
+        "declared_component_keys",
+        "semantic.component_keys",
+        "allowed_copy"
+      ]) {
+        expect(requirement).toContain(semanticSnippet);
+      }
+
+      expect(rollback).toContain("REQUIREMENT_DESIGN_CONTEXT_REQUIRED");
+      expect(rollback).toContain("design_id");
+      expect(rollback).toContain("get_requirement_design_history");
+      expect(rollback).toContain("rollback_requirement_design");
+      expect(rollback).toContain("apply_requirement_design_operations");
+      expect(rollback).toContain("commit_requirement_design_session");
+
+      expect(changeStyle).toContain("begin_product_component_session");
+      expect(changeStyle).toContain("operation: \"change_style\"");
+      expect(changeStyle).toContain("do not mutate existing requirement canvases");
+      expect(refineComponents).toContain("begin_product_component_session");
+      expect(refineComponents).toContain("operation: \"refine\"");
+      expect(refineComponents).toContain("do not mutate existing requirement canvases");
+    }
+
+    const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");
+    expect(shared).toContain("generate_components");
+    expect(shared).toContain("begin_product_component_session");
+    expect(shared).toContain("commit_product_component_session");
+    expect(shared).toContain("components: []");
+    expect(shared).not.toContain("fm-refine-design");
   });
 
   it("copies v0.4 agent guidance for product selection, design init fallback, and deletion", async () => {
@@ -252,13 +310,12 @@ describe("agent template inventory", () => {
       ]);
 
       const shared = await readFile(join(copiedTemplatesDir, "shared", "SKILL.md"), "utf8");
-      expect(shared).toContain("Product selection completeness excludes `components_initialized`");
+      expect(shared).toContain("Product selection completeness excludes legacy component-initialization flags");
       expect(shared).toContain("collect missing platform, style, languages, and default_language");
       expect(shared).toContain("Do not generate components during product selection");
-      expect(shared).toContain("confirm the default language");
+      expect(shared).toContain("Design routes must not call removed page-level design MCP tools");
       expect(shared).toContain("generate_components");
-      expect(shared).toContain("complete_product_init");
-      expect(shared).toContain("retry design once");
+      expect(shared).not.toContain("complete_product_init");
       expect(shared).toContain("Only when the user explicitly asks to delete a product");
       expect(shared).toContain("repeat the product name and product ID");
       expect(shared).toContain("describe deletion scope");
@@ -272,7 +329,7 @@ describe("agent template inventory", () => {
 
       for (const platform of ["claude", "codex", "gemini"] as const) {
         const listProduct = await readCopiedTemplate(copiedTemplatesDir, platform, "fm-list-product");
-        expect(listProduct).toContain("basic config does not include components_initialized");
+        expect(listProduct).toContain("Basic config does not include legacy component-initialization flags");
         expect(listProduct).toContain("Deletion branch");
         expect(listProduct).toContain("Only when the user explicitly asks");
         expect(listProduct).toContain("repeat the product name and product ID");

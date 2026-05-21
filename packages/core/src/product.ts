@@ -30,9 +30,8 @@ const productSchema = productIndexEntrySchema.extend({
   platform: z.enum(platforms).optional(),
   style: styleMetadataSchema.optional(),
   languages: z.array(z.enum(languages)).optional(),
-  default_language: z.enum(languages).optional(),
-  components_initialized: z.boolean().optional()
-}).superRefine((product, context) => {
+  default_language: z.enum(languages).optional()
+}).strict().superRefine((product, context) => {
   const hasLanguages = product.languages !== undefined;
   const hasDefaultLanguage = product.default_language !== undefined;
 
@@ -64,7 +63,7 @@ const productSchema = productIndexEntrySchema.extend({
       path: ["default_language"]
     });
   }
-});
+}).strict();
 
 const productConfigSchema = z.object({
   platform: z.enum(platforms),
@@ -84,7 +83,7 @@ const productConfigSchema = z.object({
 export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductConfig = z.infer<typeof productConfigSchema>;
-export type ProductConfigField = "platform" | "style" | "languages" | "components_initialized";
+export type ProductConfigField = "platform" | "style" | "languages";
 
 export interface ProductServiceOptions {
   home: string;
@@ -115,8 +114,7 @@ export class ProductService {
     const product = productSchema.parse({
       id: createId("product"),
       name: input.name,
-      description: input.description,
-      components_initialized: false
+      description: input.description
     });
     const index = await this.readProductIndex();
 
@@ -140,28 +138,6 @@ export class ProductService {
       ...product,
       ...productConfigSchema.parse(config)
     });
-
-    await writeYamlAtomic(this.productFile(next.id), next);
-    return next;
-  }
-
-  async markComponentsInitialized(productId: string): Promise<Product> {
-    return this.runProductMutation({ operation: "mark_components_initialized", product_id: productId }, async () =>
-      this.markComponentsInitializedLocked(productId)
-    );
-  }
-
-  async markComponentsInitializedLocked(productId: string): Promise<Product> {
-    const product = await this.getProduct(productId);
-    const libraryFile = this.componentLibraryFile(product.id);
-    if (!(await fileExists(libraryFile))) {
-      throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
-        product_id: product.id,
-        missing: ["components_library"]
-      });
-    }
-    await assertValidComponentLibrary(libraryFile);
-    const next = productSchema.parse({ ...product, components_initialized: true });
 
     await writeYamlAtomic(this.productFile(next.id), next);
     return next;
@@ -224,7 +200,7 @@ export class ProductService {
   }
 }
 
-async function assertValidComponentLibrary(file: string): Promise<void> {
+export async function assertValidComponentLibrary(file: string): Promise<void> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(file, "utf8"));
@@ -268,8 +244,6 @@ function isProductConfigFieldIncomplete(product: unknown, field: ProductConfigFi
         typeof product.default_language !== "string" ||
         !product.languages.includes(product.default_language)
       );
-    case "components_initialized":
-      return product.components_initialized !== true;
   }
 }
 

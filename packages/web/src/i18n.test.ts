@@ -146,4 +146,52 @@ describe("i18n", () => {
       }
     }
   });
+
+  it("defines design scene canvas copy for both locales", () => {
+    const keys = [
+      "action.clearSelection",
+      "action.fitPage",
+      "action.fitSelection",
+      "action.openPreview",
+      "action.resetView",
+      "action.zoomIn",
+      "action.zoomOut",
+      "action.zoomOne",
+      "design.canvas",
+      "design.canvasUnavailable",
+      "design.componentLatest",
+      "design.componentPinned",
+      "design.emptySelection",
+      "design.export",
+      "design.geometry",
+      "design.graphFit",
+      "design.graphZoomOne",
+      "design.mainCanvas",
+      "design.nodeList",
+      "design.pencilPath",
+      "design.preview",
+      "design.previewExpired",
+      "design.previewMissing",
+      "design.properties",
+      "design.rendererWarnings",
+      "design.selectedNode",
+      "design.session",
+      "design.sessionElapsed",
+      "design.sessionLockOwner",
+      "design.sessionNone",
+      "design.sessionOperation",
+      "design.sessionPencilPid",
+      "design.spacing",
+      "design.unsupportedProperties",
+      "design.usageIndex",
+      "design.view"
+    ];
+
+    for (const locale of ["en", "zh"] satisfies Locale[]) {
+      for (const key of keys) {
+        expect(messages[locale][key], `${locale} ${key}`).toBeTypeOf("string");
+        expect(translate(key, locale), `${locale} ${key}`).not.toBe(key);
+      }
+    }
+  });
 });

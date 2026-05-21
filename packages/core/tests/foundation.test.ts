@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import * as corePublic from "../src/index.js";
 import {
   FormaError,
   createId,
@@ -28,6 +29,13 @@ describe("core foundation", () => {
     expect(platforms).toEqual(["mobile", "desktop", "tablet", "web"]);
     expect(requirementStatuses).toEqual(["empty", "submitted", "active", "archived"]);
     expect(designStatuses).toEqual(["pending", "done", "expired"]);
+  });
+
+  it("does not publicly export legacy page-level design write surface", () => {
+    expect(corePublic).not.toHaveProperty("DesignService");
+    expect(corePublic).not.toHaveProperty("designSchema");
+    expect(corePublic).not.toHaveProperty("designIdSchema");
+    expect(corePublic).not.toHaveProperty("saveDesignInputSchema");
   });
 
   it("uses injected forma home", async () => {

@@ -1,9 +1,9 @@
-import { access, chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AgentInstallPlatform, InstallServiceOptions } from "@xenonbyte/forma-core";
+import { readYamlUnknown, writeYamlAtomic, type AgentInstallPlatform, type InstallServiceOptions } from "@xenonbyte/forma-core";
 import { runCli, type CliEnv } from "../src/index.js";
 
 interface TestState {
@@ -61,6 +61,101 @@ describe("runCli", () => {
     expect(env.state.startedServers).toEqual([{}]);
     expect(result.stdout).toContain("server started");
     expect(result.exitCode).toBe(0);
+  });
+
+  it("runs schema-normalization-dry-run against an explicit home without rewriting runtime YAML", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
+    const before = await readFile(join(env.state.formaHome, "data", "P-123abc", "product.yaml"), "utf8");
+
+    const result = await runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("normalization-preflight/");
+    expect(await readFile(join(env.state.formaHome, "data", "P-123abc", "product.yaml"), "utf8")).toBe(before);
+  });
+
+  it("runs v6-schema-cutover after dry-run and writes committed marker", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
+    await expect(runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env)).resolves.toMatchObject({ exitCode: 0 });
+
+    const result = await runCli(["v6-schema-cutover", "--home", env.state.formaHome], env);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("normalization-backups/");
+    await expect(access(join(env.state.formaHome, ".v6-schema-cutover-committed"))).resolves.toBeUndefined();
+    const product = await readYamlUnknown(join(env.state.formaHome, "data", "P-123abc", "product.yaml")) as Record<string, unknown>;
+    expect(product).not.toHaveProperty("components_initialized");
+  });
+
+  it("passes an explicit preflight report path to v6-schema-cutover", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
+    const dryRun = await runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env);
+    const reportPath = dryRun.stdout.match(/report: (.+)$/m)?.[1];
+    expect(reportPath).toBeTruthy();
+
+    const result = await runCli(["v6-schema-cutover", "--home", env.state.formaHome, "--report", join(env.state.formaHome, reportPath!)], env);
+
+    expect(result.exitCode).toBe(0);
+    await expect(access(join(env.state.formaHome, ".v6-schema-cutover-committed"))).resolves.toBeUndefined();
+  });
+
+  it("accepts --preflight-report for v6-schema-cutover", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
+    const dryRun = await runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env);
+    const reportPath = dryRun.stdout.match(/report: (.+)$/m)?.[1];
+    expect(reportPath).toBeTruthy();
+
+    const result = await runCli(["v6-schema-cutover", "--home", env.state.formaHome, "--preflight-report", join(env.state.formaHome, reportPath!)], env);
+
+    expect(result.exitCode).toBe(0);
+    await expect(access(join(env.state.formaHome, ".v6-schema-cutover-committed"))).resolves.toBeUndefined();
+  });
+
+  it("runs recover-v6-normalization-journal only for backup directories under the current home", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
+    await runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env);
+    await runCli(["v6-schema-cutover", "--home", env.state.formaHome], env);
+    const backupDir = join(env.state.formaHome, "normalization-backups");
+    const selected = `normalization-backups/${(await readdir(backupDir))[0]!}`;
+
+    const outside = await mkdtemp(join(tmpdir(), "forma-cli-outside-backup-"));
+    const rejected = await runCli(["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", outside], env);
+    const recovered = await runCli(["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", selected], env);
+
+    expect(rejected.exitCode).toBe(1);
+    expect(rejected.stderr).toContain("backup-dir");
+    expect(recovered.exitCode).toBe(0);
+    expect(recovered.stdout).toContain("restored");
+  });
+
+  it("requires restore_v6_backup confirmation for restore-v6-normalization-backup", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
+    await runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env);
+    await runCli(["v6-schema-cutover", "--home", env.state.formaHome], env);
+    const backupRoot = join(env.state.formaHome, "normalization-backups");
+    const backupDir = join(backupRoot, (await readdir(backupRoot))[0]!);
+
+    const missingConfirm = await runCli(["restore-v6-normalization-backup", "--home", env.state.formaHome, "--backup-dir", backupDir], env);
+    const restored = await runCli([
+      "restore-v6-normalization-backup",
+      "--home",
+      env.state.formaHome,
+      "--backup-dir",
+      backupDir,
+      "--confirm",
+      "restore_v6_backup"
+    ], env);
+
+    expect(missingConfirm.exitCode).toBe(1);
+    expect(missingConfirm.stderr).toContain("restore_v6_backup");
+    expect(restored.exitCode).toBe(0);
+    expect(restored.stdout).toContain("restored");
   });
 
   it("serve start writes metadata and log files under the Forma home", async () => {
@@ -658,6 +753,57 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
   };
 
   return env;
+}
+
+async function seedLegacyRuntime(
+  home: string,
+  options: { productPatch?: Record<string, unknown>; pagePatch?: Record<string, unknown> } = {}
+): Promise<void> {
+  const createdAt = "2026-05-21T00:00:00.000Z";
+  await writeYamlAtomic(join(home, "data", "products.yaml"), {
+    products: [{ id: "P-123abc", name: "Shop", description: "Shop app" }]
+  });
+  await writeYamlAtomic(join(home, "data", "P-123abc", "product.yaml"), {
+    id: "P-123abc",
+    name: "Shop",
+    description: "Shop app",
+    ...options.productPatch
+  });
+  await writeYamlAtomic(join(home, "data", "P-123abc", "R-11111111", "requirement.yaml"), {
+    id: "R-11111111",
+    product_id: "P-123abc",
+    title: "Login",
+    status: "submitted",
+    ui_affected: true,
+    created_at: createdAt,
+    updated_at: createdAt,
+    pages: [
+      {
+        page_id: "login",
+        name: "Login",
+        baseline_page: "login",
+        design_status: "pending",
+        copy: [{ context: "cta", text: "Sign in" }],
+        ...options.pagePatch
+      }
+    ],
+    navigation: []
+  });
+  await writeYamlAtomic(join(home, "data", "P-123abc", "baseline", "baseline.yaml"), {
+    product_id: "P-123abc",
+    pages: [
+      {
+        id: "login",
+        name: "Login",
+        features: "",
+        copy: [{ context: "cta", text: "Sign in" }],
+        fields: "free-text field notes",
+        interactions: "free-text interaction notes",
+        source_requirements: ["R-11111111"]
+      }
+    ],
+    navigation: []
+  });
 }
 
 function serveMetadata(overrides: Partial<{ home: string; pid: number; token: string; started_at: string; log: string }> = {}) {

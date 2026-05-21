@@ -1,16 +1,36 @@
 import { useEffect, useState } from "react";
 
-import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type RequirementWithDocument } from "../api.js";
+import {
+  apiClient,
+  formatApiError,
+  type ActiveDesignSession,
+  type ApiErrorInfo,
+  type FormaApiClient,
+  type ProductComponentLibrary,
+  type RequirementDesignCanvas,
+  type RequirementWithDocument
+} from "../api.js";
 import { useT } from "../LocaleContext.js";
+import { DesignSessionPanel } from "../components/DesignSessionPanel.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 
 export interface RequirementDetailProps {
-  client?: Pick<FormaApiClient, "getRequirement">;
+  client?: Pick<FormaApiClient, "getRequirement"> &
+    Partial<Pick<FormaApiClient, "getActiveRequirementDesignSession" | "getProductComponentLibrary" | "getRequirementDesignCanvas">>;
   params: Record<string, string>;
 }
 
-type RequirementState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { requirement: RequirementWithDocument; status: "ready" };
+interface RequirementDesignStatus {
+  canvas: RequirementDesignCanvas | null;
+  componentLibrary: ProductComponentLibrary | null;
+  session: ActiveDesignSession | null;
+}
+
+type RequirementState =
+  | { status: "error"; error: ApiErrorInfo }
+  | { status: "loading" }
+  | { designStatus: RequirementDesignStatus; requirement: RequirementWithDocument; status: "ready" };
 
 export function RequirementDetail({ client = apiClient, params }: RequirementDetailProps) {
   const t = useT();
@@ -24,9 +44,10 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
 
     client
       .getRequirement(productId, requirementId)
-      .then((requirement) => {
+      .then(async (requirement) => {
+        const designStatus = await loadRequirementDesignStatus(client, productId, requirementId, requirement);
         if (!cancelled) {
-          setState({ requirement, status: "ready" });
+          setState({ designStatus, requirement, status: "ready" });
         }
       })
       .catch((error: unknown) => {
@@ -57,6 +78,7 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
   }
 
   const requirement = state.requirement;
+  const designStatus = state.designStatus;
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
 
@@ -110,12 +132,13 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
                   <div className="flex items-center">
                     {noUiChanges ? (
                       <span className="text-sm text-zinc-500">{t("requirement.noDesignAction")}</span>
-                    ) : page.design_id ? (
-                      <a className={secondaryLinkClasses} href={`/products/${productId}/requirements/${requirement.id}/designs/${page.design_id}`}>
+                    ) : (
+                      <a
+                        className={secondaryLinkClasses}
+                        href={`/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/design?page_id=${encodeURIComponent(page.page_id)}`}
+                      >
                         {t("action.openDesign")}
                       </a>
-                    ) : (
-                      <span className="text-sm text-zinc-500">{t("requirement.noDesign")}</span>
                     )}
                   </div>
                 </article>
@@ -126,27 +149,11 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
       </div>
 
       <div className="space-y-3">
-        {noUiChanges ? null : (
-          <WorkSurface title={t("requirement.designHistory")}>
-            {requirement.pages.some((page) => page.design_id) ? (
-              <div className="space-y-2">
-                {requirement.pages
-                  .filter((page) => page.design_id)
-                  .map((page) => (
-                    <a
-                      className={secondaryLinkClasses}
-                      href={`/products/${productId}/requirements/${requirement.id}/designs/${page.design_id}`}
-                      key={page.design_id}
-                    >
-                      {page.design_id}
-                    </a>
-                  ))}
-              </div>
-            ) : (
-              <p className="text-sm text-zinc-500">{t("requirement.noDesignIds")}</p>
-            )}
+        {!noUiChanges ? (
+          <WorkSurface title={t("design.mainCanvas")}>
+            <DesignSessionPanel canvas={designStatus.canvas} componentLibrary={designStatus.componentLibrary} session={designStatus.session} />
           </WorkSurface>
-        )}
+        ) : null}
         <WorkSurface title={t("requirement.navigation")}>
           {requirement.navigation.length === 0 ? (
             <p className="text-sm text-zinc-500">{t("requirement.navigationEmpty")}</p>
@@ -166,6 +173,25 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
       </div>
     </div>
   );
+}
+
+async function loadRequirementDesignStatus(
+  client: RequirementDetailProps["client"],
+  productId: string,
+  requirementId: string,
+  requirement: RequirementWithDocument
+): Promise<RequirementDesignStatus> {
+  if (requirement.ui_affected === false) {
+    return { canvas: null, componentLibrary: null, session: null };
+  }
+
+  const [canvas, session, componentLibrary] = await Promise.all([
+    client?.getRequirementDesignCanvas ? client.getRequirementDesignCanvas(productId, requirementId).catch(() => null) : Promise.resolve(null),
+    client?.getActiveRequirementDesignSession ? client.getActiveRequirementDesignSession(productId, requirementId).catch(() => null) : Promise.resolve(null),
+    client?.getProductComponentLibrary ? client.getProductComponentLibrary(productId).catch(() => null) : Promise.resolve(null)
+  ]);
+
+  return { canvas, componentLibrary, session };
 }
 
 const secondaryLinkClasses =

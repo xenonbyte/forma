@@ -55,7 +55,7 @@ export interface ScannedStyleDirectory {
   designMdPath: string;
 }
 
-type SyncPencilService = Pick<PencilService, "checkAvailability" | "withLock" | "validatePenFile" | "exportPreview">;
+type SyncPencilService = Pick<PencilService, "checkAvailability">;
 
 export interface SyncServiceOptions {
   home: string;
@@ -78,12 +78,6 @@ const defaultStyleVariables: StyleVariables = {
 
 const syncStaleAfterMs = 10 * 60 * 1000;
 const styleRepoUrl = "https://github.com/VoltAgent/awesome-design-md.git";
-const previewBatchSize = 5;
-const lockRetryDelayMs = 2_000;
-const lockRetryCount = 15;
-const previewPencilModel = "claude-haiku-4-5";
-const previewRenderTimeoutMs = 90_000;
-
 type ScannedStyle = {
   name: string;
   designMdPath: string;
@@ -93,8 +87,6 @@ type ScannedStyle = {
   variables: StyleVariables;
   sha256: string;
   status: "added" | "updated" | "unchanged";
-  previewSucceeded: boolean;
-  previewPath?: string;
 };
 
 class SyncTaskFailure extends Error {
@@ -135,7 +127,6 @@ export class SyncService {
 
   async startSync(): Promise<Extract<SyncStatus, { status: "running" }>> {
     await this.recoverFromCrash();
-    await this.pencilService.checkAvailability();
     await this.checkGit();
 
     const current = await this.readStatus();
@@ -224,21 +215,15 @@ export class SyncService {
           category: classifyStyle(designMd),
           variables: extractVariablesFromDesignMd(designMd),
           sha256,
-          status,
-          previewSucceeded: false
+          status
         });
         await this.writeProgress(taskId, startedAt, "extracting_variables", styles.length, stylesToSync.length, style.name);
       }
 
       currentPhase = "rendering_previews";
       await this.writeProgress(taskId, startedAt, "rendering_previews", 0, styles.length);
-      let stylesFailed = 0;
-      let rendered = 0;
-      for (const batch of chunk(styles, previewBatchSize)) {
-        const batchFailed = await this.renderPreviewBatchWithLock(batch, taskId, startedAt, rendered, styles.length, tempRepoDir);
-        stylesFailed += batchFailed;
-        rendered += batch.length;
-        await this.writeProgress(taskId, startedAt, "rendering_previews", rendered, styles.length, batch.at(-1)?.name);
+      for (const [index, style] of styles.entries()) {
+        await this.writeProgress(taskId, startedAt, "rendering_previews", index + 1, styles.length, style.name);
       }
 
       currentPhase = "updating_index";
@@ -253,7 +238,7 @@ export class SyncService {
           styles_total: styles.length,
           styles_updated: styles.filter((style) => style.status === "updated").length,
           styles_added: styles.filter((style) => style.status === "added").length,
-          styles_failed: stylesFailed,
+          styles_failed: 0,
           duration_ms: Math.max(0, this.now().getTime() - new Date(startedAt).getTime())
         }
       });
@@ -297,9 +282,6 @@ export class SyncService {
 
       for (const [index, style] of styles.entries()) {
         await copyFileAtomic(style.designMdPath, join(stageDir, style.name, "DESIGN.md"));
-        if (style.previewPath) {
-          await copyFileAtomic(style.previewPath, join(stageDir, style.name, "preview@2x.png"));
-        }
         await this.writeProgress(taskId, startedAt, "updating_index", index + 1, styles.length, style.name);
       }
 
@@ -372,72 +354,6 @@ export class SyncService {
     }
   }
 
-  private async renderPreviewBatchWithLock(
-    batch: ScannedStyle[],
-    taskId: string,
-    startedAt: string,
-    completedBeforeBatch: number,
-    total: number,
-    previewWorkDir: string
-  ): Promise<number> {
-    for (let retry = 0; retry <= lockRetryCount; retry += 1) {
-      try {
-        return await this.pencilService.withLock({ operation: "style-sync", product_id: "styles" }, async () => {
-          let failed = 0;
-          for (const [index, style] of batch.entries()) {
-            try {
-              style.previewPath = await this.renderStylePreview(style, previewWorkDir);
-              style.previewSucceeded = true;
-            } catch {
-              failed += 1;
-            }
-            await this.writeProgress(
-              taskId,
-              startedAt,
-              "rendering_previews",
-              completedBeforeBatch + index + 1,
-              total,
-              style.name
-            );
-          }
-          return failed;
-        });
-      } catch (error) {
-        if (!isPencilLockHeld(error)) {
-          return batch.length;
-        }
-        if (retry === lockRetryCount) {
-          return batch.length;
-        }
-        await delay(lockRetryDelayMs);
-      }
-    }
-    return batch.length;
-  }
-
-  private async renderStylePreview(style: ScannedStyle, previewWorkDir: string): Promise<string> {
-    await mkdir(previewWorkDir, { recursive: true });
-    const penPath = join(previewWorkDir, `${style.name}.pen`);
-    const pngPath = join(previewWorkDir, `${style.name}.png`);
-    const templatePath = join(this.home, "styles", "_preview-template.pen");
-    if (!this.runner) {
-      throw new Error("Pencil runner unavailable");
-    }
-    await copyFile(templatePath, penPath);
-    await this.runner.run(
-      "pencil",
-      ["--in", penPath, "--out", penPath, "--prompt", previewPrompt(style), "--model", previewPencilModel],
-      { timeoutMs: previewRenderTimeoutMs }
-    );
-    await this.pencilService.validatePenFile(penPath);
-    await this.pencilService.exportPreview(penPath, pngPath);
-    const output = await stat(pngPath);
-    if (output.size <= 0) {
-      throw new Error("Preview export is empty");
-    }
-    return pngPath;
-  }
-
   private async readStatus(): Promise<SyncStatus> {
     try {
       return await readYamlAs(this.stateFile, syncStatusSchema);
@@ -493,42 +409,6 @@ const variableKeyMap: Record<string, keyof StyleVariables> = {
   md: "border-radius",
   xs: "spacing-unit"
 };
-
-function previewPrompt(style: ScannedStyle): string {
-  const variables = [
-    `--primary: ${style.variables.primary}`,
-    `--background: ${style.variables.background}`,
-    `--text-primary: ${style.variables["text-primary"]}`,
-    `--font-heading: ${style.variables["font-heading"]}`,
-    `--font-body: ${style.variables["font-body"]}`,
-    `--border-radius: ${style.variables["border-radius"]}`,
-    `--spacing-unit: ${style.variables["spacing-unit"]}`
-  ];
-
-  return [
-    "Generate a Forma style preview pen from the existing preview template.",
-    `Style name: ${style.name}`,
-    "Only update style variables. Do not add, remove, rename, resize, or reposition nodes.",
-    "Use these exact variable names and values:",
-    ...variables
-  ].join("\n");
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function isPencilLockHeld(error: unknown): boolean {
-  return error instanceof Error && "code" in error && error.code === "PENCIL_LOCK_HELD";
-}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

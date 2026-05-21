@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { BaselinePage } from "../api.js";
+import { useT } from "../LocaleContext.js";
 import { countFeatures, layoutNavigationGraph, type ForceLayoutEdge, type ForceLayoutNode, type ForceLayoutResult } from "../lib/force-layout.js";
 
 export type NavigationGraphNavigationInput = { from: string; to: string; label?: string; trigger?: string };
@@ -71,6 +72,8 @@ const edgeStroke = "#a1a1aa";
 const nodeFill = "#ffffff";
 const selectedFill = "#fffbeb";
 const arrowSize = 6;
+const graphButtonClasses =
+  "inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-xs font-semibold text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
 export function normalizeNavigation(input: NavigationGraphNavigationInput[]): NavigationGraphEdge[] {
   return input.map((edge) => ({
@@ -81,8 +84,12 @@ export function normalizeNavigation(input: NavigationGraphNavigationInput[]): Na
 }
 
 export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
+  const t = useT();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [viewAction, setViewAction] = useState<"fit" | "reset" | null>(null);
   const [selectedPageId, setSelectedPageId] = useState<string | null>(null);
   const selectedPage = pages.find((page) => page.id === selectedPageId) ?? null;
   const normalizedNavigation = useMemo(() => normalizeNavigation(navigation), [navigation]);
@@ -146,18 +153,40 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <GraphButton label={t("design.graphZoomOut")} onClick={() => changeZoom(-0.25)}>-</GraphButton>
+        <GraphButton label={t("design.graphZoomIn")} onClick={() => changeZoom(0.25)}>+</GraphButton>
+        <GraphButton label={t("design.graphFit")} onClick={fitGraph}>[]</GraphButton>
+        <GraphButton label={t("design.graphZoomOne")} onClick={() => setZoom(1)}>1</GraphButton>
+        <GraphButton label={t("design.graphReset")} onClick={resetGraph}>R</GraphButton>
+      </div>
       <div
         aria-label="Navigation graph"
+        aria-describedby="navigation-graph-status"
         className="relative w-full overflow-hidden rounded-md border border-zinc-200 bg-zinc-50"
+        onKeyDown={handleKeyDown}
+        role="application"
         style={{ height: layout.height }}
+        tabIndex={0}
       >
-        <div className="absolute inset-0 [&>canvas]:h-full [&>canvas]:w-full" ref={containerRef} />
+        <div
+          className="absolute inset-0 origin-top-left [&>canvas]:h-full [&>canvas]:w-full"
+          ref={containerRef}
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        />
         {runtimeError ? (
           <div className="absolute inset-x-3 top-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
             Navigation graph unavailable: {runtimeError}
           </div>
         ) : null}
       </div>
+
+      <p id="navigation-graph-status" className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+        Zoom {Math.round(zoom * 100)}%
+        <span className="ml-3">Pan {Math.round(pan.x)}, {Math.round(pan.y)}</span>
+        {viewAction === "fit" ? <span className="ml-3">{t("design.graphFit")}</span> : null}
+        {viewAction === "reset" ? <span className="ml-3">{t("design.graphReset")}</span> : null}
+      </p>
 
       {normalizedNavigation.length === 0 ? <p className="text-sm text-zinc-500">暂无页面间导航关系</p> : null}
 
@@ -176,6 +205,64 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
         </section>
       ) : null}
     </div>
+  );
+
+  function changeZoom(delta: number) {
+    setZoom((current) => Math.min(4, Math.max(0.25, Math.round((current + delta) * 100) / 100)));
+    setViewAction(null);
+  }
+
+  function fitGraph() {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setViewAction("fit");
+  }
+
+  function resetGraph() {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setViewAction("reset");
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const step = event.shiftKey ? 240 : 48;
+    if (event.key === "ArrowRight" || event.key === "ArrowLeft" || event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setPan((current) => ({
+        x: current.x + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0),
+        y: current.y + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0)
+      }));
+      setViewAction(null);
+      return;
+    }
+    if (event.key === "+" || event.key === "=") {
+      event.preventDefault();
+      changeZoom(0.25);
+      return;
+    }
+    if (event.key === "-" || event.key === "_") {
+      event.preventDefault();
+      changeZoom(-0.25);
+      return;
+    }
+    if (event.key === "0") {
+      event.preventDefault();
+      setZoom(1);
+      setViewAction(null);
+      return;
+    }
+    if (event.key.toLowerCase() === "f") {
+      event.preventDefault();
+      fitGraph();
+    }
+  }
+}
+
+function GraphButton({ children, label, onClick }: { children: string; label: string; onClick: () => void }) {
+  return (
+    <button aria-label={label} className={graphButtonClasses} onClick={onClick} title={label} type="button">
+      {children}
+    </button>
   );
 }
 

@@ -11,7 +11,7 @@ Execution:
 2. Display a numbered list using only product name and product ID.
 3. Ask the user to choose by number.
 4. Call `set_current_session` with the chosen product ID.
-5. If basic config is incomplete, follow shared config completion guidance: collect missing platform, style, languages, and default_language, call `init_product_config` or `update_product_config`, then retry `set_current_session` once. basic config does not include components_initialized.
+5. If basic config is incomplete, follow shared config completion guidance: collect missing platform, style, languages, and default_language, call `init_product_config` or `update_product_config`, then retry `set_current_session` once. Basic config does not include legacy component-initialization flags.
 6. On success, fetch and summarize the latest requirement for the selected product.
 
 Deletion branch:

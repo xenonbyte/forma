@@ -1,698 +1,653 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  defaultProductMutationWarningSink,
-  FormaError,
+  getPencilMutationLock,
   getProductMutationLock,
-  type ProductMutationContext
+  pencilMutationLockPath,
+  productMutationLockPath,
+  PRODUCT_MUTATION_LOCK_HEARTBEAT_MS,
+  PRODUCT_MUTATION_LOCK_TTL_MS,
+  runProductMutationWithWarnings
 } from "../src/index.js";
-
-type FsPromises = typeof import("node:fs/promises");
-type ProductMutationLockModule = typeof import("../src/product-mutation-lock.js");
-
-const staleThresholdMs = 120_000;
-const waitTimeoutMs = 30_000;
-const heartbeatMs = 5_000;
-const testNow = new Date("2026-05-19T00:00:00.000Z");
 
 const tempRoots: string[] = [];
 
-function lockPath(home: string): string {
-  return join(home, "tmp", "locks", "product-mutations.lock");
-}
-
-function ownerPath(home: string): string {
-  return join(lockPath(home), "owner.json");
-}
-
 async function createHome(): Promise<string> {
-  const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+  const home = await mkdtemp(join(tmpdir(), "forma-v6-lock-"));
   tempRoots.push(home);
   return home;
 }
 
 function deferred<T = void>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (error?: unknown) => void;
-  const promise = new Promise<T>((promiseResolve, promiseReject) => {
-    resolve = promiseResolve;
-    reject = promiseReject;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
   });
-  return { promise, resolve, reject };
+  return { promise, resolve };
 }
 
-async function readOwner(home: string): Promise<Record<string, unknown>> {
-  return JSON.parse(await readFile(ownerPath(home), "utf8")) as Record<string, unknown>;
+async function nextTick(): Promise<void> {
+  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
 }
 
-async function waitForOwner(home: string): Promise<Record<string, unknown>> {
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    try {
-      return await readOwner(home);
-    } catch (error) {
-      lastError = error;
-      await vi.advanceTimersByTimeAsync(1);
-    }
-  }
-  throw lastError;
+async function expectNoLockSidecars(lockDir: string): Promise<void> {
+  const files = await readdir(lockDir);
+  expect(files.filter((file) => file.endsWith(".mutate") || file.endsWith(".claim"))).toEqual([]);
 }
 
-async function waitForWarnings(context: ProductMutationContext | undefined): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    if ((context?.warnings.length ?? 0) > 0) {
-      return;
-    }
-    await vi.advanceTimersByTimeAsync(1);
-    await Promise.resolve();
-  }
-  throw new Error("Timed out waiting for product mutation lock warning");
-}
-
-async function writeOwner(home: string, owner: Record<string, unknown>): Promise<void> {
-  await mkdir(lockPath(home), { recursive: true });
-  await writeFile(ownerPath(home), JSON.stringify(owner, null, 2), "utf8");
-}
-
-async function importLockWithReusedPathRace(
-  home: string,
-  replacementOwner: Record<string, unknown>
-): Promise<ProductMutationLockModule> {
-  const actual = await vi.importActual<FsPromises>("node:fs/promises");
-  vi.resetModules();
-  let injected = false;
-
-  async function replaceLockPath(): Promise<void> {
-    if (injected) {
-      return;
-    }
-    injected = true;
-    await actual.rm(lockPath(home), { recursive: true, force: true });
-    await actual.mkdir(lockPath(home), { recursive: true });
-    await actual.writeFile(ownerPath(home), JSON.stringify(replacementOwner, null, 2), "utf8");
-  }
-
-  vi.doMock("node:fs/promises", () => ({
-    ...actual,
-    rename: vi.fn(async (oldPath: Parameters<FsPromises["rename"]>[0], newPath: Parameters<FsPromises["rename"]>[1]) => {
-      if (oldPath === lockPath(home)) {
-        await replaceLockPath();
-      }
-      return await actual.rename(oldPath, newPath);
-    }),
-    rm: vi.fn(async (path: Parameters<FsPromises["rm"]>[0], options?: Parameters<FsPromises["rm"]>[1]) => {
-      if (path === lockPath(home)) {
-        await replaceLockPath();
-      }
-      return await actual.rm(path, options);
-    })
+async function writeMutationSidecar(lockFile: string, input: { lock_id: string; owner_pid: number; expires_at: string }): Promise<void> {
+  await writeFile(`${lockFile}.mutate`, JSON.stringify({
+    lock_id: input.lock_id,
+    owner_pid: input.owner_pid,
+    owner_process_start_time: "2026-05-21T00:00:00.000Z",
+    hostname: "host",
+    acquired_at: "2026-05-21T00:00:00.000Z",
+    expires_at: input.expires_at
   }));
-
-  return await import("../src/product-mutation-lock.js");
-}
-
-async function importLockWithHeartbeatWriteRace(
-  home: string,
-  replacementOwner: Record<string, unknown>
-): Promise<{ module: ProductMutationLockModule; armRace: () => void; raceInjected: Promise<void> }> {
-  const actual = await vi.importActual<FsPromises>("node:fs/promises");
-  vi.resetModules();
-  let armed = false;
-  let injected = false;
-  const raceInjected = deferred();
-
-  async function replaceLockPath(): Promise<void> {
-    if (injected) {
-      return;
-    }
-    injected = true;
-    await actual.rm(lockPath(home), { recursive: true, force: true });
-    await actual.mkdir(lockPath(home), { recursive: true });
-    await actual.writeFile(ownerPath(home), JSON.stringify(replacementOwner, null, 2), "utf8");
-    raceInjected.resolve();
-  }
-
-  vi.doMock("node:fs/promises", () => ({
-    ...actual,
-    writeFile: vi.fn(
-      async (
-        file: Parameters<FsPromises["writeFile"]>[0],
-        data: Parameters<FsPromises["writeFile"]>[1],
-        options?: Parameters<FsPromises["writeFile"]>[2]
-      ) => {
-        if (armed && typeof file === "string" && dirname(file) === lockPath(home) && file.endsWith(".tmp")) {
-          await replaceLockPath();
-        }
-        return await actual.writeFile(file, data, options);
-      }
-    )
-  }));
-
-  return {
-    module: await import("../src/product-mutation-lock.js"),
-    raceInjected: raceInjected.promise,
-    armRace() {
-      armed = true;
-    }
-  };
-}
-
-async function importLockWithPausedHeartbeatClaim(
-  home: string
-): Promise<{ module: ProductMutationLockModule; claimReached: Promise<void>; resumeClaim: () => void }> {
-  const actual = await vi.importActual<FsPromises>("node:fs/promises");
-  vi.resetModules();
-  const claimReached = deferred();
-  const resume = deferred();
-  let paused = false;
-
-  vi.doMock("node:fs/promises", () => ({
-    ...actual,
-    rename: vi.fn(async (oldPath: Parameters<FsPromises["rename"]>[0], newPath: Parameters<FsPromises["rename"]>[1]) => {
-      if (!paused && oldPath === ownerPath(home) && typeof newPath === "string" && newPath.endsWith(".claim")) {
-        paused = true;
-        await actual.rename(oldPath, newPath);
-        claimReached.resolve();
-        await resume.promise;
-        return;
-      }
-      return await actual.rename(oldPath, newPath);
-    })
-  }));
-
-  return {
-    module: await import("../src/product-mutation-lock.js"),
-    claimReached: claimReached.promise,
-    resumeClaim: resume.resolve
-  };
-}
-
-async function importLockWithRestoreLockEmptyTargetRace(
-  home: string
-): Promise<{ module: ProductMutationLockModule; targetCreated: Promise<void> }> {
-  const actual = await vi.importActual<FsPromises>("node:fs/promises");
-  vi.resetModules();
-  const targetCreated = deferred();
-  let injected = false;
-
-  vi.doMock("node:fs/promises", () => ({
-    ...actual,
-    readFile: vi.fn(async (file: Parameters<FsPromises["readFile"]>[0], options?: Parameters<FsPromises["readFile"]>[1]) => {
-      const result = await actual.readFile(file, options);
-      if (!injected && typeof file === "string" && file.includes(".removing") && file.endsWith("owner.json")) {
-        injected = true;
-        await actual.mkdir(lockPath(home));
-        targetCreated.resolve();
-      }
-      return result;
-    })
-  }));
-
-  return {
-    module: await import("../src/product-mutation-lock.js"),
-    targetCreated: targetCreated.promise
-  };
-}
-
-async function setLockDirectoryMtime(home: string, mtime: Date): Promise<void> {
-  await utimes(lockPath(home), mtime, mtime);
-}
-
-function liveOwner(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    owner_id: "owner-live",
-    pid: process.pid,
-    operation: "existing-operation",
-    product_id: "P-existing",
-    acquired_at: testNow.toISOString(),
-    updated_at: testNow.toISOString(),
-    ...overrides
-  };
 }
 
 afterEach(async () => {
   vi.useRealTimers();
   vi.restoreAllMocks();
-  vi.doUnmock("node:fs/promises");
-  vi.resetModules();
   await Promise.all(tempRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe("ProductMutationLock", () => {
-  it("serializes same-process mutations for the same resolved home", async () => {
+describe("v6 transaction locks", () => {
+  it("writes product lock content at the product-scoped v6 path", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-21T00:00:00.000Z") });
     const home = await createHome();
-    const firstRelease = deferred();
-    const events: string[] = [];
-    const firstLock = getProductMutationLock(home);
-    const secondLock = getProductMutationLock(join(home, "."));
+    let lock: Record<string, unknown> = {};
 
-    const first = firstLock.run({ operation: "first", product_id: "P-a1b2c3" }, async () => {
-      events.push("first-start");
-      await firstRelease.promise;
-      events.push("first-end");
-      return "first-result";
+    await getProductMutationLock(home).run({ operation: "begin_requirement_design_session", product_id: "P-123abc", session_id: "S-1234567890abcdef" }, async () => {
+      lock = JSON.parse(await readFile(productMutationLockPath(home, "P-123abc"), "utf8"));
     });
 
-    while (!events.includes("first-start")) {
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-
-    const second = secondLock.run({ operation: "second", product_id: "P-a1b2c3" }, async () => {
-      events.push("second-start");
-      events.push("second-end");
-      return "second-result";
+    expect(lock).toMatchObject({
+      owner_pid: process.pid,
+      command: "begin_requirement_design_session",
+      scope: "begin_requirement_design_session",
+      product_id: "P-123abc",
+      session_id: "S-1234567890abcdef",
+      acquired_at: "2026-05-21T00:00:00.000Z",
+      heartbeat_at: "2026-05-21T00:00:00.000Z",
+      expires_at: "2026-05-21T00:02:00.000Z"
     });
-
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(events).toEqual(["first-start"]);
-
-    firstRelease.resolve();
-
-    await expect(first).resolves.toBe("first-result");
-    await expect(second).resolves.toBe("second-result");
-    expect(events).toEqual(["first-start", "first-end", "second-start", "second-end"]);
+    expect(typeof lock.lock_id).toBe("string");
+    expect(typeof lock.owner_process_start_time).toBe("string");
+    expect(typeof lock.hostname).toBe("string");
+    await expect(readFile(productMutationLockPath(home, "P-123abc"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("recovers an existing stale lock directory before acquiring with the lock directory path", async () => {
-    vi.useFakeTimers({ now: testNow });
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+  it("uses the global Pencil lock path and reports live locks", async () => {
     const home = await createHome();
-    const staleUpdatedAt = new Date(testNow.getTime() - staleThresholdMs - 1_000).toISOString();
-    await writeOwner(home, liveOwner({ owner_id: "owner-stale", updated_at: staleUpdatedAt }));
+    await mkdir(join(home, "locks"), { recursive: true });
+    await writeFile(pencilMutationLockPath(home), JSON.stringify({
+      lock_id: "L-live",
+      owner_pid: process.pid,
+      owner_process_start_time: "2026-05-21T00:00:00.000Z",
+      hostname: "host",
+      command: "begin",
+      scope: "pencil",
+      acquired_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+      heartbeat_at: new Date().toISOString()
+    }));
 
-    let lockDirIsDirectory = false;
-    let warnings: string[] = [];
-    await getProductMutationLock(home).run({ operation: "replace-stale", product_id: "P-a1b2c3" }, async (context) => {
-      lockDirIsDirectory = (await stat(lockPath(home))).isDirectory();
-      warnings = [...context.warnings];
+    await expect(getPencilMutationLock(home).run({ operation: "begin", scope: "pencil" }, async () => "ok")).rejects.toMatchObject({
+      code: "PENCIL_LOCK_HELD"
     });
-
-    expect(lockDirIsDirectory).toBe(true);
-    expect(warnings).toEqual([expect.stringContaining("stale")]);
-    expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("stale"));
-    await expect(stat(lockPath(home))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("writes owner.json atomically and leaves no temporary owner files behind", async () => {
-    vi.useFakeTimers({ now: testNow });
+  it("reports corrupt locks without overwriting them", async () => {
     const home = await createHome();
+    const lockFile = productMutationLockPath(home, "P-123abc");
+    await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
+    await writeFile(lockFile, "{not-json", "utf8");
 
-    let owner: Record<string, unknown> = {};
-    let lockEntries: string[] = [];
-    await getProductMutationLock(home).run({ operation: "create-owner", product_id: "P-a1b2c3" }, async () => {
-      owner = await readOwner(home);
-      lockEntries = await readdir(lockPath(home));
+    await expect(getProductMutationLock(home).run({ operation: "begin", product_id: "P-123abc" }, async () => "ok")).rejects.toMatchObject({
+      code: "LOCK_CORRUPT"
     });
-
-    expect(owner).toMatchObject({
-      operation: "create-owner",
-      product_id: "P-a1b2c3",
-      pid: process.pid
-    });
-    expect(typeof owner.owner_id).toBe("string");
-    expect(Date.parse(String(owner.acquired_at))).not.toBeNaN();
-    expect(Date.parse(String(owner.updated_at))).not.toBeNaN();
-    expect(lockEntries).toContain("owner.json");
-    expect(lockEntries.filter((entry) => entry.endsWith(".tmp"))).toEqual([]);
+    await expect(readFile(lockFile, "utf8")).resolves.toBe("{not-json");
   });
 
-  it("heartbeats owner.json.updated_at and the lock directory mtime", async () => {
-    vi.useFakeTimers({ now: testNow });
+  it("reclaims expired locks and exposes heartbeat timing constants", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-21T00:00:00.000Z") });
     const home = await createHome();
-    const release = deferred();
-    const entered = deferred<ProductMutationContext>();
-    const run = getProductMutationLock(home).run({ operation: "heartbeat", product_id: "P-a1b2c3" }, async (context) => {
-      entered.resolve(context);
-      await release.promise;
-      return "done";
+    const lockFile = productMutationLockPath(home, "P-123abc");
+    await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
+    await writeFile(lockFile, JSON.stringify({
+      lock_id: "L-stale",
+      owner_pid: 999999,
+      owner_process_start_time: "2026-05-20T00:00:00.000Z",
+      hostname: "host",
+      command: "old",
+      scope: "old",
+      product_id: "P-123abc",
+      acquired_at: "2026-05-20T00:00:00.000Z",
+      expires_at: "2026-05-20T00:02:00.000Z",
+      heartbeat_at: "2026-05-20T00:00:00.000Z"
+    }));
+
+    await getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+      expect(PRODUCT_MUTATION_LOCK_HEARTBEAT_MS).toBe(15_000);
+      expect(JSON.parse(await readFile(lockFile, "utf8")).lock_id).not.toBe("L-stale");
     });
 
-    await entered.promise;
-    const firstOwner = await readOwner(home);
-    const firstDirectoryStat = await stat(lockPath(home));
-
-    await vi.advanceTimersByTimeAsync(heartbeatMs);
-
-    let secondOwner = await waitForOwner(home);
-    let secondDirectoryStat = await stat(lockPath(home));
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (
-        Date.parse(String(secondOwner.updated_at)) > Date.parse(String(firstOwner.updated_at)) &&
-        secondDirectoryStat.mtimeMs > firstDirectoryStat.mtimeMs
-      ) {
-        break;
-      }
-      await vi.advanceTimersByTimeAsync(1);
-      secondOwner = await waitForOwner(home);
-      secondDirectoryStat = await stat(lockPath(home));
-    }
-
-    expect(Date.parse(String(secondOwner.updated_at))).toBeGreaterThan(Date.parse(String(firstOwner.updated_at)));
-    expect(secondDirectoryStat.mtimeMs).toBeGreaterThan(firstDirectoryStat.mtimeMs);
-
-    release.resolve();
-    await expect(run).resolves.toBe("done");
+    await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("stops heartbeat without overwriting a lock path reused by another owner", async () => {
-    vi.useFakeTimers({ now: testNow });
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+  it("records release mismatch warnings instead of deleting a replacement lock", async () => {
     const home = await createHome();
-    const release = deferred();
-    const entered = deferred<ProductMutationContext>();
-    let mutationContext: ProductMutationContext | undefined;
-    const run = getProductMutationLock(home).run({ operation: "heartbeat-race", product_id: "P-a1b2c3" }, async (context) => {
-      mutationContext = context;
-      entered.resolve(context);
-      await release.promise;
-      return "done";
-    });
+    const warnings: string[] = [];
+    await runProductMutationWithWarnings(
+      getProductMutationLock(home),
+      { operation: "replace", product_id: "P-123abc" },
+      async () => {
+        await writeFile(productMutationLockPath(home, "P-123abc"), JSON.stringify({
+          lock_id: "L-replacement",
+          owner_pid: process.pid,
+          owner_process_start_time: "2026-05-21T00:00:00.000Z",
+          hostname: "host",
+          command: "replacement",
+          scope: "replacement",
+          product_id: "P-123abc",
+          acquired_at: new Date().toISOString(),
+          expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+          heartbeat_at: new Date().toISOString()
+        }));
+      },
+      (warning) => warnings.push(warning)
+    );
 
-    await entered.promise;
-    const replacementOwner = liveOwner({
-      owner_id: "owner-heartbeat-reused",
-      operation: "replacement-heartbeat",
-      product_id: "P-fedcba"
-    });
-    await rm(lockPath(home), { recursive: true, force: true });
-    await writeOwner(home, replacementOwner);
-
-    await vi.advanceTimersByTimeAsync(heartbeatMs);
-    await waitForWarnings(mutationContext);
-
-    expect(await waitForOwner(home)).toMatchObject({
-      owner_id: "owner-heartbeat-reused",
-      operation: "replacement-heartbeat"
-    });
-    expect(mutationContext?.warnings).toEqual([expect.stringContaining("stopping heartbeat")]);
-    expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("stopping heartbeat"));
-
-    release.resolve();
-    await expect(run).resolves.toBe("done");
-    expect(await waitForOwner(home)).toMatchObject({ owner_id: "owner-heartbeat-reused" });
+    expect(warnings.some((warning) => warning.includes("LOCK_RELEASE_MISMATCH"))).toBe(true);
+    await expect(readFile(productMutationLockPath(home, "P-123abc"), "utf8")).resolves.toContain("L-replacement");
   });
 
-  it("does not overwrite a lock path reused between heartbeat owner read and write", async () => {
-    vi.useFakeTimers({ now: testNow });
-    const stopped = deferred();
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation((warning) => {
-      if (String(warning).includes("stopping heartbeat")) {
-        stopped.resolve();
-      }
-      return undefined;
-    });
+  it("treats a deleted product directory as already released", async () => {
     const home = await createHome();
-    const replacementOwner = liveOwner({
-      owner_id: "owner-heartbeat-write-reused",
-      operation: "replacement-heartbeat-write",
-      product_id: "P-fedcba"
-    });
-    const { module, armRace, raceInjected } = await importLockWithHeartbeatWriteRace(home, replacementOwner);
-    const release = deferred();
-    const entered = deferred<ProductMutationContext>();
-    let mutationContext: ProductMutationContext | undefined;
-    const run = module
-      .getProductMutationLock(home)
-      .run({ operation: "heartbeat-write-race", product_id: "P-a1b2c3" }, async (context) => {
-        mutationContext = context;
-        entered.resolve(context);
-        await release.promise;
-        return "done";
-      });
+    const productDir = join(home, "data", "P-123abc");
 
-    await entered.promise;
-    armRace();
+    await expect(getProductMutationLock(home).run({ operation: "delete-product", product_id: "P-123abc" }, async () => {
+      await rm(productDir, { recursive: true, force: true });
+    })).resolves.toBeUndefined();
 
-    await vi.advanceTimersByTimeAsync(heartbeatMs);
-    await raceInjected;
-    await stopped.promise;
-
-    expect(await waitForOwner(home)).toMatchObject({
-      owner_id: "owner-heartbeat-write-reused",
-      operation: "replacement-heartbeat-write"
-    });
-    expect(mutationContext?.warnings).toEqual([expect.stringContaining("stopping heartbeat")]);
-    expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("stopping heartbeat"));
-
-    release.resolve();
-    await expect(run).resolves.toBe("done");
-    expect(await waitForOwner(home)).toMatchObject({ owner_id: "owner-heartbeat-write-reused" });
-  });
-
-  it("does not restore a claimed owner over an existing owner.json", async () => {
-    vi.useFakeTimers({ now: testNow });
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
-    const home = await createHome();
-    const { module, claimReached, resumeClaim } = await importLockWithPausedHeartbeatClaim(home);
-    const release = deferred();
-    const entered = deferred();
-    const replacementOwner = liveOwner({
-      owner_id: "owner-restore-claim-existing",
-      operation: "replacement-owner-restore",
-      product_id: "P-fedcba"
-    });
-    const run = module.getProductMutationLock(home).run({ operation: "owner-restore-race", product_id: "P-a1b2c3" }, async () => {
-      entered.resolve();
-      await release.promise;
-      return "done";
-    });
-
-    await entered.promise;
-    await vi.advanceTimersByTimeAsync(heartbeatMs);
-    await claimReached;
-    await writeOwner(home, replacementOwner);
-    release.resolve();
-    resumeClaim();
-
-    await expect(run).resolves.toBe("done");
-    expect(await waitForOwner(home)).toMatchObject({
-      owner_id: "owner-restore-claim-existing",
-      operation: "replacement-owner-restore"
-    });
-    expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("owner changed while restoring"));
+    await expect(access(productDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("waits for an in-flight heartbeat before releasing the lock", async () => {
-    vi.useFakeTimers({ now: testNow });
+    vi.useFakeTimers();
     const home = await createHome();
-    const { module, claimReached, resumeClaim } = await importLockWithPausedHeartbeatClaim(home);
+    const heartbeatStarted = deferred();
+    const allowHeartbeatWrite = deferred();
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      return {
+        ...actual,
+        copyFile: vi.fn(async (src: Parameters<typeof actual.copyFile>[0], dest: Parameters<typeof actual.copyFile>[1], mode?: Parameters<typeof actual.copyFile>[2]) => {
+          if (String(dest).endsWith("/data/P-123abc/locks/product-mutation.lock")) {
+            heartbeatStarted.resolve();
+            await allowHeartbeatWrite.promise;
+          }
+          return actual.copyFile(src, dest, mode);
+        })
+      };
+    });
+    const lockModule = await import("../src/product-mutation-lock.js");
+
+    let completed = false;
+    const running = lockModule.getProductMutationLock(home).run({ operation: "heartbeat", product_id: "P-123abc" }, async () => {
+      await vi.advanceTimersByTimeAsync(lockModule.PRODUCT_MUTATION_LOCK_HEARTBEAT_MS);
+      await heartbeatStarted.promise;
+    }).then(() => {
+      completed = true;
+    });
+    await nextTick();
+    expect(completed).toBe(false);
+
+    allowHeartbeatWrite.resolve();
+    await running;
+    await expect(readFile(lockModule.productMutationLockPath(home, "P-123abc"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
+  });
+
+  it("does not delete a replacement lock that appears during release", async () => {
+    const home = await createHome();
+    const warnings: string[] = [];
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      let injected = false;
+      let claimRead = false;
+      const target = join(home, "data", "P-123abc", "locks", "product-mutation.lock");
+      return {
+        ...actual,
+        readFile: vi.fn(async (file: Parameters<typeof actual.readFile>[0], options?: Parameters<typeof actual.readFile>[1]) => {
+          if (!injected && claimRead && String(file) === target) {
+            injected = true;
+            await actual.writeFile(target, JSON.stringify({
+              lock_id: "L-release-replacement",
+              owner_pid: process.pid,
+              owner_process_start_time: "2026-05-21T00:00:00.000Z",
+              hostname: "host",
+              command: "replacement",
+              scope: "replacement",
+              product_id: "P-123abc",
+              acquired_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+              heartbeat_at: new Date().toISOString()
+            }));
+          }
+          const result = await actual.readFile(file, options);
+          if (String(file).includes(".claim") && !String(file).includes(".mutate.")) {
+            claimRead = true;
+          }
+          return result;
+        })
+      };
+    });
+    const lockModule = await import("../src/product-mutation-lock.js");
+
+    await lockModule.runProductMutationWithWarnings(
+      lockModule.getProductMutationLock(home),
+      { operation: "release-race", product_id: "P-123abc" },
+      async () => undefined,
+      (warning) => warnings.push(warning)
+    );
+
+    expect(warnings.some((warning) => warning.includes("LOCK_RELEASE_MISMATCH"))).toBe(true);
+    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).resolves.toContain("L-release-replacement");
+    await expectNoLockSidecars(join(home, "data", "P-123abc", "locks"));
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
+  });
+
+  it("does not overwrite a replacement lock that appears during heartbeat", async () => {
+    vi.useFakeTimers();
+    const home = await createHome();
+    const warnings: string[] = [];
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      let injected = false;
+      const target = join(home, "data", "P-123abc", "locks", "product-mutation.lock");
+      return {
+        ...actual,
+        copyFile: vi.fn(async (src: Parameters<typeof actual.copyFile>[0], dest: Parameters<typeof actual.copyFile>[1], mode?: Parameters<typeof actual.copyFile>[2]) => {
+          if (!injected && String(dest) === target) {
+            injected = true;
+            await actual.writeFile(target, JSON.stringify({
+              lock_id: "L-heartbeat-replacement",
+              owner_pid: process.pid,
+              owner_process_start_time: "2026-05-21T00:00:00.000Z",
+              hostname: "host",
+              command: "replacement",
+              scope: "replacement",
+              product_id: "P-123abc",
+              acquired_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+              heartbeat_at: new Date().toISOString()
+            }));
+          }
+          return actual.copyFile(src, dest, mode);
+        })
+      };
+    });
+    const lockModule = await import("../src/product-mutation-lock.js");
+
+    await lockModule.runProductMutationWithWarnings(
+      lockModule.getProductMutationLock(home),
+      { operation: "heartbeat-race", product_id: "P-123abc" },
+      async () => {
+        await vi.advanceTimersByTimeAsync(lockModule.PRODUCT_MUTATION_LOCK_HEARTBEAT_MS);
+      },
+      (warning) => warnings.push(warning)
+    );
+
+    expect(warnings.some((warning) => warning.includes("LOCK_RELEASE_MISMATCH"))).toBe(true);
+    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).resolves.toContain("L-heartbeat-replacement");
+    await expectNoLockSidecars(join(home, "data", "P-123abc", "locks"));
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
+  });
+
+  it("reclaims stale dead mutation sidecars before acquiring", async () => {
+    const home = await createHome();
+    const lockFile = productMutationLockPath(home, "P-123abc");
+    const lockDir = join(home, "data", "P-123abc", "locks");
+    await mkdir(lockDir, { recursive: true });
+    await writeMutationSidecar(lockFile, {
+      lock_id: "M-stale-dead",
+      owner_pid: 999999,
+      expires_at: "2026-05-20T00:00:00.000Z"
+    });
+
+    let entered = false;
+    await getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+      entered = true;
+      await expect(readFile(lockFile, "utf8")).resolves.toContain("\"lock_id\": \"L-");
+    });
+
+    expect(entered).toBe(true);
+    await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expectNoLockSidecars(lockDir);
+  });
+
+  it("keeps fresh live mutation sidecars blocking without entering the callback", async () => {
+    const home = await createHome();
+    const lockFile = productMutationLockPath(home, "P-123abc");
+    await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
+    await writeMutationSidecar(lockFile, {
+      lock_id: "M-live",
+      owner_pid: process.pid,
+      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString()
+    });
+
+    let entered = false;
+    await expect(getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+      entered = true;
+    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+
+    expect(entered).toBe(false);
+    await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(`${lockFile}.mutate`, "utf8")).resolves.toContain("M-live");
+  });
+
+  it("does not acquire a new lock while a recovered mutation sidecar still has a claimed live lock", async () => {
+    const home = await createHome();
+    const lockFile = productMutationLockPath(home, "P-123abc");
+    const claimFile = `${lockFile}.in-flight.claim`;
+    await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
+    await writeFile(lockFile, JSON.stringify({
+      lock_id: "L-original",
+      owner_pid: process.pid,
+      owner_process_start_time: "2026-05-21T00:00:00.000Z",
+      hostname: "host",
+      command: "original",
+      scope: "original",
+      product_id: "P-123abc",
+      acquired_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+      heartbeat_at: new Date().toISOString()
+    }));
+    await writeMutationSidecar(lockFile, {
+      lock_id: "M-stale-in-flight",
+      owner_pid: 999999,
+      expires_at: "2026-05-20T00:00:00.000Z"
+    });
+    await rename(lockFile, claimFile);
+
+    let entered = false;
+    await expect(getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+      entered = true;
+    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+
+    expect(entered).toBe(false);
+    await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(claimFile, "utf8")).resolves.toContain("L-original");
+    await expect(readFile(`${lockFile}.mutate`, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("keeps the claim file when restore fails and blocks later acquisition", async () => {
+    const home = await createHome();
+    const lockDir = join(home, "data", "P-123abc", "locks");
+    const lockFile = join(lockDir, "product-mutation.lock");
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      return {
+        ...actual,
+        copyFile: vi.fn(async (src: Parameters<typeof actual.copyFile>[0], dest: Parameters<typeof actual.copyFile>[1], mode?: Parameters<typeof actual.copyFile>[2]) => {
+          if (String(dest) === lockFile && String(src).endsWith(".claim")) {
+            const error = new Error("restore failed") as Error & { code: string };
+            error.code = "EIO";
+            throw error;
+          }
+          return actual.copyFile(src, dest, mode);
+        })
+      };
+    });
+    const lockModule = await import("../src/product-mutation-lock.js");
+
+    await expect(lockModule.getProductMutationLock(home).run({ operation: "restore-fails", product_id: "P-123abc" }, async () => {
+      await writeFile(lockFile, JSON.stringify({
+        lock_id: "L-replacement-before-restore",
+        owner_pid: process.pid,
+        owner_process_start_time: "2026-05-21T00:00:00.000Z",
+        hostname: "host",
+        command: "replacement",
+        scope: "replacement",
+        product_id: "P-123abc",
+        acquired_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+        heartbeat_at: new Date().toISOString()
+      }));
+    })).rejects.toMatchObject({ code: "EIO" });
+
+    const claimFiles = (await readdir(lockDir)).filter((file) => file.endsWith(".claim"));
+    expect(claimFiles).toHaveLength(1);
+    await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(lockDir, claimFiles[0]!), "utf8")).resolves.toContain("L-replacement-before-restore");
+
+    let entered = false;
+    await expect(lockModule.getProductMutationLock(home).run({ operation: "next", product_id: "P-123abc" }, async () => {
+      entered = true;
+    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+    expect(entered).toBe(false);
+    await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
+  });
+
+  it("holds global mutations behind active product mutations in the same process", async () => {
+    const home = await createHome();
     const release = deferred();
-    const entered = deferred();
-    const run = module.getProductMutationLock(home).run({ operation: "pending-heartbeat", product_id: "P-a1b2c3" }, async () => {
-      entered.resolve();
+    const events: string[] = [];
+    const product = getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => {
+      events.push("product-enter");
       await release.promise;
-      return "done";
+      events.push("product-exit");
     });
+    while (!events.includes("product-enter")) {
+      await nextTick();
+    }
 
-    await entered.promise;
-    await vi.advanceTimersByTimeAsync(heartbeatMs);
-    await claimReached;
+    let globalEntered = false;
+    const global = getProductMutationLock(home).run({ operation: "global" }, async () => {
+      globalEntered = true;
+      events.push("global-enter");
+    });
+    await nextTick();
+
+    expect(globalEntered).toBe(false);
     release.resolve();
-    await vi.advanceTimersByTimeAsync(1);
-
-    let settled = false;
-    void run.then(() => {
-      settled = true;
-    });
-    await vi.advanceTimersByTimeAsync(1);
-    await Promise.resolve();
-    expect(settled).toBe(false);
-
-    resumeClaim();
-    await expect(run).resolves.toBe("done");
-    await expect(stat(lockPath(home))).rejects.toMatchObject({ code: "ENOENT" });
+    await Promise.all([product, global]);
+    expect(events).toEqual(["product-enter", "product-exit", "global-enter"]);
   });
 
-  it("does not restore a claimed lock over an existing empty lock directory", async () => {
-    vi.useFakeTimers({ now: testNow });
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+  it("holds product mutations behind active global mutations in the same process", async () => {
     const home = await createHome();
-    const { module, targetCreated } = await importLockWithRestoreLockEmptyTargetRace(home);
-    const replacementOwner = liveOwner({
-      owner_id: "owner-lock-restore-empty-target",
-      operation: "replacement-lock-restore",
-      product_id: "P-fedcba"
+    const release = deferred();
+    const events: string[] = [];
+    const global = getProductMutationLock(home).run({ operation: "global" }, async () => {
+      events.push("global-enter");
+      await release.promise;
+      events.push("global-exit");
     });
+    while (!events.includes("global-enter")) {
+      await nextTick();
+    }
 
-    await module.getProductMutationLock(home).run({ operation: "lock-restore-race", product_id: "P-a1b2c3" }, async () => {
-      await writeOwner(home, replacementOwner);
-      return "done";
+    let productEntered = false;
+    const product = getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => {
+      productEntered = true;
+      events.push("product-enter");
     });
-    await targetCreated;
+    await nextTick();
 
-    expect((await stat(lockPath(home))).isDirectory()).toBe(true);
-    await expect(readFile(ownerPath(home), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-    expect(emitWarning).toHaveBeenCalledWith(expect.stringContaining("path was reused while restoring"));
+    expect(productEntered).toBe(false);
+    release.resolve();
+    await Promise.all([global, product]);
+    expect(events).toEqual(["global-enter", "global-exit", "product-enter"]);
   });
 
-  it("does not remove a lock path reused between release validation and deletion", async () => {
-    vi.useFakeTimers({ now: testNow });
+  it("reports live product files when a global mutation starts cross-process", async () => {
     const home = await createHome();
-    const replacementOwner = liveOwner({
-      owner_id: "owner-release-reused",
-      operation: "replacement-release",
-      product_id: "P-fedcba"
-    });
-    const { getProductMutationLock: getRaceLock } = await importLockWithReusedPathRace(home, replacementOwner);
+    await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
+    await writeFile(productMutationLockPath(home, "P-123abc"), JSON.stringify({
+      lock_id: "L-product",
+      owner_pid: process.pid,
+      owner_process_start_time: "2026-05-21T00:00:00.000Z",
+      hostname: "host",
+      command: "product",
+      scope: "product",
+      product_id: "P-123abc",
+      acquired_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+      heartbeat_at: new Date().toISOString()
+    }));
 
-    await getRaceLock(home).run({ operation: "release-race", product_id: "P-a1b2c3" }, async () => "done");
-
-    expect(await readOwner(home)).toMatchObject({
-      owner_id: "owner-release-reused",
-      operation: "replacement-release"
+    await expect(getProductMutationLock(home).run({ operation: "global" }, async () => "ok")).rejects.toMatchObject({
+      code: "PRODUCT_MUTATION_LOCKED"
     });
   });
 
-  it("does not remove an active owner-unknown lock younger than the stale threshold", async () => {
-    vi.useFakeTimers({ now: testNow });
+  it("reports live global files when a product mutation starts cross-process", async () => {
     const home = await createHome();
-    await mkdir(lockPath(home), { recursive: true });
-    await setLockDirectoryMtime(home, testNow);
+    await mkdir(join(home, "locks"), { recursive: true });
+    await writeFile(productMutationLockPath(home), JSON.stringify({
+      lock_id: "L-global",
+      owner_pid: process.pid,
+      owner_process_start_time: "2026-05-21T00:00:00.000Z",
+      hostname: "host",
+      command: "global",
+      scope: "global",
+      acquired_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+      heartbeat_at: new Date().toISOString()
+    }));
 
-    const errorPromise = getProductMutationLock(home)
-      .run({ operation: "blocked-missing-owner", product_id: "P-a1b2c3" }, async () => {
-        throw new Error("callback must not run");
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
-
-    await vi.advanceTimersByTimeAsync(waitTimeoutMs + 1_000);
-
-    const error = await errorPromise;
-    expect(error).toBeInstanceOf(FormaError);
-    expect((error as FormaError).code).toBe("PRODUCT_MUTATION_LOCKED");
-    expect((await stat(lockPath(home))).isDirectory()).toBe(true);
+    await expect(getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => "ok")).rejects.toMatchObject({
+      code: "PRODUCT_MUTATION_LOCKED"
+    });
   });
 
-  it("removes a missing owner.json lock that is stale by directory mtime and reports the warning", async () => {
-    vi.useFakeTimers({ now: testNow });
-    vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+  it("cleans up a product lock when a global lock appears after the product write", async () => {
     const home = await createHome();
-    await mkdir(lockPath(home), { recursive: true });
-    await setLockDirectoryMtime(home, new Date(testNow.getTime() - staleThresholdMs - 1_000));
-
-    let warnings: string[] = [];
-    await getProductMutationLock(home).run({ operation: "recover-missing", product_id: "P-a1b2c3" }, async (context) => {
-      warnings = [...context.warnings];
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      return {
+        ...actual,
+        writeFile: vi.fn(async (file: Parameters<typeof actual.writeFile>[0], data: Parameters<typeof actual.writeFile>[1], options?: Parameters<typeof actual.writeFile>[2]) => {
+          await actual.writeFile(file, data, options);
+          if (String(file).endsWith("/data/P-123abc/locks/product-mutation.lock")) {
+            await actual.mkdir(join(home, "locks"), { recursive: true });
+            await actual.writeFile(join(home, "locks", "product-mutation.lock"), JSON.stringify({
+              lock_id: "L-global-race",
+              owner_pid: process.pid,
+              owner_process_start_time: "2026-05-21T00:00:00.000Z",
+              hostname: "host",
+              command: "global",
+              scope: "global",
+              acquired_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+              heartbeat_at: new Date().toISOString()
+            }));
+          }
+        })
+      };
     });
+    const lockModule = await import("../src/product-mutation-lock.js");
 
-    expect(warnings).toEqual([expect.stringContaining("missing or corrupt")]);
+    let entered = false;
+    await expect(lockModule.getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => {
+      entered = true;
+    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+
+    expect(entered).toBe(false);
+    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(join(home, "locks", "product-mutation.lock"), "utf8")).resolves.toContain("L-global-race");
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
   });
 
-  it("removes a corrupt owner.json lock that is stale by directory mtime and reports the warning", async () => {
-    vi.useFakeTimers({ now: testNow });
-    vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+  it("does not unlink a fresh lock that replaces a stale lock during reclaim", async () => {
+    vi.useFakeTimers({ now: new Date("2026-05-21T00:00:00.000Z") });
     const home = await createHome();
-    await mkdir(dirname(ownerPath(home)), { recursive: true });
-    await writeFile(ownerPath(home), "{not-json", "utf8");
-    await setLockDirectoryMtime(home, new Date(testNow.getTime() - staleThresholdMs - 1_000));
-
-    let warnings: string[] = [];
-    await getProductMutationLock(home).run({ operation: "recover-corrupt", product_id: "P-a1b2c3" }, async (context) => {
-      warnings = [...context.warnings];
+    const lockFile = productMutationLockPath(home, "P-123abc");
+    await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
+    await writeFile(lockFile, JSON.stringify({
+      lock_id: "L-stale",
+      owner_pid: 999999,
+      owner_process_start_time: "2026-05-20T00:00:00.000Z",
+      hostname: "host",
+      command: "old",
+      scope: "old",
+      product_id: "P-123abc",
+      acquired_at: "2026-05-20T00:00:00.000Z",
+      expires_at: "2026-05-20T00:02:00.000Z",
+      heartbeat_at: "2026-05-20T00:00:00.000Z"
+    }));
+    vi.resetModules();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      return {
+        ...actual,
+        writeFile: vi.fn(async (file: Parameters<typeof actual.writeFile>[0], data: Parameters<typeof actual.writeFile>[1], options?: Parameters<typeof actual.writeFile>[2]) => {
+          await actual.writeFile(file, data, options);
+          if (String(file).endsWith("/product-mutation.lock.mutate")) {
+            await actual.writeFile(lockFile, JSON.stringify({
+              lock_id: "L-fresh",
+              owner_pid: process.pid,
+              owner_process_start_time: "2026-05-21T00:00:00.000Z",
+              hostname: "host",
+              command: "fresh",
+              scope: "fresh",
+              product_id: "P-123abc",
+              acquired_at: new Date().toISOString(),
+              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+              heartbeat_at: new Date().toISOString()
+            }));
+          }
+        })
+      };
     });
+    const lockModule = await import("../src/product-mutation-lock.js");
 
-    expect(warnings).toEqual([expect.stringContaining("missing or corrupt")]);
+    let entered = false;
+    await expect(lockModule.getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+      entered = true;
+    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+
+    expect(entered).toBe(false);
+    await expect(readFile(lockFile, "utf8")).resolves.toContain("L-fresh");
+    vi.doUnmock("node:fs/promises");
+    vi.resetModules();
   });
 
-  it("removes a dead owner PID and reports the warning", async () => {
-    vi.useFakeTimers({ now: testNow });
-    vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
+  it("rejects malformed product ids before constructing lock paths", async () => {
     const home = await createHome();
-    await writeOwner(home, liveOwner({ owner_id: "owner-dead", pid: 999_999_999 }));
 
-    let warnings: string[] = [];
-    await getProductMutationLock(home).run({ operation: "recover-dead-pid", product_id: "P-a1b2c3" }, async (context) => {
-      warnings = [...context.warnings];
+    expect(() => productMutationLockPath(home, "../../outside")).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+    expect(() => productMutationLockPath(home, "not-a-product")).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
+    await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "../../outside" }, async () => "ok")).rejects.toMatchObject({
+      code: "INVALID_INPUT"
     });
-
-    expect(warnings).toEqual([expect.stringContaining("dead owner PID")]);
+    await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "not-a-product" }, async () => "ok")).rejects.toMatchObject({
+      code: "INVALID_INPUT"
+    });
+    await expect(access(join(home, "..", "..", "outside"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("does not remove a lock path reused during stale owner cleanup", async () => {
-    vi.useFakeTimers({ now: testNow });
+  it("rejects malformed session ids before writing lock content", async () => {
     const home = await createHome();
-    const staleUpdatedAt = new Date(testNow.getTime() - staleThresholdMs - 1_000).toISOString();
-    await writeOwner(home, liveOwner({ owner_id: "owner-stale-race", updated_at: staleUpdatedAt }));
-    const replacementOwner = liveOwner({
-      owner_id: "owner-cleanup-reused",
-      operation: "replacement-cleanup",
-      product_id: "P-fedcba"
+
+    await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "P-123abc", session_id: "S-1" }, async () => "ok")).rejects.toMatchObject({
+      code: "INVALID_INPUT"
     });
-    const { getProductMutationLock: getRaceLock } = await importLockWithReusedPathRace(home, replacementOwner);
-    let callbackRan = false;
-
-    const errorPromise = getRaceLock(home)
-      .run({ operation: "cleanup-race", product_id: "P-a1b2c3" }, async () => {
-        callbackRan = true;
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
-
-    await vi.advanceTimersByTimeAsync(waitTimeoutMs + 1_000);
-
-    const error = await errorPromise;
-    expect(callbackRan).toBe(false);
-    expect((error as { code?: string }).code).toBe("PRODUCT_MUTATION_LOCKED");
-    expect(await readOwner(home)).toMatchObject({
-      owner_id: "owner-cleanup-reused",
-      operation: "replacement-cleanup"
-    });
-  });
-
-  it("times out with operation, product ID, lock path, waited milliseconds, and warnings", async () => {
-    vi.useFakeTimers({ now: testNow });
-    const home = await createHome();
-    await writeOwner(home, liveOwner({ operation: "other-live", product_id: "P-other1" }));
-
-    const errorPromise = getProductMutationLock(home)
-      .run({ operation: "delete-product", product_id: "P-a1b2c3" }, async () => {
-        throw new Error("callback must not run");
-      })
-      .then(
-        () => undefined,
-        (error: unknown) => error
-      );
-
-    await vi.advanceTimersByTimeAsync(waitTimeoutMs + 1_000);
-
-    const error = errorPromise.then((caught) => caught as FormaError);
-    await expect(error).resolves.toBeInstanceOf(FormaError);
-    await expect(error).resolves.toMatchObject({
-      code: "PRODUCT_MUTATION_LOCKED",
-      details: {
-        operation: "delete-product",
-        product_id: "P-a1b2c3",
-        lock_path: lockPath(home),
-        warnings: []
-      }
-    });
-    await expect(error.then((caught) => caught.details.waited_ms)).resolves.toBeGreaterThanOrEqual(waitTimeoutMs);
-  });
-
-  it("exposes the new product mutation error codes", () => {
-    expect(new FormaError("INVALID_INPUT", "Invalid input").toJSON().error_code).toBe("INVALID_INPUT");
-    expect(new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation locked").toJSON().error_code).toBe(
-      "PRODUCT_MUTATION_LOCKED"
-    );
-    expect(new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed").toJSON().error_code).toBe(
-      "PRODUCT_DELETION_RECOVERY_FAILED"
-    );
-  });
-});
-
-describe("defaultProductMutationWarningSink", () => {
-  it("emits process warnings", () => {
-    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
-
-    defaultProductMutationWarningSink("product mutation warning");
-
-    expect(emitWarning).toHaveBeenCalledWith("product mutation warning");
   });
 });

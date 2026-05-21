@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,10 +8,11 @@ import {
   ProductService,
   SessionService,
   createFormaStore,
+  getProductComponentLibrary,
   getProductMutationLock,
+  productMutationLockPath,
   readYaml,
-  type GeneratedDesign,
-  type GeneratePageDesignInput,
+  writeYamlAtomic,
   type ProductMutationContext,
   type ProductMutationLock
 } from "../src/index.js";
@@ -27,7 +29,7 @@ interface ProductDeletionStateForTest {
   phase: ProductDeletionPhase;
   backups: { products_yaml: "backups/products.yaml"; session_yaml?: "backups/session.yaml" };
   moved_paths: Array<{
-    kind: "product_data" | "component_library";
+    kind: "product_data" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
     original_path: string;
     staged_path: string;
     required: boolean;
@@ -56,19 +58,22 @@ async function lockProbeDelay(): Promise<void> {
 }
 
 async function seedStaleProductMutationLock(home: string): Promise<void> {
-  const lockDir = join(home, "tmp", "locks", "product-mutations.lock");
-  await mkdir(lockDir, { recursive: true });
+  const lockFile = productMutationLockPath(home);
+  await mkdir(resolve(lockFile, ".."), { recursive: true });
   const staleTime = new Date(Date.now() - 130_000).toISOString();
   await writeFile(
-    join(lockDir, "owner.json"),
+    lockFile,
     JSON.stringify(
       {
-        owner_id: "owner-stale",
-        pid: process.pid,
-        operation: "existing-operation",
-        product_id: "P-existing",
+        lock_id: "L-stale",
+        owner_pid: process.pid,
+        owner_process_start_time: "2026-05-20T00:00:00.000Z",
+        hostname: "host",
+        command: "existing-operation",
+        scope: "existing-operation",
         acquired_at: staleTime,
-        updated_at: staleTime
+        expires_at: staleTime,
+        heartbeat_at: staleTime
       },
       null,
       2
@@ -108,6 +113,7 @@ function createLateWarningLock(lateWarning: string): ProductMutationLock {
 
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-store-"));
+  await markNormalizationCommitted(home);
   return createFormaStore({ home, bundledStylesDir: resolve("styles") });
 }
 
@@ -132,6 +138,10 @@ function createStoreWithDeletionHooks(home: string, productDeletionHooks: Record
   } as Parameters<typeof createFormaStore>[0] & { productDeletionHooks: Record<string, unknown> });
 }
 
+async function markNormalizationCommitted(home: string): Promise<void> {
+  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
+}
+
 async function seedReadyProduct(store: Awaited<ReturnType<typeof createTestStore>>, name = "Shop App") {
   const product = await store.products.createProduct({ name, description: "Mobile shop" });
   await store.products.initProductConfig(product.id, {
@@ -150,7 +160,63 @@ async function seedReadyProduct(store: Awaited<ReturnType<typeof createTestStore
 
 async function writeComponentLibrary(home: string, productId: string, contents = { children: [{ id: "button", type: "component" }] }) {
   await mkdir(join(home, "library"), { recursive: true });
-  await writeFile(join(home, "library", `${productId}.lib.pen`), JSON.stringify(contents), "utf8");
+  await mkdir(join(home, "library", `${productId}.versions`), { recursive: true });
+  const text = JSON.stringify(contents);
+  const checksum = `sha256:${createHash("sha256").update(text).digest("hex")}`;
+  await writeFile(join(home, "library", `${productId}.lib.pen`), text, "utf8");
+  await writeFile(join(home, "library", `${productId}.versions`, "1.lib.pen"), text, "utf8");
+  await writeFile(
+    join(home, "library", `${productId}.components.yaml`),
+    [
+      `product_id: ${productId}`,
+      "current_version: 1",
+      `latest_file: ${productId}.lib.pen`,
+      "versions:",
+      "  - version: 1",
+      `    file: ${productId}.versions/1.lib.pen`,
+      `    checksum: ${checksum}`,
+      "    components:",
+      "      - key: button",
+      "        name: Button",
+      ""
+    ].join("\n"),
+    "utf8"
+  );
+}
+
+async function writeTerminalDesignSession(
+  home: string,
+  productId: string,
+  input: {
+    sessionId: string;
+    status: string;
+    recordStatus: string;
+    auditPath: string;
+    scope?: string;
+  }
+): Promise<void> {
+  const sessionDir = join(home, "data", productId, "sessions", input.sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeFile(join(sessionDir, "canvas.pen"), "pen", "utf8");
+  await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
+    session_id: input.sessionId,
+    scope: input.scope ?? "requirement",
+    status: input.recordStatus
+  });
+  await writeYamlAtomic(join(home, "data", productId, "sessions", "local-active.yaml"), {
+    session_id: input.sessionId,
+    session_record_path: `data/${productId}/sessions/${input.sessionId}/design_session.yaml`
+  });
+  await writeYamlAtomic(join(home, "data", productId, "sessions", "active-design-session.yaml"), {
+    session_id: input.sessionId,
+    scope: input.scope ?? "requirement",
+    owner_path: `data/${productId}/sessions/local-active.yaml`,
+    local_active_path: `data/${productId}/sessions/local-active.yaml`,
+    canvas_path: `data/${productId}/sessions/${input.sessionId}/canvas.pen`,
+    staging_path: `data/${productId}/sessions/${input.sessionId}`,
+    status: input.status,
+    audit_link: input.auditPath
+  });
 }
 
 async function pathExists(file: string): Promise<boolean> {
@@ -219,54 +285,10 @@ async function writeGeneratedComponentCandidate(name: string): Promise<{ tempDir
   return { tempDir, penPath };
 }
 
-const minimalPng = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
-  0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f,
-  0x15, 0xc4, 0x89, 0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00,
-  0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-  0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
-]);
-
-async function writeGeneratedPageDesignCandidate(name: string): Promise<GeneratedDesign> {
-  const tempDir = await mkdtemp(join(tmpdir(), `forma-generated-page-${name}-`));
-  const penPath = join(tempDir, "page.pen");
-  const previewPath = join(tempDir, "preview.png");
-  await writeFile(
-    penPath,
-    JSON.stringify({
-      children: [{ id: `root-${name}`, type: "frame", name: "Root", children: [] }]
-    }),
-    "utf8"
-  );
-  await writeFile(previewPath, minimalPng);
-  return { tempDir, penPath, previewPath };
-}
-
-async function seedDesignReadyProduct(store: Awaited<ReturnType<typeof createTestStore>>, name = "Shop App") {
-  const product = await seedReadyProduct(store, name);
-  await writeComponentLibrary(store.home, product.id);
-  await store.products.markComponentsInitialized(product.id);
-  return product;
-}
-
-async function submitSinglePageRequirement(
-  store: Awaited<ReturnType<typeof createTestStore>>,
-  productId: string,
-  pageId = "checkout"
-) {
-  const empty = await store.requirements.createEmptyRequirement(productId, "Checkout");
-  return store.requirements.saveRequirement({
-    requirement_id: empty.id,
-    document_md: "# Checkout\nCart checkout",
-    ui_affected: true,
-    pages: [{ page_id: pageId, name: "Checkout", baseline_page: pageId, change_type: "new" }],
-    navigation: []
-  });
-}
-
 describe("product session and style services", () => {
   it("serializes direct product writes with the default home lock", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+    await markNormalizationCommitted(home);
     const products = new ProductService({ home });
     const release = deferred();
     const events: string[] = [];
@@ -292,7 +314,7 @@ describe("product session and style services", () => {
     expect(created).toBe(true);
   });
 
-  it("serializes direct session writes with the default home lock", async () => {
+  it("serializes direct session writes behind a global maintenance lock", async () => {
     const { store, style } = await createStoreWithStyle();
     const products = new ProductService({ home: store.home });
     const sessions = new SessionService({ home: store.home, products });
@@ -335,24 +357,22 @@ describe("product session and style services", () => {
       default_language: "en",
       style
     });
-    await mkdir(join(store.home, "library"), { recursive: true });
-    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), JSON.stringify({ children: [{ id: "button" }] }));
-    await products.markComponentsInitialized(product.id);
+    await writeComponentLibrary(store.home, product.id, { children: [{ id: "button" }] });
     await sessions.setCurrentProduct(product.id);
 
     expect(productMutationLock.calls).toEqual([
       { operation: "create_product" },
       { operation: "init_product_config", product_id: product.id },
-      { operation: "mark_components_initialized", product_id: product.id },
       { operation: "set_current_product", product_id: product.id }
     ]);
   });
 
   it("passes a shared product mutation lock and warning sink through the store", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock("lock warning");
     const warnings: string[] = [];
-    const store = createFormaStore({
+    const store = await createFormaStore({
       home,
       bundledStylesDir: resolve("styles"),
       productMutationLock,
@@ -376,6 +396,7 @@ describe("product session and style services", () => {
 
   it("flushes lock acquisition warnings to a custom sink when product mutation lock rejects", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+    await markNormalizationCommitted(home);
     const warnings: string[] = [];
     const productMutationLock: ProductMutationLock = {
       async run(): Promise<never> {
@@ -396,6 +417,7 @@ describe("product session and style services", () => {
 
   it("flushes real lock cleanup warnings to a custom sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+    await markNormalizationCommitted(home);
     await seedStaleProductMutationLock(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const warnings: string[] = [];
@@ -412,6 +434,7 @@ describe("product session and style services", () => {
 
   it("does not duplicate real lock cleanup warnings with the default warning sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+    await markNormalizationCommitted(home);
     await seedStaleProductMutationLock(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const products = new ProductService({ home });
@@ -427,6 +450,7 @@ describe("product session and style services", () => {
 
   it("flushes injected lock context warnings to the default warning sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+    await markNormalizationCommitted(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const products = new ProductService({ home, productMutationLock: createRecordingLock("default service warning") });
 
@@ -440,6 +464,7 @@ describe("product session and style services", () => {
 
   it("flushes service late lock warnings after the mutation callback resolves", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
+    await markNormalizationCommitted(home);
     const warnings: string[] = [];
     const products = new ProductService({
       home,
@@ -454,8 +479,9 @@ describe("product session and style services", () => {
 
   it("flushes store runProductMutation callback warnings to the default warning sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
+    await markNormalizationCommitted(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock: createRecordingLock() });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock: createRecordingLock() });
 
     try {
       await store.runProductMutation({ operation: "manual_warning" }, async (context) => {
@@ -470,8 +496,9 @@ describe("product session and style services", () => {
 
   it("flushes store late lock warnings after the mutation callback resolves", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
+    await markNormalizationCommitted(home);
     const warnings: string[] = [];
-    const store = createFormaStore({
+    const store = await createFormaStore({
       home,
       bundledStylesDir: resolve("styles"),
       productMutationLock: createLateWarningLock("late store warning"),
@@ -483,14 +510,15 @@ describe("product session and style services", () => {
     expect(warnings).toEqual(["late store warning"]);
   });
 
-  it("generateComponents uses a structural generator, validates config, locks, and persists the final library", async () => {
+  it("generateComponents is unavailable as a v6 runtime write surface", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-components-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
     const candidate = await writeGeneratedComponentCandidate("store");
     const generator = {
       generateComponents: vi.fn(async () => candidate)
     };
-    const store = createFormaStore({
+    const store = await createFormaStore({
       home,
       bundledStylesDir: resolve("styles"),
       productMutationLock,
@@ -511,395 +539,27 @@ describe("product session and style services", () => {
     });
     productMutationLock.calls.length = 0;
 
-    const result = await store.generateComponents({
+    await expect(store.generateComponents({
       product_id: product.id,
       prompt: "Create controls",
       workspace: "/tmp/workspace"
-    });
+    })).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
 
     const libraryPath = store.products.componentLibraryFile(product.id);
-    expect(productMutationLock.calls).toEqual([{ operation: "generate_components", product_id: product.id }]);
-    expect(generator.generateComponents).toHaveBeenCalledWith({
-      product_id: product.id,
-      prompt: "Create controls",
-      workspace: "/tmp/workspace"
-    });
-    expect(result).toEqual({ ...candidate, libraryPath });
-    expect(await readFile(libraryPath, "utf8")).toBe(await readFile(candidate.penPath, "utf8"));
-    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ components_initialized: false });
+    expect(productMutationLock.calls).toEqual([]);
+    expect(generator.generateComponents).not.toHaveBeenCalled();
+    await expect(access(libraryPath)).rejects.toThrow();
+    await expect(store.products.getProduct(product.id)).resolves.not.toHaveProperty("components_initialized");
   });
 
-  it("generateAndSavePageDesign persists generated output, returns stable paths, locks, and cleans temp output", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const productMutationLock = createRecordingLock();
-    const generated = await writeGeneratedPageDesignCandidate("success");
-    const pageDesignGenerator = {
-      generatePageDesign: vi.fn(async (_input: GeneratePageDesignInput) => generated)
-    };
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock,
-      pageDesignGenerator
-    });
-    const product = await seedDesignReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-    productMutationLock.calls.length = 0;
-    const saveDesignsLocked = vi.spyOn(store.designs, "saveDesignsLocked");
-
-    const result = await store.generateAndSavePageDesign({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      prompt: "Create checkout page",
-      workspace: "/tmp/workspace"
-    });
-
-    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
-      page_id: "checkout",
-      mode: "generate",
-      penPath: generated.penPath,
-      previewPath: generated.previewPath
-    }]);
-    expect(productMutationLock.calls).toEqual([{ operation: "generate_and_save_page_design", product_id: product.id }]);
-    expect(pageDesignGenerator.generatePageDesign).toHaveBeenCalledWith({
-      product_id: product.id,
-      prompt: "Create checkout page",
-      workspace: "/tmp/workspace"
-    });
-    expect(result).toMatchObject({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      version: 1
-    });
-    expect(result.pen_path).toBe(join(home, "data", product.id, requirement.id, result.design_id, "design.pen"));
-    expect(result.preview_path).toBe(join(home, "data", product.id, requirement.id, result.design_id, "preview@2x.png"));
-    await expect(access(result.pen_path)).resolves.toBeUndefined();
-    await expect(access(result.preview_path)).resolves.toBeUndefined();
-    await expect(access(generated.tempDir)).rejects.toThrow();
-    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
-      status: "active",
-      pages: [expect.objectContaining({ page_id: "checkout", design_status: "done", design_id: result.design_id })]
-    });
-  });
-
-  it("generateAndSavePageDesign rejects incomplete config before calling the generator", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const productMutationLock = createRecordingLock();
-    const pageDesignGenerator = {
-      generatePageDesign: vi.fn(async () => writeGeneratedPageDesignCandidate("unused-incomplete"))
-    };
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock,
-      pageDesignGenerator
-    });
-    const product = await seedReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-    productMutationLock.calls.length = 0;
-
-    await expect(
-      store.generateAndSavePageDesign({
-        product_id: product.id,
-        requirement_id: requirement.id,
-        page_id: "checkout",
-        prompt: "Create checkout page",
-        workspace: "/tmp/workspace"
-      })
-    ).rejects.toMatchObject({
-      code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { product_id: product.id, missing: ["components_initialized"] }
-    });
-
-    expect(productMutationLock.calls).toEqual([{ operation: "generate_and_save_page_design", product_id: product.id }]);
-    expect(pageDesignGenerator.generatePageDesign).not.toHaveBeenCalled();
-  });
-
-  it("generateAndSavePageDesign rejects a requirement outside the product before calling the generator", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const pageDesignGenerator = {
-      generatePageDesign: vi.fn(async () => writeGeneratedPageDesignCandidate("unused-product"))
-    };
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock: createRecordingLock(),
-      pageDesignGenerator
-    });
-    const productA = await seedDesignReadyProduct(store, "Shop App A");
-    const productB = await seedDesignReadyProduct(store, "Shop App B");
-    const requirement = await submitSinglePageRequirement(store, productA.id, "checkout");
-
-    await expect(
-      store.generateAndSavePageDesign({
-        product_id: productB.id,
-        requirement_id: requirement.id,
-        page_id: "checkout",
-        prompt: "Create checkout page",
-        workspace: "/tmp/workspace"
-      })
-    ).rejects.toMatchObject({
-      code: "PAGE_NOT_OWNED",
-      details: {
-        product_id: productB.id,
-        requirement_id: requirement.id,
-        requirement_product_id: productA.id
-      }
-    });
-
-    expect(pageDesignGenerator.generatePageDesign).not.toHaveBeenCalled();
-  });
-
-  it("generateAndSavePageDesign rejects a page outside the requirement before calling the generator", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const pageDesignGenerator = {
-      generatePageDesign: vi.fn(async () => writeGeneratedPageDesignCandidate("unused-page"))
-    };
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock: createRecordingLock(),
-      pageDesignGenerator
-    });
-    const product = await seedDesignReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-
-    await expect(
-      store.generateAndSavePageDesign({
-        product_id: product.id,
-        requirement_id: requirement.id,
-        page_id: "settings",
-        prompt: "Create settings page",
-        workspace: "/tmp/workspace"
-      })
-    ).rejects.toMatchObject({
-      code: "PAGE_NOT_OWNED",
-      details: {
-        product_id: product.id,
-        requirement_id: requirement.id,
-        page_id: "settings"
-      }
-    });
-
-    expect(pageDesignGenerator.generatePageDesign).not.toHaveBeenCalled();
-  });
-
-  it("generateAndSavePageDesign maps patch and rebuild modes to existing design saves", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const generatedInitial = await writeGeneratedPageDesignCandidate("initial");
-    const generatedPatch = await writeGeneratedPageDesignCandidate("patch");
-    const generatedRebuild = await writeGeneratedPageDesignCandidate("rebuild");
-    const pageDesignGenerator = {
-      generatePageDesign: vi.fn()
-        .mockResolvedValueOnce(generatedInitial)
-        .mockResolvedValueOnce(generatedPatch)
-        .mockResolvedValueOnce(generatedRebuild)
-    };
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock: createRecordingLock(),
-      pageDesignGenerator
-    });
-    const product = await seedDesignReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-    const saveDesignsLocked = vi.spyOn(store.designs, "saveDesignsLocked");
-
-    const initial = await store.generateAndSavePageDesign({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      prompt: "Create checkout page",
-      workspace: "/tmp/workspace"
-    });
-
-    expect(initial).toMatchObject({ design_id: initial.design_id, version: 1 });
-
-    await store.requirements.saveRequirement({
-      requirement_id: requirement.id,
-      document_md: "# Checkout\nPatch checkout",
-      ui_affected: true,
-      pages: [{ page_id: "checkout", name: "Checkout", baseline_page: "checkout", change_type: "patch" }],
-      navigation: []
-    });
-
-    const patched = await store.generateAndSavePageDesign({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      prompt: "Patch checkout page",
-      workspace: "/tmp/workspace"
-    });
-
-    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
-      page_id: "checkout",
-      mode: "refine",
-      penPath: generatedPatch.penPath,
-      previewPath: generatedPatch.previewPath
-    }]);
-    expect(patched).toMatchObject({ design_id: initial.design_id, version: 2 });
-
-    await store.requirements.saveRequirement({
-      requirement_id: requirement.id,
-      document_md: "# Checkout\nRebuild checkout",
-      ui_affected: true,
-      pages: [{ page_id: "checkout", name: "Checkout", baseline_page: "checkout", change_type: "rebuild" }],
-      navigation: []
-    });
-
-    const rebuilt = await store.generateAndSavePageDesign({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      prompt: "Rebuild checkout page",
-      workspace: "/tmp/workspace"
-    });
-
-    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
-      page_id: "checkout",
-      mode: "update",
-      penPath: generatedRebuild.penPath,
-      previewPath: generatedRebuild.previewPath
-    }]);
-    expect(rebuilt).toMatchObject({ design_id: initial.design_id, version: 3 });
-  });
-
-  it("generateAndSavePageDesign warns when cleanup fails after committed save", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const warnings: string[] = [];
-    const generated = await writeGeneratedPageDesignCandidate("cleanup-committed");
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock: createRecordingLock(),
-      pageDesignGenerator: {
-        generatePageDesign: vi.fn(async () => generated)
-      },
-      generatedDesignCleanup: vi.fn(async () => {
-        throw new Error("cleanup unavailable");
-      }),
-      onProductMutationWarning: (warning) => warnings.push(warning)
-    });
-    const product = await seedDesignReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-
-    const result = await store.generateAndSavePageDesign({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      prompt: "Create checkout page",
-      workspace: "/tmp/workspace"
-    });
-
-    expect(result).toMatchObject({
-      product_id: product.id,
-      requirement_id: requirement.id,
-      page_id: "checkout",
-      version: 1
-    });
-    expect(warnings).toEqual([
-      expect.stringContaining("after committed")
-    ]);
-    expect(warnings[0]).toContain(generated.tempDir);
-    expect(warnings[0]).toContain("cleanup unavailable");
-  });
-
-  it("generateAndSavePageDesign cleans temp output when metadata fails after committed save", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const generated = await writeGeneratedPageDesignCandidate("metadata-fails");
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock: createRecordingLock(),
-      pageDesignGenerator: {
-        generatePageDesign: vi.fn(async () => generated)
-      }
-    });
-    const product = await seedDesignReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-    const saveDesignsLocked = vi.spyOn(store.designs, "saveDesignsLocked");
-    vi.spyOn(store.designs, "getDesignMetadata").mockRejectedValueOnce(
-      new FormaError("DESIGN_NOT_FOUND", "metadata missing", { design_id: "D-missing" })
-    );
-
-    await expect(
-      store.generateAndSavePageDesign({
-        product_id: product.id,
-        requirement_id: requirement.id,
-        page_id: "checkout",
-        prompt: "Create checkout page",
-        workspace: "/tmp/workspace"
-      })
-    ).rejects.toMatchObject({
-      code: "DESIGN_NOT_FOUND",
-      details: { design_id: "D-missing" }
-    });
-
-    expect(saveDesignsLocked).toHaveBeenCalledWith(requirement.id, [{
-      page_id: "checkout",
-      mode: "generate",
-      penPath: generated.penPath,
-      previewPath: generated.previewPath
-    }]);
-    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
-      status: "active",
-      pages: [expect.objectContaining({ page_id: "checkout", design_status: "done" })]
-    });
-    await expect(access(generated.tempDir)).rejects.toThrow();
-  });
-
-  it("generateAndSavePageDesign preserves save failure when cleanup also fails", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-store-page-design-"));
-    const warnings: string[] = [];
-    const generated = await writeGeneratedPageDesignCandidate("cleanup-failed");
-    await writeFile(generated.previewPath, "not a png", "utf8");
-    const store = createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productMutationLock: createRecordingLock(),
-      pageDesignGenerator: {
-        generatePageDesign: vi.fn(async () => generated)
-      },
-      generatedDesignCleanup: vi.fn(async () => {
-        throw new Error("cleanup unavailable");
-      }),
-      onProductMutationWarning: (warning) => warnings.push(warning)
-    });
-    const product = await seedDesignReadyProduct(store);
-    const requirement = await submitSinglePageRequirement(store, product.id, "checkout");
-
-    await expect(
-      store.generateAndSavePageDesign({
-        product_id: product.id,
-        requirement_id: requirement.id,
-        page_id: "checkout",
-        prompt: "Create checkout page",
-        workspace: "/tmp/workspace"
-      })
-    ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-
-    expect(warnings).toEqual([
-      expect.stringContaining("after failed")
-    ]);
-    expect(warnings[0]).toContain(generated.tempDir);
-    expect(warnings[0]).toContain("cleanup unavailable");
-    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
-      status: "submitted",
-      pages: [expect.objectContaining({ page_id: "checkout", design_status: "pending" })]
-    });
-    const stored = await store.requirements.getRequirement({ requirement_id: requirement.id });
-    expect(stored.pages[0]).not.toHaveProperty("design_id");
-  });
-
-  it("generateComponents rejects incomplete product config before calling the generator", async () => {
+  it("generateComponents rejects before calling the generator", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-components-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
     const generator = {
       generateComponents: vi.fn(async () => writeGeneratedComponentCandidate("unused"))
     };
-    const store = createFormaStore({
+    const store = await createFormaStore({
       home,
       bundledStylesDir: resolve("styles"),
       productMutationLock,
@@ -915,16 +575,17 @@ describe("product session and style services", () => {
         workspace: "/tmp/workspace"
       })
     ).rejects.toMatchObject({
-      code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { product_id: product.id, missing: ["platform", "style", "languages"] }
+      code: "PENCIL_CAPABILITY_UNAVAILABLE",
+      details: { product_id: product.id, required_mode: "app_bound_session" }
     });
 
-    expect(productMutationLock.calls).toEqual([{ operation: "generate_components", product_id: product.id }]);
+    expect(productMutationLock.calls).toEqual([]);
     expect(generator.generateComponents).not.toHaveBeenCalled();
   });
 
-  it("generateComponents cleans up the candidate temp dir when final copy fails", async () => {
+  it("generateComponents does not create candidate temp dirs through store", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-components-"));
+    await markNormalizationCommitted(home);
     const candidate = {
       tempDir: await mkdtemp(join(tmpdir(), "forma-generated-components-missing-")),
       penPath: ""
@@ -933,7 +594,7 @@ describe("product session and style services", () => {
     const generator = {
       generateComponents: vi.fn(async () => candidate)
     };
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), pencilService: generator });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), pencilService: generator });
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
     await store.products.initProductConfig(product.id, {
       platform: "mobile",
@@ -953,19 +614,20 @@ describe("product session and style services", () => {
         prompt: "Create controls",
         workspace: "/tmp/workspace"
       })
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
 
-    await expect(access(candidate.tempDir)).rejects.toThrow();
+    await expect(access(candidate.tempDir)).resolves.toBeUndefined();
     await expect(access(store.products.componentLibraryFile(product.id))).rejects.toThrow();
   });
 
-  it("generateComponents serializes with the default home lock", async () => {
+  it("does not call legacy generateComponents while a global maintenance lock is held", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-components-lock-"));
+    await markNormalizationCommitted(home);
     const candidate = await writeGeneratedComponentCandidate("locked");
     const generator = {
       generateComponents: vi.fn(async () => candidate)
     };
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), pencilService: generator });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), pencilService: generator });
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
     await store.products.initProductConfig(product.id, {
       platform: "mobile",
@@ -994,17 +656,16 @@ describe("product session and style services", () => {
       product_id: product.id,
       prompt: "Create controls",
       workspace: "/tmp/workspace"
-    }).then(() => {
+    }).catch(() => undefined).then(() => {
       completed = true;
     });
     await lockProbeDelay();
 
-    expect(completed).toBe(false);
+    expect(completed).toBe(true);
     expect(generator.generateComponents).not.toHaveBeenCalled();
     release.resolve();
     await Promise.all([hold, generate]);
     expect(events).toEqual(["hold-enter", "hold-exit"]);
-    expect(completed).toBe(true);
   });
 
   it("creates products and blocks incomplete session", async () => {
@@ -1088,9 +749,7 @@ describe("product session and style services", () => {
         variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
       }
     });
-    await mkdir(join(store.home, "library"), { recursive: true });
-    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), JSON.stringify({ children: [{ id: "button", type: "component" }] }));
-    await store.products.markComponentsInitialized(product.id);
+    await writeComponentLibrary(store.home, product.id);
     await store.sessions.setCurrentProduct(product.id);
 
     expect(await store.sessions.getCurrentSession()).toEqual({ current_product: product.id });
@@ -1108,7 +767,7 @@ describe("product session and style services", () => {
 
     await store.sessions.setCurrentProduct(product.id);
 
-    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ components_initialized: false });
+    await expect(store.products.getProduct(product.id)).resolves.not.toHaveProperty("components_initialized");
     expect(await store.sessions.getCurrentSession()).toEqual({ current_product: product.id });
   });
 
@@ -1135,7 +794,6 @@ describe("product session and style services", () => {
         "  design_md_path: styles/linear/DESIGN.md",
         "  variables:",
         ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
-        "components_initialized: false",
         ""
       ].join("\n")
     );
@@ -1149,7 +807,6 @@ describe("product session and style services", () => {
         "languages:",
         "  - en",
         "default_language: en",
-        "components_initialized: false",
         ""
       ].join("\n")
     );
@@ -1166,7 +823,6 @@ describe("product session and style services", () => {
         "  design_md_path: styles/linear/DESIGN.md",
         "  variables:",
         ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
-        "components_initialized: false",
         ""
       ].join("\n")
     );
@@ -1185,7 +841,6 @@ describe("product session and style services", () => {
         "  design_md_path: styles/linear/DESIGN.md",
         "  variables:",
         ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
-        "components_initialized: false",
         ""
       ].join("\n")
     );
@@ -1205,7 +860,6 @@ describe("product session and style services", () => {
         "  design_md_path: styles/linear/DESIGN.md",
         "  variables:",
         ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
-        "components_initialized: false",
         ""
       ].join("\n")
     );
@@ -1273,8 +927,9 @@ describe("product session and style services", () => {
 
   it("rejects mismatched delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
@@ -1289,8 +944,9 @@ describe("product session and style services", () => {
 
   it("rejects missing delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
@@ -1307,8 +963,9 @@ describe("product session and style services", () => {
 
   it("rejects empty delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
@@ -1323,8 +980,9 @@ describe("product session and style services", () => {
 
   it("rejects invalid product ids before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
@@ -1341,8 +999,9 @@ describe("product session and style services", () => {
 
   it("returns product mutation lock context warnings from deleteProduct", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-warning-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock("lock warning");
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     const product = await seedReadyProduct(store);
     productMutationLock.calls.length = 0;
 
@@ -1388,9 +1047,10 @@ describe("product session and style services", () => {
 
   it("returns cleanup_pending after committed cleanup failure and recovery later removes committed staging", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-cleanup-"));
+    await markNormalizationCommitted(home);
     let failCleanup = true;
     let cleanupOperationDir = "";
-    const store = createStoreWithDeletionHooks(home, {
+    const store = await createStoreWithDeletionHooks(home, {
       beforeCleanupOperationDir: async (operationDir: string) => {
         cleanupOperationDir = operationDir;
         if (failCleanup) {
@@ -1423,7 +1083,8 @@ describe("product session and style services", () => {
 
   it("reports both original deletion error and rollback error when rollback fails", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-rollback-failure-"));
-    const store = createStoreWithDeletionHooks(home, {
+    await markNormalizationCommitted(home);
+    const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state: ProductDeletionStateForTest) => {
         if (state.phase === "index_written") {
           await rm(join(home, "tmp", "deletions", state.operation_id, "backups", "products.yaml"), { force: true });
@@ -1504,8 +1165,9 @@ describe("product session and style services", () => {
 
   it("returns product mutation lock context warnings from recoverPendingProductDeletes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-recover-warning-"));
+    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock("recover lock warning");
-    const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "missing-state"), { recursive: true });
     productMutationLock.calls.length = 0;
 
@@ -1573,8 +1235,9 @@ describe("product session and style services", () => {
 
   it("persists full moved_paths and missing_paths while phase is backed_up before moving active paths", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-plan-"));
+    await markNormalizationCommitted(home);
     const snapshots: ProductDeletionStateForTest[] = [];
-    const store = createStoreWithDeletionHooks(home, {
+    const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state: ProductDeletionStateForTest) => {
         if (state.phase === "backed_up") {
           snapshots.push(JSON.parse(JSON.stringify(state)) as ProductDeletionStateForTest);
@@ -1598,13 +1261,343 @@ describe("product session and style services", () => {
         required: true
       },
       {
-        kind: "component_library",
+        kind: "component_library_latest",
         original_path: `library/${product.id}.lib.pen`,
         staged_path: `staged/library/${product.id}.lib.pen`,
         required: false
+      },
+      {
+        kind: "component_library_metadata",
+        original_path: `library/${product.id}.components.yaml`,
+        staged_path: `staged/library/${product.id}.components.yaml`,
+        required: false
+      },
+      {
+        kind: "component_library_versions",
+        original_path: `library/${product.id}.versions`,
+        staged_path: `staged/library/${product.id}.versions`,
+        required: false
       }
     ]);
-    expect(snapshots[0]!.missing_paths).toEqual([]);
+    expect(snapshots[0]!.missing_paths).toEqual([`library/${product.id}.sessions`]);
+  });
+
+  it("blocks product deletion on a non-terminal v6 design session before moving data or library files", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await mkdir(join(store.home, "data", product.id, "sessions"), { recursive: true });
+    await writeFile(
+      join(store.home, "data", product.id, "sessions", "active-design-session.yaml"),
+      [
+        "session_id: S-running",
+        "scope: requirement",
+        `owner_path: data/${product.id}/sessions/local-active.yaml`,
+        `local_active_path: data/${product.id}/sessions/local-active.yaml`,
+        `canvas_path: data/${product.id}/R-11111111/design.pen`,
+        `staging_path: data/${product.id}/sessions/S-running`,
+        "status: running",
+        ""
+      ].join("\n"),
+      "utf8"
+    );
+    await mkdir(join(store.home, "data", product.id, "R-11111111"), { recursive: true });
+    await mkdir(join(store.home, "data", product.id, "sessions", "S-running"), { recursive: true });
+    await writeFile(join(store.home, "data", product.id, "R-11111111", "design.pen"), "pen", "utf8");
+    await writeFile(join(store.home, "data", product.id, "sessions", "local-active.yaml"), "session_id: S-running\n", "utf8");
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_ACTIVE",
+      details: {
+        session_id: "S-running",
+        scope: "requirement",
+        status: "running"
+      }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("blocks deletion on active session path escapes before moving product or library files", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await mkdir(join(store.home, "data", product.id, "sessions"), { recursive: true });
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "active-design-session.yaml"), {
+      session_id: "S-escape",
+      scope: "requirement",
+      owner_path: `data/${product.id}/sessions/local-active.yaml`,
+      local_active_path: `data/${product.id}/sessions/local-active.yaml`,
+      canvas_path: "../outside/design.pen",
+      staging_path: `data/${product.id}/sessions/S-escape`,
+      status: "running"
+    });
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "local-active.yaml"), {
+      session_id: "S-escape"
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "LOCK_CORRUPT"
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("blocks deletion when product lease and local active file disagree", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await mkdir(join(store.home, "data", product.id, "sessions", "S-mismatch"), { recursive: true });
+    await writeFile(join(store.home, "data", product.id, "sessions", "S-mismatch", "canvas.pen"), "pen", "utf8");
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "active-design-session.yaml"), {
+      session_id: "S-product",
+      scope: "requirement",
+      owner_path: `data/${product.id}/sessions/local-active.yaml`,
+      local_active_path: `data/${product.id}/sessions/local-active.yaml`,
+      canvas_path: `data/${product.id}/sessions/S-mismatch/canvas.pen`,
+      staging_path: `data/${product.id}/sessions/S-mismatch`,
+      status: "running"
+    });
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "local-active.yaml"), {
+      session_id: "S-local"
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "LOCK_CORRUPT",
+      details: { session_id: "S-product", local_active_path: expect.any(String) }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("reports commit_recovery_required sessions as active after lease validation", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await mkdir(join(store.home, "data", product.id, "sessions", "S-recovery"), { recursive: true });
+    await writeFile(join(store.home, "data", product.id, "sessions", "S-recovery", "canvas.pen"), "pen", "utf8");
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "active-design-session.yaml"), {
+      session_id: "S-recovery",
+      scope: "requirement",
+      owner_path: `data/${product.id}/sessions/local-active.yaml`,
+      local_active_path: `data/${product.id}/sessions/local-active.yaml`,
+      canvas_path: `data/${product.id}/sessions/S-recovery/canvas.pen`,
+      staging_path: `data/${product.id}/sessions/S-recovery`,
+      status: "commit_recovery_required"
+    });
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "local-active.yaml"), {
+      session_id: "S-recovery"
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_ACTIVE",
+      details: {
+        session_id: "S-recovery",
+        status: "commit_recovery_required",
+        canvas_path: expect.any(String),
+        staging_path: expect.any(String)
+      }
+    });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("requires terminal design sessions to have an audit link before deletion moves files", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await mkdir(join(store.home, "data", product.id, "sessions", "S-committed"), { recursive: true });
+    await writeFile(join(store.home, "data", product.id, "sessions", "S-committed", "canvas.pen"), "pen", "utf8");
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "active-design-session.yaml"), {
+      session_id: "S-committed",
+      scope: "requirement",
+      owner_path: `data/${product.id}/sessions/local-active.yaml`,
+      local_active_path: `data/${product.id}/sessions/local-active.yaml`,
+      canvas_path: `data/${product.id}/sessions/S-committed/canvas.pen`,
+      staging_path: `data/${product.id}/sessions/S-committed`,
+      status: "committed"
+    });
+    await writeYamlAtomic(join(store.home, "data", product.id, "sessions", "local-active.yaml"), {
+      session_id: "S-committed"
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_AUDIT_LINK_MISSING",
+      details: { session_id: "S-committed", status: "committed" }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("requires terminal session audit links to be present in formal requirement design history before deletion moves files", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    const requirement = await store.requirements.createEmptyRequirement(product.id, "Login");
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId: "S-history-missing",
+      status: "committed",
+      recordStatus: "committed",
+      auditPath: `data/${product.id}/${requirement.id}/history/S-history-missing.audit.yaml`
+    });
+    await mkdir(join(store.home, "data", product.id, requirement.id, "history"), { recursive: true });
+    await writeFile(join(store.home, "data", product.id, requirement.id, "history", "S-history-missing.audit.yaml"), "ok\n", "utf8");
+    await writeYamlAtomic(join(store.home, "data", product.id, requirement.id, "design.yaml"), {
+      schema_version: 1,
+      product_id: product.id,
+      requirement_id: requirement.id,
+      canvas_file: "design.pen",
+      canvas_version: 1,
+      pages: [],
+      history: []
+    });
+    await writeFile(join(store.home, "data", product.id, requirement.id, "design.pen"), "pen", "utf8");
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_AUDIT_LINK_MISSING",
+      details: { session_id: "S-history-missing", status: "committed" }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("rejects corrupt requirement design metadata even when it contains a matching audit link", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    const requirement = await store.requirements.createEmptyRequirement(product.id, "Login");
+    const auditPath = `data/${product.id}/${requirement.id}/history/S-corrupt-design.audit.yaml`;
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId: "S-corrupt-design",
+      status: "committed",
+      recordStatus: "committed",
+      auditPath
+    });
+    await mkdir(join(store.home, "data", product.id, requirement.id, "history"), { recursive: true });
+    await writeFile(join(store.home, "data", product.id, requirement.id, "history", "S-corrupt-design.audit.yaml"), "ok\n", "utf8");
+    await writeYamlAtomic(join(store.home, "data", product.id, requirement.id, "design.yaml"), {
+      product_id: product.id,
+      requirement_id: requirement.id,
+      history: [{ session_id: "S-corrupt-design", audit_link: auditPath }]
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_AUDIT_LINK_MISSING",
+      details: { session_id: "S-corrupt-design" }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("blocks deletion when the resolved terminal session record is non-terminal", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId: "S-record-running",
+      status: "committed",
+      recordStatus: "running",
+      auditPath: `data/${product.id}/sessions/S-record-running/audit.yaml`
+    });
+    await writeFile(join(store.home, "data", product.id, "sessions", "S-record-running", "audit.yaml"), "ok\n", "utf8");
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_ACTIVE",
+      details: { session_id: "S-record-running", status: "running" }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("accepts terminal component library sessions only when component version metadata contains the audit link", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId: "S-component-commit",
+      status: "committed",
+      recordStatus: "committed",
+      scope: "component_library",
+      auditPath: `library/${product.id}.versions/S-component-commit.audit.yaml`
+    });
+    await writeFile(join(store.home, "library", `${product.id}.versions`, "S-component-commit.audit.yaml"), "ok\n", "utf8");
+    const libraryMetadata = await readYaml<Record<string, unknown>>(join(store.home, "library", `${product.id}.components.yaml`));
+    const versions = (libraryMetadata.versions as Array<Record<string, unknown>>).map((version) => ({
+      ...version,
+      session_id: "S-component-commit",
+      audit_link: `library/${product.id}.versions/S-component-commit.audit.yaml`
+    }));
+    await writeYamlAtomic(join(store.home, "library", `${product.id}.components.yaml`), { ...libraryMetadata, versions });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).resolves.toMatchObject({
+      product_id: product.id,
+      deleted: true
+    });
+    await expect(store.products.getProduct(product.id)).rejects.toMatchObject({ code: "PRODUCT_NOT_FOUND" });
+  });
+
+  it("rejects corrupt component metadata even when it contains a matching audit link", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    const auditPath = `library/${product.id}.versions/S-corrupt-component.audit.yaml`;
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId: "S-corrupt-component",
+      status: "committed",
+      recordStatus: "committed",
+      scope: "component_library",
+      auditPath
+    });
+    await writeFile(join(store.home, "library", `${product.id}.versions`, "S-corrupt-component.audit.yaml"), "ok\n", "utf8");
+    const metadata = await readYaml<Record<string, unknown>>(join(store.home, "library", `${product.id}.components.yaml`));
+    await writeYamlAtomic(join(store.home, "library", `${product.id}.components.yaml`), {
+      ...metadata,
+      current_version: "not-a-number",
+      versions: [{ session_id: "S-corrupt-component", audit_link: auditPath }]
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_AUDIT_LINK_MISSING",
+      details: { session_id: "S-corrupt-component" }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
+  });
+
+  it("rejects non-current component version audit links even when current library is valid", async () => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    await writeComponentLibrary(store.home, product.id);
+    const auditPath = `library/${product.id}.versions/S-noncurrent.audit.yaml`;
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId: "S-noncurrent",
+      status: "committed",
+      recordStatus: "committed",
+      scope: "component_library",
+      auditPath
+    });
+    await writeFile(join(store.home, "library", `${product.id}.versions`, "S-noncurrent.audit.yaml"), "ok\n", "utf8");
+    const metadata = await readYaml<Record<string, unknown>>(join(store.home, "library", `${product.id}.components.yaml`));
+    await writeYamlAtomic(join(store.home, "library", `${product.id}.components.yaml`), {
+      ...metadata,
+      versions: [
+        ...(metadata.versions as Array<Record<string, unknown>>),
+        {
+          version: 2,
+          file: "../outside.lib.pen",
+          checksum: "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+          components: [],
+          session_id: "S-noncurrent",
+          audit_link: auditPath
+        }
+      ]
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
+      code: "DESIGN_SESSION_AUDIT_LINK_MISSING",
+      details: { session_id: "S-noncurrent" }
+    });
+    await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
+    expect(await pathExists(join(store.home, "library", `${product.id}.lib.pen`))).toBe(true);
   });
 
   it("does not return products removed from products.yaml even if product.yaml remains", async () => {
@@ -1620,6 +1613,7 @@ describe("product session and style services", () => {
 
   it("keeps product reads consistent after backed_up, session_written, index_written, and before first move", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-consistency-"));
+    await markNormalizationCommitted(home);
     const observations: string[] = [];
     const assertConsistent = async (label: string, productId: string) => {
       const session = await readYaml<{ current_product: string | null }>(join(home, "session.yaml"));
@@ -1630,7 +1624,7 @@ describe("product session and style services", () => {
       expect(!(session.current_product === productId && !productDirExists)).toBe(true);
       observations.push(`${label}:${session.current_product ?? "null"}:${indexHasProduct}:${productDirExists}`);
     };
-    const store = createStoreWithDeletionHooks(home, {
+    const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state: ProductDeletionStateForTest) => {
         if (["backed_up", "session_written", "index_written"].includes(state.phase)) {
           await assertConsistent(state.phase, state.product_id);
@@ -1870,33 +1864,25 @@ describe("product session and style services", () => {
     expect(await readFile(join(store.home, "styles", "linear", "DESIGN.md"), "utf8")).toBe("# Local Linear\n");
   });
 
-  it("does not mark components initialized until a persisted component library exists", async () => {
+  it("reads component library initialization from the v6 library read model", async () => {
     const store = await createTestStore();
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
 
-    await expect(store.products.markComponentsInitialized(product.id)).rejects.toMatchObject({
-      code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { missing: ["components_library"] }
-    });
+    await expect(getProductComponentLibrary(store.home, product.id)).resolves.toMatchObject({ status: "missing" });
 
-    await mkdir(join(store.home, "library"), { recursive: true });
-    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), JSON.stringify({ children: [{ id: "button", type: "component" }] }));
+    await writeComponentLibrary(store.home, product.id);
 
-    await expect(store.products.markComponentsInitialized(product.id)).resolves.toMatchObject({
-      id: product.id,
-      components_initialized: true
-    });
+    await expect(getProductComponentLibrary(store.home, product.id)).resolves.toMatchObject({ status: "complete" });
+    await expect(store.products.getProduct(product.id)).resolves.not.toHaveProperty("components_initialized");
   });
 
   it("rejects invalid persisted component libraries", async () => {
     const store = await createTestStore();
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
-    await mkdir(join(store.home, "library"), { recursive: true });
-    await writeFile(join(store.home, "library", `${product.id}.lib.pen`), "not json");
+    await writeComponentLibrary(store.home, product.id);
+    await writeFile(join(store.home, "library", `${product.id}.versions`, "1.lib.pen"), "not json");
 
-    await expect(store.products.markComponentsInitialized(product.id)).rejects.toMatchObject({
-      code: "PEN_FILE_INVALID"
-    });
+    await expect(getProductComponentLibrary(store.home, product.id)).resolves.toMatchObject({ status: "invalid" });
   });
 
   it("fills default style variables", async () => {

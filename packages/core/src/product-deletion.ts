@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { access, copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, realpath, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { z } from "zod";
+import { getProductComponentLibrary } from "./components.js";
 import { FormaError } from "./errors.js";
 import { productIdSchema, type ProductService } from "./product.js";
+import { getRequirementDesign } from "./requirement-design.js";
 import { readYaml, writeYamlAtomic } from "./yaml.js";
 
 export interface DeleteProductInput {
@@ -37,7 +39,7 @@ export interface ProductDeletionState {
   phase: ProductDeletionPhase;
   backups: { products_yaml: "backups/products.yaml"; session_yaml?: "backups/session.yaml" };
   moved_paths: Array<{
-    kind: "product_data" | "component_library";
+    kind: "product_data" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
     original_path: string;
     staged_path: string;
     required: boolean;
@@ -66,7 +68,7 @@ const relativePathSchema = z.string().min(1).refine((value) => !isAbsolute(value
 });
 
 const movedPathSchema = z.object({
-  kind: z.enum(["product_data", "component_library"]),
+  kind: z.enum(["product_data", "component_library", "component_library_latest", "component_library_metadata", "component_library_versions", "component_library_sessions"]),
   original_path: relativePathSchema,
   staged_path: relativePathSchema,
   required: z.boolean()
@@ -107,6 +109,14 @@ const productIndexSchema = z.object({
 }).strict();
 
 type ProductDeletionStateInput = Omit<ProductDeletionState, "updated_at">;
+const nonTerminalDesignSessionStatuses = new Set([
+  "running",
+  "recoverable",
+  "failed_operation",
+  "failed_commit",
+  "blocked_manual_edit",
+  "commit_recovery_required"
+]);
 
 export function validateDeleteProductInput(input: DeleteProductInput): string {
   if (typeof input.product_id !== "string" || input.product_id.trim().length === 0) {
@@ -132,6 +142,7 @@ export async function deleteProductLocked(
   const productId = input.product_id;
   const recovery = await recoverPendingProductDeletesLocked(runtime);
   await runtime.products.getProduct(productId);
+  await assertNoBlockingDesignSession(runtime.home, productId);
 
   const operationId = `delete-${Date.now()}-${randomBytes(6).toString("hex")}`;
   const operationDir = join(runtime.home, "tmp", "deletions", operationId);
@@ -176,6 +187,9 @@ export async function deleteProductLocked(
     const session = sessionExists ? await readYaml<{ current_product: string | null }>(sessionFile) : { current_product: null };
     const productData = join("data", productId);
     const libraryFile = join("library", `${productId}.lib.pen`);
+    const libraryMetadata = join("library", `${productId}.components.yaml`);
+    const libraryVersions = join("library", `${productId}.versions`);
+    const librarySessions = join("library", `${productId}.sessions`);
     const movedPaths: ProductDeletionState["moved_paths"] = [];
     const missingPaths: string[] = [];
     if (await pathExists(join(runtime.home, productData))) {
@@ -191,13 +205,24 @@ export async function deleteProductLocked(
     const componentLibraryFile = runtime.products.componentLibraryFile(productId);
     if (await pathExists(componentLibraryFile)) {
       movedPaths.push({
-        kind: "component_library",
+        kind: "component_library_latest",
         original_path: libraryFile,
         staged_path: join("staged", "library", `${productId}.lib.pen`),
         required: false
       });
     } else {
       missingPaths.push(libraryFile);
+    }
+    for (const entry of [
+      { kind: "component_library_metadata" as const, original_path: libraryMetadata, staged_path: join("staged", "library", `${productId}.components.yaml`) },
+      { kind: "component_library_versions" as const, original_path: libraryVersions, staged_path: join("staged", "library", `${productId}.versions`) },
+      { kind: "component_library_sessions" as const, original_path: librarySessions, staged_path: join("staged", "library", `${productId}.sessions`) }
+    ]) {
+      if (await pathExists(join(runtime.home, entry.original_path))) {
+        movedPaths.push({ ...entry, required: false });
+      } else {
+        missingPaths.push(entry.original_path);
+      }
     }
 
     state = await persistState(operationDir, {
@@ -392,6 +417,231 @@ async function restoreBackup(home: string, operationDir: string, backupPath: str
     throw recoveryFailed("Product deletion recovery failed: backup is missing", { backup_path: backupPath });
   }
   await copyFileAtomic(source, destination);
+}
+
+async function assertNoBlockingDesignSession(home: string, productId: string): Promise<void> {
+  const activePath = join(home, "data", productId, "sessions", "active-design-session.yaml");
+  if (!(await pathExists(activePath))) {
+    return;
+  }
+  let active: Record<string, unknown>;
+  try {
+    active = await readYaml<Record<string, unknown>>(activePath);
+  } catch (error) {
+    throw new FormaError("LOCK_CORRUPT", "Active design session lock is corrupt", {
+      product_id: productId,
+      local_active_path: activePath,
+      cause: errorMessage(error)
+    });
+  }
+
+  const status = typeof active.status === "string" ? active.status : "running";
+  const details = {
+    session_id: stringOrNull(active.session_id),
+    scope: stringOrNull(active.scope),
+    owner_path: stringOrNull(active.owner_path),
+    local_active_path: stringOrNull(active.local_active_path),
+    canvas_path: stringOrNull(active.canvas_path),
+    staging_path: stringOrNull(active.staging_path),
+    status
+  };
+  const corruptionCode = status === "failed_commit" || status === "commit_recovery_required"
+    ? "DESIGN_COMMIT_RECOVERY_REQUIRED"
+    : "LOCK_CORRUPT";
+  const sessionId = requireActiveString(active.session_id, "session_id", corruptionCode, details);
+  const localActivePath = await validateLeasePath(home, active.local_active_path, "local_active_path", corruptionCode, details);
+  await validateLeasePath(home, active.owner_path, "owner_path", corruptionCode, details);
+  await validateLeasePath(home, active.canvas_path, "canvas_path", corruptionCode, details);
+  await validateLeasePath(home, active.staging_path, "staging_path", corruptionCode, details);
+  let localActive: Record<string, unknown>;
+  try {
+    localActive = await readYaml<Record<string, unknown>>(localActivePath);
+  } catch (error) {
+    throw new FormaError(corruptionCode, "Local active design session lock is corrupt", {
+      ...details,
+      local_active_path: localActivePath,
+      cause: errorMessage(error)
+    });
+  }
+  if (localActive.session_id !== sessionId) {
+    throw new FormaError(corruptionCode, "Active design session lock is inconsistent with local active file", {
+      ...details,
+      local_active_path: localActivePath,
+      local_session_id: stringOrNull(localActive.session_id)
+    });
+  }
+
+  const checkedDetails = { ...details, local_active_path: localActivePath };
+  if (nonTerminalDesignSessionStatuses.has(status)) {
+    throw new FormaError("DESIGN_SESSION_ACTIVE", "Design session is active", checkedDetails);
+  }
+  if (status === "committed" || status === "discarded") {
+    if (typeof active.audit_link !== "string" || active.audit_link.length === 0) {
+      throw new FormaError("DESIGN_SESSION_AUDIT_LINK_MISSING", "Design session audit link is missing", checkedDetails);
+    }
+    await validateLeasePath(home, active.audit_link, "audit_link", "DESIGN_SESSION_AUDIT_LINK_MISSING", checkedDetails);
+    const sessionRecordPath = await validateLeasePath(
+      home,
+      typeof localActive.session_record_path === "string"
+        ? localActive.session_record_path
+        : `${String(active.staging_path)}/design_session.yaml`,
+      "session_record_path",
+      corruptionCode,
+      checkedDetails
+    );
+    const sessionRecord = await readDesignSessionRecord(sessionRecordPath, corruptionCode, checkedDetails);
+    if (sessionRecord.session_id !== sessionId) {
+      throw new FormaError(corruptionCode, "Design session record does not match active lease", {
+        ...checkedDetails,
+        session_record_path: sessionRecordPath,
+        record_session_id: sessionRecord.session_id
+      });
+    }
+    if (nonTerminalDesignSessionStatuses.has(sessionRecord.status)) {
+      throw new FormaError("DESIGN_SESSION_ACTIVE", "Design session is active", {
+        ...checkedDetails,
+        status: sessionRecord.status,
+        session_record_path: sessionRecordPath
+      });
+    }
+    if (sessionRecord.status !== "committed" && sessionRecord.status !== "discarded") {
+      throw new FormaError("LOCK_CORRUPT", "Design session record has an invalid status", {
+        ...checkedDetails,
+        status: sessionRecord.status,
+        session_record_path: sessionRecordPath
+      });
+    }
+    if (!(await hasFormalAuditLink(home, productId, sessionId, active.audit_link))) {
+      throw new FormaError("DESIGN_SESSION_AUDIT_LINK_MISSING", "Design session audit link is missing", {
+        ...checkedDetails,
+        audit_link: active.audit_link,
+        session_record_path: sessionRecordPath
+      });
+    }
+    return;
+  }
+  throw new FormaError("LOCK_CORRUPT", "Active design session lock has an invalid status", checkedDetails);
+}
+
+async function readDesignSessionRecord(
+  sessionRecordPath: string,
+  code: "LOCK_CORRUPT" | "DESIGN_COMMIT_RECOVERY_REQUIRED",
+  details: Record<string, unknown>
+): Promise<{ session_id: string; status: string }> {
+  let record: Record<string, unknown>;
+  try {
+    record = await readYaml<Record<string, unknown>>(sessionRecordPath);
+  } catch (error) {
+    throw new FormaError(code, "Design session record is corrupt", {
+      ...details,
+      session_record_path: sessionRecordPath,
+      cause: errorMessage(error)
+    });
+  }
+  return {
+    session_id: requireActiveString(record.session_id, "session_id", code, details),
+    status: typeof record.status === "string" ? record.status : "running"
+  };
+}
+
+async function hasFormalAuditLink(home: string, productId: string, sessionId: string, auditLink: string): Promise<boolean> {
+  return (await requirementHistoryHasAuditLink(home, productId, sessionId, auditLink))
+    || (await componentVersionHasAuditLink(home, productId, sessionId, auditLink));
+}
+
+async function requirementHistoryHasAuditLink(home: string, productId: string, sessionId: string, auditLink: string): Promise<boolean> {
+  const productDir = join(home, "data", productId);
+  const entries = await readdir(productDir, { withFileTypes: true }).catch((error: unknown) => {
+    if (isNodeError(error) && error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  });
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !/^R-[a-f0-9]{8}$/.test(entry.name)) {
+      continue;
+    }
+    const design = await getRequirementDesign(home, productId, entry.name);
+    if (design.status === "missing") {
+      continue;
+    }
+    if (design.status === "invalid") {
+      continue;
+    }
+    if (design.history.some((item) => recordHasAuditLink(item, sessionId, auditLink))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function componentVersionHasAuditLink(home: string, productId: string, sessionId: string, auditLink: string): Promise<boolean> {
+  const componentLibrary = await getProductComponentLibrary(home, productId);
+  if (componentLibrary.status !== "complete") {
+    return false;
+  }
+  const current = componentLibrary.current_version_record;
+  return current?.session_id === sessionId && current.audit_link === auditLink;
+}
+
+function recordHasAuditLink(value: unknown, sessionId: string, auditLink: string): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return record.session_id === sessionId && record.audit_link === auditLink;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function requireActiveString(
+  value: unknown,
+  field: string,
+  code: "LOCK_CORRUPT" | "DESIGN_COMMIT_RECOVERY_REQUIRED",
+  details: Record<string, unknown>
+): string {
+  if (typeof value === "string" && value.length > 0) {
+    return value;
+  }
+  throw new FormaError(code, "Active design session lock is corrupt", { ...details, field });
+}
+
+async function validateLeasePath(
+  home: string,
+  value: unknown,
+  field: string,
+  code: "LOCK_CORRUPT" | "DESIGN_COMMIT_RECOVERY_REQUIRED" | "DESIGN_SESSION_AUDIT_LINK_MISSING",
+  details: Record<string, unknown>
+): Promise<string> {
+  const raw = requireActiveString(value, field, code === "DESIGN_SESSION_AUDIT_LINK_MISSING" ? "LOCK_CORRUPT" : code, details);
+  if (isAbsolute(raw)) {
+    throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
+  }
+  const resolvedHome = resolve(home);
+  const resolved = resolve(resolvedHome, raw);
+  if (resolved !== resolvedHome && !resolved.startsWith(`${resolvedHome}/`)) {
+    throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
+  }
+  try {
+    const realHome = await realpath(resolvedHome);
+    const real = await realpath(resolved);
+    if (real !== realHome && !real.startsWith(`${realHome}/`)) {
+      throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
+    }
+    return real;
+  } catch (error) {
+    if (error instanceof FormaError) {
+      throw error;
+    }
+    throw new FormaError(code, "Active design session path is missing or unreadable", {
+      ...details,
+      field,
+      path: raw,
+      cause: errorMessage(error)
+    });
+  }
 }
 
 async function persistState(operationDir: string, state: ProductDeletionStateInput): Promise<ProductDeletionState> {

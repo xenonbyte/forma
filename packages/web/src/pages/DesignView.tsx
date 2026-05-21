@@ -1,60 +1,71 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   apiClient,
   formatApiError,
-  type AnnotationNode,
+  type ActiveDesignSession,
   type ApiErrorInfo,
-  type DesignHistoryPayload,
-  type DesignHistoryVersion,
-  type FormaApiClient
+  type FormaApiClient,
+  type ProductComponentLibrary,
+  type RequirementDesignCanvas,
+  type RequirementDesignIndexStatus,
+  type RequirementDesignScene
 } from "../api.js";
-import { AnnotationCanvas, calculateNodeSpacing } from "../components/AnnotationCanvas.js";
-import { DiffViewer } from "../components/DiffViewer.js";
+import { useT } from "../LocaleContext.js";
+import { DesignSceneCanvas } from "../components/DesignSceneCanvas.js";
+import { DesignSessionPanel } from "../components/DesignSessionPanel.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { PropertyPanel } from "../components/PropertyPanel.js";
 
 export interface DesignViewProps {
-  client?: Pick<FormaApiClient, "getDesignAnnotations" | "getDesignDiff" | "getDesignHistory">;
+  client?: Pick<FormaApiClient, "getRequirementDesignCanvas" | "getRequirementDesignScene"> &
+    Partial<Pick<FormaApiClient, "getActiveRequirementDesignSession" | "getProductComponentLibrary">>;
   params: Record<string, string>;
 }
 
 type DesignState =
-  | { error: ApiErrorInfo; status: "error" }
   | { status: "loading" }
-  | { annotations: AnnotationNode[]; history: DesignHistoryPayload; status: "ready" };
-
-interface VersionSelection {
-  fromVersion: number;
-  toVersion: number;
-}
-
-const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
-const secondaryLinkClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 " +
-  focusClasses;
+  | { status: "error"; error: ApiErrorInfo }
+  | { status: "index"; canvas: RequirementDesignCanvas; indexStatus: Exclude<RequirementDesignIndexStatus, "complete" | "stale"> }
+  | {
+      activeSession: ActiveDesignSession | null;
+      canvas: RequirementDesignCanvas;
+      componentLibrary: ProductComponentLibrary | null;
+      indexStatus: "complete" | "stale";
+      scene: RequirementDesignScene;
+      status: "ready";
+    };
 
 export function DesignView({ client = apiClient, params }: DesignViewProps) {
+  const t = useT();
   const productId = params.productId ?? "";
-  const requirementId = params.reqId ?? "";
-  const designId = params.designId ?? "";
+  const requirementId = params.reqId ?? params.requirementId ?? "";
+  const pageId = useMemo(() => selectedPageIdFromLocation(), []);
   const [state, setState] = useState<DesignState>({ status: "loading" });
-  const [hoveredNode, setHoveredNode] = useState<AnnotationNode | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
-  const [selection, setSelection] = useState<VersionSelection | null>(null);
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
-    setSelectedNodeIds([]);
-    setHoveredNode(null);
-    setSelection(null);
 
-    Promise.all([client.getDesignAnnotations(designId), client.getDesignHistory(designId)])
-      .then(([annotations, history]) => {
+    client
+      .getRequirementDesignCanvas(productId, requirementId)
+      .then(async (canvas) => {
+        const indexStatus = designIndexStatus(canvas);
+        if (indexStatus !== "complete" && indexStatus !== "stale") {
+          if (!cancelled) {
+            setState({ canvas, indexStatus, status: "index" });
+          }
+          return;
+        }
+        const [scene, activeSession, componentLibrary] = await Promise.all([
+          client.getRequirementDesignScene(productId, requirementId),
+          client.getActiveRequirementDesignSession ? client.getActiveRequirementDesignSession(productId, requirementId).catch(() => null) : Promise.resolve(null),
+          client.getProductComponentLibrary ? client.getProductComponentLibrary(productId).catch(() => null) : Promise.resolve(null)
+        ]);
         if (!cancelled) {
-          setState({ annotations, history, status: "ready" });
-          setSelection(defaultVersionSelection(history.versions));
+          setState({ activeSession, canvas, componentLibrary, indexStatus, scene, status: "ready" });
         }
       })
       .catch((error: unknown) => {
@@ -66,201 +77,124 @@ export function DesignView({ client = apiClient, params }: DesignViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, designId]);
-
-  const handleHoverNode = useCallback((node: AnnotationNode | null) => setHoveredNode(node), []);
-  const handleSelectNode = useCallback((node: AnnotationNode) => setSelectedNodeIds((current) => selectAnnotationNode(current, node.id)), []);
+  }, [client, productId, requirementId]);
 
   if (state.status === "loading") {
     return (
-      <StatePanel state="loading" title="Design">
-        Loading annotation data and design history.
+      <StatePanel state="loading" title={t("design.view")}>
+        {t("requirement.loading")}
       </StatePanel>
     );
   }
 
   if (state.status === "error") {
     return (
-      <StatePanel
-        action={<PrimaryActionLink href={`/products/${productId}/requirements/${requirementId}`}>Requirement</PrimaryActionLink>}
-        state="error"
-        title="Design unavailable"
-      >
+      <StatePanel action={<PrimaryActionLink href={`/products/${productId}/requirements/${requirementId}`}>{t("requirement.records")}</PrimaryActionLink>} state="error" title={t("design.canvasUnavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
   }
 
-  return (
-    <DesignContent
-      annotations={state.annotations}
-      designId={designId}
-      diffClient={client}
-      history={state.history}
-      hoveredNode={hoveredNode}
-      onHoverNode={handleHoverNode}
-      onSelectNode={handleSelectNode}
-      onVersionSelectionChange={setSelection}
-      productId={productId}
-      requirementId={requirementId}
-      selectedNodeIds={selectedNodeIds}
-      versionSelection={selection}
-    />
-  );
-}
+  if (state.status === "index") {
+    return (
+      <StatePanel state={state.indexStatus === "recovery_required" ? "error" : "empty"} title={indexStateTitle(state.indexStatus)}>
+        <div className="space-y-2">
+          <p className="font-mono text-xs text-zinc-500">{state.canvas.product_id} / {state.canvas.requirement_id}</p>
+          {state.indexStatus === "incomplete" ? (
+            <p>{state.canvas.pages.map((page) => page.page_id).join(", ")}</p>
+          ) : null}
+        </div>
+      </StatePanel>
+    );
+  }
 
-export function DesignContent({
-  annotations,
-  designId,
-  diffClient = apiClient,
-  history,
-  hoveredNode,
-  onHoverNode,
-  onSelectNode,
-  onVersionSelectionChange,
-  productId,
-  requirementId,
-  selectedNodeIds = [],
-  versionSelection
-}: {
-  annotations: AnnotationNode[];
-  designId: string;
-  diffClient?: Pick<FormaApiClient, "getDesignDiff">;
-  history: DesignHistoryPayload;
-  hoveredNode: AnnotationNode | null;
-  onHoverNode: (node: AnnotationNode | null) => void;
-  onSelectNode: (node: AnnotationNode) => void;
-  onVersionSelectionChange: (selection: VersionSelection) => void;
-  productId: string;
-  requirementId: string;
-  selectedNodeIds?: string[];
-  versionSelection: VersionSelection | null;
-}) {
-  const sortedVersions = useMemo(() => [...history.versions].sort((left, right) => left.version - right.version), [history.versions]);
-  const currentVersion = sortedVersions.find((version) => version.current) ?? sortedVersions.at(-1);
-  const selectedIdsKey = selectedNodeIds.join("\u0000");
-  const selectedNodes = useMemo(
-    () => selectedNodeIds.map((id) => annotations.find((node) => node.id === id)).filter((node): node is AnnotationNode => Boolean(node)),
-    [annotations, selectedIdsKey]
-  );
-  const spacing = useMemo(() => (selectedNodes.length === 2 ? calculateNodeSpacing(selectedNodes[0], selectedNodes[1]) : null), [selectedNodes]);
-  const activeSelection = versionSelection ?? defaultVersionSelection(sortedVersions);
+  const selectedPage = pageId ?? state.scene.pages[0]?.page_id;
+  const pageNodes = (selectedPage ? state.scene.pages.find((page) => page.page_id === selectedPage) : state.scene.pages[0])?.nodes ?? [];
 
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5 font-mono text-xs font-medium text-zinc-600">
-            {designId}
-          </span>
-          <span className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-800">
-            v{history.current_version}
-          </span>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{statusLabel(state.indexStatus)}</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-normal text-zinc-950">{requirementId}</h2>
         </div>
         <a className={secondaryLinkClasses} href={`/products/${productId}/requirements/${requirementId}`}>
-          Back to requirement
+          {t("requirement.records")}
         </a>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <WorkSurface title="Annotation canvas">
-          <AnnotationCanvas
-            imageUrl={currentVersion?.image_url}
-            nodes={annotations}
-            onHoverNode={onHoverNode}
-            onSelectNode={onSelectNode}
-            selectedNodeIds={selectedNodeIds}
-            spacing={spacing}
-          />
-        </WorkSurface>
-        <WorkSurface title="Properties">
-          <PropertyPanel designId={designId} hoveredNode={hoveredNode} nodes={annotations} selectedNodes={selectedNodes} spacing={spacing} />
-        </WorkSurface>
+      <div className="grid gap-5 md:grid-cols-[minmax(480px,1fr)_minmax(320px,24rem)]" data-design-view-layout="responsive">
+        <div className="space-y-5">
+          {state.indexStatus === "stale" ? (
+            <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Stale</p>
+          ) : null}
+          <WorkSurface title={t("design.canvas")}>
+            <DesignSceneCanvas
+              canvasPages={state.canvas.pages}
+              onHoverNodeId={setHoveredNodeId}
+              onSelectionChange={setSelectedNodeIds}
+              productId={productId}
+              requirementId={requirementId}
+              scene={state.scene}
+              selectedNodeIds={selectedNodeIds}
+              selectedPageId={selectedPage}
+            />
+          </WorkSurface>
+        </div>
+        <div className="space-y-5">
+          <WorkSurface title={t("design.properties")}>
+            <PropertyPanel
+              hoveredNodeId={hoveredNodeId}
+              nodes={pageNodes}
+              productId={productId}
+              requirementId={requirementId}
+              selectedNodeIds={selectedNodeIds}
+            />
+          </WorkSurface>
+          <WorkSurface title={t("design.session")}>
+            <DesignSessionPanel canvas={state.canvas} componentLibrary={state.componentLibrary} session={state.activeSession} />
+          </WorkSurface>
+        </div>
       </div>
-
-      <WorkSurface title="Design diff">
-        {sortedVersions.length < 2 || !activeSelection ? (
-          <StatePanel state="empty" title="No history to compare">
-            This design has fewer than two versions.
-          </StatePanel>
-        ) : (
-          <div className="space-y-4">
-            <VersionControls onChange={onVersionSelectionChange} selection={activeSelection} versions={sortedVersions} />
-            <DiffViewer client={diffClient} designId={designId} fromVersion={activeSelection.fromVersion} toVersion={activeSelection.toVersion} />
-          </div>
-        )}
-      </WorkSurface>
     </div>
   );
 }
 
-export function selectAnnotationNode(current: string[], nodeId: string): string[] {
-  if (current.includes(nodeId)) {
-    return current.filter((id) => id !== nodeId);
+function designIndexStatus(canvas: RequirementDesignCanvas): RequirementDesignIndexStatus {
+  if (canvas.index_status) {
+    return canvas.index_status;
   }
-  return [...current, nodeId].slice(-2);
+  if (canvas.status === "complete") {
+    return canvas.pages.some((page) => page.status !== "done") ? "incomplete" : "complete";
+  }
+  if (canvas.status === "invalid") {
+    return "recovery_required";
+  }
+  return "missing";
 }
 
-function VersionControls({
-  onChange,
-  selection,
-  versions
-}: {
-  onChange: (selection: VersionSelection) => void;
-  selection: VersionSelection;
-  versions: DesignHistoryVersion[];
-}) {
-  return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-      <label className="grid gap-1 text-sm font-medium text-zinc-700">
-        From
-        <select
-          aria-label="From version"
-          className={`min-w-36 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 ${focusClasses}`}
-          onChange={(event) => onChange({ ...selection, fromVersion: Number(event.currentTarget.value) })}
-          value={selection.fromVersion}
-        >
-          {versions.map((version) => (
-            <option key={version.version} value={version.version}>
-              v{version.version}
-              {version.current ? " current" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="grid gap-1 text-sm font-medium text-zinc-700">
-        To
-        <select
-          aria-label="To version"
-          className={`min-w-36 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 ${focusClasses}`}
-          onChange={(event) => onChange({ ...selection, toVersion: Number(event.currentTarget.value) })}
-          value={selection.toVersion}
-        >
-          {versions.map((version) => (
-            <option key={version.version} value={version.version}>
-              v{version.version}
-              {version.current ? " current" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-    </div>
-  );
+function indexStateTitle(status: Exclude<RequirementDesignIndexStatus, "complete" | "stale">): string {
+  switch (status) {
+    case "incomplete":
+      return "Index incomplete";
+    case "recovery_required":
+      return "Recovery required";
+    case "missing":
+      return "Index required";
+  }
 }
 
-function defaultVersionSelection(versions: DesignHistoryVersion[]): VersionSelection | null {
-  if (versions.length < 2) {
-    return null;
-  }
-
-  const sorted = [...versions].sort((left, right) => left.version - right.version);
-  const toVersion = sorted.find((version) => version.current)?.version ?? sorted.at(-1)?.version;
-  const toIndex = sorted.findIndex((version) => version.version === toVersion);
-  const fromVersion = sorted[Math.max(0, toIndex - 1)]?.version ?? sorted[0]?.version;
-
-  if (!fromVersion || !toVersion) {
-    return null;
-  }
-
-  return { fromVersion, toVersion };
+function statusLabel(status: "complete" | "stale"): string {
+  return status === "complete" ? "Complete" : "Stale";
 }
+
+function selectedPageIdFromLocation(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  const value = new URL(window.location.href).searchParams.get("page_id");
+  return value ?? undefined;
+}
+
+const secondaryLinkClasses =
+  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";

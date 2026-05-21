@@ -1,854 +1,928 @@
-import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import {
-  createFormaStore,
-  DesignService,
-  getProductMutationLock,
+  assertSemanticScopeCurrent,
+  commitRequirementDesignSession,
+  deriveAllowedSemanticSurface,
+  diffRequirementDesignVersions,
+  exportRequirementDesignAsset,
+  getRequirementDesignScene,
+  indexRequirementComponentUsage,
+  indexRequirementDesignCanvas,
+  planImportMetadataNormalization,
+  planColorRepairOperations,
   readYaml,
+  refreshRequirementComponents,
+  requirementDesignPaths,
+  resolveRequirementPageFrames,
+  rollbackRequirementDesign,
+  runDesignQualityPipeline,
+  validateLayoutSnapshot,
+  validateSemanticScope,
   writeYamlAtomic,
-  type ProductMutationContext,
-  type ProductMutationLock
+  type DesignQualityReport,
+  type Requirement
 } from "../src/index.js";
 
-const minimalPng = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
-  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00,
-  0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
-  0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
-]);
+const productId = "P-123abc";
+const requirementId = "R-c9b123bf";
+const sessionId = "S-1234567890abcdef";
 
-const alternatePng = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x61, 0x6c, 0x74, 0x2d, 0x70, 0x6e, 0x67
-]);
+describe("stage 07 requirement design frame mapping", () => {
+  it("maps by metadata page id, normalized prefix, and normalized name", () => {
+    const requirement = requirementFixture([
+      { page_id: "checkout", name: "Checkout" },
+      { page_id: "settings", name: "Settings" },
+      { page_id: "profile", name: "User Profile" }
+    ]);
+    const result = resolveRequirementPageFrames(requirement, {
+      children: [
+        { id: "f1", type: "frame", name: "Anything", metadata: { type: "forma", kind: "page_frame", page_id: "checkout" } },
+        { id: "f2", type: "frame", name: "settings - desktop" },
+        { id: "f3", type: "frame", name: "User Profile" }
+      ]
+    });
 
-const samplePen = {
-  variables: { "--primary": "#5E6AD2" },
-  children: [
-    {
+    expect(result.mappings).toEqual([
+      { page_id: "checkout", frame_id: "f1", strategy: "metadata_page_id" },
+      { page_id: "settings", frame_id: "f2", strategy: "normalized_frame_prefix" },
+      { page_id: "profile", frame_id: "f3", strategy: "normalized_name" }
+    ]);
+  });
+
+  it("returns stable frame mapping errors and classifies unmanaged components", () => {
+    const requirement = requirementFixture([{ page_id: "home", name: "Home" }]);
+    expect(() => resolveRequirementPageFrames(requirement, {
+      children: [
+        { id: "f1", type: "frame", name: "home desktop" },
+        { id: "f2", type: "frame", name: "home mobile" }
+      ]
+    })).toThrow(expect.objectContaining({ code: "PAGE_FRAME_AMBIGUOUS" }));
+
+    expect(() => resolveRequirementPageFrames(requirementFixture([
+      { page_id: "home", name: "Home" },
+      { page_id: "search", name: "Search" }
+    ]), {
+      children: [{ id: "f1", type: "frame", name: "Search", metadata: { type: "forma", kind: "page_frame", page_id: "home" } }]
+    })).toThrow(expect.objectContaining({ code: "PAGE_FRAME_MISMATCH" }));
+
+    expect(() => resolveRequirementPageFrames(requirement, {
+      children: [{ id: "other", type: "frame", name: "Other" }]
+    })).toThrow(expect.objectContaining({ code: "PAGE_FRAME_NOT_FOUND" }));
+
+    const unmanaged = resolveRequirementPageFrames(requirement, {
+      children: [
+        { id: "home-frame", type: "frame", name: "home" },
+        { id: "divider", type: "component", name: "Divider", reusable: true }
+      ]
+    });
+    expect(unmanaged.unmanaged_components).toEqual([
+      { node_id: "divider", name: "Divider", classification: "unmanaged_component_candidate" }
+    ]);
+  });
+});
+
+describe("stage 07 requirement design model", () => {
+  it("indexes only requirement-level design.pen and writes relative metadata paths", async () => {
+    const home = await createDesignHome();
+    await mkdir(join(home, "data", productId, "D-legacy"), { recursive: true });
+    await writeFile(join(home, "data", productId, "D-legacy", "design.pen"), "not json");
+    await writeFile(join(home, "data", productId, requirementId, "design.pen"), JSON.stringify({
+      children: [{ id: "frame-home", type: "frame", name: "Home", metadata: { type: "forma", kind: "page_frame", page_id: "home" } }]
+    }));
+
+    const result = await indexRequirementDesignCanvas({ home, product_id: productId, requirement_id: requirementId });
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    const metadata = await readFile(paths.metadata_file, "utf8");
+
+    expect(result.canvas_version).toBe(1);
+    expect(metadata).toContain("canvas_file: design.pen");
+    expect(metadata).toContain("preview_file: previews/home@2x.png");
+    expect(metadata).toContain("frame_snapshot_file: history/pages/home.p1.pen-fragment");
+    expect(metadata).not.toContain(home);
+    await expect(exists(join(paths.canvas_history_dir, "canvas.c1.pen"))).resolves.toBe(true);
+    await expect(exists(join(paths.page_history_dir, "home.p1.pen-fragment"))).resolves.toBe(true);
+  });
+
+  it("keeps indexed pages pending when deterministic quality blocks", async () => {
+    const home = await createDesignHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    await writeFile(paths.canvas_file, JSON.stringify({
+      children: [{
+        id: "frame-home",
+        type: "frame",
+        name: "Home",
+        fill: "rgb(255, 0, 0)",
+        metadata: { type: "forma", kind: "page_frame", page_id: "home" }
+      }]
+    }));
+
+    const result = await indexRequirementDesignCanvas({
+      home,
+      product_id: productId,
+      requirement_id: requirementId,
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview")
+    });
+    const requirement = await readYaml<Record<string, unknown>>(join(paths.requirement_dir, "requirement.yaml"));
+
+    expect(result.pages).toEqual([expect.objectContaining({ page_id: "home", status: "pending" })]);
+    expect(result).toMatchObject({
+      blocked_pages: [expect.objectContaining({ page_id: "home", code: "PENCIL_COLOR_INVALID" })]
+    });
+    expect(requirement.pages).toEqual([expect.objectContaining({ page_id: "home", design_status: "pending" })]);
+    await expect(exists(join(paths.previews_dir, "home@2x.png"))).resolves.toBe(false);
+  });
+
+  it("keeps AI visual review warning-only and not_requested neutral", async () => {
+    await expect(runDesignQualityPipeline({
+      document: { children: [{ id: "n1", fill: "rgb(255, 0, 0)" }] }
+    })).resolves.toMatchObject({
+      status: "blocked",
+      hard_checks: { issues: [expect.objectContaining({ code: "PENCIL_COLOR_INVALID" })] }
+    });
+
+    await expect(runDesignQualityPipeline({
+      document: { children: [{ id: "n1", fill: "#FF0000" }] },
+      ai_visual_review: { status: "skipped", reason: "not_requested" }
+    })).resolves.toMatchObject({ status: "passed", warnings: [] });
+
+    await expect(runDesignQualityPipeline({
+      document: { children: [{ id: "n1", fill: "#FF0000" }] },
+      ai_visual_review: { status: "warning" }
+    })).resolves.toMatchObject({ status: "warning", warnings: ["AI_VISUAL_REVIEW_WARNING"] });
+  });
+
+  it("plans deterministic color repairs without mutating validation", () => {
+    const operations = planColorRepairOperations({ children: [{ id: "n1", fill: "rgba(255, 0, 0, 0.5)" }] });
+    expect(operations).toEqual([
+      {
+        tool: "batch_design",
+        args: { node_id: "n1", set: { fill: "#FF000080" } },
+        target_node_ids: ["n1"],
+        intent: "quality_repair"
+      }
+    ]);
+  });
+
+  it("blocks semantic scope violations before promotion", () => {
+    const result = validateSemanticScope({
+      document: { children: [{ id: "bad-action", metadata: { action_key: "delete-account" } }] },
+      scope: {
+        schema_version: 1,
+        product_id: productId,
+        requirement_id: requirementId,
+        language: "default",
+        page_ids: ["home"],
+        allowed_copy: ["Home"],
+        action_keys: ["save"],
+        navigation_targets: [],
+        field_keys: [],
+        component_keys: [],
+        visual_states: ["default"],
+        existing_node_ids: [],
+        baseline_node_ids: [],
+        source_contract_hash: "sha256:test"
+      }
+    });
+    expect(result).toMatchObject({
+      status: "blocked",
+      code: "DESIGN_SCOPE_VIOLATION"
+    });
+  });
+
+  it("derives scene, component usage, history diff, rollback, and export payloads", async () => {
+    const home = await createDesignHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    await writeFile(paths.canvas_file, JSON.stringify({
+      children: [{
+        id: "frame-home",
+        type: "frame",
+        name: "Home",
+        metadata: { type: "forma", kind: "page_frame", page_id: "home" },
+        children: [
+          {
+            id: "button-instance",
+            type: "instance",
+            metadata: {
+              type: "forma",
+              kind: "component_instance",
+              component_key: "button.primary",
+              ref_target: "Components - Snapshot v1/button.primary"
+            }
+          }
+        ]
+      }]
+    }));
+    await indexRequirementDesignCanvas({ home, product_id: productId, requirement_id: requirementId });
+    await writeFile(join(paths.canvas_history_dir, "canvas.c2.pen"), JSON.stringify({ children: [{ id: "changed" }] }));
+
+    await expect(getRequirementDesignScene({ home, product_id: productId, requirement_id: requirementId })).resolves.toMatchObject({
+      canvas: { file: "design.pen", version: 1 },
+      pages: [expect.objectContaining({ page_id: "home", frame_id: "frame-home" })]
+    });
+    await expect(indexRequirementComponentUsage({ home, product_id: productId, requirement_id: requirementId, write: false })).resolves.toMatchObject({
+      usages: [expect.objectContaining({ node_id: "button-instance", status: "linked" })]
+    });
+    await expect(diffRequirementDesignVersions({
+      home,
+      product_id: productId,
+      requirement_id: requirementId,
+      from_canvas_version: 1,
+      to_canvas_version: 2
+    })).resolves.toMatchObject({ changed: true });
+    await expect(rollbackRequirementDesign({ home, product_id: productId, requirement_id: requirementId, canvas_version: 1 })).resolves.toMatchObject({
+      operation: "rollback"
+    });
+    await expect(exportRequirementDesignAsset({ home, product_id: productId, requirement_id: requirementId, kind: "canvas" })).resolves.toMatchObject({
+      revision: expect.stringMatching(/^sha256:/)
+    });
+  });
+
+  it("plans metadata-only import normalization and invalidates stale plans", async () => {
+    const home = await createDesignHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    await writeFile(paths.canvas_file, JSON.stringify({ children: [] }));
+    await writeRequirementSession(home, JSON.stringify({
+      children: [{
+        id: "frame-home",
+        type: "frame",
+        name: "Home",
+        children: [{ id: "title", type: "text", text: "Home" }]
+      }]
+    }));
+
+    await expect(planImportMetadataNormalization({ home, session_id: sessionId, frame_id: "frame-home" })).resolves.toMatchObject({
+      status: "planned",
+      operations: [{
+        tool: "batch_design",
+        args: { node_id: "title", metadata: { type: "forma", kind: "text", copy: "Home" } },
+        target_node_ids: ["title"],
+        intent: "import_metadata_normalization"
+      }]
+    });
+
+    await writeFile(join(paths.requirement_dir, "sessions", sessionId, "staging.design.pen"), JSON.stringify({
+      children: [{ id: "frame-home", type: "frame", name: "Home", children: [{ id: "title", type: "text", text: "Changed" }] }]
+    }));
+    await expect(planImportMetadataNormalization({ home, session_id: sessionId, frame_id: "frame-home" })).resolves.toMatchObject({
+      status: "blocked",
+      code: "UNMANAGED_METADATA_NORMALIZATION_REQUIRED",
+      unresolved_nodes: ["frame-home"]
+    });
+  });
+});
+
+describe("stage 07 semantic scope derivation", () => {
+  it("uses requirement, translations, rules, baseline, product, component library, and current design in allowed surface and hash", async () => {
+    const home = await createDesignHome();
+    const requirementDir = join(home, "data", productId, requirementId);
+    await writeYamlAtomic(join(home, "data", productId, "product.yaml"), {
+      id: productId,
+      name: "Product",
+      description: "Test",
+      platform: "web",
+      languages: ["en", "zh"],
+      default_language: "en"
+    });
+    await writeYamlAtomic(join(requirementDir, "copy-translations.yaml"), {
+      translations: [{ page_id: "home", entries: [{ context: "title", texts: { zh: "首页" } }] }]
+    });
+    await writeYamlAtomic(join(home, "data", productId, "baseline", "rules.yaml"), {
+      rules: [{
+        id: `${requirementId}-rule`,
+        source_requirement: requirementId,
+        given: "copy",
+        when: "visible",
+        then: "allowed",
+        semantic: { allowed_copy: ["规则文案"], actions: [{ key: "rule-action", label: "Rule Action" }], component_keys: ["button.primary"] }
+      }]
+    });
+    await writeYamlAtomic(join(home, "data", productId, "baseline", "baseline.yaml"), {
+      product_id: productId,
+      pages: [{
+        id: "B-home",
+        name: "Baseline Home",
+        features: "",
+        copy: [{ context: "title", text: "Baseline Copy" }],
+        fields: "",
+        interactions: "",
+        source_requirements: [requirementId],
+        semantic_contract: {
+          fields: [{ key: "baseline-field", label: "Baseline Field" }],
+          actions: [],
+          navigation: [],
+          component_keys: ["button.primary"],
+          allowed_copy: ["Baseline Copy"]
+        },
+        semantic_contract_coverage: "explicit"
+      }],
+      navigation: []
+    });
+
+    const scope = await deriveAllowedSemanticSurface({
+      home,
+      product_id: productId,
+      requirement_id: requirementId,
+      language: "zh",
+      current_design: { children: [{ id: "existing-node" }] }
+    });
+
+    expect(scope.allowed_copy).toEqual(expect.arrayContaining(["Home", "首页", "规则文案", "Baseline Copy"]));
+    expect(scope.action_keys).toEqual(expect.arrayContaining(["save", "rule-action"]));
+    expect(scope.field_keys).toContain("baseline-field");
+    expect(scope.component_keys).toEqual(["button.primary"]);
+    expect(scope.baseline_node_ids).toEqual(expect.arrayContaining(["B-home"]));
+    expect(scope.existing_node_ids).toContain("existing-node");
+
+    await writeYamlAtomic(join(requirementDir, "copy-translations.yaml"), {
+      translations: [{ page_id: "home", entries: [{ context: "title", texts: { zh: "新的首页" } }] }]
+    });
+    await expect(assertSemanticScopeCurrent({ home, product_id: productId, requirement_id: requirementId, scope })).rejects.toMatchObject({ code: "SEMANTIC_SCOPE_CHANGED" });
+    const changedTranslationScope = await deriveAllowedSemanticSurface({ home, product_id: productId, requirement_id: requirementId, language: "zh" });
+    expect(changedTranslationScope.source_contract_hash).not.toBe(scope.source_contract_hash);
+
+    await writeYamlAtomic(join(home, "data", productId, "baseline", "rules.yaml"), {
+      rules: [{
+        id: `${requirementId}-rule`,
+        source_requirement: requirementId,
+        given: "copy",
+        when: "visible",
+        then: "allowed",
+        semantic: { allowed_copy: ["规则文案已变更"], actions: [{ key: "rule-action", label: "Rule Action" }], component_keys: ["button.primary"] }
+      }]
+    });
+    const changedRulesScope = await deriveAllowedSemanticSurface({ home, product_id: productId, requirement_id: requirementId, language: "zh" });
+    expect(changedRulesScope.source_contract_hash).not.toBe(changedTranslationScope.source_contract_hash);
+
+    await writeYamlAtomic(join(home, "data", productId, "baseline", "baseline.yaml"), {
+      product_id: productId,
+      pages: [],
+      navigation: []
+    });
+    const changedBaselineScope = await deriveAllowedSemanticSurface({ home, product_id: productId, requirement_id: requirementId, language: "zh" });
+    expect(changedBaselineScope.source_contract_hash).not.toBe(changedRulesScope.source_contract_hash);
+
+    const requirement = requirementFixture([{ page_id: "home", name: "Home Changed" }]);
+    await writeYamlAtomic(join(requirementDir, "requirement.yaml"), requirement);
+    const changedRequirementScope = await deriveAllowedSemanticSurface({ home, product_id: productId, requirement_id: requirementId, language: "zh" });
+    expect(changedRequirementScope.source_contract_hash).not.toBe(changedBaselineScope.source_contract_hash);
+  });
+
+  it("rejects unclassified business semantics and decorative business semantics", () => {
+    const baseScope = semanticScopeFixture();
+    expect(validateSemanticScope({
+      document: { children: [{ id: "action-without-key", metadata: { type: "forma", kind: "action" } }] },
+      scope: baseScope
+    })).toMatchObject({
+      status: "blocked",
+      violations: [expect.objectContaining({ code: "UNCLASSIFIED_BUSINESS_SEMANTICS" })]
+    });
+    expect(validateSemanticScope({
+      document: { children: [{ id: "decorative-action", metadata: { decorative: true, action_key: "save" } }] },
+      scope: baseScope
+    })).toMatchObject({
+      status: "blocked",
+      violations: [expect.objectContaining({ code: "DECORATIVE_HAS_BUSINESS_SEMANTICS" })]
+    });
+  });
+});
+
+describe("stage 07 layout snapshot quality", () => {
+  it("blocks critical overlap, clipped visible area, decorative overlap, unproven decorative coverage, and fixed text overflow", () => {
+    expect(validateLayoutSnapshot({
       id: "root",
-      name: "Root",
-      type: "frame",
       x: 0,
       y: 0,
-      width: 375,
-      height: 812,
+      width: 200,
+      height: 200,
       children: [
-        {
-          id: "button",
-          name: "Button",
-          type: "rectangle",
-          x: 24,
-          y: 100,
-          width: 327,
-          height: 48,
-          fill: "$--primary"
-        }
+        { id: "a", x: 0, y: 0, width: 100, height: 100 },
+        { id: "b", x: 49, y: 49, width: 100, height: 100 }
       ]
-    }
-  ]
-};
+    }).issue).toMatchObject({ code: "DESIGN_LAYOUT_INVALID", message: "Critical layout nodes overlap" });
 
-async function createDesignStore(pageCount = 1) {
-  const home = await mkdtemp(join(tmpdir(), "forma-design-"));
-  const store = createFormaStore({ home, bundledStylesDir: resolve("styles") });
-  const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
-  const empty = await store.requirements.createEmptyRequirement(product.id, "Checkout");
-  const requirement = await store.requirements.submitRequirement({
-    requirement_id: empty.id,
-    document_md: "# Checkout\nCart checkout",
-    pages: Array.from({ length: pageCount }, (_, index) => ({
-      page_id: `${empty.id}-page-${index + 1}`,
-      name: `Page ${index + 1}`,
-      baseline_page: `page-${index + 1}`
-    })),
-    navigation: []
+    expect(validateLayoutSnapshot({
+      id: "root",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      children: [
+        { id: "a", x: 0, y: 0, width: 100, height: 100 },
+        { id: "b", x: 95, y: 95, width: 100, height: 100 }
+      ]
+    }).issue).toBeUndefined();
+
+    expect(validateLayoutSnapshot({
+      id: "clip",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      clip: true,
+      children: [{ id: "child", x: -20, y: 0, width: 100, height: 100 }]
+    }).issue).toMatchObject({ code: "DESIGN_LAYOUT_INVALID", message: "Layout node has critical visible area under 95%" });
+
+    expect(validateLayoutSnapshot({
+      id: "root",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      children: [
+        { id: "content", x: 0, y: 0, width: 100, height: 100 },
+        { id: "decor", x: 0, y: 0, width: 20, height: 20, metadata: { decorative: true } }
+      ]
+    }).issue).toMatchObject({ message: "Decorative layout overlap exceeds 10%" });
+
+    expect(validateLayoutSnapshot({
+      id: "root",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      children: [
+        { id: "content", x: 0, y: 0, width: 100, height: 100 },
+        { id: "decor", x: 99, y: 99, width: 10, height: 10, metadata: { decorative: true } }
+      ]
+    }).issue).toMatchObject({ message: "Decorative overlap cannot be proven safe" });
+
+    expect(validateLayoutSnapshot({
+      id: "text",
+      x: 0,
+      y: 0,
+      width: 20,
+      height: 14,
+      textGrowth: "fixed",
+      text: "This text cannot fit"
+    }).issue).toMatchObject({ message: "Fixed-size text overflow cannot be proven safe" });
   });
 
-  return { home, product, requirement, store };
-}
+  it("records truncation, node, parent, timeout, and detail metadata", () => {
+    const truncated = validateLayoutSnapshot({ id: "root", x: 0, y: 0, width: 1, height: 1, truncated: true });
+    expect(truncated).toMatchObject({
+      issue: { code: "DESIGN_LAYOUT_INVALID" },
+      details: { truncated_parent_count: 1, limit_hit: "incomplete_scan" }
+    });
 
-async function writeDesignOutput(home: string, name: string, pen: unknown = samplePen) {
-  const penPath = join(home, `${name}.pen`);
-  const previewPath = join(home, `${name}.png`);
-  await writeFile(penPath, JSON.stringify(pen), "utf8");
-  await writeFile(previewPath, minimalPng);
-  return { penPath, previewPath };
-}
+    const tooManyNodes = validateLayoutSnapshot({
+      id: "root",
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      children: Array.from({ length: 5001 }, (_, index) => ({ id: `n${index}`, x: index, y: 0, width: 1, height: 1 }))
+    });
+    expect(tooManyNodes.details.limit_hit).toBe("layout_nodes");
 
-function deferred<T = void>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
+    const tooManyParents = validateLayoutSnapshot({
+      id: "root",
+      x: 0,
+      y: 0,
+      width: 1,
+      height: 1,
+      children: Array.from({ length: 501 }, (_, index) => ({ id: `p${index}`, x: index * 2, y: 0, width: 1, height: 1, children: [{ id: `c${index}`, x: index * 2, y: 0, width: 1, height: 1 }] }))
+    });
+    expect(tooManyParents.details.limit_hit).toBe("expanded_parent_nodes");
+
+    const timeout = validateLayoutSnapshot({ id: "root", x: 0, y: 0, width: 1, height: 1 }, { started_at_ms: 0, now_ms: 120_001 });
+    expect(timeout.details.limit_hit).toBe("timeout");
   });
-  return { promise, resolve, reject };
+});
+
+describe("stage 07 preview integrity and index recovery", () => {
+  it("throws PREVIEW_NOT_EXPORTED for committed metadata that references missing preview without regenerating it", async () => {
+    const home = await createDesignHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    await writeFile(paths.canvas_file, JSON.stringify({ children: [{ id: "frame-home", type: "frame", name: "Home" }] }));
+    await writeYamlAtomic(paths.metadata_file, {
+      schema_version: 1,
+      product_id: productId,
+      requirement_id: requirementId,
+      canvas_file: "design.pen",
+      canvas_version: 1,
+      canvas_revision: "sha256:abc",
+      pages: [{ page_id: "home", status: "done", preview_file: "previews/home@2x.png", page_version: 1, frame_id: "frame-home" }],
+      unmanaged_components: [],
+      history: []
+    });
+
+    await expect(exportRequirementDesignAsset({ home, product_id: productId, requirement_id: requirementId, kind: "preview", page_id: "home" })).rejects.toMatchObject({
+      code: "PREVIEW_NOT_EXPORTED",
+      details: { page_id: "home", preview_file: "previews/home@2x.png", canvas_revision: "sha256:abc" }
+    });
+    await expect(access(join(paths.previews_dir, "home@2x.png"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("does not replace formal preview or requirement status when candidate export fails", async () => {
+    const home = await createIndexedHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    const oldPreview = await readFile(join(paths.previews_dir, "home@2x.png"), "utf8");
+    const oldMetadata = await readFile(paths.metadata_file, "utf8");
+    await writeFile(paths.canvas_file, JSON.stringify({
+      children: [{ id: "frame-home", type: "frame", name: "Home", metadata: { type: "forma", kind: "page_frame", page_id: "home" } }]
+    }));
+
+    await expect(indexRequirementDesignCanvas({
+      home,
+      product_id: productId,
+      requirement_id: requirementId,
+      previewExporter: async () => {
+        throw new Error("export failed");
+      }
+    })).rejects.toMatchObject({ code: "PREVIEW_EXPORT_FAILED" });
+
+    await expect(readFile(join(paths.previews_dir, "home@2x.png"), "utf8")).resolves.toBe(oldPreview);
+    await expect(readFile(paths.metadata_file, "utf8")).resolves.toBe(oldMetadata);
+  });
+
+  it("restores old formal artifacts when index promotion fails after partial writes", async () => {
+    const home = await createIndexedHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    const oldPreview = await readFile(join(paths.previews_dir, "home@2x.png"), "utf8");
+    const oldMetadata = await readFile(paths.metadata_file, "utf8");
+    const oldRequirement = await readFile(join(paths.requirement_dir, "requirement.yaml"), "utf8");
+    await writeFile(paths.canvas_file, JSON.stringify({
+      children: [{ id: "frame-home", type: "frame", name: "Home", metadata: { type: "forma", kind: "page_frame", page_id: "home" } }]
+    }));
+
+    await expect(indexRequirementDesignCanvas({
+      home,
+      product_id: productId,
+      requirement_id: requirementId,
+      previewExporter: async ({ output_file }) => writeFile(output_file, "new-preview"),
+      testHooks: {
+        afterPromote(entry) {
+          if (entry.kind === "preview") {
+            throw new Error("promotion failed");
+          }
+        }
+      }
+    })).rejects.toThrow("promotion failed");
+
+    await expect(readFile(join(paths.previews_dir, "home@2x.png"), "utf8")).resolves.toBe(oldPreview);
+    await expect(readFile(paths.metadata_file, "utf8")).resolves.toBe(oldMetadata);
+    await expect(readFile(join(paths.requirement_dir, "requirement.yaml"), "utf8")).resolves.toBe(oldRequirement);
+  });
+});
+
+describe("stage 07 commit candidate builder", () => {
+  it("does not call commit substrate when deterministic quality report is missing or blocked", async () => {
+    const home = await createSessionHome();
+    const substrate = vi.fn();
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: sessionId,
+      page_id: "home",
+      frame_id: "frame-home",
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: sessionId,
+      page_id: "home",
+      frame_id: "frame-home",
+      quality_report: { status: "blocked", hard_checks: { issues: [{ code: "PENCIL_COLOR_INVALID", message: "bad" }] }, warnings: [] },
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(substrate).not.toHaveBeenCalled();
+  });
+
+  it("reruns deterministic quality against staging before commit", async () => {
+    const home = await createDesignHome();
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    await writeFile(paths.canvas_file, JSON.stringify({ children: [] }));
+    await writeRequirementSession(home, JSON.stringify({
+      children: [{
+        id: "frame-home",
+        type: "frame",
+        name: "Home",
+        fill: "rgb(255, 0, 0)",
+        metadata: { type: "forma", kind: "page_frame", page_id: "home" }
+      }]
+    }));
+    const substrate = vi.fn();
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: sessionId,
+      page_id: "home",
+      frame_id: "frame-home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "PENCIL_COLOR_INVALID" });
+    expect(substrate).not.toHaveBeenCalled();
+  });
+
+  it("builds all required candidates in fixed promotion order on success", async () => {
+    const home = await createSessionHome();
+    const substrate = vi.fn().mockResolvedValue({ session_id: sessionId, status: "committed" });
+
+    const result = await commitRequirementDesignSession({
+      home,
+      session_id: sessionId,
+      page_id: "home",
+      frame_id: "frame-home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    });
+
+    expect(result.status).toBe("committed");
+    expect(substrate).toHaveBeenCalledTimes(1);
+    const payload = substrate.mock.calls[0]![0] as { candidates: Array<{ replacement_kind: string; restore_order: number; target_file: string }> };
+    expect(payload.candidates.map((candidate) => [candidate.restore_order, candidate.replacement_kind])).toEqual([
+      [1, "canvas_history"],
+      [2, "canvas_history_metadata"],
+      [3, "page_fragment"],
+      [4, "history_preview"],
+      [5, "preview"],
+      [6, "design_canvas"],
+      [7, "design_metadata"],
+      [8, "requirement_metadata"]
+    ]);
+    expect(payload.candidates.map((candidate) => candidate.target_file)).toEqual(expect.arrayContaining([
+      `data/${productId}/${requirementId}/design.pen`,
+      `data/${productId}/${requirementId}/design.yaml`,
+      `data/${productId}/${requirementId}/requirement.yaml`,
+      `data/${productId}/${requirementId}/previews/home@2x.png`
+    ]));
+  });
+});
+
+describe("stage 07 component refresh planning", () => {
+  it("rejects non-done explicit pages, unlinked usage, unmapped libraries, semantic contract changes, and override conflicts atomically", async () => {
+    await expect(refreshRequirementComponents({
+      home: await createRefreshSessionHome({ designStatus: "pending", componentScenario: "linked" }),
+      session_id: sessionId,
+      page_ids: ["home"]
+    })).rejects.toMatchObject({ code: "COMPONENT_REFRESH_PARTIAL_BLOCKED" });
+
+    await expect(refreshRequirementComponents({
+      home: await createRefreshSessionHome({ designStatus: "done", componentScenario: "missing_metadata" }),
+      session_id: sessionId,
+      page_ids: ["home"]
+    })).rejects.toMatchObject({ code: "COMPONENT_USAGE_UNLINKED" });
+
+    await expect(refreshRequirementComponents({
+      home: await createRefreshSessionHome({ designStatus: "done", componentScenario: "old_snapshot" }),
+      session_id: sessionId,
+      page_ids: ["home"]
+    })).rejects.toMatchObject({ code: "COMPONENT_LIBRARY_UNMAPPED" });
+
+    await expect(refreshRequirementComponents({
+      home: await createRefreshSessionHome({ designStatus: "done", componentScenario: "semantic_changed" }),
+      session_id: sessionId,
+      page_ids: ["home"]
+    })).rejects.toMatchObject({ code: "COMPONENT_CONTRACT_CHANGED" });
+
+    await expect(refreshRequirementComponents({
+      home: await createRefreshSessionHome({ designStatus: "done", componentScenario: "override_conflict" }),
+      session_id: sessionId,
+      page_ids: ["home"]
+    })).rejects.toMatchObject({ code: "COMPONENT_OVERRIDE_CONFLICT" });
+  });
+
+  it("plans all component refresh operations without writing formal design state", async () => {
+    const home = await createRefreshSessionHome({ designStatus: "done", componentScenario: "linked" });
+    const paths = requirementDesignPaths(home, productId, requirementId);
+    const beforeCanvas = await readFile(paths.canvas_file, "utf8");
+    const beforeMetadataExists = await exists(paths.metadata_file);
+
+    await expect(refreshRequirementComponents({ home, session_id: sessionId, page_ids: ["home"] })).resolves.toMatchObject({
+      status: "planned",
+      operations: [expect.objectContaining({ intent: "component_refresh", target_node_ids: ["button-instance"] })]
+    });
+    await expect(readFile(paths.canvas_file, "utf8")).resolves.toBe(beforeCanvas);
+    await expect(exists(paths.metadata_file)).resolves.toBe(beforeMetadataExists);
+  });
+});
+
+async function createDesignHome(): Promise<string> {
+  const home = await mkdtemp(join(tmpdir(), "forma-design-model-"));
+  const requirementDir = join(home, "data", productId, requirementId);
+  await mkdir(requirementDir, { recursive: true });
+  await writeYamlAtomic(join(requirementDir, "requirement.yaml"), requirementFixture([{ page_id: "home", name: "Home" }]));
+  await writeComponentLibrary(home);
+  return home;
 }
 
-async function nextTick(): Promise<void> {
-  await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+async function createIndexedHome(): Promise<string> {
+  const home = await createDesignHome();
+  const paths = requirementDesignPaths(home, productId, requirementId);
+  await writeFile(paths.canvas_file, JSON.stringify({
+    children: [{ id: "frame-home", type: "frame", name: "Home", metadata: { type: "forma", kind: "page_frame", page_id: "home" } }]
+  }));
+  await indexRequirementDesignCanvas({
+    home,
+    product_id: productId,
+    requirement_id: requirementId,
+    previewExporter: async ({ output_file }) => writeFile(output_file, "old-preview")
+  });
+  return home;
 }
 
-async function lockProbeDelay(): Promise<void> {
-  await new Promise((resolveDelay) => setTimeout(resolveDelay, 50));
+async function createSessionHome(): Promise<string> {
+  const home = await createDesignHome();
+  const paths = requirementDesignPaths(home, productId, requirementId);
+  await writeFile(paths.canvas_file, JSON.stringify({ children: [] }));
+  await writeRequirementSession(home, JSON.stringify({
+    children: [{
+      id: "frame-home",
+      type: "frame",
+      name: "Home",
+      metadata: { type: "forma", kind: "page_frame", page_id: "home" }
+    }]
+  }));
+  return home;
 }
 
-function createRecordingLock(): ProductMutationLock & { calls: Array<{ operation: string; product_id?: string }> } {
-  const calls: Array<{ operation: string; product_id?: string }> = [];
+async function createRefreshSessionHome(input: {
+  designStatus: "pending" | "done";
+  componentScenario: "linked" | "missing_metadata" | "old_snapshot" | "semantic_changed" | "override_conflict";
+}): Promise<string> {
+  const home = await createDesignHome();
+  const requirement = requirementFixture([{ page_id: "home", name: "Home" }]);
+  await writeYamlAtomic(join(home, "data", productId, requirementId, "requirement.yaml"), {
+    ...requirement,
+    pages: requirement.pages.map((page) => ({ ...page, design_status: input.designStatus }))
+  });
+  const paths = requirementDesignPaths(home, productId, requirementId);
+  await writeFile(paths.canvas_file, JSON.stringify({ children: [{ id: "formal" }] }));
+  await writeRequirementSession(home, JSON.stringify(refreshPenDocument(input.componentScenario)));
+  return home;
+}
+
+async function writeRequirementSession(home: string, stagingRaw: string): Promise<void> {
+  const sessionDir = join(home, "data", productId, requirementId, "sessions", sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  const staging = join(sessionDir, "staging.design.pen");
+  await writeFile(staging, stagingRaw);
+  await writeYamlAtomic(join(sessionDir, "semantic_scope.yaml"), {
+    ...semanticScopeFixture(),
+    staging_revision: sha256(stagingRaw)
+  });
+  await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
+    schema_version: 1,
+    session_id: sessionId,
+    scope: "requirement_canvas",
+    product_id: productId,
+    requirement_id: requirementId,
+    session_dir_relative: `data/${productId}/${requirementId}/sessions/${sessionId}`,
+    session_dir: `data/${productId}/${requirementId}/sessions/${sessionId}`,
+    operation: "generate",
+    mode: "app",
+    canvas_file: `data/${productId}/${requirementId}/design.pen`,
+    canvas_path: `data/${productId}/${requirementId}/design.pen`,
+    staging_file: `data/${productId}/${requirementId}/sessions/${sessionId}/staging.design.pen`,
+    staging_path: `data/${productId}/${requirementId}/sessions/${sessionId}/staging.design.pen`,
+    pencil_binding_id: "B-1234567890abcdef",
+    pencil_command: "pencil interactive",
+    pencil_version: "pencil 1.2.3",
+    started_revision: sha256(stagingRaw),
+    last_saved_revision: sha256(stagingRaw),
+    last_controlled_revision: sha256(stagingRaw),
+    operation_log_file_relative: `data/${productId}/${requirementId}/sessions/${sessionId}/operations.jsonl`,
+    operation_log_file: `data/${productId}/${requirementId}/sessions/${sessionId}/operations.jsonl`,
+    semantic_scope_file_relative: `data/${productId}/${requirementId}/sessions/${sessionId}/semantic_scope.yaml`,
+    semantic_scope_file: `data/${productId}/${requirementId}/sessions/${sessionId}/semantic_scope.yaml`,
+    started_at: "2026-05-21T00:00:00.000Z",
+    updated_at: "2026-05-21T00:00:00.000Z",
+    pid: process.pid,
+    status: "running"
+  });
+  await writeFile(join(sessionDir, "operations.jsonl"), "");
+}
+
+function refreshPenDocument(scenario: "linked" | "missing_metadata" | "old_snapshot" | "semantic_changed" | "override_conflict") {
+  const metadata: Record<string, unknown> = {
+    type: "forma",
+    kind: "component_instance",
+    component_key: "button.primary",
+    ref_target: scenario === "old_snapshot" ? "Components - Snapshot v0/button.primary" : "Components - Snapshot v1/button.primary"
+  };
+  if (scenario === "semantic_changed") {
+    metadata.semantic_contract_hash = "sha256:old";
+    metadata.library_semantic_contract_hash = "sha256:new";
+  }
+  if (scenario === "override_conflict") {
+    metadata.overrides = ["semantic"];
+  }
   return {
-    calls,
-    async run<T>(
-      input: { operation: string; product_id?: string },
-      fn: (context: ProductMutationContext) => Promise<T>
-    ): Promise<T> {
-      calls.push(input);
-      return fn({ ...input, warnings: [] });
-    }
+    children: [{
+      id: "frame-home",
+      type: "frame",
+      name: "Home",
+      metadata: { type: "forma", kind: "page_frame", page_id: "home" },
+      children: [{
+        id: "button-instance",
+        type: "instance",
+        ...(scenario === "missing_metadata" ? {} : { metadata })
+      }]
+    }]
   };
 }
 
-describe("DesignService", () => {
-  it("serializes direct design writes with the default home lock", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const designs = new DesignService({ home, products: store.products });
-    const output = await writeDesignOutput(home, "locked-generate");
-    const release = deferred();
-    const events: string[] = [];
-    const hold = getProductMutationLock(home).run({ operation: "test_hold" }, async () => {
-      events.push("hold-enter");
-      await release.promise;
-      events.push("hold-exit");
-    });
-    while (!events.includes("hold-enter")) {
-      await nextTick();
+async function writeComponentLibrary(home: string): Promise<void> {
+  const lib = JSON.stringify({ children: [{ id: "button.primary", type: "component" }] });
+  const checksum = `sha256:${createHash("sha256").update(lib).digest("hex")}`;
+  await mkdir(join(home, "library", `${productId}.versions`), { recursive: true });
+  await writeFile(join(home, "library", `${productId}.lib.pen`), lib);
+  await writeFile(join(home, "library", `${productId}.versions`, "1.lib.pen"), lib);
+  await writeYamlAtomic(join(home, "library", `${productId}.components.yaml`), {
+    product_id: productId,
+    current_version: 1,
+    latest_file: `${productId}.lib.pen`,
+    versions: [{
+      version: 1,
+      file: `${productId}.versions/1.lib.pen`,
+      checksum,
+      components: [{ key: "button.primary", name: "Primary Button" }]
+    }]
+  });
+}
+
+function requirementFixture(pages: Array<{ page_id: string; name: string }>): Requirement {
+  return {
+    id: requirementId,
+    product_id: productId,
+    title: "Checkout style",
+    status: "submitted",
+    ui_affected: true,
+    created_at: "2026-05-21T00:00:00.000Z",
+    updated_at: "2026-05-21T00:00:00.000Z",
+    pages: pages.map((page) => ({
+      page_id: page.page_id,
+      name: page.name,
+      baseline_page: `B-${page.page_id}`,
+      design_status: "pending",
+      copy: [{ context: "title", text: page.name }],
+      declared_fields: [],
+      declared_actions: [{ key: "save", label: "Save" }],
+      declared_component_keys: ["button.primary"],
+      semantic_contract: {
+        fields: [],
+        actions: [{ key: "save", label: "Save" }],
+        navigation: [],
+        allowed_copy: [page.name],
+        component_keys: ["button.primary"]
+      },
+      semantic_contract_coverage: "explicit"
+    })),
+    navigation: []
+  };
+}
+
+function semanticScopeFixture() {
+  return {
+    schema_version: 1 as const,
+    product_id: productId,
+    requirement_id: requirementId,
+    language: "default",
+    page_ids: ["home"],
+    allowed_copy: ["Home"],
+    action_keys: ["save"],
+    navigation_targets: [],
+    field_keys: [],
+    component_keys: ["button.primary"],
+    visual_states: ["default"],
+    existing_node_ids: [],
+    baseline_node_ids: [],
+    source_inputs: {
+      requirement_hash: "sha256:req",
+      translations_hash: "sha256:trans",
+      rules_hash: "sha256:rules",
+      baseline_hash: "sha256:base",
+      product_hash: "sha256:product",
+      component_library_hash: "sha256:component",
+      current_design_hash: "sha256:design"
+    },
+    source_contract_hash: "sha256:test"
+  };
+}
+
+function passedQualityReport(): DesignQualityReport {
+  return { status: "passed", hard_checks: { issues: [] }, warnings: [] };
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return false;
     }
-
-    let completed = false;
-    const save = designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]).then(() => {
-      completed = true;
-    });
-    await lockProbeDelay();
-
-    expect(completed).toBe(false);
-    release.resolve();
-    await Promise.all([hold, save]);
-    expect(events).toEqual(["hold-enter", "hold-exit"]);
-    expect(completed).toBe(true);
-  });
-
-  it("uses stable operation names for direct design mutations", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const productMutationLock = createRecordingLock();
-    const designs = new DesignService({
-      home,
-      products: store.products,
-      productMutationLock,
-      exporter: {
-        async exportAsset(_penPath, outputPath) {
-          await writeFile(outputPath, "asset", "utf8");
-        }
-      }
-    });
-    const first = await writeDesignOutput(home, "operation-first");
-    const second = await writeDesignOutput(home, "operation-second");
-
-    const [design] = await designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...first }]);
-    await designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...second }]);
-    await designs.rollbackDesign(design.id);
-    await designs.exportDesignAsset(design.id, "button", "png");
-
-    expect(productMutationLock.calls).toEqual([
-      { operation: "save_designs" },
-      { operation: "save_designs" },
-      { operation: "rollback_design" },
-      { operation: "export_design_asset" }
-    ]);
-  });
-
-  it("saving a generated design changes the page status to done", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "generated");
-
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    expect(design).toMatchObject({ requirement_id: requirement.id, page_id: requirement.pages[0]!.page_id, version: 1 });
-    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
-      pages: [expect.objectContaining({ page_id: requirement.pages[0]!.page_id, design_status: "done", design_id: design.id })]
-    });
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"))).resolves.toBeUndefined();
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "preview@2x.png"))).resolves.toBeUndefined();
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.yaml"))).resolves.toBeUndefined();
-  });
-
-  it("saving all pages done changes the requirement status to active", async () => {
-    const { home, requirement, store } = await createDesignStore(2);
-    const first = await writeDesignOutput(home, "first");
-    const second = await writeDesignOutput(home, "second");
-
-    await store.designs.saveDesigns(requirement.id, [
-      { page_id: requirement.pages[0]!.page_id, ...first },
-      { page_id: requirement.pages[1]!.page_id, ...second }
-    ]);
-
-    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({ status: "active" });
-  });
-
-  it("ignores stage cleanup failure after requirement metadata is committed", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "cleanup-after-commit");
-    let cleanupHookCalled = false;
-    (store.designs as unknown as { testHooks?: { beforePostCommitStageCleanup?: () => Promise<void> } }).testHooks = {
-      async beforePostCommitStageCleanup() {
-        cleanupHookCalled = true;
-        throw new Error("cleanup failed");
-      }
-    };
-
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    expect(cleanupHookCalled).toBe(true);
-    await expect(store.requirements.getRequirement({ requirement_id: requirement.id })).resolves.toMatchObject({
-      pages: [expect.objectContaining({ page_id: requirement.pages[0]!.page_id, design_status: "done", design_id: design.id })]
-    });
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"))).resolves.toBeUndefined();
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "preview@2x.png"))).resolves.toBeUndefined();
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, design.id, "design.yaml"))).resolves.toBeUndefined();
-  });
-
-  it("does not leave orphan designs when a later batch input fails", async () => {
-    const { home, requirement, store } = await createDesignStore(2);
-    const first = await writeDesignOutput(home, "batch-first");
-    const second = await writeDesignOutput(home, "batch-second");
-    await rm(second.previewPath);
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [
-        { page_id: requirement.pages[0]!.page_id, ...first },
-        { page_id: requirement.pages[1]!.page_id, ...second }
-      ])
-    ).rejects.toThrow();
-
-    const storedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
-    expect(storedRequirement).toMatchObject({
-      status: "submitted",
-      pages: [
-        expect.objectContaining({ page_id: requirement.pages[0]!.page_id, design_status: "pending" }),
-        expect.objectContaining({ page_id: requirement.pages[1]!.page_id, design_status: "pending" })
-      ]
-    });
-    expect(storedRequirement.pages[0]).not.toHaveProperty("design_id");
-    expect(storedRequirement.pages[1]).not.toHaveProperty("design_id");
-    const entries = await readdir(join(home, "data", requirement.product_id, requirement.id), { withFileTypes: true });
-    expect(entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("D-")).map((entry) => entry.name)).toEqual([]);
-  });
-
-  it("saveDesigns rejects PAGE_NOT_OWNED when a page is outside the requirement", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "outside");
-
-    await expect(store.designs.saveDesigns(requirement.id, [{ page_id: "other-page", ...output }])).rejects.toMatchObject({
-      code: "PAGE_NOT_OWNED"
-    });
-  });
-
-  it("saving a refine requires an existing done page", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "refine-pending");
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...output }])
-    ).rejects.toMatchObject({ code: "PAGE_NOT_DONE" });
-  });
-
-  it("update mode rejects a pending page without an existing design", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "update-pending");
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...output }])
-    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
-  });
-
-  it("generate mode rejects an existing done design page", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "generate-existing-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const output = await writeDesignOutput(home, "generate-existing-next");
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "generate", ...output }])
-    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
-    await expect(readYaml(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.yaml"))).resolves.toMatchObject({
-      id: saved.id,
-      version: 1
-    });
-  });
-
-  it("saveDesigns rejects invalid runtime modes as structured errors", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "invalid-mode");
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "overwrite" as "generate", ...output }])
-    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
-  });
-
-  it("refine rejects done page metadata without an existing design id", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
-    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
-    await writeYamlAtomic(requirementFile, {
-      ...storedRequirement,
-      pages: [{ ...requirement.pages[0], design_status: "done" }]
-    });
-    const output = await writeDesignOutput(home, "refine-missing-design-id");
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...output }])
-    ).rejects.toMatchObject({ code: "DESIGN_MODE_INVALID" });
-  });
-
-  it("refine increments version and preserves design.v1.pen", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "refined", {
-      ...samplePen,
-      children: [{ ...samplePen.children[0], width: 390 }]
-    });
-
-    const [next] = await store.designs.saveDesigns(requirement.id, [
-      { page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }
-    ]);
-
-    expect(next).toMatchObject({ id: saved.id, version: 2 });
-    expect(next.history).toEqual([expect.objectContaining({ version: 1, file: "design.v1.pen" })]);
-    await expect(access(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.v1.pen"))).resolves.toBeUndefined();
-  });
-
-  it("refine accepts an expired patch page and preserves the design id", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "expired-patch-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const existingDesignId = saved.id;
-    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
-    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
-    await writeYamlAtomic(requirementFile, {
-      ...storedRequirement,
-      pages: [{ ...requirement.pages[0], design_status: "expired", design_id: existingDesignId, change_type: "patch" }]
-    });
-    const refined = await writeDesignOutput(home, "expired-patch-refined");
-
-    const savedDesigns = await store.designs.saveDesigns(requirement.id, [
-      { page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }
-    ]);
-
-    expect(savedDesigns[0]).toMatchObject({ id: existingDesignId, version: 2 });
-    const updatedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
-    expect(updatedRequirement.pages[0]).toMatchObject({ design_status: "done", design_id: existingDesignId });
-  });
-
-  it("update mode increments version and replaces the preview", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "update-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const updated = await writeDesignOutput(home, "updated");
-    await writeFile(updated.previewPath, alternatePng);
-
-    const [next] = await store.designs.saveDesigns(requirement.id, [
-      { page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }
-    ]);
-
-    expect(next).toMatchObject({ id: saved.id, version: 2 });
-    expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(alternatePng);
-  });
-
-  it("update accepts an expired rebuild page and preserves the design id", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "expired-rebuild-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const existingDesignId = saved.id;
-    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
-    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
-    await writeYamlAtomic(requirementFile, {
-      ...storedRequirement,
-      pages: [{ ...requirement.pages[0], design_status: "expired", design_id: existingDesignId, change_type: "rebuild" }]
-    });
-    const updated = await writeDesignOutput(home, "expired-rebuild-updated");
-
-    const savedDesigns = await store.designs.saveDesigns(requirement.id, [
-      { page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }
-    ]);
-
-    expect(savedDesigns[0]).toMatchObject({ id: existingDesignId, version: 2 });
-    const updatedRequirement = await store.requirements.getRequirement({ requirement_id: requirement.id });
-    expect(updatedRequirement.pages[0]).toMatchObject({ design_status: "done", design_id: existingDesignId });
-  });
-
-  it("getDesignMetadata returns absolute design asset paths and timestamps", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "metadata");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    const metadata = await store.designs.getDesignMetadata(design.id);
-
-    expect(metadata).toEqual({
-      id: design.id,
-      pen_path: join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"),
-      preview_path: join(home, "data", requirement.product_id, requirement.id, design.id, "preview@2x.png"),
-      version: design.version,
-      created_at: design.created_at,
-      updated_at: design.updated_at
-    });
-  });
-
-  it("does not half-update an existing design when preview copy fails", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "half-update-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const updatedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const updated = await writeDesignOutput(home, "half-update-new", updatedPen);
-    await rm(updated.previewPath);
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }])
-    ).rejects.toThrow();
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(samplePen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(minimalPng);
-    await expect(access(join(designDir, "design.v1.pen"))).rejects.toThrow();
-    await expect(store.designs.getDesignAnnotations(saved.id)).resolves.toContainEqual(expect.objectContaining({ id: "button", width: 327 }));
-  });
-
-  it("restores an existing design when commit fails after writing history files", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "mid-commit-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const updatedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const updated = await writeDesignOutput(home, "mid-commit-updated", updatedPen);
-    await writeFile(updated.previewPath, alternatePng);
-    (store.designs as unknown as { testHooks?: { afterCommitExistingHistoryFiles?: () => Promise<void> } }).testHooks = {
-      async afterCommitExistingHistoryFiles() {
-        throw new Error("mid-commit failure");
-      }
-    };
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...updated }])
-    ).rejects.toThrow("mid-commit failure");
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(samplePen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(minimalPng);
-    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({ id: saved.id, version: 1, history: [] });
-    await expect(access(join(designDir, "design.v1.pen"))).rejects.toThrow();
-    await expect(access(join(designDir, "preview.v1@2x.png"))).rejects.toThrow();
-  });
-
-  it("refine replaces the preview", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "preview-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "preview-refined");
-    await writeFile(refined.previewPath, alternatePng);
-
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-
-    expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(alternatePng);
-  });
-
-  it("saveDesigns rejects invalid pen files", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "invalid-pen");
-    await writeFile(output.penPath, "{", "utf8");
-
-    await expect(store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }])).rejects.toMatchObject({
-      code: "PEN_FILE_INVALID"
-    });
-  });
-
-  it("saveDesigns rejects non-PNG previews without creating design directories", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "invalid-preview");
-    await writeFile(output.previewPath, "not a png");
-
-    await expect(store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }])).rejects.toMatchObject({
-      code: "PEN_FILE_INVALID"
-    });
-
-    const entries = await readdir(join(home, "data", requirement.product_id, requirement.id), { withFileTypes: true });
-    expect(entries.filter((entry) => entry.isDirectory() && entry.name.startsWith("D-")).map((entry) => entry.name)).toEqual([]);
-  });
-
-  it("saveDesigns rejects missing requirements", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "missing-requirement");
-
-    await expect(store.designs.saveDesigns("R-00000000", [{ page_id: requirement.pages[0]!.page_id, ...output }])).rejects.toMatchObject({
-      code: "REQUIREMENT_NOT_FOUND"
-    });
-  });
-
-  it("rejects corrupt page metadata that points at another requirement design", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const otherEmpty = await store.requirements.createEmptyRequirement(requirement.product_id, "Profile");
-    const otherRequirement = await store.requirements.submitRequirement({
-      requirement_id: otherEmpty.id,
-      document_md: "# Profile\nEdit profile",
-      pages: [{ page_id: `${otherEmpty.id}-page-1`, name: "Profile", baseline_page: "profile" }],
-      navigation: []
-    });
-    const original = await writeDesignOutput(home, "owner-original");
-    const [otherDesign] = await store.designs.saveDesigns(otherRequirement.id, [{ page_id: otherRequirement.pages[0]!.page_id, ...original }]);
-    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
-    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
-    await writeYamlAtomic(requirementFile, {
-      ...storedRequirement,
-      pages: [{ ...requirement.pages[0], design_status: "done", design_id: otherDesign.id }]
-    });
-    const output = await writeDesignOutput(home, "owner-invalid");
-
-    await expect(
-      store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "update", ...output }])
-    ).rejects.toMatchObject({ code: "PAGE_NOT_OWNED" });
-    await expect(access(join(home, "data", otherRequirement.product_id, otherRequirement.id, otherDesign.id, "design.v1.pen"))).rejects.toThrow();
-  });
-
-  it("rollback fails on version 1", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "version-one");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    await expect(store.designs.rollbackDesign(design.id)).rejects.toMatchObject({ code: "VERSION_TOO_LOW" });
-  });
-
-  it("rollback restores design.vN.pen", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "rollback-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const refined = await writeDesignOutput(home, "rollback-refined", refinedPen);
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-
-    const rolledBack = await store.designs.rollbackDesign(saved.id);
-
-    expect(rolledBack).toMatchObject({ id: saved.id, version: 1, history: [] });
-    expect(JSON.parse(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.pen"), "utf8"))).toEqual(
-      samplePen
-    );
-  });
-
-  it("rollback restores the previous preview without an exporter", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "rollback-preview-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "rollback-preview-refined");
-    await writeFile(refined.previewPath, alternatePng);
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-
-    await store.designs.rollbackDesign(saved.id);
-
-    expect(await readFile(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview@2x.png"))).toEqual(minimalPng);
-  });
-
-  it("restores current files and metadata when rollback fails after writing pen", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "rollback-partial-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const refined = await writeDesignOutput(home, "rollback-partial-refined", refinedPen);
-    await writeFile(refined.previewPath, alternatePng);
-    const [updated] = await store.designs.saveDesigns(requirement.id, [
-      { page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }
-    ]);
-    (store.designs as unknown as { testHooks?: { afterRollbackPenWrite?: () => Promise<void> } }).testHooks = {
-      async afterRollbackPenWrite() {
-        throw new Error("rollback partial failure");
-      }
-    };
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toThrow("rollback partial failure");
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
-    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({
-      id: saved.id,
-      version: 2,
-      history: updated.history
-    });
-  });
-
-  it("rollback rejects when a newer requirement supersedes the design requirement without mutating files", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "rollback-current-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const refined = await writeDesignOutput(home, "rollback-current-refined", refinedPen);
-    await writeFile(refined.previewPath, alternatePng);
-    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    const newerEmpty = await store.requirements.createEmptyRequirement(requirement.product_id, "Newer checkout");
-    const newer = await store.requirements.submitRequirement({
-      requirement_id: newerEmpty.id,
-      document_md: "# Newer\nSupersedes old design",
-      pages: [{ page_id: `${newerEmpty.id}-page-1`, name: "Newer Page", baseline_page: "newer-page" }],
-      navigation: []
-    });
-    await writeYamlAtomic(join(home, "data", requirement.product_id, newer.id, "requirement.yaml"), {
-      ...newer,
-      created_at: "2999-01-01T00:00:00.000Z",
-      updated_at: "2999-01-01T00:00:00.000Z"
-    });
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "PAGE_NOT_OWNED" });
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
-    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({ id: saved.id, version: 2, history: updated.history });
-  });
-
-  it("rollback rejects when current requirement page no longer points at the design without mutating files", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "rollback-page-current-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const refined = await writeDesignOutput(home, "rollback-page-current-refined", refinedPen);
-    await writeFile(refined.previewPath, alternatePng);
-    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    const requirementFile = join(home, "data", requirement.product_id, requirement.id, "requirement.yaml");
-    const storedRequirement = await readYaml<Record<string, unknown>>(requirementFile);
-    await writeYamlAtomic(requirementFile, {
-      ...storedRequirement,
-      pages: [{ ...requirement.pages[0], design_status: "expired", design_id: saved.id }]
-    });
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "PAGE_NOT_OWNED" });
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
-    await expect(readYaml(join(designDir, "design.yaml"))).resolves.toMatchObject({ id: saved.id, version: 2, history: updated.history });
-  });
-
-  it("rollback fails when the previous history file is missing", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "history-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "history-refined");
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    await rm(join(home, "data", requirement.product_id, requirement.id, saved.id, "design.v1.pen"));
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
-  });
-
-  it("rollback fails when previous history metadata is missing while files exist", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "history-metadata-missing-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const refined = await writeDesignOutput(home, "history-metadata-missing-refined", refinedPen);
-    await writeFile(refined.previewPath, alternatePng);
-    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    const designFile = join(home, "data", requirement.product_id, requirement.id, saved.id, "design.yaml");
-    await writeYamlAtomic(designFile, { ...updated, history: [] });
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
-    await expect(readYaml(designFile)).resolves.toMatchObject({ id: saved.id, version: 2, history: [] });
-  });
-
-  it("rollback fails when previous history metadata is inconsistent while files exist", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "history-metadata-bad-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refinedPen = { ...samplePen, children: [{ ...samplePen.children[0], width: 390 }] };
-    const refined = await writeDesignOutput(home, "history-metadata-bad-refined", refinedPen);
-    await writeFile(refined.previewPath, alternatePng);
-    const [updated] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    const designFile = join(home, "data", requirement.product_id, requirement.id, saved.id, "design.yaml");
-    await writeYamlAtomic(designFile, {
-      ...updated,
-      history: [{ ...updated.history[0], file: "design.v2.pen", preview_file: "preview.v2@2x.png" }]
-    });
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
-
-    const designDir = join(home, "data", requirement.product_id, requirement.id, saved.id);
-    expect(JSON.parse(await readFile(join(designDir, "design.pen"), "utf8"))).toEqual(refinedPen);
-    expect(await readFile(join(designDir, "preview@2x.png"))).toEqual(alternatePng);
-    await expect(readYaml(designFile)).resolves.toMatchObject({ id: saved.id, version: 2 });
-  });
-
-  it("rollback fails when the previous preview history file is missing", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "history-preview-initial");
-    const [saved] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "history-preview-refined");
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    await rm(join(home, "data", requirement.product_id, requirement.id, saved.id, "preview.v1@2x.png"), { force: true });
-
-    await expect(store.designs.rollbackDesign(saved.id)).rejects.toMatchObject({ code: "HISTORY_FILE_MISSING" });
-  });
-
-  it("annotation flattens nested coordinates and resolves variables", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "annotation");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    await expect(store.designs.getDesignAnnotations(design.id)).resolves.toEqual([
-      expect.objectContaining({ id: "root", x: 0, y: 0, width: 375, height: 812 }),
-      expect.objectContaining({ id: "button", parent_id: "root", x: 24, y: 100, width: 327, height: 48, fill: "#5E6AD2" })
-    ]);
-  });
-
-  it("annotation maps malformed current pen to PEN_FILE_INVALID", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "malformed-current");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-    await writeFile(join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"), "{", "utf8");
-
-    await expect(store.designs.getDesignAnnotations(design.id)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-    await expect(store.designs.exportDesignAsset(design.id, "button", "png")).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-  });
-
-  it("annotation maps structurally invalid current pen to PEN_FILE_INVALID", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "invalid-current-structure");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-    await writeFile(
-      join(home, "data", requirement.product_id, requirement.id, design.id, "design.pen"),
-      JSON.stringify({ children: [] }),
-      "utf8"
-    );
-
-    await expect(store.designs.getDesignAnnotations(design.id)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-    await expect(store.designs.exportDesignAsset(design.id, "button", "png")).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-  });
-
-  it("diff reports added, removed, and modified nodes", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "diff-initial");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const changed = await writeDesignOutput(home, "diff-changed", {
-      variables: { "--primary": "#5E6AD2" },
-      children: [{ id: "root", name: "Root", type: "frame", x: 0, y: 0, width: 390, height: 812, children: [
-        { id: "title", name: "Title", type: "text", x: 24, y: 40, width: 200, height: 24, content: "Hello" }
-      ] }]
-    });
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...changed }]);
-
-    await expect(store.designs.diffDesigns(design.id, 1, 2)).resolves.toMatchObject({
-      added: [expect.objectContaining({ id: "title" })],
-      removed: [expect.objectContaining({ id: "button" })],
-      modified: [expect.objectContaining({ id: "root" })]
-    });
-  });
-
-  it("diff maps malformed history pen to PEN_FILE_INVALID", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "malformed-history-initial");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "malformed-history-refined", {
-      ...samplePen,
-      children: [{ ...samplePen.children[0], width: 390 }]
-    });
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    await writeFile(join(home, "data", requirement.product_id, requirement.id, design.id, "design.v1.pen"), "{", "utf8");
-
-    await expect(store.designs.diffDesigns(design.id, 1, 2)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-  });
-
-  it("diff maps structurally invalid history pen to PEN_FILE_INVALID", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const initial = await writeDesignOutput(home, "invalid-history-structure-initial");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...initial }]);
-    const refined = await writeDesignOutput(home, "invalid-history-structure-refined", {
-      ...samplePen,
-      children: [{ ...samplePen.children[0], width: 390 }]
-    });
-    await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, mode: "refine", ...refined }]);
-    await writeFile(join(home, "data", requirement.product_id, requirement.id, design.id, "design.v1.pen"), JSON.stringify({}), "utf8");
-
-    await expect(store.designs.diffDesigns(design.id, 1, 2)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-  });
-
-  it("exportDesignAsset exports PNG from a node-specific pen instead of copying the full preview", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "export");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-    const exportingDesigns = new DesignService({
-      home,
-      products: store.products,
-      exporter: {
-        async exportPreview(penPath, previewPath) {
-          const pen = JSON.parse(await readFile(penPath, "utf8")) as { children: Array<{ id: string }> };
-          expect(pen.children).toEqual([expect.objectContaining({ id: "button" })]);
-          await writeFile(previewPath, alternatePng);
-        }
-      }
-    });
-
-    const asset = await exportingDesigns.exportDesignAsset(design.id, "button", "png");
-
-    expect(asset).toMatchObject({
-      design_id: design.id,
-      node_id: "button",
-      format: "png",
-      path: join(home, "data", requirement.product_id, requirement.id, design.id, "exports", "button.png")
-    });
-    expect(await readFile(asset.path)).toEqual(alternatePng);
-    expect(await readFile(asset.path)).not.toEqual(minimalPng);
-    await expect(exportingDesigns.exportDesignAsset(design.id, "missing", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
-  });
-
-  it("exportDesignAsset writes a real SVG with selected node metadata and geometry", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "export-svg");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    const asset = await store.designs.exportDesignAsset(design.id, "button", "svg");
-
-    const svg = await readFile(asset.path, "utf8");
-    expect(svg.trimStart()).toMatch(/^<svg\b/);
-    expect(svg).toContain('data-node-id="button"');
-    expect(svg).toContain('x="24"');
-    expect(svg).toContain('y="100"');
-    expect(svg).toContain('width="327"');
-    expect(svg).toContain('height="48"');
-  });
-
-  it("exportDesignAsset rejects missing designs", async () => {
-    const { store } = await createDesignStore();
-
-    await expect(store.designs.exportDesignAsset("D-00000000", "button", "png")).rejects.toMatchObject({ code: "DESIGN_NOT_FOUND" });
-  });
-
-  it("exportDesignAsset validates runtime id, node, and format inputs", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "export-validation");
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    await expect(store.designs.exportDesignAsset("../../outside", "button", "png")).rejects.toMatchObject({ code: "DESIGN_NOT_FOUND" });
-    await expect(store.designs.exportDesignAsset(design.id, "../button", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
-    await expect(store.designs.exportDesignAsset(design.id, "button", "png/../../escape" as "png")).rejects.toMatchObject({
-      code: "EXPORT_FORMAT_UNSUPPORTED"
-    });
-  });
-
-  it("exportDesignAsset rejects unsafe node ids even when the node exists", async () => {
-    const { home, requirement, store } = await createDesignStore();
-    const output = await writeDesignOutput(home, "unsafe-node", {
-      children: [{ id: "../button", name: "Button", type: "rectangle", x: 0, y: 0, width: 1, height: 1 }]
-    });
-    const [design] = await store.designs.saveDesigns(requirement.id, [{ page_id: requirement.pages[0]!.page_id, ...output }]);
-
-    await expect(store.designs.exportDesignAsset(design.id, "../button", "png")).rejects.toMatchObject({ code: "NODE_NOT_FOUND" });
-  });
-});
+    throw error;
+  }
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}

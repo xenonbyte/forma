@@ -1,6 +1,6 @@
 # Forma
 
-Forma is a local product-design workspace for turning product requirements into Pencil-backed design assets. It keeps product configuration, requirements, structured copy, baselines, generated `.pen` files, previews, annotations, history, and design diffs in one local Forma home.
+Forma is a local product-design workspace for turning product requirements into Pencil-backed design assets. It keeps product configuration, requirements, structured copy, baselines, requirement-level `.pen` canvases, previews, component libraries, sessions, and history in one local Forma home.
 
 ## Install
 
@@ -38,10 +38,10 @@ Run commands from the repository root during development. The root `bin/forma.js
 
 | Package | Role |
 | --- | --- |
-| `@xenonbyte/forma-core` | Persistence, product configuration, requirements, baselines, copy, styles, designs, diffs, install manifests, and shared validation gates. |
+| `@xenonbyte/forma-core` | Persistence, product configuration, requirements, baselines, copy, styles, requirement-level design canvases, component libraries, install manifests, and shared validation gates. |
 | `@xenonbyte/forma-mcp` | MCP tool surface used by agents for sessions, products, requirements, baselines, copy, styles, and design workflows. |
 | `@xenonbyte/forma-server` | Fastify API and static Web serving layer backed by core services. |
-| `@xenonbyte/forma-web` | React Web admin for products, requirements, baselines, multilingual copy, styles, designs, annotations, and diffs. |
+| `@xenonbyte/forma-web` | React Web admin for products, requirements, baselines, multilingual copy, styles, requirement-level design scenes, component/session status, and previews. |
 | `@xenonbyte/forma-agent` | Workspace-only Claude, Codex, and Gemini command templates that are bundled into the CLI package. |
 | `@xenonbyte/forma-cli` | User-facing `forma` CLI for status, serving, installation, packaging assets, and MCP startup. |
 
@@ -51,6 +51,8 @@ Run commands from the repository root during development. The root `bin/forma.js
 forma version
 forma status
 forma serve
+forma schema-normalization-dry-run --home /path/to/forma-home
+forma v6-schema-cutover --home /path/to/forma-home
 forma install --platform claude,codex,gemini
 ```
 
@@ -65,6 +67,12 @@ node bin/forma.js install --platform claude,codex,gemini
 
 `forma status` reports the Forma data directory, installed agent platforms, Pencil CLI availability/authentication, and Web server state. `forma serve` starts the local Web admin, defaulting to `127.0.0.1:3000`.
 
+## v6 Schema Normalization
+
+Existing runtime YAML is not rewritten automatically by `forma serve`, MCP startup, Web startup, or status reads. Use `forma schema-normalization-dry-run --home <path>` first; it writes only `$FORMA_HOME/normalization-preflight/v6-{timestamp}/report.yaml`. Then run `forma v6-schema-cutover --home <path>` to require the current passing preflight report, create `$FORMA_HOME/normalization-backups/v6-{timestamp}/`, write a journal, rewrite documented legacy YAML fields, and commit `.v6-schema-cutover-committed`.
+
+If startup enters recovery-only mode, use `forma recover-v6-normalization-journal --home <path> --backup-dir <path>` or `forma restore-v6-normalization-backup --home <path> --backup-dir <path> --confirm restore_v6_backup`. Backup directories must stay under the current `$FORMA_HOME/normalization-backups/`.
+
 ## Web Admin
 
 Start the local server:
@@ -73,19 +81,19 @@ Start the local server:
 forma serve
 ```
 
-Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, review multilingual copy, open design previews, view annotations, and compare design versions.
+Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, and review multilingual copy.
 
 ## Agent Integration
 
-Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, confirmed product deletion, unified requirement capture, design generation/refinement, component refinement, style changes, rollback, and status checks.
+Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, confirmed product deletion, unified requirement capture, design planning, component refinement, style changes, rollback, and status checks.
 
 See [docs/AGENT.md](docs/AGENT.md) for the command table and recommended first-time and iterative workflows.
 
 ## MCP Tools
 
-The MCP server exposes tool families for sessions, products, requirements, baselines, designs, styles, copy, utilities, and structured error reporting. v0.4 adds confirmed `delete_product`, makes `generate_and_save_page_design` the normal page design workflow tool that persists the result, and keeps `generate_page_design` as a low-level temporary-output tool that must be followed by `save_designs` if used directly. It also runs store-orchestrated `generate_components` under the product mutation lock. Requirement changes remain centered on `save_requirement`; there is no requirement deletion MCP tool. Product rules use `get_product_rules`, and multilingual copy uses `get_page_copy` / `update_page_copy`.
+The MCP server exposes tool families for sessions, products, requirements, baselines, styles, copy, utilities, and structured error reporting. Legacy page-level design MCP tools are no longer registered; requirement-level v6 design session tools replace that surface. Requirement changes remain centered on `save_requirement`; there is no requirement deletion MCP tool. Product rules use `get_product_rules`, and multilingual copy uses `get_page_copy` / `update_page_copy`.
 
-See [docs/MCP.md](docs/MCP.md) for tool groups, v0.4 behavior changes, and the frontend development data path.
+See [docs/MCP.md](docs/MCP.md) for tool groups, current behavior, and the frontend development data path.
 
 ## Data Location
 
@@ -95,7 +103,7 @@ The CLI and Web server use `~/.forma` by default. Override the root with `FORMA_
 FORMA_HOME=/path/to/forma-home forma status
 ```
 
-Runtime data lives under `$FORMA_HOME/data`, including products, requirements, baselines, design metadata, `.pen` files, preview PNGs, copy translations, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
+Runtime data lives under `$FORMA_HOME/data`, including products, requirements, baselines, copy translations, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
 
 ## Pencil Smoke Test
 
@@ -103,9 +111,9 @@ Runtime data lives under `$FORMA_HOME/data`, including products, requirements, b
 pnpm smoke:pencil
 ```
 
-This runs a real end-to-end Pencil smoke: installs built-in styles into a temporary Forma home, creates a product and requirement, generates components and a page design with the Pencil CLI, persists `design.pen`, `preview@2x.png`, and persisted design metadata under `$FORMA_HOME/data`, reads annotations, and fetches the preview through the Web API.
+This runs a real Pencil App-bound smoke: installs built-in styles into a temporary Forma home, creates a product, opens and discards a product component library session through the v6 Pencil App session adapter, then creates and persists a requirement. It verifies live Pencil CLI authentication, required interactive capabilities, desktop app session startup, controlled save, and session cleanup without calling removed headless generation flows.
 
-Run it only when the Pencil CLI is installed, on `PATH`, and authenticated. The default `pnpm test` suite does not require live Pencil access.
+Run it only when the Pencil CLI is installed, on `PATH`, authenticated, and able to open a desktop app session. The default `pnpm test` suite does not require live Pencil access.
 
 ## Verification
 

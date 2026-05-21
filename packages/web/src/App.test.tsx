@@ -58,7 +58,6 @@ describe("App routing", () => {
             },
             languages: ["en"],
             default_language: "en",
-            components_initialized: true
           });
         }
         if (path === "/api/products/P-456def/requirements") {

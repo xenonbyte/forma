@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
 import { BaselineView } from "./pages/BaselineView.js";
-import { DesignView } from "./pages/DesignView.js";
 import { ProductDetail, type ProductDeleteNavigationState } from "./pages/ProductDetail.js";
 import { ProductList } from "./pages/ProductList.js";
 import { ProductNew } from "./pages/ProductNew.js";
+import { DesignView } from "./pages/DesignView.js";
 import { RequirementDetail } from "./pages/RequirementDetail.js";
 import { StyleDetail } from "./pages/StyleDetail.js";
 import { StyleLibrary } from "./pages/StyleLibrary.js";
@@ -71,18 +71,18 @@ export const routeTable: RouteDefinition[] = [
     title: ({ productId }) => `${productId} baseline`
   },
   {
+    component: DesignView,
+    context: "Design",
+    navGroup: "products",
+    path: "/products/:productId/requirements/:reqId/design",
+    title: ({ reqId }) => `${reqId} design`
+  },
+  {
     component: RequirementDetail,
     context: "Requirement",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId",
     title: ({ reqId }) => reqId
-  },
-  {
-    component: DesignView,
-    context: "Design",
-    navGroup: "products",
-    path: "/products/:productId/requirements/:reqId/designs/:designId",
-    title: ({ designId }) => designId
   },
   {
     component: StyleLibraryRoute,

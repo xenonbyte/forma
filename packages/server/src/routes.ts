@@ -1,17 +1,134 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 import { dirname, join, resolve, sep } from "node:path";
-import type { FastifyInstance } from "fastify";
-import { designSchema, readYamlAs, type createFormaStore, type Design, type Language, type Platform, type SyncStatus } from "@xenonbyte/forma-core";
-
-type StoreSync = {
-  recoverFromCrash: () => Promise<SyncStatus> | Promise<void>;
-  startSync: () => Promise<Extract<SyncStatus, { status: "running" }>>;
-  getStatus: () => Promise<SyncStatus>;
-};
-
-export type FormaStore = ReturnType<typeof createFormaStore> & { sync: StoreSync };
+import type { FastifyInstance, FastifyReply } from "fastify";
+import {
+  applyProductComponentOperations,
+  applyRequirementDesignOperations,
+  beginProductComponentSession,
+  beginRequirementDesignSession,
+  commitProductComponentSession,
+  commitRequirementDesignSession,
+  diffRequirementDesignVersions,
+  discardProductComponentSession,
+  discardRequirementDesignSession,
+  exportRequirementDesignAsset,
+  findBaselinePreviewMetadata,
+  getProductComponentLibrary,
+  getRequirementDesign,
+  getRequirementDesignHistory,
+  getRequirementDesignScene,
+  indexRequirementDesignCanvas,
+  planImportMetadataNormalization,
+  readRequirementDesignMetadata,
+  readYaml,
+  recoverV6NormalizationJournal,
+  recoverDesignCommitJournal,
+  refreshRequirementComponents,
+  rollbackRequirementDesign,
+  runDesignQualityPipeline,
+  restoreV6NormalizationBackup,
+  SchemaNormalizationRecoveryError,
+  type Language,
+  type Platform,
+  type SchemaNormalizationRecoveryState
+} from "@xenonbyte/forma-core";
 
 type UnknownRecord = Record<string, unknown>;
+type RouteServiceInput = Record<string, unknown> & { home: string };
+
+type V6RouteServices = Partial<{
+  beginRequirementDesignSession(input: RouteServiceInput): Promise<unknown>;
+  applyRequirementDesignOperations(input: RouteServiceInput): Promise<unknown>;
+  commitRequirementDesignSession(input: RouteServiceInput): Promise<unknown>;
+  discardRequirementDesignSession(input: RouteServiceInput): Promise<unknown>;
+  recoverDesignCommitJournal(input: RouteServiceInput): Promise<unknown>;
+  beginProductComponentSession(input: RouteServiceInput): Promise<unknown>;
+  applyProductComponentOperations(input: RouteServiceInput): Promise<unknown>;
+  commitProductComponentSession(input: RouteServiceInput): Promise<unknown>;
+  discardProductComponentSession(input: RouteServiceInput): Promise<unknown>;
+  getRequirementDesign(home: string, productId: string, requirementId: string): Promise<unknown>;
+  indexRequirementDesignCanvas(input: RouteServiceInput): Promise<unknown>;
+  getRequirementDesignScene(input: RouteServiceInput): Promise<unknown>;
+  getRequirementDesignHistory(input: RouteServiceInput): Promise<unknown>;
+  rollbackRequirementDesign(input: RouteServiceInput): Promise<unknown>;
+  diffRequirementDesignVersions(input: RouteServiceInput): Promise<unknown>;
+  exportRequirementDesignAsset(input: RouteServiceInput): Promise<unknown>;
+  getProductComponentLibrary(home: string, productId: string): Promise<unknown>;
+  refreshRequirementComponents(input: RouteServiceInput): Promise<unknown>;
+  planImportMetadataNormalization(input: RouteServiceInput): Promise<unknown>;
+  runDesignQualityPipeline(input: RouteServiceInput): Promise<unknown>;
+}>;
+
+const forbiddenPathFieldNames = new Set([
+  "filePath",
+  "file_path",
+  "canvas_path",
+  "staging_path",
+  "outputDir",
+  "output_dir",
+  "path",
+  "pen_path",
+  "preview_path",
+  "history_path"
+]);
+
+interface RequirementRecord {
+  id: string;
+  product_id: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+  document_md?: string;
+  pages: Array<{
+    page_id: string;
+    baseline_page?: string;
+    design_status?: string;
+    status?: string;
+    copy?: unknown[];
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+interface BaselinePageRecord {
+  id: string;
+  source_requirements: string[];
+  [key: string]: unknown;
+}
+
+export interface FormaRoutesStore {
+  home: string;
+  baseline: {
+    getProductBaseline(productId: string): Promise<{ pages: BaselinePageRecord[]; navigation?: unknown[]; [key: string]: unknown }>;
+  };
+  copy: {
+    getTranslations(productId: string, requirementId: string): Promise<Array<{ page_id: string; entries?: unknown[]; [key: string]: unknown }>>;
+  };
+  deleteProduct(input: { product_id: string; confirm_product_id: string }): Promise<unknown>;
+  products: {
+    createProduct(input: { name: string; description: string }): Promise<unknown>;
+    getProduct(productId: string): Promise<unknown>;
+    initProductConfig(productId: string, config: unknown): Promise<unknown>;
+    listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
+  };
+  requirements: {
+    archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
+    createEmptyRequirement(productId: string, title: string): Promise<unknown>;
+    getRequirement(input: { requirement_id: string } | { product_id: string }): Promise<RequirementRecord>;
+    getRequirementHistory(productId: string): Promise<RequirementRecord[]>;
+    saveRequirement(input: unknown): Promise<unknown>;
+  };
+  styles: {
+    getStyle(name: string): Promise<{ metadata: { design_md_path: string; [key: string]: unknown }; [key: string]: unknown }>;
+    listStyles(): Promise<unknown>;
+  };
+  sync: {
+    getStatus(): Promise<unknown>;
+    startSync(): Promise<{ task_id: string; status: string; [key: string]: unknown }>;
+  };
+}
+
+export type FormaStore = FormaRoutesStore;
 
 export class RouteHttpError extends Error {
   constructor(
@@ -32,6 +149,50 @@ export class RouteInputError extends RouteHttpError {
   }
 }
 
+export function registerPreflightOnlyRoutes(app: FastifyInstance, state: SchemaNormalizationRecoveryState): void {
+  app.get("/api/status", async () => ({ schema_normalization: state }));
+}
+
+export function registerRecoveryOnlyRoutes(app: FastifyInstance, state: SchemaNormalizationRecoveryState): void {
+  app.get("/api/status", async () => ({ schema_normalization: state }));
+  app.get("/api/recovery/schema-normalization", async () => state);
+  app.post<{ Body: unknown }>("/api/recovery/schema-normalization/recover-journal", async (request) => {
+    const body = objectBody(request.body);
+    const backupDir = requiredString(body, "backup_dir");
+    try {
+      return await recoverV6NormalizationJournal(state.home, backupDir);
+    } catch (error) {
+      throw recoveryInputError(error);
+    }
+  });
+  app.post<{ Body: unknown }>("/api/recovery/schema-normalization/restore-backup", async (request) => {
+    const body = objectBody(request.body);
+    const backupDir = requiredString(body, "backup_dir");
+    const confirm = requiredString(body, "confirm");
+    try {
+      return await restoreV6NormalizationBackup(state.home, backupDir, { confirm });
+    } catch (error) {
+      throw recoveryInputError(error);
+    }
+  });
+}
+
+export function sendNormalizationBlocked(reply: FastifyReply, state: SchemaNormalizationRecoveryState): void {
+  const preflight = state.code === "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED";
+  reply.status(409).send({
+    error_code: preflight ? "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED" : "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+    message: preflight ? "Schema normalization preflight required" : "Schema normalization recovery required",
+    details: state
+  });
+}
+
+function recoveryInputError(error: unknown): RouteHttpError {
+  if (error instanceof SchemaNormalizationRecoveryError) {
+    return new RouteHttpError("SCHEMA_NORMALIZATION_RECOVERY_REQUIRED", error.message, { ...error.result }, 409);
+  }
+  return new RouteInputError(errorMessage(error));
+}
+
 class RouteNotFoundError extends RouteHttpError {
   constructor(code: string, message: string, details: Record<string, unknown> = {}) {
     super(code, message, details, 404);
@@ -39,7 +200,9 @@ class RouteNotFoundError extends RouteHttpError {
   }
 }
 
-export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
+export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): void {
+  const v6 = getV6RouteServices(store);
+
   app.get("/api/products", async () => store.products.listProducts());
 
   app.post<{ Body: unknown }>("/api/products", async (request) => {
@@ -98,6 +261,243 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
     getOwnedRequirement(store, request.params.id, request.params.reqId)
   );
 
+  app.get<{ Params: { productId: string; requirementId: string } }>(
+    "/api/products/:productId/requirements/:requirementId/design/canvas",
+    async (request) =>
+      (v6.getRequirementDesign ?? getRequirementDesign)(store.home, request.params.productId, request.params.requirementId)
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/index",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.indexRequirementDesignCanvas
+        ? v6.indexRequirementDesignCanvas(input)
+        : indexRequirementDesignCanvas({
+          home: store.home,
+          product_id: request.params.productId,
+          requirement_id: request.params.requirementId
+        });
+    }
+  );
+
+  app.get<{ Params: { productId: string; requirementId: string } }>(
+    "/api/products/:productId/requirements/:requirementId/design/scene",
+    async (request) =>
+      (v6.getRequirementDesignScene ?? getRequirementDesignScene)({
+        home: store.home,
+        product_id: request.params.productId,
+        requirement_id: request.params.requirementId
+      })
+  );
+
+  app.get<{ Params: { productId: string; requirementId: string }; Querystring: { page_id?: string } }>(
+    "/api/products/:productId/requirements/:requirementId/design/history",
+    async (request) =>
+      (v6.getRequirementDesignHistory ?? getRequirementDesignHistory)({
+        home: store.home,
+        product_id: request.params.productId,
+        requirement_id: request.params.requirementId,
+        ...(request.query.page_id ? { page_id: request.query.page_id } : {})
+      })
+  );
+
+  app.get<{ Params: { productId: string; requirementId: string; pageId: string }; Querystring: { page_version?: string } }>(
+    "/api/products/:productId/requirements/:requirementId/design/preview/:pageId/file",
+    async (request, reply) =>
+      sendRequirementDesignPreviewFile(
+        store,
+        request.params.productId,
+        request.params.requirementId,
+        request.params.pageId,
+        optionalIntegerQuery(request.query, "page_version"),
+        reply
+      )
+  );
+
+  app.get<{ Params: { productId: string; requirementId: string }; Querystring: { node_id?: string; format?: string } }>(
+    "/api/products/:productId/requirements/:requirementId/design/export",
+    async (request) => {
+      const input = {
+        home: store.home,
+        product_id: request.params.productId,
+        requirement_id: request.params.requirementId,
+        ...(request.query.node_id ? { node_id: request.query.node_id } : {}),
+        ...(request.query.format ? { format: request.query.format } : {})
+      };
+      return v6.exportRequirementDesignAsset
+        ? v6.exportRequirementDesignAsset(input)
+        : exportRequirementDesignAsset({
+          home: store.home,
+          product_id: request.params.productId,
+          requirement_id: request.params.requirementId,
+          kind: "canvas"
+        });
+    }
+  );
+
+  app.get<{
+    Params: { productId: string; requirementId: string };
+    Querystring: { page_id?: string; from_page_version?: string; to_page_version?: string; from_canvas_version?: string; to_canvas_version?: string };
+  }>(
+    "/api/products/:productId/requirements/:requirementId/design/diff",
+    async (request) => {
+      const fromPageVersion = requiredIntegerQuery(request.query, "from_page_version", "from_canvas_version");
+      const toPageVersion = requiredIntegerQuery(request.query, "to_page_version", "to_canvas_version");
+      const input = {
+        home: store.home,
+        product_id: request.params.productId,
+        requirement_id: request.params.requirementId,
+        ...(request.query.page_id ? { page_id: request.query.page_id } : {}),
+        from_page_version: fromPageVersion,
+        to_page_version: toPageVersion
+      };
+      return v6.diffRequirementDesignVersions
+        ? v6.diffRequirementDesignVersions(input)
+        : diffRequirementDesignVersions({
+          home: store.home,
+          product_id: request.params.productId,
+          requirement_id: request.params.requirementId,
+          from_canvas_version: fromPageVersion,
+          to_canvas_version: toPageVersion
+        });
+    }
+  );
+
+  app.get<{ Params: { productId: string } }>("/api/products/:productId/design/session/active", async (request) =>
+    getActiveDesignSessionLease(store, request.params.productId)
+  );
+
+  app.get<{ Params: { productId: string; requirementId: string } }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/active",
+    async (request) => getActiveDesignSessionLease(store, request.params.productId, request.params.requirementId)
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/begin",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.beginRequirementDesignSession
+        ? v6.beginRequirementDesignSession(input)
+        : beginRequirementDesignSession(input as unknown as Parameters<typeof beginRequirementDesignSession>[0]);
+    }
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/operations",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.applyRequirementDesignOperations
+        ? v6.applyRequirementDesignOperations(input)
+        : applyRequirementDesignOperations(input as unknown as Parameters<typeof applyRequirementDesignOperations>[0]);
+    }
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/quality",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.runDesignQualityPipeline
+        ? v6.runDesignQualityPipeline(input)
+        : validateRequirementDesignQualityFromRoute(input);
+    }
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/component-refresh/plan",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.refreshRequirementComponents
+        ? v6.refreshRequirementComponents(input)
+        : refreshRequirementComponentsFromRoute(input);
+    }
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/import-metadata-normalization/plan",
+    async (request) =>
+      (v6.planImportMetadataNormalization ?? planImportMetadataNormalization)(
+        requirementMutationInput(store, request.params, request.body) as Parameters<typeof planImportMetadataNormalization>[0]
+      )
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/rollback/plan",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.rollbackRequirementDesign
+        ? v6.rollbackRequirementDesign(input)
+        : rollbackRequirementDesign({
+          home: store.home,
+          product_id: request.params.productId,
+          requirement_id: request.params.requirementId,
+          canvas_version: requiredIntegerField(input, "canvas_version")
+        });
+    }
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/commit",
+    async (request) => {
+      const input = requirementMutationInput(store, request.params, request.body);
+      return v6.commitRequirementDesignSession
+        ? v6.commitRequirementDesignSession(input)
+        : commitRequirementDesignSessionFromRoute(input);
+    }
+  );
+
+  app.post<{ Params: { productId: string; requirementId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/requirements/:requirementId/design/session/:sessionId/discard",
+    async (request) =>
+      (v6.discardRequirementDesignSession ?? discardRequirementDesignSession)(
+        requirementMutationInput(store, request.params, request.body) as Parameters<typeof discardRequirementDesignSession>[0]
+      )
+  );
+
+  app.get<{ Params: { productId: string } }>("/api/products/:productId/component-library", async (request) =>
+    (v6.getProductComponentLibrary ?? getProductComponentLibrary)(store.home, request.params.productId)
+  );
+
+  app.post<{ Params: { productId: string }; Body: unknown }>(
+    "/api/products/:productId/component-library/session/begin",
+    async (request) =>
+      (v6.beginProductComponentSession ?? beginProductComponentSession)(
+        productMutationInput(store, request.params, request.body) as Parameters<typeof beginProductComponentSession>[0]
+      )
+  );
+
+  app.post<{ Params: { productId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/component-library/session/:sessionId/operations",
+    async (request) =>
+      (v6.applyProductComponentOperations ?? applyProductComponentOperations)(
+        productMutationInput(store, request.params, request.body) as Parameters<typeof applyProductComponentOperations>[0]
+      )
+  );
+
+  app.post<{ Params: { productId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/component-library/session/:sessionId/commit",
+    async (request) =>
+      (v6.commitProductComponentSession ?? commitProductComponentSession)(
+        productMutationInput(store, request.params, request.body) as Parameters<typeof commitProductComponentSession>[0]
+      )
+  );
+
+  app.post<{ Params: { productId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/component-library/session/:sessionId/discard",
+    async (request) =>
+      (v6.discardProductComponentSession ?? discardProductComponentSession)(
+        productMutationInput(store, request.params, request.body) as Parameters<typeof discardProductComponentSession>[0]
+      )
+  );
+
+  app.post<{ Params: { productId: string; sessionId: string }; Body: unknown }>(
+    "/api/products/:productId/design/session/:sessionId/recover-commit-journal",
+    async (request) =>
+      (v6.recoverDesignCommitJournal ?? recoverDesignCommitJournal)(
+        productMutationInput(store, request.params, request.body) as Parameters<typeof recoverDesignCommitJournal>[0]
+      )
+  );
+
   app.get<{ Params: { id: string } }>("/api/products/:id/baseline", async (request) =>
     store.baseline.getProductBaseline(request.params.id)
   );
@@ -129,44 +529,6 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
       }]
     };
   });
-
-  app.get<{ Params: { designId: string } }>("/api/designs/:designId/annotations", async (request) =>
-    store.designs.getDesignAnnotations(request.params.designId)
-  );
-
-  app.get<{ Params: { designId: string }; Querystring: { version?: string } }>("/api/designs/:designId/image/file", async (request, reply) => {
-    const image = await resolveDesignImage(store, request.params.designId, request.query.version);
-    reply.type("image/png").send(await readFile(image.previewPath));
-  });
-
-  app.get<{ Params: { designId: string }; Querystring: { version?: string } }>("/api/designs/:designId/image", async (request) =>
-    getDesignImageMetadata(store, request.params.designId, request.query.version)
-  );
-
-  app.get<{ Params: { designId: string } }>("/api/designs/:designId/history", async (request) =>
-    getDesignHistoryMetadata(store, request.params.designId)
-  );
-
-  app.get<{ Params: { designId: string }; Querystring: { v1?: string; v2?: string } }>("/api/designs/:designId/diff", async (request) => {
-    const v1 = requiredPositiveIntegerQuery(request.query.v1, "v1");
-    const v2 = requiredPositiveIntegerQuery(request.query.v2, "v2");
-    const diff = await store.designs.diffDesigns(request.params.designId, v1, v2);
-    return {
-      ...diff,
-      visual: {
-        from_image_url: designImageFileUrl(request.params.designId, v1),
-        to_image_url: designImageFileUrl(request.params.designId, v2)
-      }
-    };
-  });
-
-  app.get<{ Params: { designId: string }; Querystring: { node_id?: string; format?: string } }>("/api/designs/:designId/export", async (request) =>
-    store.designs.exportDesignAsset(
-      request.params.designId,
-      requiredString(request.query, "node_id"),
-      requiredExportFormat(request.query.format)
-    )
-  );
 
   app.get("/api/styles", async () => store.styles.listStyles());
 
@@ -200,11 +562,279 @@ export function registerRoutes(app: FastifyInstance, store: FormaStore): void {
   });
 }
 
+function getV6RouteServices(store: FormaRoutesStore): V6RouteServices {
+  return (store as FormaRoutesStore & { v6?: V6RouteServices }).v6 ?? {};
+}
+
+function optionalObjectBody(body: unknown): UnknownRecord {
+  if (body === undefined) {
+    return {};
+  }
+  return objectBody(body);
+}
+
 function objectBody(body: unknown): UnknownRecord {
   if (!isRecord(body)) {
     throw new RouteInputError("Request body must be a JSON object");
   }
   return body;
+}
+
+function productMutationInput(
+  store: FormaRoutesStore,
+  params: { productId: string; sessionId?: string },
+  body: unknown
+): RouteServiceInput {
+  const input = optionalObjectBody(body);
+  assertNoForbiddenPathFields(input);
+  assertRouteBodyMatches(input, "product_id", params.productId);
+  if (params.sessionId) {
+    assertRouteBodyMatches(input, "session_id", params.sessionId);
+  }
+  return {
+    home: store.home,
+    ...input,
+    product_id: params.productId,
+    ...(params.sessionId ? { session_id: params.sessionId } : {})
+  };
+}
+
+function requirementMutationInput(
+  store: FormaRoutesStore,
+  params: { productId: string; requirementId: string; sessionId?: string },
+  body: unknown
+): RouteServiceInput {
+  const input = optionalObjectBody(body);
+  assertNoForbiddenPathFields(input);
+  assertRouteBodyMatches(input, "product_id", params.productId);
+  assertRouteBodyMatches(input, "requirement_id", params.requirementId);
+  if (params.sessionId) {
+    assertRouteBodyMatches(input, "session_id", params.sessionId);
+  }
+  return {
+    home: store.home,
+    ...input,
+    product_id: params.productId,
+    requirement_id: params.requirementId,
+    ...(params.sessionId ? { session_id: params.sessionId } : {})
+  };
+}
+
+function assertRouteBodyMatches(input: UnknownRecord, field: string, expected: string): void {
+  const actual = input[field];
+  if (actual !== undefined && actual !== expected) {
+    throw new RouteInputError(`${field} must match the route parameter`, { field, expected, actual });
+  }
+}
+
+function assertNoForbiddenPathFields(value: unknown, path: Array<string | number> = []): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertNoForbiddenPathFields(item, [...path, index]));
+    return;
+  }
+  if (!isRecord(value)) {
+    return;
+  }
+
+  for (const [key, nested] of Object.entries(value)) {
+    const nextPath = [...path, key];
+    if (forbiddenPathFieldNames.has(key)) {
+      throw new RouteHttpError("FORBIDDEN_PATH_PARAMETER", "Pencil file paths are session-owned", {
+        parameter: formatParameterPath(nextPath)
+      }, 400);
+    }
+    assertNoForbiddenPathFields(nested, nextPath);
+  }
+}
+
+function formatParameterPath(path: Array<string | number>): string {
+  return path.map((part) => String(part)).join(".");
+}
+
+async function sendRequirementDesignPreviewFile(
+  store: FormaStore,
+  productId: string,
+  requirementId: string,
+  pageId: string,
+  pageVersion: number | undefined,
+  reply: FastifyReply
+): Promise<void> {
+  const metadata = await readRequirementDesignMetadata(store.home, productId, requirementId);
+  const page = metadata.pages.find((item) => item.page_id === pageId);
+  const previewFile = pageVersion === undefined
+    ? page?.preview_file
+    : `history/previews/${pageId}.p${pageVersion}@2x.png`;
+
+  if (!previewFile) {
+    throw new RouteHttpError("PREVIEW_NOT_EXPORTED", "Preview was not exported", {
+      product_id: productId,
+      requirement_id: requirementId,
+      page_id: pageId,
+      page_version: pageVersion
+    }, 404);
+  }
+
+  const previewPath = safeStorePath(store, "data", productId, requirementId, previewFile);
+  if (!(await fileExists(previewPath))) {
+    throw new RouteHttpError("PREVIEW_NOT_EXPORTED", "Preview was not exported", {
+      product_id: productId,
+      requirement_id: requirementId,
+      page_id: pageId,
+      page_version: pageVersion,
+      preview_file: previewFile
+    }, 404);
+  }
+
+  reply.type("image/png").send(await readFile(previewPath));
+}
+
+async function getActiveDesignSessionLease(store: FormaStore, productId: string, requirementId?: string): Promise<Record<string, unknown>> {
+  const leasePath = requirementId
+    ? safeStorePath(store, "data", productId, requirementId, "sessions", "active.yaml")
+    : safeStorePath(store, "data", productId, "sessions", "active-design-session.yaml");
+  if (!(await fileExists(leasePath))) {
+    return {
+      product_id: productId,
+      ...(requirementId ? { requirement_id: requirementId } : {}),
+      status: "none"
+    };
+  }
+
+  const lease = await readYaml<Record<string, unknown>>(leasePath);
+  return {
+    product_id: productId,
+    ...(requirementId ? { requirement_id: requirementId } : {}),
+    ...lease,
+    elapsed_ms: elapsedMs(lease)
+  };
+}
+
+function elapsedMs(lease: Record<string, unknown>): number {
+  const timestamp = typeof lease.started_at === "string"
+    ? lease.started_at
+    : typeof lease.updated_at === "string"
+      ? lease.updated_at
+      : undefined;
+  if (!timestamp) {
+    return 0;
+  }
+  const parsed = Date.parse(timestamp);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  return Math.max(0, Date.now() - parsed);
+}
+
+function optionalIntegerQuery(query: UnknownRecord, field: string): number | undefined {
+  const value = query[field];
+  if (value === undefined) {
+    return undefined;
+  }
+  return parseIntegerValue(value, field);
+}
+
+function requiredIntegerQuery(query: UnknownRecord, primaryField: string, fallbackField?: string): number {
+  const field = query[primaryField] === undefined && fallbackField ? fallbackField : primaryField;
+  const value = query[field];
+  if (value === undefined) {
+    throw new RouteInputError(`Missing required query field: ${primaryField}`, { field: primaryField });
+  }
+  return parseIntegerValue(value, field);
+}
+
+function requiredIntegerField(input: UnknownRecord, field: string): number {
+  const value = input[field];
+  if (value === undefined) {
+    throw new RouteInputError(`Missing required field: ${field}`, { field });
+  }
+  return parseIntegerValue(value, field);
+}
+
+function parseIntegerValue(value: unknown, field: string): number {
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new RouteInputError(`Invalid integer field: ${field}`, { field, value });
+  }
+  return parsed;
+}
+
+async function validateRequirementDesignQualityFromRoute(input: RouteServiceInput) {
+  const sessionId = requiredString(input, "session_id");
+  const session = await findSessionRecord(input.home, sessionId);
+  return {
+    session_id: sessionId,
+    product_id: input.product_id,
+    requirement_id: input.requirement_id,
+    page_id: input.page_id,
+    frame_id: input.frame_id,
+    quality_report: await runDesignQualityPipeline({ pen_file: session.staging_path })
+  };
+}
+
+async function refreshRequirementComponentsFromRoute(input: RouteServiceInput) {
+  const scope = input.scope === "all_pages" ? undefined : isRecord(input.scope) ? input.scope : undefined;
+  return refreshRequirementComponents({
+    home: input.home,
+    session_id: requiredString(input, "session_id"),
+    target_component_library_version: typeof input.version === "number" ? input.version : undefined,
+    page_ids: Array.isArray(scope?.page_ids) ? scope.page_ids.filter((item): item is string => typeof item === "string") : undefined
+  });
+}
+
+async function commitRequirementDesignSessionFromRoute(input: RouteServiceInput) {
+  const qualityReport = input.quality_report;
+  if (!isRecord(qualityReport)) {
+    throw new RouteInputError("quality_report is required", { field: "quality_report" });
+  }
+  return commitRequirementDesignSession({
+    home: input.home,
+    session_id: requiredString(input, "session_id"),
+    page_id: requiredString(input, "page_id"),
+    frame_id: requiredString(input, "frame_id"),
+    quality_report: qualityReport as unknown as Parameters<typeof commitRequirementDesignSession>[0]["quality_report"],
+    previewExporter: async () => {
+      throw new RouteHttpError("PENCIL_CAPABILITY_UNAVAILABLE", "Preview export requires a live Pencil session adapter", {}, 503);
+    }
+  });
+}
+
+async function findSessionRecord(home: string, sessionId: string): Promise<{ staging_path: string }> {
+  for (const file of await candidateSessionFiles(home, sessionId)) {
+    if (!await fileExists(file)) {
+      continue;
+    }
+    const record = await readYaml<Record<string, unknown>>(file);
+    if (record.session_id !== sessionId || typeof record.staging_path !== "string") {
+      continue;
+    }
+    return { staging_path: resolve(home, record.staging_path) };
+  }
+  throw new RouteInputError("Design session not found", { session_id: sessionId });
+}
+
+async function candidateSessionFiles(home: string, sessionId: string): Promise<string[]> {
+  const files: string[] = [];
+  const dataDir = join(home, "data");
+  for (const productId of await safeReaddir(dataDir)) {
+    const productDir = join(dataDir, productId);
+    for (const requirementId of await safeReaddir(productDir)) {
+      if (requirementId === "sessions" || requirementId.startsWith("D-")) {
+        continue;
+      }
+      files.push(join(productDir, requirementId, "sessions", sessionId, "design_session.yaml"));
+    }
+  }
+  const libraryDir = join(home, "library");
+  for (const entry of await safeReaddir(libraryDir)) {
+    if (entry.endsWith(".sessions")) {
+      files.push(join(libraryDir, entry, sessionId, "design_session.yaml"));
+    }
+  }
+  return files;
+}
+
+async function safeReaddir(path: string): Promise<string[]> {
+  return readdir(path).catch(() => []);
 }
 
 function requiredString(input: UnknownRecord, field: string): string {
@@ -213,6 +843,10 @@ function requiredString(input: UnknownRecord, field: string): string {
     throw new RouteInputError(`Missing required field: ${field}`, { field });
   }
   return value;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function requiredPlatform(input: UnknownRecord, field: string): Platform {
@@ -237,31 +871,6 @@ function requireOnlyFields(input: UnknownRecord, fields: string[]): void {
   if (extraFields.length > 0) {
     throw new RouteInputError("Unexpected request fields", { fields: extraFields });
   }
-}
-
-function requiredPositiveIntegerQuery(value: string | undefined, field: string): number {
-  if (typeof value !== "string" || value.trim().length === 0) {
-    throw new RouteInputError(`Missing required query parameter: ${field}`, { field });
-  }
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new RouteInputError(`Invalid query parameter: ${field}`, { field, value });
-  }
-  return parsed;
-}
-
-function optionalPositiveIntegerQuery(value: string | undefined, field: string): number | undefined {
-  if (value === undefined) {
-    return undefined;
-  }
-  return requiredPositiveIntegerQuery(value, field);
-}
-
-function requiredExportFormat(format: string | undefined): "png" | "svg" | "pdf" {
-  if (format !== "png" && format !== "svg" && format !== "pdf") {
-    throw new RouteInputError("Missing or invalid export format", { field: "format", value: format });
-  }
-  return format;
 }
 
 async function getBaselinePage(store: FormaStore, productId: string, pageId: string) {
@@ -332,31 +941,9 @@ async function getStylePreview(store: FormaStore, name: string) {
 
 async function getBaselineImageMetadata(store: FormaStore, productId: string, pageId: string) {
   const page = await getBaselinePage(store, productId, pageId);
-  const sourceRequirements = new Set(page.source_requirements);
-  const requirements = (await store.requirements.getRequirementHistory(productId))
-    .filter((requirement) => sourceRequirements.has(requirement.id))
-    .sort(compareRequirementsNewestFirst);
-
-  for (const requirement of requirements) {
-    const requirementPage = requirement.pages.find((item) => item.baseline_page === pageId);
-    if (!requirementPage?.design_id) {
-      continue;
-    }
-
-    const previewPath = safeStorePath(store, "data", productId, requirement.id, requirementPage.design_id, "preview@2x.png");
-    if (!(await fileExists(previewPath))) {
-      continue;
-    }
-
-    return {
-      product_id: productId,
-      baseline_page_id: pageId,
-      requirement_id: requirement.id,
-      requirement_page_id: requirementPage.page_id,
-      design_id: requirementPage.design_id,
-      image_url: designImageFileUrl(requirementPage.design_id),
-      preview_path: previewPath
-    };
+  const preview = await findBaselinePreviewMetadata(store, productId, pageId);
+  if (preview) {
+    return preview;
   }
 
   throw new RouteNotFoundError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
@@ -366,142 +953,11 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
   });
 }
 
-async function getDesignImageMetadata(store: FormaStore, designId: string, versionQuery: string | undefined) {
-  const resolvedImage = await resolveDesignImage(store, designId, versionQuery);
-
-  return {
-    design_id: designId,
-    version: resolvedImage.version,
-    image_url: designImageFileUrl(designId, resolvedImage.version),
-    preview_path: resolvedImage.previewPath
-  };
-}
-
-async function resolveDesignImage(store: FormaStore, designId: string, versionQuery: string | undefined) {
-  const requestedVersion = optionalPositiveIntegerQuery(versionQuery, "version");
-  const { design, reference } = await readDesignMetadata(store, designId);
-  const resolvedImage = resolveDesignPreview(design, requestedVersion);
-  const previewPath = safeStorePath(store, "data", reference.product_id, reference.requirement_id, designId, resolvedImage.previewFile);
-  if (!(await fileExists(previewPath))) {
-    throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
-      design_id: designId,
-      version: resolvedImage.version,
-      file: resolvedImage.previewFile
-    });
-  }
-
-  return {
-    previewPath,
-    version: resolvedImage.version
-  };
-}
-
-async function getDesignHistoryMetadata(store: FormaStore, designId: string) {
-  const { design, reference } = await readDesignMetadata(store, designId);
-  const versions = [
-    ...design.history
-      .sort((left, right) => left.version - right.version)
-      .map((entry) => ({
-        version: entry.version,
-        file: entry.file,
-        preview_file: entry.preview_file,
-        created_at: entry.created_at,
-        current: false,
-        image_url: designImageFileUrl(designId, entry.version)
-      })),
-    {
-      version: design.version,
-      file: "design.pen",
-      preview_file: "preview@2x.png",
-      created_at: design.updated_at,
-      current: true,
-      image_url: designImageFileUrl(designId, design.version)
-    }
-  ];
-  return {
-    design_id: designId,
-    product_id: reference.product_id,
-    requirement_id: reference.requirement_id,
-    page_id: reference.page_id,
-    current_version: design.version,
-    versions
-  };
-}
-
-async function readDesignMetadata(store: FormaStore, designId: string) {
-  const reference = await getDesignReference(store, designId);
-  const designFile = safeStorePath(store, "data", reference.product_id, reference.requirement_id, designId, "design.yaml");
-  if (!(await fileExists(designFile))) {
-    throw new RouteNotFoundError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
-  }
-  const design = await readYamlAs(designFile, designSchema);
-  if (
-    design.id !== designId ||
-    design.product_id !== reference.product_id ||
-    design.requirement_id !== reference.requirement_id ||
-    design.page_id !== reference.page_id
-  ) {
-    throw new RouteNotFoundError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
-  }
-  return { design, reference };
-}
-
-function resolveDesignPreview(design: Design, requestedVersion: number | undefined): { version: number; previewFile: string } {
-  const version = requestedVersion ?? design.version;
-  if (version === design.version) {
-    return { version, previewFile: "preview@2x.png" };
-  }
-  if (version > design.version) {
-    throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
-      design_id: design.id,
-      version,
-      file: `preview.v${version}@2x.png`
-    });
-  }
-
-  const historyEntry = design.history.find((entry) => entry.version === version);
-  const expectedPreviewFile = `preview.v${version}@2x.png`;
-  if (!historyEntry || historyEntry.preview_file !== expectedPreviewFile) {
-    throw new RouteNotFoundError("HISTORY_FILE_MISSING", "Design history file is missing", {
-      design_id: design.id,
-      version,
-      file: expectedPreviewFile
-    });
-  }
-  return { version, previewFile: expectedPreviewFile };
-}
-
-async function getDesignReference(store: FormaStore, designId: string) {
-  const reference = await findDesignReference(store, designId);
-  if (!reference) {
-    throw new RouteNotFoundError("DESIGN_NOT_FOUND", "Design not found", { design_id: designId });
-  }
-  return reference;
-}
-
-async function findDesignReference(store: FormaStore, designId: string) {
-  const products = await store.products.listProducts();
-  for (const product of products) {
-    const requirements = await store.requirements.getRequirementHistory(product.id);
-    for (const requirement of requirements) {
-      const page = requirement.pages.find((item) => item.design_id === designId);
-      if (page) {
-        return {
-          product_id: product.id,
-          requirement_id: requirement.id,
-          page_id: page.page_id
-        };
-      }
-    }
-  }
-  return null;
-}
-
 function compareRequirementsNewestFirst(
   left: { id: string; created_at?: string; updated_at?: string },
   right: { id: string; created_at?: string; updated_at?: string }
 ): number {
-  return timestampForRequirement(right) - timestampForRequirement(left) || left.id.localeCompare(right.id);
+  return timestampForRequirement(right) - timestampForRequirement(left) || right.id.localeCompare(left.id);
 }
 
 function timestampForRequirement(requirement: { created_at?: string; updated_at?: string }): number {
@@ -513,16 +969,11 @@ function timestampForRequirement(requirement: { created_at?: string; updated_at?
   return Number.isFinite(createdAt) ? createdAt : 0;
 }
 
-function designImageFileUrl(designId: string, version?: number): string {
-  const versionQuery = version === undefined ? "" : `?version=${version}`;
-  return `/api/designs/${encodeURIComponent(designId)}/image/file${versionQuery}`;
-}
-
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function safeStorePath(store: FormaStore, ...segments: string[]): string {
+function safeStorePath(store: FormaRoutesStore, ...segments: string[]): string {
   const home = resolve(store.home);
   const file = resolve(home, ...segments);
   if (file !== home && !file.startsWith(`${home}${sep}`)) {

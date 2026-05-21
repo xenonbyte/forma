@@ -20,10 +20,15 @@ import {
 
 async function createConfiguredStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-requirement-"));
-  const store = createFormaStore({ home, bundledStylesDir: resolve("styles") });
+  await markNormalizationCommitted(home);
+  const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
   const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
 
   return { store, product };
+}
+
+async function markNormalizationCommitted(home: string): Promise<void> {
+  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
 }
 
 function validSubmit(requirementId: string) {
@@ -66,16 +71,29 @@ async function markRequirementPagesDone(
   home: string,
   productId: string,
   requirementId: string,
-  designIdsByPageId: Record<string, string>
+  _designIdsByPageId: Record<string, string>
 ) {
   const requirementFile = join(home, "data", productId, requirementId, "requirement.yaml");
   const saved = await readYaml<Record<string, unknown>>(requirementFile);
   const pages = (saved.pages as Array<Record<string, unknown>>).map((page) => ({
     ...page,
-    design_status: "done",
-    design_id: designIdsByPageId[String(page.page_id)]
+    design_status: "done"
   }));
   await writeYamlAtomic(requirementFile, { ...saved, pages });
+}
+
+function runtimePage(page: Record<string, unknown>) {
+  return {
+    semantic_contract: {
+      fields: [],
+      actions: [],
+      navigation: [],
+      component_keys: [],
+      allowed_copy: typeof page.name === "string" ? [page.name] : []
+    },
+    semantic_contract_coverage: "minimal",
+    ...page
+  };
 }
 
 function deferred<T = void>() {
@@ -263,6 +281,49 @@ describe("requirement and baseline services", () => {
     ]);
   });
 
+  it("preserves optional semantic rule input without deriving machine contracts from prose", async () => {
+    const { store, product } = await createConfiguredStore();
+    const req = await store.requirements.createEmptyRequirement(product.id, "Rules");
+
+    await store.requirements.saveRequirement({
+      requirement_id: req.id,
+      document_md: "# Rules\nSemantic rule",
+      ui_affected: false,
+      pages: [],
+      navigation: [],
+      translations: [],
+      rules: [{
+        id: "rule-001",
+        page_id: "login",
+        given: "用户在登录页",
+        when: "填写邮箱",
+        then: "可以继续",
+        semantic: {
+          fields: [{ key: "email", label: "Email" }],
+          actions: [{ key: "continue", label: "Continue" }],
+          component_keys: ["button.primary"],
+          allowed_copy: ["Continue"]
+        }
+      }],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+
+    await expect(store.requirements.getProductRules(product.id)).resolves.toEqual([
+      expect.objectContaining({
+        id: `${req.id}-rule-001`,
+        semantic: {
+          fields: [{ key: "email", label: "Email" }],
+          actions: [{ key: "continue", label: "Continue" }],
+          component_keys: ["button.primary"],
+          allowed_copy: ["Continue"]
+        }
+      })
+    ]);
+    const stored = await store.requirements.getRequirement({ requirement_id: req.id });
+    expect(stored.pages).toEqual([]);
+  });
+
   it("returns an empty rule list when the baseline rules file is missing", async () => {
     const { store, product } = await createConfiguredStore();
 
@@ -311,7 +372,7 @@ describe("requirement and baseline services", () => {
     const req = await store.requirements.createEmptyRequirement(product.id, "Login");
 
     await expect(store.requirements.createEmptyRequirement("P-missing", "Login")).rejects.toMatchObject({
-      code: "PRODUCT_NOT_FOUND"
+      code: "INVALID_INPUT"
     });
     await expect(
       store.requirements.submitRequirement({ ...validSubmit(req.id), document_md: "   \n\t" })
@@ -436,8 +497,8 @@ describe("requirement and baseline services", () => {
     await writeYamlAtomic(join(store.home, "data", product.id, req.id, "requirement.yaml"), {
       ...saved,
       pages: [
-        { page_id: `${req.id}-profile`, name: "资料页", baseline_page: "profile", design_status: "done" },
-        { page_id: `${req.id}-avatar`, name: "头像页", baseline_page: "avatar", design_status: "done" }
+        runtimePage({ page_id: `${req.id}-profile`, name: "资料页", baseline_page: "profile", design_status: "done" }),
+        runtimePage({ page_id: `${req.id}-avatar`, name: "头像页", baseline_page: "avatar", design_status: "done" })
       ]
     });
 
@@ -687,6 +748,106 @@ describe("requirement and baseline services", () => {
     await expect(store.requirements.archiveRequirement(req.id)).resolves.toMatchObject({ status: "archived" });
   });
 
+  it("removes archived requirement semantics from the baseline aggregate", async () => {
+    const { store, product } = await createConfiguredStore();
+    const first = await store.requirements.createEmptyRequirement(product.id, "First");
+    const archived = await store.requirements.createEmptyRequirement(product.id, "Archived");
+    await store.requirements.saveRequirement({
+      requirement_id: first.id,
+      document_md: "# First\nUI",
+      ui_affected: true,
+      pages: [{
+        page_id: "login-first",
+        name: "Login",
+        baseline_page: "login",
+        change_type: "new",
+        declared_fields: [{ key: "email", label: "Email" }]
+      }],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+    await store.requirements.saveRequirement({
+      requirement_id: archived.id,
+      document_md: "# Archived\nUI",
+      ui_affected: true,
+      pages: [{
+        page_id: "login-archived",
+        name: "Login",
+        baseline_page: "login",
+        change_type: "new",
+        declared_fields: [{ key: "phone", label: "Phone" }]
+      }],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+    const archivedFile = join(store.home, "data", product.id, archived.id, "requirement.yaml");
+    await writeYamlAtomic(archivedFile, { ...(await readYaml<Record<string, unknown>>(archivedFile)), status: "active" });
+
+    await store.requirements.archiveRequirement(archived.id);
+
+    const baseline = await store.baseline.getProductBaseline(product.id);
+    expect(baseline.pages).toHaveLength(1);
+    expect(baseline.pages[0]).toMatchObject({
+      id: "login",
+      source_requirements: [first.id],
+      semantic_contract: { fields: [{ key: "email", label: "Email" }] }
+    });
+  });
+
+  it("rejects baseline semantic conflicts before partial writes", async () => {
+    const { store, product } = await createConfiguredStore();
+    const first = await store.requirements.createEmptyRequirement(product.id, "First");
+    const second = await store.requirements.createEmptyRequirement(product.id, "Second");
+    await store.requirements.saveRequirement({
+      requirement_id: first.id,
+      document_md: "# First\nUI",
+      ui_affected: true,
+      pages: [{
+        page_id: "login-first",
+        name: "Login",
+        baseline_page: "login",
+        change_type: "new",
+        declared_fields: [{ key: "email", label: "Email" }]
+      }],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    });
+    const requirementFile = join(store.home, "data", product.id, second.id, "requirement.yaml");
+    const baselineFile = join(store.home, "data", product.id, "baseline", "baseline.yaml");
+    const beforeRequirement = await readFile(requirementFile, "utf8");
+    const beforeBaseline = await readFile(baselineFile, "utf8");
+
+    await expect(store.requirements.saveRequirement({
+      requirement_id: second.id,
+      document_md: "# Second\nConflict",
+      ui_affected: true,
+      pages: [{
+        page_id: "login-second",
+        name: "Login",
+        baseline_page: "login",
+        change_type: "new",
+        declared_fields: [{ key: "email", label: "Email address" }]
+      }],
+      navigation: [],
+      translations: [],
+      rules: [],
+      remove_rule_ids: [],
+      remove_page_ids: []
+    })).rejects.toMatchObject({ code: "BASELINE_SEMANTIC_CONTRACT_CONFLICT" });
+
+    expect(await readFile(requirementFile, "utf8")).toBe(beforeRequirement);
+    expect(await readFile(baselineFile, "utf8")).toBe(beforeBaseline);
+  });
+
   it("returns latest requirements by created_at and includes document history", async () => {
     const { store, product } = await createConfiguredStore();
     const first = await store.requirements.createEmptyRequirement(product.id, "First");
@@ -870,9 +1031,9 @@ describe("requirement and baseline services", () => {
     await writeYamlAtomic(requirementFile, {
       ...(await readYaml<Record<string, unknown>>(requirementFile)),
       pages: [
-        { page_id: "cart", name: "购物车", baseline_page: "cart", design_status: "done", design_id: "D-11111111" },
-        { page_id: "pay", name: "支付页", baseline_page: "pay", design_status: "done", design_id: "D-22222222" },
-        { page_id: "profile", name: "资料页", baseline_page: "profile", design_status: "done", design_id: "D-33333333" }
+        runtimePage({ page_id: "cart", name: "购物车", baseline_page: "cart", design_status: "done" }),
+        runtimePage({ page_id: "pay", name: "支付页", baseline_page: "pay", design_status: "done" }),
+        runtimePage({ page_id: "profile", name: "资料页", baseline_page: "profile", design_status: "done" })
       ]
     });
 
@@ -893,10 +1054,10 @@ describe("requirement and baseline services", () => {
     });
 
     expect(saved.pages).toEqual([
-      expect.objectContaining({ page_id: "cart", design_status: "expired", design_id: "D-11111111" }),
+      expect.objectContaining({ page_id: "cart", design_status: "expired" }),
       expect.objectContaining({ page_id: "success", design_status: "pending" }),
-      expect.objectContaining({ page_id: "pay", design_status: "expired", design_id: "D-22222222" }),
-      expect.objectContaining({ page_id: "profile", design_status: "done", design_id: "D-33333333" })
+      expect.objectContaining({ page_id: "pay", design_status: "expired" }),
+      expect.objectContaining({ page_id: "profile", design_status: "done" })
     ]);
     expect(saved.navigation).toEqual([{ from: "cart", to: "success", label: "Done" }]);
   });
@@ -936,18 +1097,18 @@ describe("requirement and baseline services", () => {
           name: "购物车",
           baseline_page: "cart",
           design_status: "done",
-          design_id: "D-11111111",
           change_type: "new",
-          change_summary: "Create cart"
+          change_summary: "Create cart",
+          ...runtimePage({ name: "购物车" })
         },
         {
           page_id: "pay",
           name: "支付页",
           baseline_page: "pay",
           design_status: "done",
-          design_id: "D-22222222",
           change_type: "new",
-          change_summary: "Create pay"
+          change_summary: "Create pay",
+          ...runtimePage({ name: "支付页" })
         }
       ]
     });
@@ -971,13 +1132,11 @@ describe("requirement and baseline services", () => {
       expect.objectContaining({
         page_id: "cart",
         design_status: "expired",
-        design_id: "D-11111111",
         change_summary: "Patch cart"
       }),
       expect.objectContaining({
         page_id: "pay",
         design_status: "expired",
-        design_id: "D-22222222",
         change_summary: "Rebuild pay"
       })
     ]);
@@ -1012,7 +1171,7 @@ describe("requirement and baseline services", () => {
           name: "结账页",
           baseline_page: "checkout",
           design_status: "done",
-          design_id: "D-11111111"
+          ...runtimePage({ name: "结账页" })
         }
       ]
     });
@@ -1229,7 +1388,7 @@ describe("requirement and baseline services", () => {
     const requirementFile = join(store.home, "data", product.id, req.id, "requirement.yaml");
     await writeYamlAtomic(requirementFile, {
       ...(await readYaml<Record<string, unknown>>(requirementFile)),
-      pages: [{ page_id: `${req.id}-login`, name: "登录页", baseline_page: "login", design_status: "done" }]
+      pages: [runtimePage({ page_id: `${req.id}-login`, name: "登录页", baseline_page: "login", design_status: "done" })]
     });
 
     await expect(
@@ -1256,8 +1415,8 @@ describe("requirement and baseline services", () => {
       ...(await readYaml<Record<string, unknown>>(requirementFile)),
       status: "active",
       pages: [
-        { page_id: `${req.id}-login`, name: "登录页", baseline_page: "login", design_status: "done" },
-        { page_id: `${req.id}-legacy`, name: "旧页", baseline_page: "legacy", design_status: "expired" }
+        runtimePage({ page_id: `${req.id}-login`, name: "登录页", baseline_page: "login", design_status: "done" }),
+        runtimePage({ page_id: `${req.id}-legacy`, name: "旧页", baseline_page: "legacy", design_status: "expired" })
       ]
     });
 

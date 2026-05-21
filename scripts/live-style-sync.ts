@@ -1,7 +1,7 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createFormaStore, FormaError, type SyncStatus } from "@xenonbyte/forma-core";
+import { createFormaStore, FormaError, type FormaStore, type SyncStatus } from "@xenonbyte/forma-core";
 import { formatGenericErrorForLog, sanitizeGenericErrorForLog } from "./smoke-pencil-error.js";
 
 const pollIntervalMs = 2_000;
@@ -21,9 +21,7 @@ async function main(): Promise<void> {
     console.log(`styles_updated=${result.lastSync.styles_updated}`);
     console.log(`styles_failed=${result.lastSync.styles_failed}`);
     console.log(`last_sync.completed_at=${result.lastSync.completed_at}`);
-    console.log(`preview_style=${result.preview.styleName}`);
-    console.log(`preview@2x.png=${result.preview.path}`);
-    console.log(`preview_bytes=${result.preview.bytes}`);
+    console.log(`token_preview_style=${result.tokenPreview.styleName}`);
     console.log(`live_style_limit=${liveStyleLimit}`);
   } catch (error) {
     console.error("Live style sync failed");
@@ -35,9 +33,9 @@ async function main(): Promise<void> {
 
 async function runLiveSync(home: string): Promise<{
   lastSync: NonNullable<Extract<SyncStatus, { status: "idle" }>["last_sync"]>;
-  preview: { styleName: string; path: string; bytes: number };
+  tokenPreview: { styleName: string };
 }> {
-  const store = createFormaStore({ home, bundledStylesDir: resolve("styles"), syncStyleLimit: liveStyleLimit });
+  const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), syncStyleLimit: liveStyleLimit });
 
   const builtInStyles = await store.styles.installBuiltInStyles();
   invariant(builtInStyles.length > 0, "No built-in styles were installed");
@@ -50,11 +48,12 @@ async function runLiveSync(home: string): Promise<{
   invariant(status.last_sync.styles_total > 0, "Sync completed with styles_total=0");
   invariant(status.last_sync.styles_failed === 0, `Sync completed with styles_failed=${status.last_sync.styles_failed}`);
 
-  const preview = await findSyncedPreview(home, await store.styles.listStyles());
-  return { lastSync: status.last_sync, preview };
+  const [firstStyle] = await store.styles.listStyles();
+  invariant(firstStyle, "Sync completed without style metadata");
+  return { lastSync: status.last_sync, tokenPreview: { styleName: firstStyle.name } };
 }
 
-async function waitForSync(store: ReturnType<typeof createFormaStore>): Promise<Extract<SyncStatus, { status: "idle" }>> {
+async function waitForSync(store: FormaStore): Promise<Extract<SyncStatus, { status: "idle" }>> {
   const deadline = Date.now() + maxWaitMs;
   let lastProgress = "";
 
@@ -78,51 +77,6 @@ async function waitForSync(store: ReturnType<typeof createFormaStore>): Promise<
   }
 
   throw new Error(`Sync timed out after ${Math.round(maxWaitMs / 1_000)} seconds`);
-}
-
-async function findSyncedPreview(
-  home: string,
-  styles: Array<{ name: string }>
-): Promise<{ styleName: string; path: string; bytes: number }> {
-  for (const style of styles) {
-    const previewPath = join(home, "styles", style.name, "preview@2x.png");
-    const preview = await readPngPreview(previewPath);
-    if (preview) {
-      return { styleName: style.name, path: previewPath, bytes: preview.bytes };
-    }
-  }
-
-  throw new Error("No synced style preview@2x.png exists with non-empty PNG bytes");
-}
-
-async function readPngPreview(filePath: string): Promise<{ bytes: number } | undefined> {
-  try {
-    const metadata = await stat(filePath);
-    if (metadata.size <= 0) {
-      return undefined;
-    }
-    const bytes = await readFile(filePath);
-    return hasPngSignature(bytes) ? { bytes: metadata.size } : undefined;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return undefined;
-    }
-    throw error;
-  }
-}
-
-function hasPngSignature(value: Buffer): boolean {
-  return (
-    value.length >= 8 &&
-    value[0] === 0x89 &&
-    value[1] === 0x50 &&
-    value[2] === 0x4e &&
-    value[3] === 0x47 &&
-    value[4] === 0x0d &&
-    value[5] === 0x0a &&
-    value[6] === 0x1a &&
-    value[7] === 0x0a
-  );
 }
 
 function invariant(condition: unknown, message: string): asserts condition {

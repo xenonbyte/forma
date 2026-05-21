@@ -1,7 +1,15 @@
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { constants } from "node:fs";
+import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { hostname } from "node:os";
+import { basename, dirname, join, resolve, sep } from "node:path";
+import { z } from "zod";
 import { FormaError } from "./errors.js";
+import { productIdSchema } from "./product.js";
+import { sessionIdSchema } from "./session-id.js";
+
+export const PRODUCT_MUTATION_LOCK_TTL_MS = 120_000;
+export const PRODUCT_MUTATION_LOCK_HEARTBEAT_MS = 15_000;
 
 export interface ProductMutationContext {
   operation: string;
@@ -11,45 +19,98 @@ export interface ProductMutationContext {
 
 export interface ProductMutationLock {
   run<T>(
-    input: { operation: string; product_id?: string },
+    input: { operation: string; product_id?: string; session_id?: string; scope?: string },
     fn: (context: ProductMutationContext) => Promise<T>
   ): Promise<T>;
 }
 
-const staleThresholdMs = 120000;
-const waitTimeoutMs = 30000;
-const retryIntervalMs = 100;
-const jitterMs = 25;
-const heartbeatMs = 5000;
-
-type QueueTail = Promise<void>;
-
-interface ProductMutationOwner {
-  owner_id: string;
-  pid: number;
-  operation: string;
+export interface V6LockContent {
+  lock_id: string;
+  owner_pid: number;
+  owner_process_start_time: string;
+  hostname: string;
+  command: string;
+  scope: string;
   product_id?: string;
+  session_id?: string;
   acquired_at: string;
-  updated_at: string;
+  expires_at: string;
+  heartbeat_at: string;
 }
 
-type OwnerReadResult =
-  | { status: "valid"; owner: ProductMutationOwner }
-  | { status: "missing" }
-  | { status: "corrupt" };
+const lockSchema = z.object({
+  lock_id: z.string().min(1),
+  owner_pid: z.number().int().positive(),
+  owner_process_start_time: z.string().min(1),
+  hostname: z.string().min(1),
+  command: z.string().min(1),
+  scope: z.string().min(1),
+  product_id: z.string().optional(),
+  session_id: z.string().optional(),
+  acquired_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+  expires_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+  heartbeat_at: z.string().refine((value) => Number.isFinite(Date.parse(value)))
+});
 
-interface HeartbeatController {
-  timer: NodeJS.Timeout;
-  pending: Promise<void>;
-  stopped: boolean;
-}
-
-const sameProcessQueues = new Map<string, QueueTail>();
+const sameProcessQueues = new Map<string, Promise<void>>();
+const sameProcessProductQueueKeys = new Set<string>();
 const emittedProductMutationWarningCounts = new WeakMap<string[], number>();
 const emittedFormaErrorDetailsWarningCounts = new WeakMap<Record<string, unknown>, number>();
 
+interface HeartbeatController {
+  stop(): Promise<void>;
+}
+
+type ClaimedLock = { status: "valid"; lock: V6LockContent } | { status: "corrupt" };
+
+interface ClaimedLockMutation {
+  remove(): Promise<void>;
+  replace(lock: V6LockContent): Promise<boolean>;
+  restore(): Promise<void>;
+}
+
+interface MutationSidecar {
+  release(): Promise<void>;
+}
+
+interface MutationSidecarContent {
+  lock_id: string;
+  owner_pid: number;
+  owner_process_start_time: string;
+  hostname: string;
+  acquired_at: string;
+  expires_at: string;
+}
+
+type MutationSidecarRead = { status: "valid"; lock: MutationSidecarContent } | { status: "corrupt" };
+
+const mutationSidecarSchema = z.object({
+  lock_id: z.string().min(1),
+  owner_pid: z.number().int().positive(),
+  owner_process_start_time: z.string().min(1),
+  hostname: z.string().min(1),
+  acquired_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+  expires_at: z.string().refine((value) => Number.isFinite(Date.parse(value)))
+});
+
 export function getProductMutationLock(home: string): ProductMutationLock {
-  return new ProductMutationLockImpl(resolve(home));
+  return new ProductMutationLockImpl(resolve(home), "product");
+}
+
+export function getPencilMutationLock(home: string): ProductMutationLock {
+  return new ProductMutationLockImpl(resolve(home), "pencil");
+}
+
+export function productMutationLockPath(home: string, productId?: string): string {
+  const resolvedHome = resolve(home);
+  const lockPath = productId
+    ? join(resolvedHome, "data", parseProductId(productId), "locks", "product-mutation.lock")
+    : join(resolvedHome, "locks", "product-mutation.lock");
+  return assertInsideHome(resolvedHome, lockPath);
+}
+
+export function pencilMutationLockPath(home: string): string {
+  return join(resolve(home), "locks", "pencil.lock");
 }
 
 export function defaultProductMutationWarningSink(warning: string): void {
@@ -58,16 +119,14 @@ export function defaultProductMutationWarningSink(warning: string): void {
 
 export async function runProductMutationWithWarnings<T>(
   productMutationLock: ProductMutationLock,
-  input: { operation: string; product_id?: string },
+  input: { operation: string; product_id?: string; session_id?: string; scope?: string },
   fn: (context: ProductMutationContext) => Promise<T>,
   onProductMutationWarning: (warning: string) => void
 ): Promise<T> {
   let context: ProductMutationContext | undefined;
   let flushedWarnings = 0;
   const flushContextWarnings = () => {
-    if (!context) {
-      return;
-    }
+    if (!context) return;
     const lockEmittedWarnings =
       onProductMutationWarning === defaultProductMutationWarningSink
         ? (emittedProductMutationWarningCounts.get(context.warnings) ?? 0)
@@ -97,569 +156,617 @@ export async function runProductMutationWithWarnings<T>(
 }
 
 class ProductMutationLockImpl implements ProductMutationLock {
-  private readonly lockDir: string;
-
-  constructor(private readonly home: string) {
-    this.lockDir = join(home, "tmp", "locks", "product-mutations.lock");
-  }
+  constructor(
+    private readonly home: string,
+    private readonly kind: "product" | "pencil"
+  ) {}
 
   async run<T>(
-    input: { operation: string; product_id?: string },
+    input: { operation: string; product_id?: string; session_id?: string; scope?: string },
     fn: (context: ProductMutationContext) => Promise<T>
   ): Promise<T> {
     const normalized = normalizeInput(input);
-    const queueTail = sameProcessQueues.get(this.home) ?? Promise.resolve();
+    const lockPath = this.kind === "pencil" ? pencilMutationLockPath(this.home) : productMutationLockPath(this.home, normalized.product_id);
+    const globalQueueKey = this.kind === "product" ? productMutationLockPath(this.home) : undefined;
+    const queueKey = lockPath;
+    const isProductScoped = this.kind === "product" && Boolean(normalized.product_id);
+    if (isProductScoped) {
+      sameProcessProductQueueKeys.add(queueKey);
+    }
+    const hierarchyQueues = this.kind === "product" && !normalized.product_id
+      ? [...sameProcessProductQueueKeys].map((key) => sameProcessQueues.get(key) ?? Promise.resolve())
+      : [];
+    const queueTail = normalized.product_id && globalQueueKey
+      ? Promise.all([sameProcessQueues.get(globalQueueKey) ?? Promise.resolve(), sameProcessQueues.get(queueKey) ?? Promise.resolve()]).then(() => undefined)
+      : this.kind === "product" && !normalized.product_id
+        ? Promise.all([sameProcessQueues.get(queueKey) ?? Promise.resolve(), ...hierarchyQueues]).then(() => undefined)
+        : sameProcessQueues.get(queueKey) ?? Promise.resolve();
     let releaseQueue!: () => void;
     const currentOperation = new Promise<void>((resolveCurrentOperation) => {
       releaseQueue = resolveCurrentOperation;
     });
     const queuedOperation = queueTail.catch(() => undefined).then(() => currentOperation);
-    sameProcessQueues.set(this.home, queuedOperation);
-
+    sameProcessQueues.set(queueKey, queuedOperation);
     await queueTail.catch(() => undefined);
+
+    const warnings: string[] = [];
+    let lock: V6LockContent | undefined;
+    let heartbeat: HeartbeatController | undefined;
     try {
-      return await this.runWithLock(normalized, fn);
+      try {
+        lock = await this.acquireLock(lockPath, normalized, warnings);
+        heartbeat = this.startHeartbeat(lockPath, lock, warnings);
+        return await fn({ operation: normalized.operation, product_id: normalized.product_id, warnings });
+      } finally {
+        if (heartbeat) await heartbeat.stop();
+        if (lock) await this.releaseLock(lockPath, lock.lock_id, warnings);
+      }
     } finally {
       releaseQueue();
-      if (sameProcessQueues.get(this.home) === queuedOperation) {
-        sameProcessQueues.delete(this.home);
+      if (sameProcessQueues.get(queueKey) === queuedOperation) {
+        sameProcessQueues.delete(queueKey);
+      }
+      if (isProductScoped && sameProcessQueues.get(queueKey) === undefined) {
+        sameProcessProductQueueKeys.delete(queueKey);
       }
     }
   }
 
-  private async runWithLock<T>(
-    input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
-  ): Promise<T> {
-    const warnings: string[] = [];
-    const owner = await this.acquireLock(input, warnings);
-    const heartbeat = this.startHeartbeat(owner, warnings);
+  private async acquireLock(
+    lockPath: string,
+    input: { operation: string; product_id?: string; session_id?: string; scope?: string },
+    warnings: string[]
+  ): Promise<V6LockContent> {
+    await mkdir(dirname(lockPath), { recursive: true });
+    return await this.withMutationSidecar(lockPath, async () => {
+      await this.assertNoClaimedLock(lockPath);
+      if (this.kind === "product" && input.product_id) {
+        await this.assertNoLiveGlobalProductLock(lockPath, warnings);
+      }
+      const existing = await this.readExisting(lockPath);
+      if (existing) {
+        if (existing.status === "corrupt") {
+          throw new FormaError("LOCK_CORRUPT", "Lock file is corrupt", { lock_path: lockPath });
+        }
+        const owner = existing.lock;
+        if (isLockLive(owner)) {
+          const details = {
+            lock_path: lockPath,
+            owner_pid: owner.owner_pid,
+            scope: owner.scope,
+            session_id: owner.session_id,
+            acquired_at: owner.acquired_at,
+            expires_at: owner.expires_at,
+            heartbeat_at: owner.heartbeat_at
+          };
+          emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
+          throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Mutation lock is held", details);
+        }
+        await this.removeStaleLockUnderMutation(lockPath, owner, warnings);
+      }
 
-    try {
-      return await fn({ ...input, warnings });
-    } finally {
-      heartbeat.stopped = true;
-      clearInterval(heartbeat.timer);
-      await heartbeat.pending.catch((error: unknown) => {
-        this.recordWarning(`Product mutation lock heartbeat failed for ${this.lockDir}: ${errorMessage(error)}`, warnings);
-      });
-      await this.releaseLock(owner.owner_id, warnings);
-    }
-  }
-
-  private async acquireLock(input: { operation: string; product_id?: string }, warnings: string[]): Promise<ProductMutationOwner> {
-    const startedAt = Date.now();
-    await mkdir(dirname(this.lockDir), { recursive: true });
-
-    while (true) {
+      const lock = createLock(input);
       try {
-        await mkdir(this.lockDir);
-        const owner = createOwner(input);
-        try {
-          await this.writeOwner(owner);
-        } catch (error) {
-          await this.cleanupFailedAcquisition(owner, warnings);
-          throw error;
-        }
-        return owner;
+        await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       } catch (error) {
-        if (!isNodeError(error) || error.code !== "EEXIST") {
+        if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+          throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Mutation lock is held", { lock_path: lockPath });
+        }
+        throw error;
+      }
+      if (this.kind === "product" && input.product_id) {
+        try {
+          await this.assertNoLiveGlobalProductLock(lockPath, warnings);
+        } catch (error) {
+          await this.removeLockByIdUnderMutation(lockPath, lock.lock_id, warnings);
           throw error;
         }
       }
-
-      const recovered = await this.recoverExistingLock(warnings);
-      if (recovered) {
-        continue;
+      if (this.kind === "product" && !input.product_id) {
+        try {
+          await this.assertNoLiveProductLocks(lockPath, warnings);
+        } catch (error) {
+          await this.removeLockByIdUnderMutation(lockPath, lock.lock_id, warnings);
+          throw error;
+        }
       }
+      return lock;
+    });
+  }
 
-      const waitedMs = Date.now() - startedAt;
-      if (waitedMs >= waitTimeoutMs) {
+  private async assertNoLiveGlobalProductLock(currentLockPath: string, warnings: string[]): Promise<void> {
+    const globalLockPath = productMutationLockPath(this.home);
+    if (globalLockPath === currentLockPath) return;
+    await this.assertNoLiveLockAt(globalLockPath, warnings);
+  }
+
+  private async assertNoLiveProductLocks(currentLockPath: string, warnings: string[]): Promise<void> {
+    const dataDir = join(this.home, "data");
+    for (const productId of await readdir(dataDir).catch(() => [])) {
+      const parsed = productIdSchema.safeParse(productId);
+      if (!parsed.success) continue;
+      const lockPath = productMutationLockPath(this.home, parsed.data);
+      if (lockPath === currentLockPath) continue;
+      await this.assertNoLiveLockAt(lockPath, warnings);
+    }
+  }
+
+  private async assertNoLiveLockAt(lockPath: string, warnings: string[]): Promise<void> {
+    await mkdir(dirname(lockPath), { recursive: true });
+    await this.withMutationSidecar(lockPath, async () => {
+      await this.assertNoClaimedLock(lockPath);
+      const existing = await this.readExisting(lockPath);
+      if (!existing) return;
+      if (existing.status === "corrupt") {
+        throw new FormaError("LOCK_CORRUPT", "Lock file is corrupt", { lock_path: lockPath });
+      }
+      if (isLockLive(existing.lock)) {
         const details = {
-          operation: input.operation,
-          product_id: input.product_id,
-          lock_path: this.lockDir,
-          waited_ms: waitedMs,
-          warnings: [...warnings]
+          lock_path: lockPath,
+          owner_pid: existing.lock.owner_pid,
+          scope: existing.lock.scope,
+          session_id: existing.lock.session_id,
+          acquired_at: existing.lock.acquired_at,
+          expires_at: existing.lock.expires_at,
+          heartbeat_at: existing.lock.heartbeat_at
         };
         emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
-        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held", details);
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock is held", details);
       }
-
-      await delay(Math.min(retryDelayMs(), waitTimeoutMs - waitedMs));
-    }
-  }
-
-  private async recoverExistingLock(warnings: string[]): Promise<boolean> {
-    const ownerResult = await this.readOwner();
-
-    if (ownerResult.status === "valid") {
-      const owner = ownerResult.owner;
-      if (!defaultIsPidAlive(owner.pid)) {
-        return await this.removeLockWithMatchingOwner(
-          owner,
-          `Product mutation lock has dead owner PID ${owner.pid}; removing ${this.lockDir}`,
-          warnings
-        );
-      }
-
-      if (Date.now() - Date.parse(owner.updated_at) > staleThresholdMs) {
-        return await this.removeLockWithMatchingOwner(
-          owner,
-          `Product mutation lock owner is stale; removing ${this.lockDir}`,
-          warnings
-        );
-      }
-
-      return false;
-    }
-
-    const lockStat = await stat(this.lockDir).catch((error: unknown) => {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return undefined;
-      }
-      throw error;
+      await this.removeStaleLockUnderMutation(lockPath, existing.lock, warnings);
     });
-    if (!lockStat) {
-      return true;
-    }
-
-    if (Date.now() - lockStat.mtimeMs <= staleThresholdMs) {
-      return false;
-    }
-
-    return await this.removeOwnerUnknownLockIfStillStale(
-      lockStat.mtimeMs,
-      `Product mutation lock owner.json is missing or corrupt and stale; removing ${this.lockDir}`,
-      warnings
-    );
   }
 
-  private async removeLockWithMatchingOwner(
-    owner: ProductMutationOwner,
-    warning: string,
-    warnings: string[]
-  ): Promise<boolean> {
-    const claimedDir = await this.claimLockDirectory();
-    if (!claimedDir) {
-      return true;
-    }
-
-    const current = await this.readOwner(claimedDir);
-    if (current.status !== "valid" || !ownersMatch(current.owner, owner)) {
-      await this.restoreClaimedLock(claimedDir, warnings);
-      return false;
-    }
-
-    await rm(claimedDir, { recursive: true, force: true });
-    this.recordWarning(warning, warnings);
-    return true;
-  }
-
-  private async removeOwnerUnknownLockIfStillStale(
-    expectedMtimeMs: number,
-    warning: string,
-    warnings: string[]
-  ): Promise<boolean> {
-    const claimedDir = await this.claimLockDirectory();
-    if (!claimedDir) {
-      return true;
-    }
-
-    const current = await this.readOwner(claimedDir);
-    if (current.status === "valid") {
-      await this.restoreClaimedLock(claimedDir, warnings);
-      return false;
-    }
-
-    const currentStat = await stat(claimedDir).catch((error: unknown) => {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return undefined;
+  private async removeStaleLockUnderMutation(lockPath: string, expected: V6LockContent, warnings: string[]): Promise<void> {
+    await this.withClaimedLockUnderMutation(lockPath, warnings, async (latest, claim) => {
+      if (!latest) return;
+      if (latest.status === "corrupt") {
+        throw new FormaError("LOCK_CORRUPT", "Lock file is corrupt", { lock_path: lockPath });
       }
-      throw error;
+      if (latest.lock.lock_id !== expected.lock_id || isLockLive(latest.lock)) {
+        const details = {
+          lock_path: lockPath,
+          owner_pid: latest.lock.owner_pid,
+          scope: latest.lock.scope,
+          session_id: latest.lock.session_id,
+          acquired_at: latest.lock.acquired_at,
+          expires_at: latest.lock.expires_at,
+          heartbeat_at: latest.lock.heartbeat_at
+        };
+        emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
+        throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Mutation lock changed during stale reclaim", details);
+      }
+      await claim.remove();
+      recordWarning(`stale_reclaimed:${lockPath}`, warnings);
     });
-    if (!currentStat) {
-      return true;
-    }
-    if (currentStat.mtimeMs !== expectedMtimeMs || Date.now() - currentStat.mtimeMs <= staleThresholdMs) {
-      await this.restoreClaimedLock(claimedDir, warnings);
-      return false;
-    }
-
-    await rm(claimedDir, { recursive: true, force: true });
-    this.recordWarning(warning, warnings);
-    return true;
   }
 
-  private startHeartbeat(owner: ProductMutationOwner, warnings: string[]): HeartbeatController {
-    const controller: HeartbeatController = {
-      timer: undefined as unknown as NodeJS.Timeout,
-      pending: Promise.resolve(),
-      stopped: false
+  private async removeLockByIdUnderMutation(lockPath: string, lockId: string, warnings: string[]): Promise<void> {
+    await this.withClaimedLockUnderMutation(lockPath, warnings, async (existing, claim) => {
+      if (!existing) return;
+      if (existing.status === "valid" && existing.lock.lock_id === lockId) {
+        await claim.remove();
+        return;
+      }
+      await claim.restore();
+      recordWarning(`LOCK_RELEASE_MISMATCH:${lockPath}`, warnings);
+    });
+  }
+
+  private startHeartbeat(lockPath: string, lock: V6LockContent, warnings: string[]): HeartbeatController {
+    const inFlight = new Set<Promise<void>>();
+    let stopped = false;
+    const runHeartbeat = () => {
+      if (stopped) return;
+      const pending = this.heartbeat(lockPath, lock, warnings, () => stopped).catch((error: unknown) => {
+        recordWarning(`lock_heartbeat_failed:${lockPath}:${errorMessage(error)}`, warnings);
+      });
+      inFlight.add(pending);
+      pending.finally(() => inFlight.delete(pending));
     };
-    controller.timer = setInterval(() => {
-      controller.pending = controller.pending
-        .catch((error: unknown) => {
-          this.recordWarning(`Product mutation lock heartbeat failed for ${this.lockDir}: ${errorMessage(error)}`, warnings);
-        })
-        .then(async () => {
-          if (controller.stopped) {
-            return;
-          }
-          await this.updateHeartbeat(owner, warnings, controller);
-        });
-    }, heartbeatMs);
-    controller.timer.unref?.();
-    return controller;
+    const timer = setInterval(() => {
+      runHeartbeat();
+    }, PRODUCT_MUTATION_LOCK_HEARTBEAT_MS);
+    return {
+      async stop() {
+        stopped = true;
+        clearInterval(timer);
+        await Promise.allSettled([...inFlight]);
+      }
+    };
   }
 
-  private async updateHeartbeat(
-    owner: ProductMutationOwner,
-    warnings: string[],
-    heartbeat: HeartbeatController
-  ): Promise<void> {
-    if (heartbeat.stopped) {
-      return;
-    }
-
-    const claimFile = join(this.lockDir, `.owner-${owner.owner_id}-${randomBytes(8).toString("hex")}.claim`);
-    try {
-      await rename(this.ownerFileFor(this.lockDir), claimFile);
-    } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        this.stopHeartbeat(heartbeat, warnings);
+  private async heartbeat(lockPath: string, lock: V6LockContent, warnings: string[], isStopped: () => boolean): Promise<void> {
+    if (isStopped()) return;
+    await this.withClaimedLock(lockPath, warnings, async (existing, claim) => {
+      if (isStopped()) {
+        await claim.restore();
         return;
       }
-      this.recordWarning(`Product mutation lock heartbeat failed for ${this.lockDir}: ${errorMessage(error)}`, warnings);
-      return;
-    }
-
-    if (heartbeat.stopped) {
-      await this.restoreClaimedOwner(claimFile, warnings);
-      return;
-    }
-
-    const claimed = await this.readOwnerFile(claimFile);
-    if (claimed.status !== "valid" || claimed.owner.owner_id !== owner.owner_id) {
-      await this.restoreClaimedOwner(claimFile, warnings);
-      this.stopHeartbeat(heartbeat, warnings);
-      return;
-    }
-
-    const updatedOwner = { ...claimed.owner, updated_at: new Date().toISOString() };
-    const tempFile = join(this.lockDir, `.owner-${owner.owner_id}-${randomBytes(8).toString("hex")}.tmp`);
-    try {
-      if (heartbeat.stopped) {
-        await this.restoreClaimedOwner(claimFile, warnings);
+      if (!existing || existing.status === "corrupt" || existing.lock.lock_id !== lock.lock_id) {
+        await claim.restore();
+        recordWarning(`LOCK_RELEASE_MISMATCH:${lockPath}`, warnings);
         return;
       }
-      await writeFile(tempFile, `${JSON.stringify(updatedOwner, null, 2)}\n`, "utf8");
-
-      const stillClaimed = await this.readOwnerFile(claimFile);
-      if (heartbeat.stopped) {
-        await rm(tempFile, { force: true });
-        await this.restoreClaimedOwner(claimFile, warnings);
+      const now = new Date();
+      const updated = {
+        ...existing.lock,
+        heartbeat_at: now.toISOString(),
+        expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString()
+      };
+      if (isStopped()) {
+        await claim.restore();
         return;
       }
-      if (stillClaimed.status !== "valid") {
-        await rm(tempFile, { force: true });
-        this.stopHeartbeat(heartbeat, warnings);
-        return;
-      }
-      if (!ownersMatch(stillClaimed.owner, claimed.owner)) {
-        await rm(tempFile, { force: true });
-        await this.restoreClaimedOwner(claimFile, warnings);
-        this.stopHeartbeat(heartbeat, warnings);
-        return;
-      }
-
-      await rename(tempFile, this.ownerFileFor(this.lockDir));
-      await rm(claimFile, { force: true });
-      const mtime = new Date(updatedOwner.updated_at);
-      await utimes(this.lockDir, mtime, mtime);
-    } catch (error) {
-      await rm(tempFile, { force: true });
-      await this.restoreClaimedOwner(claimFile, warnings);
-      this.recordWarning(`Product mutation lock heartbeat failed for ${this.lockDir}: ${errorMessage(error)}`, warnings);
-    }
+      await claim.replace(updated);
+    });
   }
 
-  private async writeOwner(owner: ProductMutationOwner, lockDir = this.lockDir): Promise<void> {
-    const tempFile = join(lockDir, `.owner-${owner.owner_id}-${randomBytes(8).toString("hex")}.tmp`);
+  private async releaseLock(lockPath: string, lockId: string, warnings: string[]): Promise<void> {
     try {
-      await writeFile(tempFile, `${JSON.stringify(owner, null, 2)}\n`, "utf8");
-      await rename(tempFile, this.ownerFileFor(lockDir));
-      const mtime = new Date(owner.updated_at);
-      await utimes(lockDir, mtime, mtime);
+      await this.withClaimedLock(lockPath, warnings, async (existing, claim) => {
+        if (!existing) return;
+        if (existing.status === "valid" && existing.lock.lock_id === lockId) {
+          await claim.remove();
+          return;
+        }
+        await claim.restore();
+        recordWarning(`LOCK_RELEASE_MISMATCH:${lockPath}`, warnings);
+      });
     } catch (error) {
-      await rm(tempFile, { force: true });
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+        return;
+      }
       throw error;
     }
   }
 
-  private async readOwner(lockDir = this.lockDir): Promise<OwnerReadResult> {
-    return await this.readOwnerFile(this.ownerFileFor(lockDir));
+  private async withClaimedLock<T>(
+    lockPath: string,
+    warnings: string[],
+    mutate: (existing: ClaimedLock | undefined, claim: ClaimedLockMutation) => Promise<T>
+  ): Promise<T> {
+    const sidecar = await this.acquireMutationSidecar(lockPath);
+    try {
+      return await this.withClaimedLockUnderMutation(lockPath, warnings, mutate);
+    } finally {
+      await sidecar.release();
+    }
   }
 
-  private async readOwnerFile(ownerFile: string): Promise<OwnerReadResult> {
+  private async withMutationSidecar<T>(lockPath: string, mutate: () => Promise<T>): Promise<T> {
+    const sidecar = await this.acquireMutationSidecar(lockPath);
+    try {
+      return await mutate();
+    } finally {
+      await sidecar.release();
+    }
+  }
+
+  private async acquireMutationSidecar(lockPath: string): Promise<MutationSidecar> {
+    const mutationLockPath = `${lockPath}.mutate`;
+    const mutationLock = createMutationSidecar();
+    while (true) {
+      try {
+        await writeFile(mutationLockPath, `${JSON.stringify(mutationLock, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+        return {
+          release: () => this.releaseMutationSidecar(lockPath, mutationLock)
+        };
+      } catch (error) {
+        if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+          throw error;
+        }
+      }
+
+      const existing = await this.readMutationSidecar(mutationLockPath);
+      if (existing && !isMutationSidecarReclaimable(existing)) {
+        throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
+      }
+      const reclaimed = await this.reclaimMutationSidecar(lockPath, existing);
+      if (!reclaimed) {
+        throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
+      }
+    }
+  }
+
+  private async readMutationSidecar(mutationLockPath: string): Promise<MutationSidecarRead | undefined> {
     let raw: string;
     try {
-      raw = await readFile(ownerFile, "utf8");
+      raw = await readFile(mutationLockPath, "utf8");
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return { status: "missing" };
-      }
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
       return { status: "corrupt" };
     }
-
     try {
-      const parsed: unknown = JSON.parse(raw);
-      if (!isProductMutationOwner(parsed)) {
-        return { status: "corrupt" };
-      }
-      return { status: "valid", owner: parsed };
+      return { status: "valid", lock: mutationSidecarSchema.parse(JSON.parse(raw)) };
     } catch {
       return { status: "corrupt" };
     }
   }
 
-  private async releaseLock(ownerId: string, warnings: string[]): Promise<void> {
-    const claimedDir = await this.claimLockDirectory();
-    if (!claimedDir) {
-      return;
-    }
-
-    const current = await this.readOwner(claimedDir);
-    if (current.status === "valid" && current.owner.owner_id === ownerId) {
-      await rm(claimedDir, { recursive: true, force: true });
-      return;
-    }
-
-    await this.restoreClaimedLock(claimedDir, warnings);
-  }
-
-  private async cleanupFailedAcquisition(owner: ProductMutationOwner, warnings: string[]): Promise<void> {
-    const claimedDir = await this.claimLockDirectory();
-    if (!claimedDir) {
-      return;
-    }
-
-    const current = await this.readOwner(claimedDir);
-    if (current.status === "valid" && current.owner.owner_id !== owner.owner_id) {
-      await this.restoreClaimedLock(claimedDir, warnings);
-      return;
-    }
-
-    await rm(claimedDir, { recursive: true, force: true });
-  }
-
-  private recordWarning(warning: string, warnings: string[]): void {
-    warnings.push(warning);
-    defaultProductMutationWarningSink(warning);
-    emittedProductMutationWarningCounts.set(warnings, warnings.length);
-  }
-
-  private stopHeartbeat(heartbeat: HeartbeatController, warnings: string[]): void {
-    heartbeat.stopped = true;
-    clearInterval(heartbeat.timer);
-    this.recordWarning(`Product mutation lock owner changed; stopping heartbeat for ${this.lockDir}`, warnings);
-  }
-
-  private ownerFileFor(lockDir: string): string {
-    return join(lockDir, "owner.json");
-  }
-
-  private async restoreClaimedOwner(claimFile: string, warnings: string[]): Promise<void> {
-    let claimedOwner: string;
+  private async reclaimMutationSidecar(lockPath: string, expected: MutationSidecarRead | undefined): Promise<boolean> {
+    const mutationLockPath = `${lockPath}.mutate`;
+    const claimPath = `${mutationLockPath}.${randomBytes(8).toString("hex")}.claim`;
     try {
-      claimedOwner = await readFile(claimFile, "utf8");
+      await rename(mutationLockPath, claimPath);
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return;
-      }
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return true;
       throw error;
     }
 
-    try {
-      await writeFile(this.ownerFileFor(this.lockDir), claimedOwner, { encoding: "utf8", flag: "wx" });
-      await rm(claimFile, { force: true });
-    } catch (error) {
-      if (isNodeError(error) && error.code === "EEXIST") {
-        this.recordWarning(
-          `Product mutation lock owner changed while restoring ${claimFile}; preserving ${this.lockDir}`,
-          warnings
-        );
-        await rm(claimFile, { force: true });
-        return;
-      }
-      if (isNodeError(error) && error.code === "ENOENT") {
-        await rm(claimFile, { force: true });
-        return;
-      }
-      throw error;
+    const claimed = await this.readMutationSidecar(claimPath);
+    if (sameMutationSidecar(expected, claimed) && isMutationSidecarReclaimable(claimed)) {
+      await rm(claimPath, { force: true });
+      return true;
     }
+
+    await this.restoreClaimFile(claimPath, mutationLockPath, { removeOnExisting: false });
+    return false;
   }
 
-  private async claimLockDirectory(): Promise<string | undefined> {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const claimedDir = join(
-        dirname(this.lockDir),
-        `.product-mutations.lock.${process.pid}.${randomBytes(8).toString("hex")}.removing`
-      );
-      try {
-        await rename(this.lockDir, claimedDir);
-        return claimedDir;
-      } catch (error) {
-        if (isNodeError(error) && error.code === "ENOENT") {
-          return undefined;
-        }
-        if (isNodeError(error) && error.code === "EEXIST") {
-          continue;
-        }
+  private async releaseMutationSidecar(lockPath: string, expected: MutationSidecarContent): Promise<void> {
+    const mutationLockPath = `${lockPath}.mutate`;
+    const claimPath = `${mutationLockPath}.${randomBytes(8).toString("hex")}.claim`;
+    try {
+      await rename(mutationLockPath, claimPath);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+      throw error;
+    }
+
+    const claimed = await this.readMutationSidecar(claimPath);
+    if (claimed?.status === "valid" && claimed.lock.lock_id === expected.lock_id) {
+      await rm(claimPath, { force: true });
+      return;
+    }
+    await this.restoreClaimFile(claimPath, mutationLockPath, { removeOnExisting: false });
+  }
+
+  private async restoreClaimFile(claimPath: string, targetPath: string, options?: { removeOnExisting?: boolean }): Promise<void> {
+    try {
+      await copyFile(claimPath, targetPath, constants.COPYFILE_EXCL);
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
+        throw error;
+      }
+      if (options?.removeOnExisting === false) {
         throw error;
       }
     }
+    await rm(claimPath, { force: true });
+  }
 
-    throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock cleanup path is unavailable", {
-      lock_path: this.lockDir
+  private async assertNoClaimedLock(lockPath: string): Promise<void> {
+    const lockDir = dirname(lockPath);
+    const prefix = `${basename(lockPath)}.`;
+    const claims = (await readdir(lockDir).catch(() => []))
+      .filter((file) => file.startsWith(prefix) && file.endsWith(".claim"));
+    if (claims.length === 0) return;
+    throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Lock mutation claim is in progress", {
+      lock_path: lockPath,
+      claim_path: join(lockDir, claims[0]!)
     });
   }
 
-  private async restoreClaimedLock(claimedDir: string, warnings: string[]): Promise<void> {
+  private async withClaimedLockUnderMutation<T>(
+    lockPath: string,
+    warnings: string[],
+    mutate: (existing: ClaimedLock | undefined, claim: ClaimedLockMutation) => Promise<T>
+  ): Promise<T> {
+    const claimPath = `${lockPath}.${randomBytes(8).toString("hex")}.claim`;
+    let claimActive = false;
+    const restore = async () => {
+      if (!claimActive) return;
+      try {
+        await copyFile(claimPath, lockPath, constants.COPYFILE_EXCL);
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+          recordWarning(`LOCK_RELEASE_MISMATCH:${lockPath}`, warnings);
+          await rm(claimPath, { force: true });
+          claimActive = false;
+          return;
+        } else {
+          throw error;
+        }
+      }
+      await rm(claimPath, { force: true });
+      claimActive = false;
+    };
+    const claim: ClaimedLockMutation = {
+      async remove() {
+        if (!claimActive) return;
+        try {
+          await readFile(lockPath, "utf8");
+          recordWarning(`LOCK_RELEASE_MISMATCH:${lockPath}`, warnings);
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+            throw error;
+          }
+        }
+        await rm(claimPath, { force: true });
+        claimActive = false;
+      },
+      async replace(lock) {
+        if (!claimActive) return false;
+        await writeFile(claimPath, `${JSON.stringify(lock, null, 2)}\n`, "utf8");
+        try {
+          await copyFile(claimPath, lockPath, constants.COPYFILE_EXCL);
+          await rm(claimPath, { force: true });
+          claimActive = false;
+          return true;
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+            recordWarning(`LOCK_RELEASE_MISMATCH:${lockPath}`, warnings);
+            await rm(claimPath, { force: true });
+            claimActive = false;
+            return false;
+          }
+          throw error;
+        }
+      },
+      restore
+    };
+
     try {
-      await mkdir(this.lockDir);
-    } catch (error) {
-      if (isNodeError(error) && error.code === "EEXIST") {
-        this.recordWarning(
-          `Product mutation lock path was reused while restoring ${claimedDir}; preserving ${this.lockDir}`,
-          warnings
-        );
-        await rm(claimedDir, { recursive: true, force: true });
-        return;
+      try {
+        await rename(lockPath, claimPath);
+        claimActive = true;
+      } catch (error) {
+        if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+          return await mutate(undefined, claim);
+        }
+        throw error;
       }
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return;
+      let existing: ClaimedLock;
+      try {
+        existing = { status: "valid", lock: lockSchema.parse(JSON.parse(await readFile(claimPath, "utf8"))) };
+      } catch {
+        existing = { status: "corrupt" };
       }
-      throw error;
+      return await mutate(existing, claim);
+    } finally {
+      if (claimActive) {
+        await restore();
+      }
     }
+  }
 
-    const entries = await readdir(claimedDir).catch((error: unknown) => {
-      if (isNodeError(error) && error.code === "ENOENT") {
-        return [];
-      }
-      throw error;
-    });
-
+  private async readExisting(lockPath: string): Promise<{ status: "valid"; lock: V6LockContent } | { status: "corrupt" } | undefined> {
+    let raw: string;
     try {
-      for (const entry of entries) {
-        await rename(join(claimedDir, entry), join(this.lockDir, entry));
-      }
-      await rm(claimedDir, { recursive: true, force: true });
+      raw = await readFile(lockPath, "utf8");
     } catch (error) {
-      this.recordWarning(
-        `Product mutation lock restore failed for ${claimedDir}: ${errorMessage(error)}`,
-        warnings
-      );
-      throw error;
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
+      return { status: "corrupt" };
+    }
+    try {
+      return { status: "valid", lock: lockSchema.parse(JSON.parse(raw)) };
+    } catch {
+      return { status: "corrupt" };
     }
   }
 }
 
-function normalizeInput(input: { operation: string; product_id?: string }): { operation: string; product_id?: string } {
-  if (!input || typeof input.operation !== "string" || input.operation.trim().length === 0) {
-    throw new FormaError("INVALID_INPUT", "Product mutation operation is required", { operation: input?.operation });
-  }
-  if (input.product_id !== undefined && (typeof input.product_id !== "string" || input.product_id.trim().length === 0)) {
-    throw new FormaError("INVALID_INPUT", "Product mutation product_id must be a non-empty string", {
-      product_id: input.product_id
-    });
-  }
-  return input.product_id === undefined
-    ? { operation: input.operation }
-    : { operation: input.operation, product_id: input.product_id };
-}
-
-function createOwner(input: { operation: string; product_id?: string }): ProductMutationOwner {
-  const now = new Date().toISOString();
+function createLock(input: { operation: string; product_id?: string; session_id?: string; scope?: string }): V6LockContent {
+  const now = new Date();
   return {
-    owner_id: randomBytes(16).toString("hex"),
-    pid: process.pid,
-    operation: input.operation,
-    product_id: input.product_id,
-    acquired_at: now,
-    updated_at: now
+    lock_id: `L-${randomBytes(8).toString("hex")}`,
+    owner_pid: process.pid,
+    owner_process_start_time: processStartTime(),
+    hostname: hostname(),
+    command: input.operation,
+    scope: input.scope ?? input.operation,
+    ...(input.product_id ? { product_id: input.product_id } : {}),
+    ...(input.session_id ? { session_id: input.session_id } : {}),
+    acquired_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+    heartbeat_at: now.toISOString()
   };
 }
 
-function retryDelayMs(): number {
-  return retryIntervalMs + Math.floor(Math.random() * (jitterMs + 1));
+function createMutationSidecar(): MutationSidecarContent {
+  const now = new Date();
+  return {
+    lock_id: `M-${randomBytes(8).toString("hex")}`,
+    owner_pid: process.pid,
+    owner_process_start_time: processStartTime(),
+    hostname: hostname(),
+    acquired_at: now.toISOString(),
+    expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString()
+  };
 }
 
-async function delay(ms: number): Promise<void> {
-  await new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
+function isMutationSidecarReclaimable(sidecar: MutationSidecarRead | undefined): boolean {
+  if (!sidecar || sidecar.status === "corrupt") return true;
+  return Date.parse(sidecar.lock.expires_at) <= Date.now() || !isPidAlive(sidecar.lock.owner_pid);
 }
 
-function defaultIsPidAlive(pid: number): boolean {
+function sameMutationSidecar(expected: MutationSidecarRead | undefined, actual: MutationSidecarRead | undefined): boolean {
+  if (!expected) return !actual;
+  if (!actual) return false;
+  if (expected.status === "corrupt" || actual.status === "corrupt") {
+    return expected.status === actual.status;
+  }
+  return expected.lock.lock_id === actual.lock.lock_id;
+}
+
+function normalizeInput(input: { operation: string; product_id?: string; session_id?: string; scope?: string }): {
+  operation: string;
+  product_id?: string;
+  session_id?: string;
+  scope?: string;
+} {
+  if (!input || typeof input.operation !== "string" || input.operation.trim().length === 0) {
+    throw new FormaError("INVALID_INPUT", "Product mutation operation is required", { operation: input?.operation });
+  }
+  if (input.product_id !== undefined) {
+    return {
+      ...input,
+      product_id: parseProductId(input.product_id),
+      ...(input.session_id !== undefined ? { session_id: parseSessionId(input.session_id) } : {})
+    };
+  }
+  if (input.session_id !== undefined) {
+    return { ...input, session_id: parseSessionId(input.session_id) };
+  }
+  return input;
+}
+
+function parseProductId(productId: string): string {
+  const parsed = productIdSchema.safeParse(productId);
+  if (!parsed.success) {
+    throw new FormaError("INVALID_INPUT", "Product mutation product_id is invalid", { product_id: productId });
+  }
+  return parsed.data;
+}
+
+function parseSessionId(sessionId: string): string {
+  const parsed = sessionIdSchema.safeParse(sessionId);
+  if (!parsed.success) {
+    throw new FormaError("INVALID_INPUT", "Product mutation session_id is invalid", { session_id: sessionId });
+  }
+  return parsed.data;
+}
+
+function assertInsideHome(home: string, file: string): string {
+  const resolved = resolve(file);
+  if (resolved !== home && !resolved.startsWith(`${home}${sep}`)) {
+    throw new FormaError("INVALID_INPUT", "Lock path escapes Forma home", { home, path: file });
+  }
+  return resolved;
+}
+
+function isLockLive(lock: V6LockContent): boolean {
+  return Date.parse(lock.expires_at) > Date.now() && isPidAlive(lock.owner_pid);
+}
+
+function isPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return isNodeError(error) && error.code === "EPERM";
+    return error instanceof Error && "code" in error && error.code === "EPERM";
   }
 }
 
-function isProductMutationOwner(value: unknown): value is ProductMutationOwner {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return (
-    typeof value.owner_id === "string" &&
-    typeof value.pid === "number" &&
-    Number.isInteger(value.pid) &&
-    value.pid > 0 &&
-    typeof value.operation === "string" &&
-    (value.product_id === undefined || typeof value.product_id === "string") &&
-    typeof value.acquired_at === "string" &&
-    Number.isFinite(Date.parse(value.acquired_at)) &&
-    typeof value.updated_at === "string" &&
-    Number.isFinite(Date.parse(value.updated_at))
-  );
+function processStartTime(): string {
+  return new Date(Date.now() - Math.round(process.uptime() * 1000)).toISOString();
 }
 
-function ownersMatch(a: ProductMutationOwner, b: ProductMutationOwner): boolean {
-  return (
-    a.owner_id === b.owner_id &&
-    a.pid === b.pid &&
-    a.operation === b.operation &&
-    a.product_id === b.product_id &&
-    a.acquired_at === b.acquired_at &&
-    a.updated_at === b.updated_at
-  );
+function recordWarning(warning: string, warnings: string[]): void {
+  warnings.push(warning);
+  defaultProductMutationWarningSink(warning);
+  emittedProductMutationWarningCounts.set(warnings, warnings.length);
 }
 
 function flushErrorWarnings(error: unknown, onProductMutationWarning: (warning: string) => void): void {
-  if (!isRecord(error) || !isRecord(error.details)) {
-    return;
+  if (!(error instanceof FormaError)) return;
+  const details = error.details;
+  const warnings = Array.isArray(details.warnings) ? details.warnings.filter((warning): warning is string => typeof warning === "string") : [];
+  const alreadyEmitted = emittedFormaErrorDetailsWarningCounts.get(details) ?? 0;
+  for (const warning of warnings.slice(alreadyEmitted)) {
+    onProductMutationWarning(warning);
   }
-  const warnings = error.details.warnings;
-  if (!Array.isArray(warnings) || !warnings.every((warning) => typeof warning === "string")) {
-    return;
-  }
-  const emittedWarnings =
-    onProductMutationWarning === defaultProductMutationWarningSink
-      ? (emittedFormaErrorDetailsWarningCounts.get(error.details) ?? 0)
-      : 0;
-  for (let index = emittedWarnings; index < warnings.length; index += 1) {
-    onProductMutationWarning(warnings[index]!);
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && "code" in error;
 }
 
 function errorMessage(error: unknown): string {

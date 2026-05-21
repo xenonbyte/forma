@@ -13,6 +13,22 @@ describe("matchRoute", () => {
     expect(match.hash).toBe("#new-requirement");
   });
 
+  it("does not match the removed legacy design detail route", () => {
+    const match = matchRoute("/products/P-123abc/requirements/R-12345678/designs/D-12345678");
+
+    expect(match.found).toBe(false);
+    expect(match.route.path).toBe("*");
+  });
+
+  it("matches the requirement-level design route and ignores page query params for path matching", () => {
+    const match = matchRoute("/products/P-123abc/requirements/R-12345678/design?page_id=checkout-page");
+
+    expect(match.found).toBe(true);
+    expect(match.route.path).toBe("/products/:productId/requirements/:reqId/design");
+    expect(match.params).toEqual({ productId: "P-123abc", reqId: "R-12345678" });
+    expect(match.pathname).toBe("/products/P-123abc/requirements/R-12345678/design");
+  });
+
   it("keeps delete navigation state when navigating back to products", () => {
     const deleteState = {
       productDelete: {

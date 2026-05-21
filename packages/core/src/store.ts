@@ -3,7 +3,6 @@ import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { BaselineService } from "./baseline.js";
 import { CopyService } from "./copy.js";
-import { DesignService } from "./design.js";
 import {
   deleteProductLocked,
   recoverPendingProductDeletesLocked,
@@ -14,6 +13,9 @@ import {
   type ProductDeletionRecoveryResult
 } from "./product-deletion.js";
 import { assertProductConfig, ProductService } from "./product.js";
+import { getProductComponentLibrary } from "./components.js";
+import { getRequirementDesign } from "./requirement-design.js";
+import { readDesignStartupRecoveryState } from "./design-session.js";
 import {
   defaultProductMutationWarningSink,
   getProductMutationLock,
@@ -28,12 +30,12 @@ import {
   defaultPencilRunner,
   PencilService,
   type GeneratedComponentCandidate,
-  type GeneratedDesign,
-  type GenerateComponentsInput,
-  type GeneratePageDesignInput
+  type GenerateComponentsInput
 } from "./pencil.js";
 import { SyncService } from "./sync.js";
 import { FormaError } from "./errors.js";
+import { readSchemaNormalizationRecoveryState, SchemaNormalizationStartupError } from "./schema-normalization.js";
+import { writeYamlAtomic } from "./yaml.js";
 
 export interface ComponentGenerator {
   generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponentCandidate>;
@@ -43,32 +45,6 @@ export interface GeneratedComponents extends GeneratedComponentCandidate {
   libraryPath: string;
 }
 
-export interface PageDesignGenerator {
-  generatePageDesign(input: GeneratePageDesignInput): Promise<GeneratedDesign>;
-}
-
-export interface GenerateAndSavePageDesignInput {
-  product_id: string;
-  requirement_id: string;
-  page_id: string;
-  prompt: string;
-  workspace: string;
-}
-
-export interface GenerateAndSavePageDesignResult {
-  product_id: string;
-  requirement_id: string;
-  page_id: string;
-  design_id: string;
-  version: number;
-  pen_path: string;
-  preview_path: string;
-}
-
-type GeneratedDesignCleanup = (tempDir: string) => Promise<void>;
-type GeneratedDesignCleanupOutcome = "committed" | "failed";
-type PageDesignSaveMode = "generate" | "refine" | "update";
-
 export interface FormaStoreOptions {
   home: string;
   bundledStylesDir?: string;
@@ -76,12 +52,44 @@ export interface FormaStoreOptions {
   productMutationLock?: ProductMutationLock;
   onProductMutationWarning?: (warning: string) => void;
   pencilService?: ComponentGenerator;
-  pageDesignGenerator?: PageDesignGenerator;
-  generatedDesignCleanup?: GeneratedDesignCleanup;
   productDeletionHooks?: ProductDeletionHooks;
 }
 
-export function createFormaStore(options: FormaStoreOptions) {
+export interface FormaStore {
+  home: string;
+  baseline: BaselineService;
+  copy: CopyService;
+  deleteProduct(input: DeleteProductInput): Promise<DeleteProductResult>;
+  generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponents>;
+  products: ProductService;
+  recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
+  requirements: RequirementService;
+  runProductMutation<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: ProductMutationContext) => Promise<T>
+  ): Promise<T>;
+  sessions: SessionService;
+  sync: SyncService;
+  styles: StyleService;
+}
+
+export async function createFormaStore(options: FormaStoreOptions): Promise<FormaStore> {
+  const normalization = await readSchemaNormalizationRecoveryState(options.home);
+  if (normalization.mode !== "normal") {
+    throw new SchemaNormalizationStartupError(normalization);
+  }
+  const store = createStrictFormaStore(options);
+  await validateStrictStoreReadModels(store);
+  void readDesignStartupRecoveryState(options.home)
+    .then((state) => writeYamlAtomic(join(options.home, "design-session-recovery-status.yaml"), {
+      scanned_at: new Date().toISOString(),
+      ...state
+    }))
+    .catch(() => undefined);
+  return store;
+}
+
+function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   const productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
   const onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
   const productMutationOptions = {
@@ -90,15 +98,12 @@ export function createFormaStore(options: FormaStoreOptions) {
   };
   const pencil = new PencilService({ home: options.home, runner: defaultPencilRunner });
   const componentGenerator = options.pencilService ?? pencil;
-  const pageDesignGenerator = options.pageDesignGenerator ?? pencil;
-  const generatedDesignCleanup = options.generatedDesignCleanup ?? defaultGeneratedDesignCleanup;
   const styles = new StyleService({ home: options.home, bundledStylesDir: options.bundledStylesDir });
   const products = new ProductService({ home: options.home, ...productMutationOptions });
   const sessions = new SessionService({ home: options.home, products, ...productMutationOptions });
   const baseline = new BaselineService({ home: options.home, products, ...productMutationOptions });
   const copy = new CopyService({ home: options.home, ...productMutationOptions });
   const requirements = new RequirementService({ home: options.home, products, baseline, copy, ...productMutationOptions });
-  const designs = new DesignService({ home: options.home, products, ...productMutationOptions });
   const sync = new SyncService({ home: options.home, pencilService: pencil, runner: defaultPencilRunner, styleLimit: options.syncStyleLimit });
   const runProductMutation = <T>(
     input: { operation: string; product_id?: string },
@@ -111,86 +116,10 @@ export function createFormaStore(options: FormaStoreOptions) {
       onProductMutationWarning
     );
   const generateComponents = (input: GenerateComponentsInput): Promise<GeneratedComponents> =>
-    runProductMutation({ operation: "generate_components", product_id: input.product_id }, async () => {
-      const product = await products.getProduct(input.product_id);
-      assertProductConfig(product, input.product_id, ["platform", "style", "languages"]);
-      const candidate = await componentGenerator.generateComponents(input);
-      const libraryPath = products.componentLibraryFile(input.product_id);
-      try {
-        await copyFileAtomic(candidate.penPath, libraryPath);
-        return { ...candidate, libraryPath };
-      } catch (error) {
-        await rm(candidate.tempDir, { recursive: true, force: true });
-        throw error;
-      }
-    });
-  const generateAndSavePageDesign = (input: GenerateAndSavePageDesignInput): Promise<GenerateAndSavePageDesignResult> =>
-    runProductMutation({ operation: "generate_and_save_page_design", product_id: input.product_id }, async (context) => {
-      const product = await products.getProduct(input.product_id);
-      assertProductConfig(product, input.product_id, ["platform", "style", "languages", "components_initialized"]);
-
-      const requirement = await requirements.getRequirement({ requirement_id: input.requirement_id });
-      if (requirement.product_id !== input.product_id) {
-        throw new FormaError("PAGE_NOT_OWNED", "Requirement is not owned by product", {
-          product_id: input.product_id,
-          requirement_id: input.requirement_id,
-          requirement_product_id: requirement.product_id
-        });
-      }
-
-      const page = requirement.pages.find((candidate) => candidate.page_id === input.page_id);
-      if (!page) {
-        throw new FormaError("PAGE_NOT_OWNED", "Page is not owned by requirement", {
-          product_id: input.product_id,
-          requirement_id: input.requirement_id,
-          page_id: input.page_id
-        });
-      }
-
-      const mode = modeFromPageChangeType(page.change_type);
-      const generated = await pageDesignGenerator.generatePageDesign({
-        product_id: input.product_id,
-        prompt: input.prompt,
-        workspace: input.workspace
-      });
-
-      let committed = false;
-      let cleanupDone = false;
-      const cleanupGenerated = async (outcome: GeneratedDesignCleanupOutcome): Promise<void> => {
-        if (cleanupDone) return;
-        cleanupDone = true;
-        await cleanupGeneratedDesignOutput(context, generatedDesignCleanup, generated.tempDir, outcome);
-      };
-      try {
-        const savedDesigns = await designs.saveDesignsLocked(input.requirement_id, [
-          { page_id: input.page_id, mode, penPath: generated.penPath, previewPath: generated.previewPath }
-        ]);
-        committed = true;
-
-        const saved = savedDesigns.find((design) => design.page_id === input.page_id);
-        if (!saved) {
-          throw new FormaError("DESIGN_NOT_FOUND", "Saved design was not found", {
-            requirement_id: input.requirement_id,
-            page_id: input.page_id
-          });
-        }
-
-        const metadata = await designs.getDesignMetadata(saved.id);
-        await cleanupGenerated("committed");
-        return {
-          product_id: input.product_id,
-          requirement_id: input.requirement_id,
-          page_id: input.page_id,
-          design_id: saved.id,
-          version: saved.version,
-          pen_path: metadata.pen_path,
-          preview_path: metadata.preview_path
-        };
-      } catch (error) {
-        await cleanupGenerated(committed ? "committed" : "failed");
-        throw error;
-      }
-    });
+    Promise.reject(new FormaError("PENCIL_CAPABILITY_UNAVAILABLE", "Headless component generation is unavailable in v6", {
+      product_id: input.product_id,
+      required_mode: "app_bound_session"
+    }));
   const deletionRuntime = { home: options.home, products, hooks: options.productDeletionHooks };
   const deleteProduct = async (input: DeleteProductInput): Promise<DeleteProductResult> => {
     const productId = validateDeleteProductInput(input);
@@ -216,9 +145,7 @@ export function createFormaStore(options: FormaStoreOptions) {
     baseline,
     copy,
     deleteProduct,
-    designs,
     generateComponents,
-    generateAndSavePageDesign,
     products,
     recoverPendingProductDeletes,
     requirements,
@@ -229,32 +156,33 @@ export function createFormaStore(options: FormaStoreOptions) {
   };
 }
 
-function modeFromPageChangeType(changeType: unknown): PageDesignSaveMode {
-  if (changeType === "new") return "generate";
-  if (changeType === "patch") return "refine";
-  if (changeType === "rebuild") return "update";
-  throw new FormaError("DESIGN_MODE_INVALID", "Design mode is invalid", { change_type: changeType });
-}
-
-async function cleanupGeneratedDesignOutput(
-  context: ProductMutationContext,
-  cleanup: GeneratedDesignCleanup,
-  tempDir: string,
-  outcome: GeneratedDesignCleanupOutcome
-): Promise<void> {
-  try {
-    await cleanup(tempDir);
-  } catch (error) {
-    context.warnings.push(`Failed to cleanup generated design temp dir after ${outcome}: ${tempDir}: ${errorMessage(error)}`);
+async function validateStrictStoreReadModels(store: FormaStore): Promise<void> {
+  const products = await store.products.listProducts();
+  for (const productEntry of products) {
+    const product = await store.products.getProduct(productEntry.id);
+    const baseline = await store.baseline.getProductBaseline(product.id);
+    void baseline;
+    const componentLibrary = await getProductComponentLibrary(store.home, product.id);
+    if (componentLibrary.status !== "missing" && componentLibrary.status !== "complete") {
+      throw new FormaError("STRICT_SCHEMA_VALIDATION_FAILED", "Strict component library read model is invalid", {
+        product_id: product.id,
+        status: componentLibrary.status
+      });
+    }
+    const requirements = await store.requirements.getRequirementHistory(product.id);
+    for (const requirement of requirements) {
+      await store.copy.getTranslations(product.id, requirement.id);
+      const design = await getRequirementDesign(store.home, product.id, requirement.id);
+      if (design.status === "invalid") {
+        throw new FormaError("STRICT_SCHEMA_VALIDATION_FAILED", "Strict requirement design read model is invalid", {
+          product_id: product.id,
+          requirement_id: requirement.id,
+          missing_files: design.missing_files,
+          error: design.error
+        });
+      }
+    }
   }
-}
-
-async function defaultGeneratedDesignCleanup(tempDir: string): Promise<void> {
-  await rm(tempDir, { recursive: true, force: true });
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 async function copyFileAtomic(source: string, destination: string): Promise<void> {

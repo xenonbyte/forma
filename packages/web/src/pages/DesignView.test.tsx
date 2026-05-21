@@ -1,69 +1,116 @@
-import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+// @vitest-environment happy-dom
 
-import { DesignContent, selectAnnotationNode } from "./DesignView.js";
-import type { AnnotationNode, DesignHistoryPayload } from "../api.js";
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const annotations: AnnotationNode[] = [
-  { id: "frame", name: "Checkout frame", type: "frame", x: 0, y: 0, width: 400, height: 300 },
-  { id: "cta", parent_id: "frame", name: "Pay button", type: "button", x: 40, y: 220, width: 120, height: 44 },
-  { id: "summary", parent_id: "frame", name: "Summary panel", type: "panel", x: 220, y: 40, width: 140, height: 120 }
-];
+import { DesignView } from "./DesignView.js";
+import type { FormaApiClient, RequirementDesignCanvas, RequirementDesignScene } from "../api.js";
 
-const history: DesignHistoryPayload = {
-  design_id: "D-12345678",
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const completeCanvas: RequirementDesignCanvas = {
+  index_status: "complete",
   product_id: "P-123abc",
   requirement_id: "R-12345678",
-  page_id: "checkout",
-  current_version: 2,
-  versions: [
-    {
-      version: 1,
-      file: "design.v1.pen",
-      preview_file: "preview.v1@2x.png",
-      created_at: "2026-05-17T01:00:00.000Z",
-      current: false,
-      image_url: "/api/designs/D-12345678/image/file?version=1"
-    },
-    {
-      version: 2,
-      file: "design.pen",
-      preview_file: "preview@2x.png",
-      created_at: "2026-05-17T02:00:00.000Z",
-      current: true,
-      image_url: "/api/designs/D-12345678/image/file?version=2"
-    }
-  ]
+  canvas_version: 1,
+  pages: [{ page_id: "checkout-page", status: "done", frame_id: "frame-1" }]
 };
 
-describe("DesignView selection", () => {
-  it("keeps up to two selected nodes and toggles an existing selection", () => {
-    expect(selectAnnotationNode([], "frame")).toEqual(["frame"]);
-    expect(selectAnnotationNode(["frame"], "cta")).toEqual(["frame", "cta"]);
-    expect(selectAnnotationNode(["frame", "cta"], "summary")).toEqual(["cta", "summary"]);
-    expect(selectAnnotationNode(["cta", "summary"], "cta")).toEqual(["summary"]);
+const missingCanvas: RequirementDesignCanvas = {
+  index_status: "missing",
+  product_id: "P-123abc",
+  requirement_id: "R-12345678",
+  pages: []
+};
+
+const scene: RequirementDesignScene = {
+  schema_version: 1,
+  product_id: "P-123abc",
+  requirement_id: "R-12345678",
+  canvas: { file: "design.pen", version: 1 },
+  pages: [
+    {
+      page_id: "checkout-page",
+      frame_id: "frame-1",
+      preview: { status: "exported", file: "previews/checkout-page@2x.png" },
+      nodes: [{ id: "frame-1", name: "Checkout", type: "frame", unsupported_properties: [] }]
+    }
+  ],
+  unsupported_properties: []
+};
+
+const roots: Root[] = [];
+const containers: HTMLElement[] = [];
+
+afterEach(() => {
+  for (const root of roots.splice(0)) {
+    act(() => {
+      root.unmount();
+    });
+  }
+  for (const container of containers.splice(0)) {
+    container.remove();
+  }
+  vi.restoreAllMocks();
+  window.history.replaceState({}, "", "/products");
+});
+
+describe("DesignView", () => {
+  it("loads scene only after a complete requirement design canvas is available", async () => {
+    const client = {
+      getRequirementDesignCanvas: vi.fn(async () => completeCanvas),
+      getRequirementDesignScene: vi.fn(async () => scene)
+    } satisfies Pick<FormaApiClient, "getRequirementDesignCanvas" | "getRequirementDesignScene">;
+    const { container, root } = createTestRoot();
+
+    window.history.replaceState({}, "", "/products/P-123abc/requirements/R-12345678/design?page_id=checkout-page");
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      await flushPromises();
+    });
+
+    expect(client.getRequirementDesignCanvas).toHaveBeenCalledWith("P-123abc", "R-12345678");
+    expect(client.getRequirementDesignScene).toHaveBeenCalledWith("P-123abc", "R-12345678");
+    expect(container.textContent).toContain("checkout-page");
+    expect(container.textContent).toContain("frame-1");
+    expect(container.textContent).toContain("Complete");
+    expect(container.querySelector('[role="application"]')).not.toBeNull();
+    expect(container.querySelector("[data-design-view-layout]")?.className).toContain("md:grid-cols");
+    expect(container.textContent).toContain("Properties");
+    expect(container.textContent).toContain("Preview");
+    expect(container.innerHTML).not.toContain("Annotation canvas");
   });
 
-  it("passes two selected nodes through to the property panel", () => {
-    const html = renderToStaticMarkup(
-      <DesignContent
-        annotations={annotations}
-        designId="D-12345678"
-        history={history}
-        hoveredNode={null}
-        onHoverNode={() => undefined}
-        onSelectNode={() => undefined}
-        onVersionSelectionChange={() => undefined}
-        productId="P-123abc"
-        requirementId="R-12345678"
-        selectedNodeIds={["cta", "summary"]}
-        versionSelection={{ fromVersion: 1, toVersion: 2 }}
-      />
-    );
+  it("shows index action state for missing canvases without reading scene", async () => {
+    const client = {
+      getRequirementDesignCanvas: vi.fn(async () => missingCanvas),
+      getRequirementDesignScene: vi.fn(async () => scene)
+    } satisfies Pick<FormaApiClient, "getRequirementDesignCanvas" | "getRequirementDesignScene">;
+    const { container, root } = createTestRoot();
 
-    expect(html).toContain("Spacing");
-    expect(html).toContain("Pay button");
-    expect(html).toContain("Summary panel");
-    expect(html).toContain("Checkout frame / Pay button");
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      await flushPromises();
+    });
+
+    expect(client.getRequirementDesignCanvas).toHaveBeenCalledWith("P-123abc", "R-12345678");
+    expect(client.getRequirementDesignScene).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Index required");
   });
 });
+
+function createTestRoot() {
+  const container = document.createElement("div");
+  document.body.append(container);
+  containers.push(container);
+  const root = createRoot(container);
+  roots.push(root);
+  return { container, root };
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}

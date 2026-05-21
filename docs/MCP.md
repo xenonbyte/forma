@@ -13,6 +13,12 @@ Forma MCP tools return JSON text content. Tool failures use a stable payload sha
 
 Agents should read session state before route-specific work and should not infer the active product from chat history alone.
 
+## Schema Normalization Limited Mode
+
+When v6 schema normalization blocks startup, the MCP server registers only limited tools. `fm-status` returns the side-effect-free `schema_normalization` state. Other normal tools return `SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED` or `SCHEMA_NORMALIZATION_RECOVERY_REQUIRED` and do not construct runtime services or rewrite YAML.
+
+Run the explicit CLI/API recovery flow outside MCP: `schema-normalization-dry-run`, `v6-schema-cutover`, `recover-v6-normalization-journal`, or `restore-v6-normalization-backup`. Status reads never recover, restore, or rewrite files.
+
 ## Products
 
 - `list_products`: lists products.
@@ -20,9 +26,8 @@ Agents should read session state before route-specific work and should not infer
 - `delete_product`: deletes a product after explicit ID confirmation.
 - `init_product_config`: writes platform, style, `languages`, and `default_language` for an existing product. v0.3 requires `languages` and `default_language`; `default_language` must be included in `languages`.
 - `update_product_config`: updates platform, style, `languages`, and `default_language`. v0.3 requires `languages` and `default_language`.
-- `complete_product_init`: marks product components as initialized after component generation.
 
-Product selection/basic configuration is complete when platform, style, languages, and default language are present. This completeness check excludes component initialization. Page design still requires initialized components and returns `PRODUCT_CONFIG_INCOMPLETE` when components are missing.
+Product selection/basic configuration is complete when platform, style, languages, and default language are present. This completeness check excludes component initialization.
 
 `delete_product` input is:
 
@@ -49,7 +54,7 @@ There is no `delete_requirement` MCP tool. Requirement changes and removals rema
 ## Requirements
 
 - `get_requirement_history`: lists requirement history for a product.
-- `get_requirement`: reads a requirement by `requirement_id` or the latest product requirement by `product_id`. v0.3 returns structured page `copy`, `copy_translations`, and page `design_metadata` when available.
+- `get_requirement`: reads a requirement by `requirement_id` or the latest product requirement by `product_id`. It returns structured page `copy` and `copy_translations` without legacy page-level design metadata.
 - `save_requirement`: creates or updates a requirement through the unified state machine.
 - `get_product_rules`: reads persisted product-level behavioral rules.
 
@@ -65,16 +70,19 @@ v0.3 `get_baseline_image` can resolve expired baseline pages when an existing pr
 
 ## Designs
 
-- `generate_and_save_page_design`: generates a page design and persists the resulting `.pen` and preview as the official design in one workflow.
-- `generate_page_design`: generates temporary Pencil output for low-level debugging or compatibility workflows.
-- `generate_components`: generates product components through Pencil.
-- `save_designs`: persists validated design outputs and advances saved page design status.
-- `rollback_design`: rolls a design back to the previous version.
-- `diff_designs`: compares annotations between two design versions.
-- `get_design_annotations`: reads design annotations.
-- `export_design_asset`: exports a design node as `png`, `svg`, or `pdf`.
+Legacy page-level design MCP tools are no longer registered. Explicit calls to removed tool names should receive the MCP platform's unknown tool response, not a Forma compatibility handler.
 
-Design generation checks product configuration. Page design requires initialized components; component generation requires product platform, style, and languages. Normal `/design` workflows should call `generate_and_save_page_design`, which persists the generated `.pen` and preview as the official page design. `generate_page_design` only creates temporary Pencil output; low-level callers using it must pass the returned `pen_path` and `preview_path` to `save_designs`, otherwise generated `.pen` files can remain temporary and be lost. Persisted design metadata, history, rollback, annotations, and preview serving use files under `$FORMA_HOME/data`. `generate_components` remains store-orchestrated and runs under the product mutation lock, so concurrent product deletion or component generation for the same Forma home is serialized.
+Requirement-level v6 tools are registered in these groups:
+
+- Session: `begin_requirement_design_session`, `apply_requirement_design_operations`, `commit_requirement_design_session`, `discard_requirement_design_session`, `recover_design_commit_journal`.
+- Product components: `begin_product_component_session`, `apply_product_component_operations`, `commit_product_component_session`, `discard_product_component_session`, `get_product_component_library`.
+- Read/model: `get_requirement_design_canvas`, `index_requirement_design_canvas`, `get_requirement_design_scene`, `get_requirement_design_history`, `rollback_requirement_design`, `diff_requirement_design_versions`, `export_requirement_design_asset`.
+- Component/quality: `index_component_usages`, `refresh_requirement_components`, `plan_import_metadata_normalization`, `validate_requirement_design_quality`.
+- Session-scoped Pencil wrappers: `session_get_editor_state`, `session_get_guidelines`, `session_get_variables`, `session_batch_get`, `session_snapshot_layout`, `session_get_screenshot`, `session_export_nodes`.
+
+Session wrapper inputs require `session_id`, may include `pencil_binding_id`, and reject caller-supplied path/output fields such as `filePath`, `file_path`, `canvas_path`, `staging_path`, `outputDir`, `output_dir`, `path`, `pen_path`, `preview_path`, and `history_path`. Requirement design mutations must go through `apply_requirement_design_operations`; requirement sessions accept only `batch_design` operations with v6 intents.
+
+`refresh_requirement_components` accepts `scope: "all_pages"` or an object containing `page_ids`, `component_keys`, or both. Empty arrays and blank page/component keys are validation errors. Stable component refresh errors from core are returned without renaming.
 
 ## Styles
 
@@ -97,11 +105,10 @@ Translation entries use `{ context, texts, outdated }`, where `texts` maps langu
 `help.usage_guide.workflows.develop_frontend` documents this four-step data path for implementation agents:
 
 1. `get_requirement`
-2. `get_design_annotations`
-3. `export_design_asset`
-4. `get_product_rules`
+2. `get_product_rules`
+3. `get_page_copy`
 
-Use that order to load requirement intent, inspect the generated design, export required assets, and apply behavioral rules before frontend implementation.
+Use that order to load requirement intent, apply behavioral rules, and read source copy before frontend implementation.
 
 ## Error Codes
 
@@ -129,7 +136,17 @@ Core Forma errors include:
 - `SYNC_GIT_NOT_FOUND`
 - `PENCIL_CLI_NOT_FOUND`
 - `PENCIL_NOT_AUTHENTICATED`
+- `PENCIL_APP_REQUIRED`
+- `PENCIL_CAPABILITY_UNAVAILABLE`
 - `PENCIL_LOCK_HELD`
+- `FORBIDDEN_PATH_PARAMETER`
+- `DESIGN_SESSION_ACTIVE`
+- `MANUAL_EDIT_DETECTED`
+- `COMPONENT_USAGE_UNLINKED`
+- `COMPONENT_LIBRARY_UNMAPPED`
+- `COMPONENT_CONTRACT_CHANGED`
+- `COMPONENT_OVERRIDE_CONFLICT`
+- `COMPONENT_REFRESH_PARTIAL_BLOCKED`
 
 MCP wrapper errors include:
 

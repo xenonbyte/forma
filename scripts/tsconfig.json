@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true,
+    "baseUrl": "..",
+    "paths": {
+      "@xenonbyte/forma-core": ["packages/core/src/index.ts"],
+      "@xenonbyte/forma-server": ["packages/server/src/index.ts"],
+      "@xenonbyte/forma-mcp": ["packages/mcp/src/index.ts"]
+    },
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}

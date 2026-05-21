@@ -1,10 +1,31 @@
 import { randomUUID } from "node:crypto";
-import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
+import { access, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { PassThrough, Writable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
 import { PencilService, type PencilRunner } from "../src/index.js";
 import { defaultPencilRunner } from "../src/pencil.js";
+import {
+  PENCIL_BATCH_GET_TIMEOUT_MS,
+  PENCIL_CONTROLLED_SAVE_TIMEOUT_MS,
+  PENCIL_DESKTOP_PREFLIGHT_TIMEOUT_MS,
+  PENCIL_EDITOR_STATE_TIMEOUT_MS,
+  PENCIL_GUIDELINES_TIMEOUT_MS,
+  PENCIL_LIVENESS_TIMEOUT_MS,
+  PENCIL_OPEN_PROBE_TIMEOUT_MS,
+  PENCIL_SCREENSHOT_TIMEOUT_MS,
+  PENCIL_SESSION_EXPORT_TIMEOUT_MS,
+  PENCIL_SNAPSHOT_LAYOUT_TIMEOUT_MS,
+  PENCIL_STATUS_TIMEOUT_MS,
+  PENCIL_VARIABLES_TIMEOUT_MS,
+  PENCIL_VERSION_TIMEOUT_MS,
+  PencilAppSessionAdapter,
+  PencilReadExportAdapter,
+  type PencilInteractiveProcess,
+  type PencilInteractiveProcessFactory
+} from "../src/pencil-adapter.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -29,6 +50,17 @@ function createFakeRunner(
   };
 }
 
+function createHealthyRunner(): PencilRunner {
+  return createFakeRunner(async (_command, args) => {
+    if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+    if (args[0] === "status") return { stdout: "active", stderr: "" };
+    if (args[0] === "interactive" && args[1] === "--help") {
+      return { stdout: "get_editor_state get_guidelines batch_get batch_design export_nodes snapshot_layout set_variables save", stderr: "" };
+    }
+    return { stdout: "ok", stderr: "" };
+  });
+}
+
 async function createHome(name: string) {
   return await mkdir(join(tmpdir(), `forma-pencil-${name}-${randomUUID()}`), { recursive: true });
 }
@@ -37,7 +69,365 @@ async function delay(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createFakeProcessFactory(messages: string[] = []): PencilInteractiveProcessFactory {
+  return async () => ({
+    pid: process.pid + 4242 + messages.length,
+    async send(message) {
+      messages.push(message);
+      return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+    },
+    isAlive: () => true,
+    async close() {
+      messages.push("close");
+    }
+  });
+}
+
+function createMockInteractiveChild(options: {
+  stderrBeforeStdout?: boolean;
+  neverRespond?: boolean;
+  responseDelayMs?: number;
+  writes?: string[];
+}) {
+  const child = new EventEmitter() as EventEmitter & {
+    pid: number;
+    stdin: Writable & { setDefaultEncoding(encoding: BufferEncoding): Writable };
+    stdout: PassThrough;
+    stderr: PassThrough;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const writes = options.writes ?? [];
+  child.pid = process.pid + 9000 + writes.length;
+  child.stdout = stdout;
+  child.stderr = stderr;
+  child.kill = vi.fn(() => {
+    child.emit("exit", 1);
+    return true;
+  });
+  child.stdin = new Writable({
+    write(chunk, _encoding, callback) {
+      const text = chunk.toString();
+      writes.push(text);
+      callback();
+      if (options.neverRespond) return;
+        setTimeout(() => {
+          if (options.stderrBeforeStdout) {
+            stderr.write("warning before completion\n");
+          }
+          stdout.write(`result for ${writes.length}\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
+        }, options.responseDelayMs ?? 0);
+    }
+  }) as Writable & { setDefaultEncoding(encoding: BufferEncoding): Writable };
+  child.stdin.setDefaultEncoding = () => child.stdin;
+  return { child, writes };
+}
+
+function createPromptTerminatedInteractiveChild(options: { writes?: string[] }) {
+  const child = new EventEmitter() as EventEmitter & {
+    pid: number;
+    stdin: Writable & { setDefaultEncoding(encoding: BufferEncoding): Writable };
+    stdout: PassThrough;
+    stderr: PassThrough;
+    kill: ReturnType<typeof vi.fn>;
+  };
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const writes = options.writes ?? [];
+  child.pid = process.pid + 9100 + writes.length;
+  child.stdout = stdout;
+  child.stderr = stderr;
+  child.kill = vi.fn(() => {
+    child.emit("exit", 1);
+    return true;
+  });
+  child.stdin = new Writable({
+    write(chunk, _encoding, callback) {
+      const text = chunk.toString();
+      writes.push(text);
+      callback();
+      if (/^\w+\(.*\)\n$/.test(text)) {
+        stdout.write(`{"message":"schema ok"}\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
+      } else {
+        stdout.write(`\u001b[31mInvalid syntax. Expected: tool_name({ key: value })\u001b[39m\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
+      }
+    }
+  }) as Writable & { setDefaultEncoding(encoding: BufferEncoding): Writable };
+  child.stdin.setDefaultEncoding = () => child.stdin;
+  return { child, writes };
+}
+
 describe("PencilService", () => {
+  it("exports fixed v6 Pencil adapter timeout constants", () => {
+    expect(PENCIL_VERSION_TIMEOUT_MS).toBe(10_000);
+    expect(PENCIL_STATUS_TIMEOUT_MS).toBe(10_000);
+    expect(PENCIL_DESKTOP_PREFLIGHT_TIMEOUT_MS).toBe(45_000);
+    expect(PENCIL_OPEN_PROBE_TIMEOUT_MS).toBe(60_000);
+    expect(PENCIL_LIVENESS_TIMEOUT_MS).toBe(5_000);
+    expect(PENCIL_CONTROLLED_SAVE_TIMEOUT_MS).toBe(30_000);
+    expect(PENCIL_SESSION_EXPORT_TIMEOUT_MS).toBe(60_000);
+    expect(PENCIL_EDITOR_STATE_TIMEOUT_MS).toBe(15_000);
+    expect(PENCIL_VARIABLES_TIMEOUT_MS).toBe(15_000);
+    expect(PENCIL_GUIDELINES_TIMEOUT_MS).toBe(20_000);
+    expect(PENCIL_BATCH_GET_TIMEOUT_MS).toBe(15_000);
+    expect(PENCIL_SNAPSHOT_LAYOUT_TIMEOUT_MS).toBe(15_000);
+    expect(PENCIL_SCREENSHOT_TIMEOUT_MS).toBe(60_000);
+  });
+
+  it("runs Pencil preflight before session files and cleans the probe directory", async () => {
+    const home = await createHome("adapter-preflight");
+    const fakeRunner = createFakeRunner(async (_command, args) => {
+      if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args[0] === "interactive" && args[1] === "--help") {
+        return { stdout: "get_editor_state get_guidelines batch_get batch_design export_nodes snapshot_layout set_variables save", stderr: "" };
+      }
+      if (args[0] === "interactive") return { stdout: "{\"schema\":true}", stderr: "" };
+      if (args[0] === "get_editor_state") return { stdout: "{\"schema\":true}", stderr: "" };
+      return { stdout: "", stderr: "" };
+    });
+    const adapter = new PencilAppSessionAdapter({ home, runner: fakeRunner, processFactory: createFakeProcessFactory() });
+
+    await expect(adapter.preflight()).resolves.toMatchObject({
+      ok: true,
+      version: "pencil 1.2.3",
+      capabilities: expect.arrayContaining(["batch_design", "save"])
+    });
+    await expect(access(join(home, ".pencil-preflight"))).rejects.toThrow();
+    expect(fakeRunner.calls.map((call) => call.args)).toEqual([
+      ["version"],
+      ["status"],
+      ["interactive", "--help"]
+    ]);
+  });
+
+  it("maps Pencil preflight failures to stable v6 error codes", async () => {
+    const home = await createHome("adapter-failures");
+    await expect(new PencilAppSessionAdapter({
+      home,
+      runner: createFakeRunner(async () => {
+        throw Object.assign(new Error("missing"), { code: "ENOENT" });
+      })
+    }).preflight()).rejects.toMatchObject({ code: "PENCIL_CLI_NOT_FOUND" });
+
+    await expect(new PencilAppSessionAdapter({
+      home,
+      runner: createFakeRunner(async (_command, args) => {
+        if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+        throw new Error("inactive");
+      })
+    }).preflight()).rejects.toMatchObject({ code: "PENCIL_NOT_AUTHENTICATED" });
+
+    await expect(new PencilAppSessionAdapter({
+      home,
+      runner: createFakeRunner(async (_command, args) => {
+        if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+        if (args[0] === "status") return { stdout: "active", stderr: "" };
+        return { stdout: "get_editor_state", stderr: "" };
+      })
+    }).preflight()).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
+  });
+
+  it("opens app-bound staging files and rejects read-export mutations", async () => {
+    const home = await createHome("adapter-open");
+    const staging = join(home, "staging.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const fakeRunner = createFakeRunner(async (_command, args) => {
+      if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args[0] === "interactive" && args[1] === "--help") {
+        return { stdout: "get_editor_state get_guidelines batch_get batch_design export_nodes snapshot_layout set_variables save", stderr: "" };
+      }
+      if (args[0] === "interactive") return { stdout: "{\"schema\":true}", stderr: "" };
+      if (args[0] === "get_editor_state") return { stdout: "{\"schema\":true}", stderr: "" };
+      if (args[0] === "interactive-shell") return { stdout: "{\"schema\":true}", stderr: "" };
+      if (args[0] === "save") return { stdout: "saved", stderr: "" };
+      return { stdout: "", stderr: "" };
+    });
+    const appAdapter = new PencilAppSessionAdapter({ home, runner: fakeRunner, processFactory: createFakeProcessFactory() });
+
+    const binding = await appAdapter.openSession({ session_id: "S-open", staging_path: staging });
+    expect(binding).toMatchObject({
+      session_id: "S-open",
+      mode: "app",
+      staging_path: await realpath(staging)
+    });
+    expect(binding.pid).not.toBe(process.pid);
+    await expect(new PencilReadExportAdapter({ home, runner: fakeRunner }).executeMutation("batch_design", {})).rejects.toMatchObject({
+      code: "PENCIL_CAPABILITY_UNAVAILABLE"
+    });
+  });
+
+  it("keeps a child-process binding and sends save/write through the binding shell", async () => {
+    const home = await createHome("adapter-binding");
+    const staging = join(home, "staging.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const messages: string[] = [];
+    const aliveStates: boolean[] = [];
+    const runner = createFakeRunner(async (_command, args) => {
+      if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args[0] === "interactive" && args[1] === "--help") {
+        return { stdout: "get_editor_state get_guidelines batch_get batch_design export_nodes snapshot_layout set_variables save", stderr: "" };
+      }
+      if (args[0] === "get_editor_state") return { stdout: "{\"schema\":true}", stderr: "" };
+      return { stdout: "ok", stderr: "" };
+    });
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      runner,
+      processFactory: async () => {
+        const index = aliveStates.push(true) - 1;
+        return {
+          pid: process.pid + 4242 + index,
+          async send(message) {
+            messages.push(message);
+            if (!aliveStates[index]) throw new Error("dead");
+            return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}" : "ok", stderr: "" };
+          },
+          isAlive: () => aliveStates[index]!,
+          async close() {
+            aliveStates[index] = false;
+          }
+        };
+      }
+    });
+
+    const binding = await adapter.openSession({ session_id: "S-bind", staging_path: staging });
+    expect(binding.pid).toBe(process.pid + 4243);
+    await adapter.controlledSave(binding.pencil_binding_id);
+    await adapter.executeWriteTool(binding.pencil_binding_id, "batch_design", { nodes: [] });
+
+    expect(messages).toEqual([
+      "get_editor_state({\"include_schema\":true})",
+	      "save()",
+	      "get_editor_state({\"include_schema\":true})",
+	      "save()",
+	      "save()",
+	      "batch_design({\"nodes\":[]})"
+	    ]);
+    expect(runner.calls.filter((call) => call.args[0] === "batch_design" || (call.args[0] === "save" && call.args[1] === staging))).toEqual([]);
+
+    aliveStates[1] = false;
+    await expect(adapter.controlledSave(binding.pencil_binding_id)).rejects.toMatchObject({ code: "PENCIL_APP_REQUIRED" });
+  });
+
+  it("does not treat stderr warnings as interactive command completion", async () => {
+    vi.resetModules();
+    const writes: string[] = [];
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => createMockInteractiveChild({ stderrBeforeStdout: true, writes }).child)
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
+    const home = await createHome("adapter-stderr-frame");
+    const staging = join(home, "staging.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const adapter = new FreshAdapter({ home, runner: createHealthyRunner() });
+
+    const binding = await adapter.openSession({ session_id: "S-stderr", staging_path: staging });
+    await expect(adapter.controlledSave(binding.pencil_binding_id)).resolves.toBeUndefined();
+
+    expect(writes.some((write) => write.includes("save()"))).toBe(true);
+    vi.doUnmock("node:child_process");
+    vi.resetModules();
+  });
+
+  it("uses Pencil function-call syntax and completes on the returned prompt", async () => {
+    vi.resetModules();
+    const writes: string[] = [];
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => createPromptTerminatedInteractiveChild({ writes }).child)
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
+    const home = await createHome("adapter-prompt-completion");
+    const staging = join(home, "staging.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const adapter = new FreshAdapter({ home, runner: createHealthyRunner() });
+
+    try {
+      const opened = adapter.openSession({ session_id: "S-prompt", staging_path: staging });
+      await expect(opened).resolves.toMatchObject({ session_id: "S-prompt" });
+      expect(writes).toEqual([
+        "get_editor_state({\"include_schema\":true})\n",
+        "save()\n",
+        "get_editor_state({\"include_schema\":true})\n",
+        "save()\n"
+      ]);
+    } finally {
+      vi.doUnmock("node:child_process");
+      vi.resetModules();
+    }
+  });
+
+  it("serializes concurrent interactive sends for one child process", async () => {
+    vi.resetModules();
+    const writes: string[] = [];
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => createMockInteractiveChild({ responseDelayMs: 5, writes }).child)
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
+    const home = await createHome("adapter-serialized");
+    const staging = join(home, "staging.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const adapter = new FreshAdapter({ home, runner: createHealthyRunner() });
+    const binding = await adapter.openSession({ session_id: "S-serial", staging_path: staging });
+    writes.length = 0;
+
+    await Promise.all([
+      adapter.controlledSave(binding.pencil_binding_id),
+      adapter.executeWriteTool(binding.pencil_binding_id, "batch_design", { nodes: [] })
+    ]);
+
+    expect(writes).toHaveLength(2);
+    expect(writes[0]).toContain("save()");
+    expect(writes[1]).toContain("batch_design");
+    vi.doUnmock("node:child_process");
+    vi.resetModules();
+  });
+
+  it("marks timed out interactive child processes unavailable", async () => {
+    vi.useFakeTimers();
+    vi.resetModules();
+    const children: Array<ReturnType<typeof createMockInteractiveChild>["child"]> = [];
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => {
+        const created = createMockInteractiveChild({ neverRespond: true });
+        children.push(created.child);
+        return created.child;
+      })
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
+    const home = await createHome("adapter-timeout");
+    const staging = join(home, "staging.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const adapter = new FreshAdapter({ home, runner: createHealthyRunner() });
+
+    const opened = adapter.openSession({ session_id: "S-timeout", staging_path: staging });
+    while (children.length === 0) {
+      await vi.advanceTimersByTimeAsync(0);
+      await Promise.resolve();
+    }
+    await vi.advanceTimersByTimeAsync(PENCIL_EDITOR_STATE_TIMEOUT_MS + 1);
+    await expect(opened).rejects.toMatchObject({ code: "PENCIL_APP_REQUIRED" });
+    expect(children[0]?.kill).toHaveBeenCalled();
+    vi.doUnmock("node:child_process");
+    vi.resetModules();
+    vi.useRealTimers();
+  });
+
+  it("makes legacy headless generation unavailable in v6 runtime", async () => {
+    const home = await createHome("headless-unavailable");
+    const service = new PencilService({ home, runner: createFakeRunner() });
+
+    await expect(service.generatePageDesign({ product_id: "P-123abc", prompt: "draw", workspace: home })).rejects.toMatchObject({
+      code: "PENCIL_CAPABILITY_UNAVAILABLE"
+    });
+    await expect(service.generateComponents({ product_id: "P-123abc", prompt: "draw", workspace: home })).rejects.toMatchObject({
+      code: "PENCIL_CAPABILITY_UNAVAILABLE"
+    });
+  });
+
   it("passes timeout options through the default runner", async () => {
     await expect(defaultPencilRunner.run(process.execPath, ["--version"], { timeoutMs: 5_000 })).resolves.toMatchObject({
       stderr: expect.any(String),
@@ -330,67 +720,36 @@ describe("PencilService", () => {
     ]);
   });
 
-  it("generatePageDesign runs expected pencil commands and returns temp paths", async () => {
+  it("generatePageDesign is unavailable as a v6 headless runtime write path", async () => {
     const home = await createHome("page-design");
-    const fakeRunner = createFakeRunner(async (_command, args) => {
-      if (args[0] === "status") return { stdout: "active", stderr: "" };
-      if (args.includes("--out")) {
-        const out = args[args.indexOf("--out") + 1];
-        await writeFile(out, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
-      }
-      if (args.includes("--export")) {
-        const output = args[args.indexOf("--export") + 1];
-        await writeFile(output, minimalPng);
-      }
-      return { stdout: "ok", stderr: "" };
-    });
+    const fakeRunner = createFakeRunner();
     const service = new PencilService({ home, runner: fakeRunner });
 
-    const result = await service.generatePageDesign({
+    await expect(service.generatePageDesign({
       product_id: "P-page",
       prompt: "Create checkout",
       workspace: "/tmp/workspace"
-    });
+    })).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
 
-    await expect(access(result.penPath)).resolves.toBeUndefined();
-    await expect(access(result.previewPath)).resolves.toBeUndefined();
-    const generateCall = fakeRunner.calls.find((call) => call.args.includes("--prompt"));
-    expect(generateCall?.command).toBe("pencil");
-    expect(generateCall?.args).toEqual(["--out", result.penPath, "--workspace", "/tmp/workspace", "--prompt", "Create checkout"]);
-    expect(fakeRunner.calls.some((call) => call.args.includes("--export-scale") && call.args.includes("2"))).toBe(true);
+    expect(fakeRunner.calls).toEqual([]);
   });
 
-  it("generateComponents runs expected pencil command and returns temp paths", async () => {
+  it("generateComponents is unavailable as a v6 headless runtime write path", async () => {
     const home = await createHome("components");
     const finalLibraryPath = join(home, "library", "P-c0ffee.lib.pen");
     await mkdir(dirname(finalLibraryPath), { recursive: true });
     await writeFile(finalLibraryPath, "sentinel component library");
-    const fakeRunner = createFakeRunner(async (_command, args) => {
-      if (args[0] === "status") return { stdout: "active", stderr: "" };
-      if (args.includes("--out")) {
-        const out = args[args.indexOf("--out") + 1];
-        await writeFile(out, JSON.stringify({ children: [{ id: "button", type: "component" }] }));
-      }
-      return { stdout: "ok", stderr: "" };
-    });
+    const fakeRunner = createFakeRunner();
     const service = new PencilService({ home, runner: fakeRunner });
 
-    const result = await service.generateComponents({
+    await expect(service.generateComponents({
       product_id: "P-c0ffee",
       prompt: "Create controls",
       workspace: "/tmp/workspace"
-    });
+    })).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
 
-    await expect(access(result.penPath)).resolves.toBeUndefined();
-    expect(result).toEqual({ tempDir: result.tempDir, penPath: result.penPath });
-    expect(result.penPath.endsWith("components.lib.pen")).toBe(true);
     expect(await readFile(finalLibraryPath, "utf8")).toBe("sentinel component library");
-    expect(fakeRunner.calls.find((call) => call.args.includes("--prompt"))?.args).toEqual([
-      "--out",
-      result.penPath,
-      "--prompt",
-      "Create controls"
-    ]);
+    expect(fakeRunner.calls).toEqual([]);
   });
 
   it("rejects unsafe component library product ids before running Pencil", async () => {
@@ -411,14 +770,14 @@ describe("PencilService", () => {
         prompt: "Create controls",
         workspace: "/tmp/workspace"
       })
-    ).rejects.toMatchObject({ code: "PRODUCT_NOT_FOUND" });
+    ).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
 
     expect(fakeRunner.calls).toEqual([]);
     await expect(access(join(home, "escape.lib.pen"))).rejects.toThrow();
     await expect(access(join(dirname(home), "escape.lib.pen"))).rejects.toThrow();
   });
 
-  it("rejects invalid generated pen files and releases the lock", async () => {
+  it("does not create temp files for removed headless component generation", async () => {
     const home = await createHome("invalid-generated");
     let outputPen = "";
     const fakeRunner = createFakeRunner(async (_command, args) => {
@@ -438,12 +797,12 @@ describe("PencilService", () => {
         prompt: "Create invalid output",
         workspace: "/tmp/workspace"
       })
-    ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    ).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
     await expect(access(join(home, "pencil.lock"))).rejects.toThrow();
-    await expect(access(dirname(outputPen))).rejects.toThrow();
+    expect(outputPen).toBe("");
   });
 
-  it("cleans up page design temp dir after failed preview export", async () => {
+  it("does not create temp files for removed headless page design generation", async () => {
     const home = await createHome("preview-cleanup");
     let outputPen = "";
     const fakeRunner = createFakeRunner(async (_command, args) => {
@@ -466,7 +825,7 @@ describe("PencilService", () => {
         prompt: "Create preview",
         workspace: "/tmp/workspace"
       })
-    ).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
-    await expect(access(dirname(outputPen))).rejects.toThrow();
+    ).rejects.toMatchObject({ code: "PENCIL_CAPABILITY_UNAVAILABLE" });
+    expect(outputPen).toBe("");
   });
 });

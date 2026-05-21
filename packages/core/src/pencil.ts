@@ -147,37 +147,16 @@ export class PencilService {
   }
 
   async generatePageDesign(input: GeneratePageDesignInput): Promise<GeneratedDesign> {
-    await this.checkAvailability();
-    return await this.withLock({ operation: "design", product_id: input.product_id }, async () => {
-      const tempDir = await this.createTempDir();
-      try {
-        const penPath = join(tempDir, "page.pen");
-        const previewPath = join(tempDir, "preview.png");
-        await this.runner.run("pencil", ["--out", penPath, "--workspace", input.workspace, "--prompt", input.prompt]);
-        await this.validatePenFile(penPath);
-        await this.exportPreview(penPath, previewPath);
-        return { penPath, previewPath, tempDir };
-      } catch (error) {
-        await rm(tempDir, { recursive: true, force: true });
-        throw error;
-      }
+    void input;
+    throw new FormaError("PENCIL_CAPABILITY_UNAVAILABLE", "Headless page design generation is unavailable in v6", {
+      required_mode: "app_bound_session"
     });
   }
 
   async generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponentCandidate> {
-    const productId = parseProductId(input.product_id);
-    await this.checkAvailability();
-    return await this.withLock({ operation: "components", product_id: productId }, async () => {
-      const tempDir = await this.createTempDir();
-      try {
-        const penPath = join(tempDir, "components.lib.pen");
-        await this.runner.run("pencil", ["--out", penPath, "--prompt", input.prompt]);
-        await this.validatePenFile(penPath);
-        return { penPath, tempDir };
-      } catch (error) {
-        await rm(tempDir, { recursive: true, force: true });
-        throw error;
-      }
+    void input;
+    throw new FormaError("PENCIL_CAPABILITY_UNAVAILABLE", "Headless component generation is unavailable in v6", {
+      required_mode: "app_bound_session"
     });
   }
 
