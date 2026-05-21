@@ -19,6 +19,12 @@ const removedLegacyCommands = ["fm-refine-design"] as const;
 
 type Platform = "claude" | "codex" | "gemini";
 
+const fallbackMcpCommandRunner = {
+  run: async () => {
+    throw new Error("official MCP CLI unavailable in install tests");
+  }
+};
+
 interface InstallManifest {
   platform: Platform;
   installed_paths: string[];
@@ -43,9 +49,18 @@ async function createService(options: ConstructorParameters<typeof InstallServic
     formaHome,
     userHome,
     templatesDir: resolve("packages/agent/templates"),
+    mcpCommandRunner: fallbackMcpCommandRunner,
     ...options
   });
   return { formaHome, userHome, service };
+}
+
+function formaStdioMcpConfig(command = "forma", args = ["mcp"]) {
+  return { type: "stdio", command, args, env: {} };
+}
+
+function userHomeEnv(userHome: string) {
+  return { HOME: userHome, USERPROFILE: userHome };
 }
 
 async function readManifest(formaHome: string, platform: Platform): Promise<InstallManifest> {
@@ -184,6 +199,104 @@ describe("InstallService", () => {
       expect(codex.installed_paths).not.toContain(join(userHome, ".codex", "skills", command, "SKILL.md"));
     }
     expect(codex.config_paths).toEqual([join(userHome, ".codex", "config.toml")]);
+  });
+
+  it("uses official MCP CLI commands before managed config file fallbacks", async () => {
+    const calls: Array<{
+      command: string;
+      args: string[];
+      options?: { env?: Record<string, string | undefined> };
+    }> = [];
+    const { formaHome, userHome, service } = await createService({
+      mcpCommandRunner: {
+        run: async (command, args, options) => {
+          calls.push({ command, args, options });
+        }
+      }
+    });
+
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+
+    expect((await readManifest(formaHome, "claude")).config_paths).toEqual([join(userHome, ".claude.json")]);
+    expect((await readManifest(formaHome, "codex")).config_paths).toEqual([join(userHome, ".codex", "config.toml")]);
+    expect((await readManifest(formaHome, "gemini")).config_paths).toEqual([join(userHome, ".gemini", "settings.json")]);
+
+    await service.uninstallPlatforms(["claude", "codex", "gemini"]);
+
+    expect(calls).toEqual([
+      {
+        command: "claude",
+        args: ["mcp", "add-json", "--scope", "user", "forma", JSON.stringify(formaStdioMcpConfig())],
+        options: { env: userHomeEnv(userHome) }
+      },
+      {
+        command: "codex",
+        args: ["mcp", "add", "forma", "--", "forma", "mcp"],
+        options: { env: userHomeEnv(userHome) }
+      },
+      {
+        command: "gemini",
+        args: ["mcp", "add", "--scope", "user", "--transport", "stdio", "forma", "forma", "mcp"],
+        options: { env: userHomeEnv(userHome) }
+      },
+      {
+        command: "claude",
+        args: ["mcp", "remove", "--scope", "user", "forma"],
+        options: { env: userHomeEnv(userHome) }
+      },
+      {
+        command: "codex",
+        args: ["mcp", "remove", "forma"],
+        options: { env: userHomeEnv(userHome) }
+      },
+      {
+        command: "gemini",
+        args: ["mcp", "remove", "--scope", "user", "forma"],
+        options: { env: userHomeEnv(userHome) }
+      }
+    ]);
+    await expect(exists(join(userHome, ".claude.json"))).resolves.toBe(false);
+    await expect(exists(join(userHome, ".codex", "config.toml"))).resolves.toBe(false);
+    await expect(exists(join(userHome, ".gemini", "settings.json"))).resolves.toBe(false);
+  });
+
+  it("removes empty config artifacts left by official MCP CLI removal", async () => {
+    let userHome = "";
+    const { service, userHome: createdUserHome } = await createService({
+      mcpCommandRunner: {
+        run: async (command, args) => {
+          if (args[0] !== "mcp" || args[1] !== "remove") {
+            return;
+          }
+
+          if (command === "claude") {
+            const configPath = join(userHome, ".claude.json");
+            await mkdir(dirname(configPath), { recursive: true });
+            await writeFile(configPath, `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`, "utf8");
+            return;
+          }
+
+          if (command === "gemini") {
+            const configPath = join(userHome, ".gemini", "settings.json");
+            await mkdir(dirname(configPath), { recursive: true });
+            await writeFile(configPath, `${JSON.stringify({ mcpServers: {} }, null, 2)}\n`, "utf8");
+            return;
+          }
+
+          const configPath = join(userHome, ".codex", "config.toml");
+          await mkdir(dirname(configPath), { recursive: true });
+          await writeFile(configPath, "\n", "utf8");
+        }
+      }
+    });
+    userHome = createdUserHome;
+
+    await service.installPlatforms(["claude", "codex", "gemini"]);
+    await service.uninstallPlatforms(["claude", "codex", "gemini"]);
+
+    await expect(exists(join(userHome, ".claude.json"))).resolves.toBe(false);
+    await expect(exists(join(userHome, ".codex", "config.toml"))).resolves.toBe(false);
+    await expect(exists(join(userHome, ".gemini", "settings.json"))).resolves.toBe(false);
   });
 
   it("removes stale command files from old manifests during install upgrade", async () => {
@@ -527,7 +640,7 @@ describe("InstallService", () => {
     expect(JSON.parse(await readFile(claudeCodeConfig, "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: { command: "forma", args: ["mcp"] }
+        forma: formaStdioMcpConfig()
       }
     });
     await expect(exists(join(userHome, ".claude", "mcp.json"))).resolves.toBe(false);
@@ -540,7 +653,7 @@ describe("InstallService", () => {
     await mkdir(dirname(legacyConfig), { recursive: true });
     await writeFile(
       legacyConfig,
-      `${JSON.stringify({ mcpServers: { forma: { command: "forma", args: ["mcp"] } } }, null, 2)}\n`,
+      `${JSON.stringify({ mcpServers: { forma: formaStdioMcpConfig() } }, null, 2)}\n`,
       "utf8"
     );
     await writeYamlAtomic(join(formaHome, "manifests", "claude.manifest"), {
@@ -556,7 +669,7 @@ describe("InstallService", () => {
 
     expect(JSON.parse(await readFile(claudeCodeConfig, "utf8"))).toEqual({
       mcpServers: {
-        forma: { command: "forma", args: ["mcp"] }
+        forma: formaStdioMcpConfig()
       }
     });
     await expect(exists(legacyConfig)).resolves.toBe(false);
@@ -579,13 +692,13 @@ describe("InstallService", () => {
     expect(JSON.parse(await readFile(join(userHome, ".claude.json"), "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: { command: "forma", args: ["mcp"] }
+        forma: formaStdioMcpConfig()
       }
     });
     expect(JSON.parse(await readFile(join(userHome, ".gemini", "settings.json"), "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: { command: "forma", args: ["mcp"] }
+        forma: formaStdioMcpConfig()
       }
     });
   });
@@ -614,7 +727,7 @@ describe("InstallService", () => {
     expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: { command: "forma", args: ["mcp"] }
+        forma: formaStdioMcpConfig()
       }
     });
 

@@ -235,10 +235,14 @@ const saveRequirementSchema = z.object({
   remove_rule_ids: z.array(z.string().min(1)).optional(),
   remove_page_ids: z.array(z.string().min(1)).optional()
 }).strict();
-const getRequirementSchema = z.union([
-  z.object({ requirement_id: z.string().min(1) }).strict(),
-  z.object({ product_id: z.string().min(1) }).strict()
-]);
+const getRequirementSchema = z.object({
+  requirement_id: z.string().min(1).optional(),
+  product_id: z.string().min(1).optional()
+}).strict().superRefine((input, context) => {
+  if (Boolean(input.requirement_id) === Boolean(input.product_id)) {
+    context.addIssue({ code: "custom", message: "provide exactly one of requirement_id or product_id" });
+  }
+});
 const getPageCopySchema = z.object({
   product_id: z.string().min(1),
   page_id: z.string().min(1),
@@ -276,7 +280,7 @@ const forbiddenPathFieldNames = new Set([
 const forbiddenPathFieldSchemas = Object.fromEntries(
   [...forbiddenPathFieldNames].map((field) => [
     field,
-    z.custom<never>(() => false, { message: "FORBIDDEN_PATH_PARAMETER" }).optional()
+    z.never({ error: "FORBIDDEN_PATH_PARAMETER" }).optional()
   ])
 ) as Record<string, z.ZodType>;
 const sessionIdInputSchema = z.object({ session_id: nonEmptyStringSchema }).strict();
@@ -1015,7 +1019,9 @@ function toFormaErrorPayload(error: unknown): { error_code: string; message: str
 }
 
 async function getRequirementWithCopy(store: FormaStore, input: z.infer<typeof getRequirementSchema>) {
-  const requirement = await store.requirements.getRequirement(input);
+  const requirement = input.requirement_id
+    ? await store.requirements.getRequirement({ requirement_id: input.requirement_id })
+    : await store.requirements.getRequirement({ product_id: input.product_id! });
   const copyTranslations = await store.copy.getTranslations(requirement.product_id, requirement.id);
   return { ...requirement, copy_translations: copyTranslations };
 }

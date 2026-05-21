@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import * as z from "zod/v4";
 import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
 
 const removedLegacyToolNames = [
@@ -220,6 +221,20 @@ describe("MCP forma tools", () => {
     for (const removedToolName of removedLegacyToolNames) {
       expect(JSON.stringify(payload)).not.toContain(removedToolName);
     }
+  });
+
+  it("exposes JSON-Schema-compatible MCP input schemas", () => {
+    const failures: Array<{ tool: string; message: string }> = [];
+
+    for (const [tool, schema] of Object.entries(formaToolInputSchemas)) {
+      try {
+        z.toJSONSchema(schema);
+      } catch (error) {
+        failures.push({ tool, message: error instanceof Error ? error.message : String(error) });
+      }
+    }
+
+    expect(failures).toEqual([]);
   });
 
   it("v6 session wrapper schemas accept scoped inputs and reject caller path fields", () => {
