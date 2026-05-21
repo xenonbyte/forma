@@ -1348,65 +1348,63 @@ describe("Fastify API routes", () => {
     expect(store.sync.recoverFromCrash).toHaveBeenCalledTimes(1);
   });
 
-  it("does not wait for pending product delete recovery before app.ready resolves", async () => {
+  it("waits for pending product delete recovery before buildServer resolves", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
-    let recoveryResolved = false;
-    void recovery.promise.then(() => {
-      recoveryResolved = true;
-    });
+    let serverResolved = false;
     const store = fakeStore({
       recoverPendingProductDeletes: vi.fn(() => recovery.promise)
     });
-    const app = await buildServer({ store });
-    apps.push(app);
+    const server = buildServer({ store }).then((app) => {
+      serverResolved = true;
+      return app;
+    });
 
-    await app.ready();
+    await flushMicrotasks();
 
     expect(store.recoverPendingProductDeletes).toHaveBeenCalledTimes(1);
-    expect(recoveryResolved).toBe(false);
+    expect(serverResolved).toBe(false);
 
     recovery.resolve({ recovered: 0, cleaned: 0, warnings: [] });
-    await recovery.promise;
+    const app = await server;
+    apps.push(app);
+    await app.ready();
+    expect(serverResolved).toBe(true);
   });
 
-  it("logs pending product delete recovery warnings during startup", async () => {
+  it("logs pending product delete recovery warnings before serving normal routes", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
       recoverPendingProductDeletes: vi.fn(() => recovery.promise)
     });
-    const app = await buildServer({ store });
-    apps.push(app);
-    const warn = vi.spyOn(app.log, "warn");
+    const server = buildServer({ store });
 
-    await app.ready();
+    await flushMicrotasks();
+
     recovery.resolve({
       recovered: 1,
       cleaned: 0,
       warnings: ["rolled back pending delete", "cleaned stale operation"]
     });
-    await recovery.promise;
-    await flushMicrotasks();
+    const app = await server;
+    apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/api/products" });
 
-    expect(warn).toHaveBeenCalledWith({ warning: "rolled back pending delete" }, "Forma product deletion recovery warning");
-    expect(warn).toHaveBeenCalledWith({ warning: "cleaned stale operation" }, "Forma product deletion recovery warning");
+    expect(response.statusCode).toBe(200);
+    expect(store.products.listProducts).toHaveBeenCalledTimes(1);
   });
 
-  it("logs pending product delete recovery failures without rejecting app.ready", async () => {
+  it("rejects buildServer when pending product delete recovery fails", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
       recoverPendingProductDeletes: vi.fn(() => recovery.promise)
     });
-    const app = await buildServer({ store });
-    apps.push(app);
-    const warn = vi.spyOn(app.log, "warn");
     const error = new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
+    const server = buildServer({ store });
 
-    await app.ready();
-    recovery.reject(error);
-    await recovery.promise.catch(() => undefined);
     await flushMicrotasks();
+    recovery.reject(error);
 
-    expect(warn).toHaveBeenCalledWith({ error }, "Forma product deletion recovery failed");
+    await expect(server).rejects.toBe(error);
   });
 
   it("maps requirement archive invalid status to 409", async () => {

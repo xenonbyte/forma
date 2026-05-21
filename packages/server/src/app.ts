@@ -89,15 +89,10 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
     throw new Error("Forma store was not initialized");
   }
 
-  void store.recoverPendingProductDeletes()
-    .then((recovery) => {
-      for (const warning of recovery.warnings) {
-        app.log.warn({ warning }, "Forma product deletion recovery warning");
-      }
-    })
-    .catch((error: unknown) => {
-      app.log.warn({ error }, "Forma product deletion recovery failed");
-    });
+  const productDeletionRecovery = await store.recoverPendingProductDeletes();
+  for (const warning of productDeletionRecovery.warnings) {
+    app.log.warn({ warning }, "Forma product deletion recovery warning");
+  }
 
   void store.sync.recoverFromCrash().catch(() => undefined);
   registerRoutes(app, store);
