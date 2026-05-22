@@ -24,9 +24,15 @@ import { PencilAppSessionAdapter, type PencilInteractiveProcessFactory } from ".
 
 const fullPencilCapabilityHelp = "get_editor_state get_guidelines get_variables batch_get batch_design set_variables export_nodes snapshot_layout get_screenshot save";
 
-function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = {}): PencilRunner {
+function createRunner(options: {
+  failVersion?: boolean;
+  failWrite?: boolean;
+  calls?: string[][];
+  afterInteractiveHelp?: () => Promise<void> | void;
+} = {}): PencilRunner {
   return {
     async run(_command, args) {
+      options.calls?.push([...args]);
       if (options.failVersion && args[0] === "version") {
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
       }
@@ -36,6 +42,7 @@ function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = 
       if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
       if (args[0] === "status") return { stdout: "active", stderr: "" };
       if (args[0] === "interactive" && args[1] === "--help") {
+        await options.afterInteractiveHelp?.();
         return { stdout: fullPencilCapabilityHelp, stderr: "" };
       }
       if (args[0] === "get_editor_state") return { stdout: "{\"schema\":true}", stderr: "" };
@@ -249,17 +256,43 @@ describe("v6 requirement design sessions", () => {
     await mkdir(join(home, "data", "P-123abc", "R-1234abcd"), { recursive: true });
     await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "requirement.yaml"), requirementFixture());
     const openedPaths: string[] = [];
+    const pencilCalls: string[][] = [];
 
     await expect(beginRequirementDesignSession({
       home,
       product_id: "P-123abc",
       requirement_id: "R-1234abcd",
       operation: "generate",
-      runner: createRunner({ failVersion: true }),
+      runner: createRunner({ failVersion: true, calls: pencilCalls }),
+      processFactory: createConvergedSessionProcessFactory(openedPaths)
+    })).rejects.toMatchObject({
+      details: { required_action: "generate_components" }
+    });
+
+    expect(pencilCalls).toEqual([]);
+    expect(openedPaths).toEqual([]);
+    await expect(exists(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toBe(false);
+    await expect(exists(join(home, "data", "P-123abc", "R-1234abcd", "sessions"))).resolves.toBe(false);
+  });
+
+  it("rechecks component library under product lock before creating requirement session artifacts", async () => {
+    const home = await createHome();
+    const openedPaths: string[] = [];
+
+    await expect(beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner({
+        afterInteractiveHelp: async () => {
+          await rm(join(home, "library", "P-123abc.components.yaml"), { force: true });
+        }
+      }),
       processFactory: createConvergedSessionProcessFactory(openedPaths)
     })).rejects.toMatchObject({
       code: "COMPONENT_LIBRARY_METADATA_MISSING",
-      details: { required_action: "generate_components" }
+      details: { required_action: "generate_components", status: "metadata_missing" }
     });
 
     expect(openedPaths).toEqual([]);

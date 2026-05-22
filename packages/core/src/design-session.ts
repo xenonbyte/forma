@@ -148,15 +148,13 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
   const runner = input.runner ?? defaultPencilRunner;
   const appAdapter = new PencilAppSessionAdapter({ home, runner, processFactory: input.processFactory });
 
-  const componentLibrary = await getProductComponentLibrary(home, productId);
-  if (componentLibrary.status !== "complete") {
-    throw componentLibraryError(productId, componentLibrary.status, { ...componentLibrary });
-  }
+  await assertRequirementComponentLibraryComplete(home, productId);
   await appAdapter.preflight();
 
   const lock = getProductMutationLock(home);
-  return await lock.run({ operation: "begin_requirement_design_session", product_id: productId, scope: "requirement_canvas" }, async () =>
-    getPencilMutationLock(home).run({ operation: "begin_requirement_design_session", product_id: productId, scope: "pencil" }, async () => {
+  return await lock.run({ operation: "begin_requirement_design_session", product_id: productId, scope: "requirement_canvas" }, async () => {
+    await assertRequirementComponentLibraryComplete(home, productId);
+    return await getPencilMutationLock(home).run({ operation: "begin_requirement_design_session", product_id: productId, scope: "pencil" }, async () => {
     const sessionId = `S-${randomBytes(8).toString("hex")}`;
     const productLease = join(home, "data", productId, "sessions", "active-design-session.yaml");
     const localLease = join(home, "data", productId, requirementId, "sessions", "active.yaml");
@@ -287,7 +285,8 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
       };
       throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", details);
     }
-    }));
+    });
+  });
 }
 
 export interface ApplyRequirementDesignOperationsInput {
@@ -1492,6 +1491,13 @@ function minimalLegalPen(): string {
   return `${JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame", name: "Empty canvas" }] }, null, 2)}\n`;
 }
 
+async function assertRequirementComponentLibraryComplete(home: string, productId: string): Promise<void> {
+  const componentLibrary = await getProductComponentLibrary(home, productId);
+  if (componentLibrary.status !== "complete") {
+    throw componentLibraryError(productId, componentLibrary.status, { ...componentLibrary });
+  }
+}
+
 function componentLibraryError(productId: string, status: string, details: Record<string, unknown>): FormaError {
   const payload = {
     product_id: productId,
@@ -1500,10 +1506,10 @@ function componentLibraryError(productId: string, status: string, details: Recor
     required_action: "generate_components",
     ...details
   };
-  if (status === "missing" || status === "metadata_missing") {
+  if (status === "metadata_missing") {
     return new FormaError("COMPONENT_LIBRARY_METADATA_MISSING", "Product component library metadata is missing", payload);
   }
-  if (status === "version_snapshot_missing") {
+  if (status === "missing" || status === "version_snapshot_missing") {
     return new FormaError("COMPONENT_LIBRARY_VERSION_MISSING", "Product component library version snapshot is missing", payload);
   }
   if (status === "latest_file_missing") {
