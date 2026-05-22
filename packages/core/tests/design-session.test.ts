@@ -44,7 +44,7 @@ function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = 
   };
 }
 
-function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } = {}): PencilInteractiveProcessFactory {
+function createProcessFactory(options: { failOpen?: boolean; alive?: boolean; activePath?: string } = {}): PencilInteractiveProcessFactory {
   return async (input) => {
     if (options.failOpen) {
       throw new Error("open failed");
@@ -54,7 +54,7 @@ function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } =
       pid: process.pid + 3000,
       async send(message) {
         if (!alive) throw new Error("dead");
-        return createProcessResponse(message, input.stagingPath);
+        return createProcessResponse(message, input.stagingPath, options.activePath);
       },
       isAlive: () => alive,
       async close() {
@@ -117,13 +117,13 @@ function createWritingProcessFactory(options: { failBatchWrites?: number[] } = {
   };
 }
 
-function createProcessResponse(message: string, stagingPath: string): { stdout: string; stderr: string } {
-  return createOpenTimeProcessResponse(message, stagingPath) ?? { stdout: "ok\n", stderr: "" };
+function createProcessResponse(message: string, stagingPath: string, activePath?: string): { stdout: string; stderr: string } {
+  return createOpenTimeProcessResponse(message, stagingPath, activePath) ?? { stdout: "ok\n", stderr: "" };
 }
 
-function createOpenTimeProcessResponse(message: string, stagingPath: string): { stdout: string; stderr: string } | undefined {
+function createOpenTimeProcessResponse(message: string, stagingPath: string, activePath?: string): { stdout: string; stderr: string } | undefined {
   if (message.startsWith("get_editor_state")) {
-    return { stdout: `${JSON.stringify({ schema: true, filePath: stagingPath })}\n`, stderr: "" };
+    return { stdout: `${JSON.stringify({ schema: true, filePath: activePath ?? stagingPath })}\n`, stderr: "" };
   }
   if (message.startsWith("batch_get")) {
     return { stdout: `${JSON.stringify({ nodes: extractBatchGetNodeIds(message).map((id) => ({ id })) })}\n`, stderr: "" };
@@ -272,6 +272,38 @@ describe("v6 requirement design sessions", () => {
     await expect(readYaml(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toMatchObject({
       owner_path: "data/P-123abc/R-1234abcd/sessions/active.yaml",
       local_active_path: "data/P-123abc/R-1234abcd/sessions/active.yaml"
+    });
+  });
+
+  it("preserves adapter reason when requirement begin fails during active editor convergence", async () => {
+    const home = await createHome();
+    const other = join(home, "other.pen");
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+
+    let error: unknown;
+    try {
+      await beginRequirementDesignSession({
+        home,
+        product_id: "P-123abc",
+        requirement_id: "R-1234abcd",
+        operation: "generate",
+        runner: createRunner(),
+        processFactory: createProcessFactory({ activePath: other })
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        reason: "active_editor_path_mismatch"
+      }
+    });
+    const sessionId = (error as { details?: { session_id?: string } }).details?.session_id;
+    expect(sessionId).toEqual(expect.any(String));
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
+      reason: "active_editor_path_mismatch"
     });
   });
 
@@ -1287,6 +1319,38 @@ describe("v6 product component sessions", () => {
     await expect(exists(join(home, "library", "P-123abc.sessions"))).resolves.toBe(false);
     await expect(exists(join(home, "library", "P-123abc.sessions", "active.yaml"))).resolves.toBe(false);
     await expect(exists(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toBe(false);
+  });
+
+  it("preserves adapter reason when component begin fails during active editor convergence", async () => {
+    const home = await createHome();
+    const other = join(home, "other.pen");
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+
+    let error: unknown;
+    try {
+      await beginProductComponentSession({
+        home,
+        product_id: "P-123abc",
+        operation: "refine",
+        seed_components: [{ component_key: "button" }],
+        runner: createRunner(),
+        processFactory: createProcessFactory({ activePath: other })
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        reason: "active_editor_path_mismatch"
+      }
+    });
+    const sessionId = (error as { details?: { session_id?: string } }).details?.session_id;
+    expect(sessionId).toEqual(expect.any(String));
+    await expect(readYaml(join(home, "library", "P-123abc.sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
+      reason: "active_editor_path_mismatch"
+    });
   });
 
   it("discards staging while keeping formal component library and audit files", async () => {

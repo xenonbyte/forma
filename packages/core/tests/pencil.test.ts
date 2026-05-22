@@ -96,7 +96,9 @@ function createConvergedProcessFactory(
           return { stdout: JSON.stringify({ nodes: [] }), stderr: "" };
         }
         const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
-        return { stdout: JSON.stringify({ nodes: (payload.nodeIds ?? []).map((id) => ({ id })) }), stderr: "" };
+        const document = JSON.parse(await readFile(input.stagingPath, "utf8")) as { children?: Array<{ id?: unknown }> };
+        const childIds = new Set((document.children ?? []).map((node) => node.id).filter((id): id is string => typeof id === "string"));
+        return { stdout: JSON.stringify({ nodes: (payload.nodeIds ?? []).filter((id) => childIds.has(id)).map((id) => ({ id })) }), stderr: "" };
       }
       return { stdout: "ok\n", stderr: "" };
     },
@@ -491,13 +493,27 @@ describe("PencilService", () => {
     const staging = join(sessionDir, "staging.design.pen");
     await mkdir(sessionDir, { recursive: true });
     await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const events: string[] = [];
     const messages: string[] = [];
-    const runner = createHealthyRunner();
+    const runner = createFakeRunner(async (command, args) => {
+      if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
+      if (args[0] === "status") return { stdout: "active", stderr: "" };
+      if (args[0] === "interactive" && args[1] === "--help") {
+        return { stdout: "get_editor_state get_guidelines get_variables batch_get batch_design set_variables export_nodes snapshot_layout get_screenshot save", stderr: "" };
+      }
+      if (command === "open") {
+        events.push("foreground_open");
+      }
+      return { stdout: "ok", stderr: "" };
+    });
     const adapter = new PencilAppSessionAdapter({
       home,
       platform: "darwin",
       runner,
-      processFactory: createConvergedProcessFactory(messages)
+      processFactory: async (input) => {
+        events.push("process_start");
+        return createConvergedProcessFactory(messages)(input);
+      }
     });
 
     const binding = await adapter.openSession({ session_id: "S-foreground", staging_path: staging, expected_session_dir: sessionDir });
@@ -510,6 +526,7 @@ describe("PencilService", () => {
     });
     expect(binding.binding_guard_id).toMatch(/^formaSessionBindingGuardS-foreground_[A-Za-z0-9_-]{24}$/);
     expect(runner.calls.some((call) => call.command === "open" && call.args[0] === "-a" && call.args[1] === "Pencil" && call.args[2] === realStaging)).toBe(true);
+    expect(events).toEqual(["foreground_open", "process_start"]);
     expect(messages).toHaveLength(2);
     expect(messages[0]).toBe("get_editor_state({\"include_schema\":true})");
     expect(messages[1]).toMatch(/^batch_get\(/);

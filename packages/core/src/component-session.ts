@@ -155,13 +155,14 @@ export async function beginProductComponentSession(input: {
     } catch (error) {
       const cleanup = await rollbackComponentBegin({ productLease, activeFile, stagingPath, sessionDir, sessionId });
       const failedDir = join(sessionsRoot, "failed-begins");
+      const failedReason = error instanceof FormaError && typeof error.details.reason === "string" ? error.details.reason : errorMessage(error);
       await writeYamlAtomic(join(failedDir, `${sessionId}.yaml`), {
         session_id: sessionId,
         status: "failed_begin",
         error_code: error instanceof FormaError ? error.code : "PENCIL_APP_REQUIRED",
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
-        reason: errorMessage(error),
+        reason: failedReason,
         cleanup_status: cleanup,
         pencil_version: error instanceof FormaError ? error.details.pencil_version : undefined
       }).catch(async (writeError: unknown) => {
@@ -172,7 +173,7 @@ export async function beginProductComponentSession(input: {
         session_id: sessionId,
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
-        reason: errorMessage(error),
+        reason: failedReason,
         cleanup_status: cleanup,
         ...(error instanceof FormaError && error.details.pencil_version ? { pencil_version: error.details.pencil_version } : {})
       });
