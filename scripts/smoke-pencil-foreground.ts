@@ -6,13 +6,19 @@ import {
   beginRequirementDesignSession,
   commitProductComponentSession,
   createFormaStore,
+  discardProductComponentSession,
   discardRequirementDesignSession,
   FormaError,
   applyProductComponentOperations
 } from "@xenonbyte/forma-core";
 import { formatGenericErrorForLog } from "./smoke-pencil-error.js";
 
-const componentKey = "input.text";
+const componentKey = "button.primary";
+const componentSemanticHash = `sha256:${"1".repeat(64)}`;
+const componentOperationInput = [
+  `button=I(document,{type:"frame",name:"button.primary",reusable:true,width:180,height:48,layout:"horizontal",alignItems:"center",gap:8,padding:12,cornerRadius:8,fill:"#2563EB",metadata:{type:"forma",kind:"product_component",component_key:"button.primary",semantic_contract_hash:"${componentSemanticHash}"}});`,
+  `I(button,{type:"text",name:"Label",content:"Primary",fontSize:16,fontWeight:"600",fill:"#FFFFFF"});`
+].join("\n");
 const smokePrompt =
   "Create a simple mobile login page with title, email input, password input, primary login button, and forgot password link. Use the product design style variables.";
 
@@ -47,88 +53,109 @@ async function runSmoke(home: string): Promise<{
 }> {
   await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
   const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+  let componentSession: Awaited<ReturnType<typeof beginProductComponentSession>> | undefined;
+  let componentCommitted = false;
+  let requirementSession: Awaited<ReturnType<typeof beginRequirementDesignSession>> | undefined;
 
-  const styles = await store.styles.installBuiltInStyles();
-  const style = styles.find((item) => item.name === "linear") ?? styles[0];
-  invariant(style, "No built-in styles were installed");
+  try {
+    const styles = await store.styles.installBuiltInStyles();
+    const style = styles.find((item) => item.name === "linear") ?? styles[0];
+    invariant(style, "No built-in styles were installed");
 
-  const createdProduct = await store.products.createProduct({
-    name: "Pencil Foreground Smoke Mobile Login",
-    description: "Temporary product for the live Pencil foreground smoke test."
-  });
-  const product = await store.products.initProductConfig(createdProduct.id, {
-    platform: "mobile",
-    style,
-    languages: ["en"],
-    default_language: "en"
-  });
+    const createdProduct = await store.products.createProduct({
+      name: "Pencil Foreground Smoke Mobile Login",
+      description: "Temporary product for the live Pencil foreground smoke test."
+    });
+    const product = await store.products.initProductConfig(createdProduct.id, {
+      platform: "mobile",
+      style,
+      languages: ["en"],
+      default_language: "en"
+    });
 
-  const emptyRequirement = await store.requirements.createEmptyRequirement(product.id, "Mobile Login");
-  const requirement = await store.requirements.submitRequirement({
-    requirement_id: emptyRequirement.id,
-    document_md: `# Mobile Login\n\n${smokePrompt}\n`,
-    pages: [
-      {
-        page_id: "login",
-        name: "Login",
-        baseline_page: "login",
-        features: "Mobile authentication entry page",
-        copy: [{ context: "summary", text: "Title, email input, password input, login button, and forgot password link" }],
-        fields: "email, password",
-        interactions: "Submit credentials and open password recovery",
-        declared_component_keys: [componentKey]
-      }
-    ],
-    navigation: []
-  });
+    const emptyRequirement = await store.requirements.createEmptyRequirement(product.id, "Mobile Login");
+    const requirement = await store.requirements.submitRequirement({
+      requirement_id: emptyRequirement.id,
+      document_md: `# Mobile Login\n\n${smokePrompt}\n`,
+      pages: [
+        {
+          page_id: "login",
+          name: "Login",
+          baseline_page: "login",
+          features: "Mobile authentication entry page",
+          copy: [{ context: "summary", text: "Title, email input, password input, login button, and forgot password link" }],
+          fields: "email, password",
+          interactions: "Submit credentials and open password recovery",
+          declared_component_keys: [componentKey]
+        }
+      ],
+      navigation: []
+    });
 
-  await assertMissingComponentsBeforePencil(home, product.id, requirement.id);
-  console.log("missing_components_check=ok");
+    await assertMissingComponentsBeforePencil(home, product.id, requirement.id);
+    console.log("missing_components_check=ok");
 
-  const componentSession = await beginProductComponentSession({
-    home,
-    product_id: product.id,
-    operation: "generate",
-    newly_required_component_keys: [componentKey],
-    seed_components: [
-      {
-        component_key: componentKey,
-        name: "Text input",
-        semantic_contract_hash: `sha256:${"1".repeat(64)}`,
-        source: "smoke:pencil:foreground",
-        required_by: [{ requirement_id: requirement.id, page_id: "login" }]
-      }
-    ]
-  });
-  console.log(`component_staging=${componentSession.staging_path}`);
+    componentSession = await beginProductComponentSession({
+      home,
+      product_id: product.id,
+      operation: "generate",
+      newly_required_component_keys: [componentKey],
+      seed_components: [
+        {
+          component_key: componentKey,
+          name: "Primary button",
+          semantic_contract_hash: componentSemanticHash,
+          source: "smoke:pencil:foreground",
+          required_by: [{ requirement_id: requirement.id, page_id: "login" }]
+        }
+      ]
+    });
+    console.log(`component_staging=${componentSession.staging_path}`);
 
-  await applyProductComponentOperations({
-    home,
-    session_id: componentSession.session_id,
-    operations: [{ tool: "batch_design", args: { nodes: [] }, intent: "generate" }]
-  });
-  await commitProductComponentSession({ home, session_id: componentSession.session_id });
+    await applyProductComponentOperations({
+      home,
+      session_id: componentSession.session_id,
+      operations: [{ tool: "batch_design", args: { input: componentOperationInput }, intent: "generate" }]
+    });
+    await commitProductComponentSession({ home, session_id: componentSession.session_id });
+    componentCommitted = true;
+    const componentSessionId = componentSession.session_id;
 
-  const requirementSession = await beginRequirementDesignSession({
-    home,
-    product_id: product.id,
-    requirement_id: requirement.id,
-    operation: "generate"
-  });
-  console.log(`requirement_staging=${requirementSession.staging_path}`);
-  await discardRequirementDesignSession({ home, session_id: requirementSession.session_id });
+    requirementSession = await beginRequirementDesignSession({
+      home,
+      product_id: product.id,
+      requirement_id: requirement.id,
+      operation: "generate"
+    });
+    console.log(`requirement_staging=${requirementSession.staging_path}`);
+    const requirementSessionId = requirementSession.session_id;
+    await discardRequirementDesignSession({ home, session_id: requirementSession.session_id });
+    requirementSession = undefined;
 
-  return {
-    productId: product.id,
-    requirementId: requirement.id,
-    componentSessionId: componentSession.session_id,
-    requirementSessionId: requirementSession.session_id
-  };
+    return {
+      productId: product.id,
+      requirementId: requirement.id,
+      componentSessionId,
+      requirementSessionId
+    };
+  } finally {
+    if (requirementSession) {
+      await discardRequirementDesignSession({ home, session_id: requirementSession.session_id }).catch((error: unknown) => {
+        console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
+      });
+    }
+    if (componentSession && !componentCommitted) {
+      await discardProductComponentSession({ home, session_id: componentSession.session_id }).catch((error: unknown) => {
+        console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
+      });
+    }
+  }
 }
 
 async function assertMissingComponentsBeforePencil(home: string, productId: string, requirementId: string): Promise<void> {
+  let session: Awaited<ReturnType<typeof beginRequirementDesignSession>> | undefined;
   try {
-    await beginRequirementDesignSession({
+    session = await beginRequirementDesignSession({
       home,
       product_id: productId,
       requirement_id: requirementId,
@@ -141,6 +168,9 @@ async function assertMissingComponentsBeforePencil(home: string, productId: stri
     throw error;
   }
 
+  await discardRequirementDesignSession({ home, session_id: session.session_id }).catch((error: unknown) => {
+    console.error(`cleanup_warning=${formatGenericErrorForLog(error)}`);
+  });
   throw new Error("Expected requirement design session to require component generation before opening Pencil");
 }
 
