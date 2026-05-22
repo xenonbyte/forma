@@ -22,6 +22,8 @@ import {
 import { commitRequirementDesignSessionWithCandidates } from "../src/design-session.js";
 import { PencilAppSessionAdapter, type PencilInteractiveProcessFactory } from "../src/pencil-adapter.js";
 
+const fullPencilCapabilityHelp = "get_editor_state get_guidelines get_variables batch_get batch_design set_variables export_nodes snapshot_layout get_screenshot save";
+
 function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = {}): PencilRunner {
   return {
     async run(_command, args) {
@@ -34,7 +36,7 @@ function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = 
       if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
       if (args[0] === "status") return { stdout: "active", stderr: "" };
       if (args[0] === "interactive" && args[1] === "--help") {
-        return { stdout: "get_editor_state get_guidelines batch_get batch_design export_nodes snapshot_layout set_variables save", stderr: "" };
+        return { stdout: fullPencilCapabilityHelp, stderr: "" };
       }
       if (args[0] === "get_editor_state") return { stdout: "{\"schema\":true}", stderr: "" };
       return { stdout: "ok", stderr: "" };
@@ -43,7 +45,7 @@ function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = 
 }
 
 function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } = {}): PencilInteractiveProcessFactory {
-  return async () => {
+  return async (input) => {
     if (options.failOpen) {
       throw new Error("open failed");
     }
@@ -52,7 +54,7 @@ function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } =
       pid: process.pid + 3000,
       async send(message) {
         if (!alive) throw new Error("dead");
-        return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+        return createProcessResponse(message, input.stagingPath);
       },
       isAlive: () => alive,
       async close() {
@@ -65,14 +67,14 @@ function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } =
 function createControllableProcessFactory(): { factory: PencilInteractiveProcessFactory; killAll: () => void } {
   const aliveFlags: Array<{ alive: boolean }> = [];
   return {
-    factory: async () => {
+    factory: async (input) => {
       const state = { alive: true };
       aliveFlags.push(state);
       return {
         pid: process.pid + 4000 + aliveFlags.length,
         async send(message) {
           if (!state.alive) throw new Error("dead");
-          return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+          return createProcessResponse(message, input.stagingPath);
         },
         isAlive: () => state.alive,
         async close() {
@@ -95,9 +97,8 @@ function createWritingProcessFactory(options: { failBatchWrites?: number[] } = {
       pid: process.pid + 7000 + Math.floor(Math.random() * 1000),
       async send(message) {
         if (!alive) throw new Error("dead");
-        if (message.startsWith("get_editor_state")) {
-          return { stdout: "{\"schema\":true}\n", stderr: "" };
-        }
+        const openTimeResponse = createOpenTimeProcessResponse(message, input.stagingPath);
+        if (openTimeResponse) return openTimeResponse;
         if (message.startsWith("batch_design(")) {
           batchWrites += 1;
           if (failBatchWrites.has(batchWrites)) {
@@ -114,6 +115,25 @@ function createWritingProcessFactory(options: { failBatchWrites?: number[] } = {
       }
     };
   };
+}
+
+function createProcessResponse(message: string, stagingPath: string): { stdout: string; stderr: string } {
+  return createOpenTimeProcessResponse(message, stagingPath) ?? { stdout: "ok\n", stderr: "" };
+}
+
+function createOpenTimeProcessResponse(message: string, stagingPath: string): { stdout: string; stderr: string } | undefined {
+  if (message.startsWith("get_editor_state")) {
+    return { stdout: `${JSON.stringify({ schema: true, filePath: stagingPath })}\n`, stderr: "" };
+  }
+  if (message.startsWith("batch_get")) {
+    return { stdout: `${JSON.stringify({ nodes: extractBatchGetNodeIds(message).map((id) => ({ id })) })}\n`, stderr: "" };
+  }
+  return undefined;
+}
+
+function extractBatchGetNodeIds(message: string): string[] {
+  const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
+  return payload.nodeIds ?? [];
 }
 
 async function readJsonl(file: string): Promise<Record<string, unknown>[]> {
@@ -955,7 +975,8 @@ describe("v6 requirement design sessions", () => {
   it("rejects recovery backups outside the requirement session backup directory", async () => {
     const home = await createHome();
     const formal = join(home, "data", "P-123abc", "R-1234abcd", "design.pen");
-    await writeFile(formal, "partial-current");
+    const currentFormal = JSON.stringify({ children: [{ id: "partial-current", type: "frame" }] });
+    await writeFile(formal, currentFormal);
     const outsideBackup = join(home, "data", "P-123abc", "outside-design.bak");
     await writeFile(outsideBackup, "old-formal");
     const oldHash = `sha256:${createHash("sha256").update(await readFile(outsideBackup)).digest("hex")}`;
@@ -993,7 +1014,7 @@ describe("v6 requirement design sessions", () => {
       failed_files: [expect.objectContaining({ reason: expect.stringContaining("session backup directory") })]
     });
 
-    await expect(readFile(formal, "utf8")).resolves.toBe("partial-current");
+    await expect(readFile(formal, "utf8")).resolves.toBe(currentFormal);
     await expect(readYaml(join(sessionDir, "design_session.yaml"))).resolves.toMatchObject({ status: "commit_recovery_required" });
   });
 
@@ -1470,10 +1491,10 @@ describe("v6 product component sessions", () => {
     const processFactory: PencilInteractiveProcessFactory = async (input) => ({
       pid: process.pid + 5000,
       async send(message) {
-        if (message.startsWith("save()") && input.stagingPath.endsWith("staging.lib.pen")) {
+        if (message.startsWith("batch_get") && input.stagingPath.endsWith("staging.lib.pen")) {
           await mkdir(join(input.stagingPath, "..", "design_session.yaml"), { recursive: true });
         }
-        return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+        return createProcessResponse(message, input.stagingPath);
       },
       isAlive: () => !closed.value,
       async close() {
@@ -1518,10 +1539,10 @@ describe("v6 product component sessions", () => {
       return {
         pid: process.pid + 6000,
         async send(message) {
-          if (isComponentOpen && message.startsWith("save()")) {
+          if (isComponentOpen && message.startsWith("batch_get")) {
             await rm(input.stagingPath, { force: true });
           }
-          return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+          return createProcessResponse(message, input.stagingPath);
         },
         isAlive: () => !openBinding.closed,
         async close() {
@@ -2174,7 +2195,6 @@ describe("v6 product component sessions", () => {
   it("reports component recovery failure without applying a corrupted backup", async () => {
     const home = await createHome();
     const latestPath = join(home, "library", "P-123abc.lib.pen");
-    const originalLatest = await readFile(latestPath, "utf8");
     let activeSessionId = "";
 
     vi.resetModules();
@@ -2212,7 +2232,11 @@ describe("v6 product component sessions", () => {
       code: "DESIGN_COMMIT_RECOVERY_REQUIRED"
     });
 
-    await expect(readFile(latestPath, "utf8")).resolves.toBe(originalLatest);
+    const latestAfterFailedRecovery = await readFile(latestPath, "utf8");
+    expect(latestAfterFailedRecovery).not.toBe("corrupted latest backup");
+    expect(JSON.parse(latestAfterFailedRecovery) as unknown).toMatchObject({
+      children: expect.arrayContaining([expect.objectContaining({ id: "button", type: "component" })])
+    });
     await expect(readYaml(join(home, "library", "P-123abc.sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
       status: "commit_recovery_required"
     });
