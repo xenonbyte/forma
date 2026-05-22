@@ -642,7 +642,7 @@ export async function commitRequirementDesignSession(input: {
   }
   const noGuardRaw = stripSessionBindingGuardsFromRawStagingForMetadata(stagingRaw);
   const canvasRevision = sha256(noGuardRaw);
-  const document = parsePenDocument(stagingRaw);
+  const document = parsePenDocument(noGuardRaw);
   const page = requirement.pages.find((item) => item.page_id === input.page_id);
   if (!page) {
     throw new FormaError("INVALID_INPUT", "Page is not part of requirement", { page_id: input.page_id });

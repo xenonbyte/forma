@@ -684,6 +684,46 @@ describe("v6 requirement design sessions", () => {
     await expect(fileContainsGuard(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"))).resolves.toBe(false);
   });
 
+  it("rejects guarded requirement history pen candidates", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await expect(fileContainsGuard(session.staging_path)).resolves.toBe(true);
+
+    const rawGuardedHash = await hashFileForTest(session.staging_path);
+    await expect(commitRequirementDesignSessionWithCandidates({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      candidates: [{
+        target_file: "data/P-123abc/R-1234abcd/history/canvas/canvas.c1.pen",
+        candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/staging.design.pen`,
+        old_file_missing: true,
+        candidate_hash: rawGuardedHash,
+        replacement_kind: "canvas_history",
+        restore_order: 1
+      }]
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+
+    await expect(access(join(home, "data", "P-123abc", "R-1234abcd", "history", "canvas", "canvas.c1.pen"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("commits requirement formal artifacts without session binding guards and with matching revisions", async () => {
     const home = await createHome();
     const processFactory = createConvergedSessionProcessFactory();
@@ -726,6 +766,36 @@ describe("v6 requirement design sessions", () => {
     await expect(fileContainsGuard(designPath)).resolves.toBe(false);
     await expect(fileContainsGuard(metadataPath)).resolves.toBe(false);
     await expect(fileContainsGuard(historyPath)).resolves.toBe(false);
+  });
+
+  it("rejects session binding guard frame ids during requirement commit", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+    const document = JSON.parse(await readFile(session.staging_path, "utf8")) as { children: Array<Record<string, unknown>> };
+    const guard = document.children.find((node) => typeof node.id === "string" && node.id.startsWith("formaSessionBindingGuard"));
+    if (!guard || typeof guard.id !== "string") throw new Error("test setup expected a session guard");
+    const previewExporter = vi.fn(async ({ output_file }: { output_file: string }) => writeFile(output_file, "preview"));
+    const substrate = vi.fn().mockResolvedValue({ session_id: session.session_id, status: "committed" });
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: guard.id,
+      quality_report: passedQualityReport(),
+      previewExporter,
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "PAGE_FRAME_NOT_FOUND" });
+    expect(previewExporter).not.toHaveBeenCalled();
+    expect(substrate).not.toHaveBeenCalled();
   });
 
   it("marks requirement commit recoverable when staging disappears before candidate build", async () => {

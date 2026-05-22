@@ -8,7 +8,7 @@ import { FormaError } from "./errors.js";
 import { hashFile } from "./file-hash.js";
 import { PencilAppSessionAdapter, rejectPathLikeParameters, type PencilInteractiveProcessFactory } from "./pencil-adapter.js";
 import { defaultPencilRunner, type PencilRunner } from "./pencil.js";
-import { createSanitizedCommitCandidate } from "./pencil-session-guard.js";
+import { createSanitizedCommitCandidate, penDocumentHasSessionBindingGuard } from "./pencil-session-guard.js";
 import { productIdSchema } from "./product.js";
 import { getPencilMutationLock, getProductMutationLock } from "./product-mutation-lock.js";
 import { requirementIdSchema } from "./requirement.js";
@@ -546,6 +546,12 @@ export async function commitRequirementDesignSessionWithCandidates(input: {
     if (candidate.candidate_hash && candidate.candidate_hash !== candidateHash) {
       throw new FormaError("INVALID_INPUT", "Candidate hash does not match candidate file", { candidate_file: candidate.candidate_file });
     }
+    if (isPenFileTarget(targetPath) && await penDocumentHasSessionBindingGuard(validatedCandidatePath)) {
+      throw new FormaError("PEN_FILE_INVALID", "Formal pen candidate contains a session binding guard", {
+        target_file: candidate.target_file,
+        candidate_file: candidate.candidate_file
+      });
+    }
     if (!oldExists) {
       if (candidate.old_file_missing !== true) {
         throw new FormaError("INVALID_INPUT", "Candidate old metadata must mark missing target", { target_file: candidate.target_file });
@@ -606,6 +612,10 @@ export async function commitRequirementDesignSessionWithCandidates(input: {
   await adapter.closeBinding(record.pencil_binding_id);
   return { session_id: input.session_id, status: "committed" };
     }));
+}
+
+function isPenFileTarget(targetPath: string): boolean {
+  return targetPath.endsWith(".pen");
 }
 
 export async function recoverDesignCommitJournal(input: {
