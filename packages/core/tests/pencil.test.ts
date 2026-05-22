@@ -893,6 +893,36 @@ describe("PencilService", () => {
     ]);
   });
 
+  it("reports missing expected active staging as session_check", async () => {
+    const home = await createHome("adapter-missing-expected-staging");
+    const staging = join(home, "staging.design.pen");
+    const missing = join(home, "missing.design.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: createConvergedProcessFactory(messages)
+    });
+    const binding = await adapter.openSession({ session_id: "S-missing-expected-staging", staging_path: staging, expected_session_dir: home });
+    messages.length = 0;
+
+    await expect(
+      adapter.assertActiveStagingBinding({ bindingId: binding.pencil_binding_id, expectedStagingPath: missing })
+    ).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      message: "Pencil App session is not bound to this staging file",
+      details: {
+        failed_phase: "session_check",
+        pencil_binding_id: binding.pencil_binding_id,
+        staging_path: missing,
+        reason: expect.stringMatching(/no such file|ENOENT/i)
+      }
+    });
+    expect(messages).toEqual([]);
+  });
+
   it("fails controlled save with active_editor_drift after the user switches documents", async () => {
     const home = await createHome("adapter-runtime-drift-save");
     const staging = join(home, "staging.design.pen");

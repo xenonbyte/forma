@@ -257,7 +257,17 @@ export class PencilAppSessionAdapter {
 
   async assertActiveStagingBinding(input: { bindingId: string; expectedStagingPath: string }): Promise<PencilAppBinding> {
     const owned = this.requireLiveBinding(input.bindingId);
-    const expected = await realpath(input.expectedStagingPath);
+    let expected: string;
+    try {
+      expected = await realpath(input.expectedStagingPath);
+    } catch (error) {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App session is not bound to this staging file", {
+        failed_phase: "session_check",
+        pencil_binding_id: input.bindingId,
+        staging_path: input.expectedStagingPath,
+        reason: errorMessage(error)
+      });
+    }
     if (owned.binding.staging_path !== expected) {
       throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App session is not bound to this staging file", {
         failed_phase: "session_check",
