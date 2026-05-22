@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -86,7 +86,8 @@ function createConvergedSessionProcessFactory(openedPaths: string[] = []): Penci
           return { stdout: `${JSON.stringify({ nodes: extractBatchGetNodeIds(message).map((id) => ({ id })) })}\n`, stderr: "" };
         }
         if (message.startsWith("batch_design(")) {
-          await writeFile(input.stagingPath, minimalPenWithNode("batch-design"));
+          const payload = JSON.parse(message.slice("batch_design(".length, -1)) as Record<string, unknown>;
+          await writeFile(input.stagingPath, await minimalPenWithNodePreservingGuards(input.stagingPath, typeof payload.id === "string" ? payload.id : "batch-design"));
         }
         return { stdout: "ok\n", stderr: "" };
       },
@@ -172,6 +173,26 @@ function extractBatchGetNodeIds(message: string): string[] {
 
 function minimalPenWithNode(id: string): string {
   return JSON.stringify({ children: [{ id, type: "frame" }] });
+}
+
+async function minimalPenWithNodePreservingGuards(stagingPath: string, id: string): Promise<string> {
+  const raw = await readFile(stagingPath, "utf8");
+  const document = JSON.parse(raw) as { children?: unknown[] };
+  const guards = Array.isArray(document.children)
+    ? document.children.filter((node) => {
+      if (!node || typeof node !== "object" || Array.isArray(node)) return false;
+      const record = node as Record<string, unknown>;
+      if (typeof record.id === "string" && record.id.startsWith("formaSessionBindingGuard")) return true;
+      const metadata = record.metadata;
+      return !!(metadata && typeof metadata === "object" && !Array.isArray(metadata) && (metadata as Record<string, unknown>).kind === "session_binding_guard");
+    })
+    : [];
+  return JSON.stringify({ children: [{ id, type: "frame" }, ...guards] });
+}
+
+async function fileContainsGuard(file: string): Promise<boolean> {
+  const raw = await readFile(file, "utf8");
+  return raw.includes("formaSessionBindingGuard") || raw.includes("session_binding_guard");
 }
 
 async function readJsonl(file: string): Promise<Record<string, unknown>[]> {
@@ -515,13 +536,21 @@ describe("v6 requirement design sessions", () => {
     const home = await createHome();
     const formal = join(home, "data", "P-123abc", "R-1234abcd", "design.pen");
     await writeFile(formal, JSON.stringify({ children: [{ id: "old", type: "frame" }] }));
+    const processFactory = createConvergedSessionProcessFactory();
     const session = await beginRequirementDesignSession({
       home,
       product_id: "P-123abc",
       requirement_id: "R-1234abcd",
       operation: "refine",
       runner: createRunner(),
-      processFactory: createProcessFactory()
+      processFactory
+    });
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "new" }, intent: "refine" }]
     });
     const candidate = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "candidate.design.pen");
     await writeFile(candidate, JSON.stringify({ children: [{ id: "new", type: "frame" }] }));
@@ -530,7 +559,7 @@ describe("v6 requirement design sessions", () => {
       home,
       session_id: session.session_id,
       runner: createRunner(),
-      processFactory: createProcessFactory(),
+      processFactory,
       candidates: [{
         target_file: "data/P-123abc/R-1234abcd/design.pen",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
@@ -545,7 +574,7 @@ describe("v6 requirement design sessions", () => {
       home,
       session_id: session.session_id,
       runner: createRunner(),
-      processFactory: createProcessFactory(),
+      processFactory,
       candidates: [{
         target_file: "data/P-123abc/R-1234abcd/design.pen",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
@@ -568,6 +597,46 @@ describe("v6 requirement design sessions", () => {
       scope: "requirement_canvas"
     })).resolves.toMatchObject({ status: "failed_commit" });
     await expect(readFile(formal, "utf8")).resolves.toContain("old");
+  });
+
+  it("commits requirement design canvas without session binding guards", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await expect(fileContainsGuard(session.staging_path)).resolves.toBe(true);
+
+    const rawGuardedHash = `sha256:${createHash("sha256").update(await readFile(session.staging_path)).digest("hex")}`;
+    await expect(commitRequirementDesignSessionWithCandidates({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      candidates: [{
+        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/staging.design.pen`,
+        old_file_missing: true,
+        candidate_hash: rawGuardedHash,
+        replacement_kind: "design_canvas",
+        restore_order: 1
+      }]
+    })).resolves.toMatchObject({ status: "committed" });
+
+    await expect(fileContainsGuard(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"))).resolves.toBe(false);
   });
 
   it("does not report a committed requirement journal during startup recovery", async () => {
@@ -735,7 +804,6 @@ describe("v6 requirement design sessions", () => {
     const siblingCandidate = join(home, "data", "P-123abc", "R-1234abcd", "sessions", `${session.session_id}-evil`, "candidate.design.pen");
     await mkdir(join(siblingCandidate, ".."), { recursive: true });
     await writeFile(siblingCandidate, JSON.stringify({ children: [{ id: "evil", type: "frame" }] }));
-    const oldHash = `sha256:${createHash("sha256").update(await readFile(formal)).digest("hex")}`;
     const candidateHash = `sha256:${createHash("sha256").update(await readFile(siblingCandidate)).digest("hex")}`;
 
     await expect(commitRequirementDesignSessionWithCandidates({
@@ -744,11 +812,11 @@ describe("v6 requirement design sessions", () => {
       runner: createRunner(),
       processFactory: createProcessFactory(),
       candidates: [{
-        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        target_file: "data/P-123abc/R-1234abcd/design.yaml",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}-evil/candidate.design.pen`,
-        old_hash: oldHash,
+        old_file_missing: true,
         candidate_hash: candidateHash,
-        replacement_kind: "design_canvas",
+        replacement_kind: "design_metadata",
         restore_order: 1
       }]
     })).rejects.toMatchObject({ code: "INVALID_INPUT" });
@@ -770,7 +838,6 @@ describe("v6 requirement design sessions", () => {
     });
     const candidateLink = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "candidate.design.pen");
     await symlink(outside, candidateLink);
-    const oldHash = `sha256:${createHash("sha256").update(await readFile(formal)).digest("hex")}`;
     const candidateHash = `sha256:${createHash("sha256").update(await readFile(outside)).digest("hex")}`;
 
     await expect(commitRequirementDesignSessionWithCandidates({
@@ -779,11 +846,11 @@ describe("v6 requirement design sessions", () => {
       runner: createRunner(),
       processFactory: createProcessFactory(),
       candidates: [{
-        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        target_file: "data/P-123abc/R-1234abcd/design.yaml",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
-        old_hash: oldHash,
+        old_file_missing: true,
         candidate_hash: candidateHash,
-        replacement_kind: "design_canvas",
+        replacement_kind: "design_metadata",
         restore_order: 1
       }]
     })).rejects.toMatchObject({ code: "INVALID_INPUT" });
@@ -938,15 +1005,23 @@ describe("v6 requirement design sessions", () => {
       };
     });
     const designSession = await import("../src/design-session.js");
+    const processFactory = createConvergedSessionProcessFactory();
     const session = await designSession.beginRequirementDesignSession({
       home,
       product_id: "P-123abc",
       requirement_id: "R-1234abcd",
       operation: "refine",
       runner: createRunner(),
-      processFactory: createProcessFactory()
+      processFactory
     });
     activeSessionId = session.session_id;
+    await designSession.applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "new" }, intent: "refine" }]
+    });
     const candidate = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "candidate.design.pen");
     await writeFile(candidate, candidateContent);
     const oldHash = `sha256:${createHash("sha256").update(original).digest("hex")}`;
@@ -956,7 +1031,7 @@ describe("v6 requirement design sessions", () => {
       home,
       session_id: session.session_id,
       runner: createRunner(),
-      processFactory: createProcessFactory(),
+      processFactory,
       candidates: [{
         target_file: "data/P-123abc/R-1234abcd/design.pen",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
@@ -972,7 +1047,8 @@ describe("v6 requirement design sessions", () => {
       })
     });
 
-    await expect(readFile(formal, "utf8")).resolves.toBe(candidateContent);
+    await expect(readFile(formal, "utf8")).resolves.toContain("new");
+    await expect(fileContainsGuard(formal)).resolves.toBe(false);
     await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
       status: "commit_recovery_required"
     });
@@ -1490,8 +1566,13 @@ describe("v6 product component sessions", () => {
       processFactory
     });
 
-    expect(openedPaths.map((path) => path.split("/").at(-1))).toEqual(["staging.lib.pen", "staging.design.pen"]);
+    expect(openedPaths).toEqual([await realpath(componentSession.staging_path), await realpath(requirementSession.staging_path)]);
     expect(requirementSession.staging_path.endsWith("staging.design.pen")).toBe(true);
+    await expect(fileContainsGuard(join(home, "library", "P-123abc.lib.pen"))).resolves.toBe(false);
+    await expect(fileContainsGuard(join(home, "library", "P-123abc.versions", "1.lib.pen"))).resolves.toBe(false);
+    await expect(readYaml(join(home, "library", "P-123abc.components.yaml"))).resolves.toMatchObject({
+      versions: [expect.objectContaining({ checksum: expect.not.stringMatching(/^sha256:0+$/) })]
+    });
   });
 
   it("discards staging while keeping formal component library and audit files", async () => {

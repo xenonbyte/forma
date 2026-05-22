@@ -636,6 +636,8 @@ export async function commitRequirementDesignSession(input: {
       actual_revision: stagingRevision
     });
   }
+  const noGuardRaw = stripSessionBindingGuardsFromRawStagingForMetadata(stagingRaw);
+  const canvasRevision = sha256(noGuardRaw);
   const document = parsePenDocument(stagingRaw);
   const page = requirement.pages.find((item) => item.page_id === input.page_id);
   if (!page) {
@@ -686,8 +688,8 @@ export async function commitRequirementDesignSession(input: {
   const historyYamlCandidate = join(candidateDir, `canvas.c${canvasVersion}.yaml`);
   const pageFragmentCandidate = join(candidateDir, `${input.page_id}.p${pageVersion}.pen-fragment`);
   const historyPreviewCandidate = join(candidateDir, `${input.page_id}.p${pageVersion}@2x.png`);
-  await writeFile(designCandidate, stagingRaw, "utf8");
-  await writeFile(historyPenCandidate, stagingRaw, "utf8");
+  await writeFile(designCandidate, noGuardRaw, "utf8");
+  await writeFile(historyPenCandidate, noGuardRaw, "utf8");
   await writeFile(pageFragmentCandidate, JSON.stringify(frame, null, 2), "utf8");
   await copyFile(previewCandidate, historyPreviewCandidate);
   const nextPages = requirement.pages.map((candidatePage) => {
@@ -713,7 +715,7 @@ export async function commitRequirementDesignSession(input: {
     requirement_id: session.requirement_id,
     canvas_file: "design.pen",
     canvas_version: canvasVersion,
-    canvas_revision: stagingRevision,
+    canvas_revision: canvasRevision,
     pages: nextPages,
     unmanaged_components: previousMetadata?.unmanaged_components ?? [],
     history: [
@@ -878,6 +880,21 @@ async function restoreIndexPromotions(_home: string, promotedTargets: IndexPromo
       await copyFile(snapshot.backup, snapshot.target);
     }
   }
+}
+
+function stripSessionBindingGuardsFromRawStagingForMetadata(raw: string): string {
+  const document = JSON.parse(raw) as { children?: unknown[]; [key: string]: unknown };
+  if (!Array.isArray(document.children)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must contain children[]");
+  }
+  document.children = document.children.filter((node) => {
+    if (!node || typeof node !== "object" || Array.isArray(node)) return true;
+    const record = node as Record<string, unknown>;
+    if (typeof record.id === "string" && record.id.startsWith("formaSessionBindingGuard")) return false;
+    const metadata = record.metadata;
+    return !(metadata && typeof metadata === "object" && !Array.isArray(metadata) && (metadata as Record<string, unknown>).kind === "session_binding_guard");
+  });
+  return `${JSON.stringify(document, null, 2)}\n`;
 }
 
 async function buildCommitCandidates(

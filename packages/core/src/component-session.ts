@@ -1,12 +1,14 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { access, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { componentLibraryMetadataSchema, getProductComponentLibrary, type ComponentLibraryMetadata } from "./components.js";
 import { indexRequirementComponentUsageDocument } from "./component-usage.js";
 import { FormaError } from "./errors.js";
+import { hashFile } from "./file-hash.js";
 import { PencilAppSessionAdapter, rejectPathLikeParameters, type PencilInteractiveProcessFactory } from "./pencil-adapter.js";
 import { defaultPencilRunner, type PencilRunner } from "./pencil.js";
+import { createSanitizedCommitCandidate } from "./pencil-session-guard.js";
 import { parsePenDocument, walkPenNodes } from "./pen-model.js";
 import { productIdSchema } from "./product.js";
 import { getPencilMutationLock, getProductMutationLock } from "./product-mutation-lock.js";
@@ -372,6 +374,21 @@ export async function commitProductComponentSession(input: { home: string; sessi
     await writeComponentSessionRecord(home, sessionFile, { ...record, status: "blocked_manual_edit", updated_at: new Date().toISOString() });
     throw new FormaError("MANUAL_EDIT_DETECTED", "Current component canvas has uncontrolled changes", { session_id: record.session_id });
   }
+  const binding = adapter.getBinding(record.pencil_binding_id);
+  if (!binding?.binding_guard_id) {
+    await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
+    throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App session is missing a binding guard", {
+      session_id: record.session_id,
+      failed_phase: "session_check",
+      pencil_binding_id: record.pencil_binding_id
+    });
+  }
+  const sanitized = await createSanitizedCommitCandidate({
+    source_staging_path: stagingPath,
+    candidate_path: join(dirname(sessionFile), "commit-candidates", "staging.no-guard.pen"),
+    binding_guard_id: binding.binding_guard_id,
+    expected_source_hash: controlledRevision
+  });
   validateComponentSeeds(record.seed_components);
   const canvasPath = record.canvas_path;
   const version = Number(record.target_version);
@@ -381,7 +398,7 @@ export async function commitProductComponentSession(input: { home: string; sessi
   const versionFile = join(home, "library", `${record.product_id}.versions`, `${version}.lib.pen`);
   const metadataPath = join(home, "library", `${record.product_id}.components.yaml`);
   const metadataCandidate = join(dirname(sessionFile), "candidate.components.yaml");
-  const checksum = await hashFile(stagingPath);
+  const checksum = sanitized.candidate_hash;
   await mkdir(dirname(versionFile), { recursive: true });
   await validateComponentCommitTarget(home, versionFile, "component_version");
   await validateComponentCommitTarget(home, metadataPath, "component_metadata");
@@ -418,7 +435,7 @@ export async function commitProductComponentSession(input: { home: string; sessi
   const entries = await prepareComponentCommitEntries(home, [
     {
       targetPath: versionFile,
-      candidatePath: stagingPath,
+      candidatePath: sanitized.candidate_path,
       candidateHash: checksum,
       backupPath: join(backupDir, `1-${version}.lib.pen.bak`),
       replacementKind: "component_version",
@@ -426,7 +443,7 @@ export async function commitProductComponentSession(input: { home: string; sessi
     },
     {
       targetPath: canvasPath,
-      candidatePath: stagingPath,
+      candidatePath: sanitized.candidate_path,
       candidateHash: checksum,
       backupPath: join(backupDir, "2-latest.lib.pen.bak"),
       replacementKind: "component_latest",
@@ -1274,10 +1291,6 @@ function resolveInside(home: string, relativePath: string): string {
 function isSameOrChildPath(parent: string, child: string): boolean {
   const relativePath = relative(parent, child);
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
-}
-
-async function hashFile(file: string): Promise<string> {
-  return `sha256:${createHash("sha256").update(await readFile(file)).digest("hex")}`;
 }
 
 async function restoreVerifiedBackup(backup: string, tempTarget: string, target: string, oldHash: string): Promise<void> {

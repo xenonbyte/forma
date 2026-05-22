@@ -1,12 +1,14 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { access, copyFile, lstat, mkdir, readdir, readFile, realpath, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { getProductComponentLibrary } from "./components.js";
 import { validateComponentCommitTarget } from "./component-session.js";
 import { FormaError } from "./errors.js";
+import { hashFile } from "./file-hash.js";
 import { PencilAppSessionAdapter, rejectPathLikeParameters, type PencilInteractiveProcessFactory } from "./pencil-adapter.js";
 import { defaultPencilRunner, type PencilRunner } from "./pencil.js";
+import { createSanitizedCommitCandidate } from "./pencil-session-guard.js";
 import { productIdSchema } from "./product.js";
 import { getPencilMutationLock, getProductMutationLock } from "./product-mutation-lock.js";
 import { requirementIdSchema } from "./requirement.js";
@@ -450,6 +452,21 @@ export async function commitRequirementDesignSessionWithCandidates(input: {
     await updateSessionRecord(home, file, { ...record, status: "blocked_manual_edit", updated_at: new Date().toISOString() });
     throw new FormaError("MANUAL_EDIT_DETECTED", "Current canvas has uncontrolled changes", { session_id: input.session_id });
   }
+  const binding = adapter.getBinding(record.pencil_binding_id);
+  if (!binding?.binding_guard_id) {
+    await updateSessionRecord(home, file, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
+    throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App session is missing a binding guard", {
+      session_id: input.session_id,
+      failed_phase: "session_check",
+      pencil_binding_id: record.pencil_binding_id
+    });
+  }
+  const sanitized = await createSanitizedCommitCandidate({
+    source_staging_path: record.staging_path,
+    candidate_path: join(record.session_dir, "commit-candidates", "staging.no-guard.pen"),
+    binding_guard_id: binding.binding_guard_id,
+    expected_source_hash: stagingRevision
+  });
   const canvasStat = await lstat(record.canvas_path).catch((error: unknown) => {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") return undefined;
     throw error;
@@ -471,7 +488,17 @@ export async function commitRequirementDesignSessionWithCandidates(input: {
   await mkdir(backupDir, { recursive: true });
   await mkdir(validatedCandidateDir, { recursive: true });
   const entries = [];
-  for (const candidate of candidates.sort((a, b) => a.restore_order - b.restore_order)) {
+  const normalizedCandidates = candidates.map((candidate) => {
+    if (resolveInside(home, candidate.target_file) !== record.canvas_path) {
+      return candidate;
+    }
+    return {
+      ...candidate,
+      candidate_file: rel(home, sanitized.candidate_path),
+      candidate_hash: sanitized.candidate_hash
+    };
+  });
+  for (const candidate of normalizedCandidates.sort((a, b) => a.restore_order - b.restore_order)) {
     if (
       !candidate.candidate_hash ||
       !candidate.replacement_kind ||
@@ -1436,10 +1463,6 @@ async function isDirectoryPath(path: string): Promise<boolean> {
     throw error;
   });
   return stat?.isDirectory() === true;
-}
-
-async function hashFile(file: string): Promise<string> {
-  return `sha256:${createHash("sha256").update(await readFile(file)).digest("hex")}`;
 }
 
 async function restoreVerifiedBackup(backup: string, tempTarget: string, target: string, oldHash: string): Promise<void> {
