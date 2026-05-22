@@ -133,6 +133,7 @@ export async function runDesignQualityPipeline(input: {
 export async function loadRequiredPencilDesignContext(input: {
   adapter: SessionDesignContextAdapter;
   binding_id: string;
+  expected_staging_path?: string;
   platform: string;
   table_heavy?: boolean;
 }): Promise<{
@@ -145,19 +146,19 @@ export async function loadRequiredPencilDesignContext(input: {
   let editor_state: unknown;
   let variables: unknown;
   try {
-    editor_state = await input.adapter.sessionGetEditorState(input.binding_id, { include_schema: true });
+    editor_state = await input.adapter.sessionGetEditorState(input.binding_id, { include_schema: true }, input.expected_staging_path);
   } catch {
     missing.push("editor_state_schema");
   }
   for (const name of ["Design System", input.platform, ...(input.table_heavy ? ["Table"] : [])]) {
     try {
-      guidelines.push(await input.adapter.sessionGetGuidelines(input.binding_id, { category: "guide", name }));
+      guidelines.push(await input.adapter.sessionGetGuidelines(input.binding_id, { category: "guide", name }, input.expected_staging_path));
     } catch {
       missing.push(name);
     }
   }
   try {
-    variables = await input.adapter.sessionGetVariables(input.binding_id);
+    variables = await input.adapter.sessionGetVariables(input.binding_id, input.expected_staging_path);
   } catch {
     missing.push("variables");
   }

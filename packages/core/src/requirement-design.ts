@@ -625,9 +625,7 @@ export async function commitRequirementDesignSession(input: {
   }
   const home = resolve(input.home);
   const session = await findRequirementSessionLoose(home, input.session_id);
-  if (!input.commitSubstrate) {
-    await assertLiveStagingBeforeDefaultCommitCandidateBuild(home, session);
-  }
+  await assertLiveStagingBeforeDefaultCommitCandidateBuild(home, session);
   const paths = requirementDesignPaths(home, session.product_id, session.requirement_id);
   const [stagingRaw, requirement] = await Promise.all([
     readFile(session.staging_path, "utf8"),
