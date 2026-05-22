@@ -1,4 +1,4 @@
-import { FormaError, createFormaStore } from "@xenonbyte/forma-core";
+import { FormaError, PencilAppSessionAdapter, createFormaStore, writeYamlAtomic } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -245,6 +245,29 @@ describe("MCP forma tools", () => {
         expectSchemaFailure(toolName, { ...validInput, [field]: "/tmp/agent-owned" }, "FORBIDDEN_PATH_PARAMETER");
       }
     }
+  });
+
+  it("passes session record staging path to adapter-backed session read tools", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-session-staging-"));
+    const sessionId = "S-1234567890abcdef";
+    await mkdir(join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId), { recursive: true });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId, "design_session.yaml"), {
+      session_id: sessionId,
+      pencil_binding_id: "B-binding",
+      staging_path: "data/P-123abc/R-1234abcd/sessions/S-1234567890abcdef/staging.design.pen"
+    });
+    const store = fakeStore({ home });
+    const adapterSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetEditorState").mockResolvedValue({ ok: true });
+    const tools = createFormaTools(store);
+
+    await tools.session_get_editor_state({ session_id: sessionId, include_schema: true });
+
+    expect(adapterSpy).toHaveBeenCalledWith(
+      "B-binding",
+      { include_schema: true },
+      join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId, "staging.design.pen")
+    );
+    adapterSpy.mockRestore();
   });
 
   it("requirement design session schemas enforce operations, intents, and forbidden operation paths", () => {

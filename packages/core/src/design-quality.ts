@@ -63,9 +63,9 @@ export interface LayoutSnapshotNode {
 }
 
 export interface SessionDesignContextAdapter {
-  sessionGetEditorState(bindingId: string, args: { include_schema: true }): Promise<unknown>;
-  sessionGetGuidelines(bindingId: string, args: { category: string; name: string }): Promise<unknown>;
-  sessionGetVariables(bindingId: string): Promise<unknown>;
+  sessionGetEditorState(bindingId: string, args: { include_schema: true }, expectedStagingPath?: string): Promise<unknown>;
+  sessionGetGuidelines(bindingId: string, args: { category: string; name: string }, expectedStagingPath?: string): Promise<unknown>;
+  sessionGetVariables(bindingId: string, expectedStagingPath?: string): Promise<unknown>;
 }
 
 const colorKeys = new Set(["fill", "strokeFill", "stroke_fill", "effectColor", "effect_color", "textColor", "text_color", "iconColor", "icon_color", "color"]);

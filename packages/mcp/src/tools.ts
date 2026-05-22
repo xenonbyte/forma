@@ -3,7 +3,7 @@ import {
   copyFile,
   readdir
 } from "node:fs/promises";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
   FormaError,
   PencilAppSessionAdapter,
@@ -826,8 +826,9 @@ function sessionAdapter(store: FormaStore): PencilAppSessionAdapter {
   return new PencilAppSessionAdapter({ home: store.home, runner: defaultPencilRunner });
 }
 
-async function sessionBindingId(home: string, adapter: PencilAppSessionAdapter, input: { session_id: string; pencil_binding_id?: string }): Promise<string> {
-  const bindingId = input.pencil_binding_id ?? (await findMcpSessionRecord(home, input.session_id)).pencil_binding_id;
+async function sessionBindingContext(home: string, adapter: PencilAppSessionAdapter, input: { session_id: string; pencil_binding_id?: string }): Promise<{ bindingId: string; expectedStagingPath: string }> {
+  const record = await findMcpSessionRecord(home, input.session_id);
+  const bindingId = input.pencil_binding_id ?? record.pencil_binding_id;
   const binding = adapter.getBinding(bindingId);
   if (binding && binding.session_id !== input.session_id) {
     throw new ToolError("PENCIL_APP_REQUIRED", "Pencil binding does not belong to this session", {
@@ -835,7 +836,7 @@ async function sessionBindingId(home: string, adapter: PencilAppSessionAdapter, 
       pencil_binding_id: bindingId
     });
   }
-  return bindingId;
+  return { bindingId, expectedStagingPath: record.staging_path };
 }
 
 function sessionToolArgs(input: Record<string, unknown>): Record<string, unknown> {
@@ -845,7 +846,8 @@ function sessionToolArgs(input: Record<string, unknown>): Record<string, unknown
 
 async function sessionGetEditorState(store: FormaStore, input: z.infer<typeof sessionGetEditorStateSchema>) {
   const adapter = sessionAdapter(store);
-  return adapter.sessionGetEditorState(await sessionBindingId(store.home, adapter, input), { include_schema: true });
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionGetEditorState(context.bindingId, { include_schema: true }, context.expectedStagingPath);
 }
 
 async function sessionGetGuidelines(store: FormaStore, input: z.infer<typeof sessionGetGuidelinesSchema>) {
@@ -853,20 +855,23 @@ async function sessionGetGuidelines(store: FormaStore, input: z.infer<typeof ses
     throw new ToolError("INVALID_INPUT", "category and name are required", { session_id: input.session_id });
   }
   const adapter = sessionAdapter(store);
-  return adapter.sessionGetGuidelines(await sessionBindingId(store.home, adapter, input), {
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionGetGuidelines(context.bindingId, {
     category: input.category,
     name: input.name
-  });
+  }, context.expectedStagingPath);
 }
 
 async function sessionGetVariables(store: FormaStore, input: z.infer<typeof sessionGetVariablesSchema>) {
   const adapter = sessionAdapter(store);
-  return adapter.sessionGetVariables(await sessionBindingId(store.home, adapter, input));
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionGetVariables(context.bindingId, context.expectedStagingPath);
 }
 
 async function sessionBatchGet(store: FormaStore, input: z.infer<typeof sessionBatchGetSchema>) {
   const adapter = sessionAdapter(store);
-  return adapter.sessionBatchGet(await sessionBindingId(store.home, adapter, input), sessionToolArgs(input));
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionBatchGet(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
 }
 
 async function sessionSnapshotLayout(store: FormaStore, input: z.infer<typeof sessionSnapshotLayoutSchema>) {
@@ -874,31 +879,34 @@ async function sessionSnapshotLayout(store: FormaStore, input: z.infer<typeof se
     throw new ToolError("INVALID_INPUT", "parentId is required", { session_id: input.session_id });
   }
   const adapter = sessionAdapter(store);
-  return adapter.sessionSnapshotLayout(await sessionBindingId(store.home, adapter, input), {
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionSnapshotLayout(context.bindingId, {
     problemsOnly: false,
     parentId: input.parentId,
     maxDepth: 8
-  });
+  }, context.expectedStagingPath);
 }
 
 async function sessionGetScreenshot(store: FormaStore, input: z.infer<typeof sessionGetScreenshotSchema>) {
   const adapter = sessionAdapter(store);
-  return adapter.sessionGetScreenshot(await sessionBindingId(store.home, adapter, input), sessionToolArgs(input));
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionGetScreenshot(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
 }
 
 async function sessionExportNodes(store: FormaStore, input: z.infer<typeof sessionExportNodesSchema>) {
   const adapter = sessionAdapter(store);
-  return adapter.sessionExportNodes(await sessionBindingId(store.home, adapter, input), sessionToolArgs(input));
+  const context = await sessionBindingContext(store.home, adapter, input);
+  return adapter.sessionExportNodes(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
 }
 
 async function exportPreviewCandidate(store: FormaStore, sessionId: string, frameId: string, outputFile: string): Promise<void> {
   const adapter = sessionAdapter(store);
-  const bindingId = await sessionBindingId(store.home, adapter, { session_id: sessionId });
-  const result = await adapter.sessionExportNodes(bindingId, {
+  const context = await sessionBindingContext(store.home, adapter, { session_id: sessionId });
+  const result = await adapter.sessionExportNodes(context.bindingId, {
     nodeIds: [frameId],
     format: "png",
     scale: 2
-  });
+  }, context.expectedStagingPath);
   const source = exportedFilePath(result);
   if (!source) {
     throw new FormaError("PREVIEW_EXPORT_FAILED", "Preview export did not return a file path", {
@@ -937,10 +945,14 @@ async function findMcpSessionRecord(home: string, sessionId: string): Promise<{
     return {
       session_id: sessionId,
       pencil_binding_id: record.pencil_binding_id,
-      staging_path: record.staging_path
+      staging_path: resolveSessionRecordPath(home, record.staging_path)
     };
   }
   throw new FormaError("INVALID_INPUT", "Session record was not found", { session_id: sessionId });
+}
+
+function resolveSessionRecordPath(home: string, path: string): string {
+  return isAbsolute(path) ? path : join(home, path);
 }
 
 async function candidateSessionFiles(home: string, sessionId: string): Promise<string[]> {
