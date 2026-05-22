@@ -1,4 +1,5 @@
 import { FormaError, PencilAppSessionAdapter, createFormaStore, writeYamlAtomic } from "@xenonbyte/forma-core";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -165,6 +166,140 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
   return store;
 }
 
+async function writeMinimalMcpSessionRecord(home: string, sessionId: string): Promise<string> {
+  const stagingRelativePath = `data/P-123abc/R-1234abcd/sessions/${sessionId}/staging.design.pen`;
+  const sessionDir = join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId);
+  await mkdir(sessionDir, { recursive: true });
+  await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
+    session_id: sessionId,
+    pencil_binding_id: "B-binding",
+    staging_path: stagingRelativePath
+  });
+  return join(home, stagingRelativePath);
+}
+
+async function writeCommitSessionRecord(home: string, sessionId: string): Promise<string> {
+  const productId = "P-123abc";
+  const requirementId = "R-1234abcd";
+  const requirementDir = join(home, "data", productId, requirementId);
+  const sessionDir = join(requirementDir, "sessions", sessionId);
+  const stagingRelativePath = `data/${productId}/${requirementId}/sessions/${sessionId}/staging.design.pen`;
+  const semanticScopeRelativePath = `data/${productId}/${requirementId}/sessions/${sessionId}/semantic_scope.yaml`;
+  const operationLogRelativePath = `data/${productId}/${requirementId}/sessions/${sessionId}/operations.jsonl`;
+  const stagingPath = join(home, stagingRelativePath);
+  const stagingRaw = JSON.stringify({
+    children: [{
+      id: "frame-home",
+      type: "frame",
+      name: "Home",
+      metadata: { type: "forma", kind: "page_frame", page_id: "home" },
+      children: [{
+        id: "button-instance",
+        type: "instance",
+        metadata: {
+          type: "forma",
+          kind: "component_instance",
+          component_key: "button.primary",
+          ref_target: "Components - Snapshot v1/button.primary"
+        }
+      }]
+    }]
+  });
+  const stagingRevision = sha256(stagingRaw);
+
+  await mkdir(sessionDir, { recursive: true });
+  await writeYamlAtomic(join(requirementDir, "requirement.yaml"), {
+    id: requirementId,
+    product_id: productId,
+    title: "Checkout style",
+    status: "submitted",
+    ui_affected: true,
+    created_at: "2026-05-21T00:00:00.000Z",
+    updated_at: "2026-05-21T00:00:00.000Z",
+    pages: [{
+      page_id: "home",
+      name: "Home",
+      baseline_page: "B-home",
+      design_status: "pending",
+      copy: [{ context: "title", text: "Home" }],
+      declared_fields: [],
+      declared_actions: [{ key: "save", label: "Save" }],
+      declared_component_keys: ["button.primary"],
+      semantic_contract: {
+        fields: [],
+        actions: [{ key: "save", label: "Save" }],
+        navigation: [],
+        allowed_copy: ["Home"],
+        component_keys: ["button.primary"]
+      },
+      semantic_contract_coverage: "explicit"
+    }],
+    navigation: []
+  });
+  await writeFile(stagingPath, stagingRaw);
+  await writeYamlAtomic(join(sessionDir, "semantic_scope.yaml"), {
+    schema_version: 1,
+    product_id: productId,
+    requirement_id: requirementId,
+    language: "default",
+    page_ids: ["home"],
+    allowed_copy: ["Home"],
+    action_keys: ["save"],
+    navigation_targets: [],
+    field_keys: [],
+    component_keys: ["button.primary"],
+    visual_states: ["default"],
+    existing_node_ids: [],
+    baseline_node_ids: [],
+    source_inputs: {
+      requirement_hash: "sha256:req",
+      translations_hash: "sha256:trans",
+      rules_hash: "sha256:rules",
+      baseline_hash: "sha256:base",
+      product_hash: "sha256:product",
+      component_library_hash: "sha256:component",
+      current_design_hash: "sha256:design"
+    },
+    source_contract_hash: "sha256:test",
+    staging_revision: stagingRevision
+  });
+  await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
+    schema_version: 1,
+    session_id: sessionId,
+    scope: "requirement_canvas",
+    product_id: productId,
+    requirement_id: requirementId,
+    session_dir_relative: `data/${productId}/${requirementId}/sessions/${sessionId}`,
+    session_dir: `data/${productId}/${requirementId}/sessions/${sessionId}`,
+    operation: "generate",
+    mode: "app",
+    canvas_file: `data/${productId}/${requirementId}/design.pen`,
+    canvas_path: `data/${productId}/${requirementId}/design.pen`,
+    staging_file: stagingRelativePath,
+    staging_path: stagingRelativePath,
+    pencil_binding_id: "B-binding",
+    pencil_command: "pencil interactive",
+    pencil_version: "pencil 1.2.3",
+    started_revision: stagingRevision,
+    last_saved_revision: stagingRevision,
+    last_controlled_revision: stagingRevision,
+    operation_log_file_relative: operationLogRelativePath,
+    operation_log_file: operationLogRelativePath,
+    semantic_scope_file_relative: semanticScopeRelativePath,
+    semantic_scope_file: semanticScopeRelativePath,
+    started_at: "2026-05-21T00:00:00.000Z",
+    updated_at: "2026-05-21T00:00:00.000Z",
+    pid: process.pid,
+    status: "running"
+  });
+  await writeFile(join(home, operationLogRelativePath), "");
+  return stagingPath;
+}
+
+function sha256(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
 describe("MCP forma tools", () => {
   it("does not register removed legacy page-level design tools", () => {
     const tools = createFormaTools(fakeStore());
@@ -250,24 +385,96 @@ describe("MCP forma tools", () => {
   it("passes session record staging path to adapter-backed session read tools", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-session-staging-"));
     const sessionId = "S-1234567890abcdef";
-    await mkdir(join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId), { recursive: true });
-    await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId, "design_session.yaml"), {
-      session_id: sessionId,
-      pencil_binding_id: "B-binding",
-      staging_path: "data/P-123abc/R-1234abcd/sessions/S-1234567890abcdef/staging.design.pen"
-    });
+    const expectedStagingPath = await writeMinimalMcpSessionRecord(home, sessionId);
     const store = fakeStore({ home });
-    const adapterSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetEditorState").mockResolvedValue({ ok: true });
+    const editorSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetEditorState").mockResolvedValue({ ok: "editor" });
+    const guidelinesSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetGuidelines").mockResolvedValue({ ok: "guidelines" });
+    const variablesSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetVariables").mockResolvedValue({ ok: "variables" });
+    const batchGetSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionBatchGet").mockResolvedValue({ ok: "batch" });
+    const snapshotSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionSnapshotLayout").mockResolvedValue({ ok: "snapshot" });
+    const screenshotSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetScreenshot").mockResolvedValue({ ok: "screenshot" });
+    const exportSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionExportNodes").mockResolvedValue({ ok: "export" });
     const tools = createFormaTools(store);
 
-    await tools.session_get_editor_state({ session_id: sessionId, include_schema: true });
+    try {
+      await tools.session_get_editor_state({ session_id: sessionId, include_schema: true });
+      await tools.session_get_guidelines({ session_id: sessionId, category: "guide", name: "Design System" });
+      await tools.session_get_variables({ session_id: sessionId });
+      await tools.session_batch_get({ session_id: sessionId, nodeIds: ["frame-1"], resolveInstances: false });
+      await tools.session_snapshot_layout({ session_id: sessionId, parentId: "frame-1", problemsOnly: false, maxDepth: 8 });
+      await tools.session_get_screenshot({ session_id: sessionId, nodeId: "frame-1" });
+      await tools.session_export_nodes({ session_id: sessionId, nodeIds: ["frame-1"], format: "png", scale: 2 });
 
-    expect(adapterSpy).toHaveBeenCalledWith(
-      "B-binding",
-      { include_schema: true },
-      join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId, "staging.design.pen")
-    );
-    adapterSpy.mockRestore();
+      expect(editorSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { include_schema: true },
+        expectedStagingPath
+      );
+      expect(guidelinesSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { category: "guide", name: "Design System" },
+        expectedStagingPath
+      );
+      expect(variablesSpy).toHaveBeenCalledWith("B-binding", expectedStagingPath);
+      expect(batchGetSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { nodeIds: ["frame-1"], resolveInstances: false },
+        expectedStagingPath
+      );
+      expect(snapshotSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { problemsOnly: false, parentId: "frame-1", maxDepth: 8 },
+        expectedStagingPath
+      );
+      expect(screenshotSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { nodeId: "frame-1" },
+        expectedStagingPath
+      );
+      expect(exportSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { nodeIds: ["frame-1"], format: "png", scale: 2 },
+        expectedStagingPath
+      );
+    } finally {
+      editorSpy.mockRestore();
+      guidelinesSpy.mockRestore();
+      variablesSpy.mockRestore();
+      batchGetSpy.mockRestore();
+      snapshotSpy.mockRestore();
+      screenshotSpy.mockRestore();
+      exportSpy.mockRestore();
+    }
+  });
+
+  it("passes session record staging path to preview export fallback during commit", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-preview-staging-"));
+    const sessionId = "S-1234567890abcdef";
+    const expectedStagingPath = await writeCommitSessionRecord(home, sessionId);
+    const exportedPreview = join(home, "preview-export.png");
+    await writeFile(exportedPreview, "preview");
+    const exportSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionExportNodes").mockResolvedValue({
+      files: [{ path: exportedPreview }]
+    });
+    const tools = createFormaTools(fakeStore({ home }));
+
+    try {
+      const result = await tools.commit_requirement_design_session({
+        session_id: sessionId,
+        page_id: "home",
+        frame_id: "frame-home"
+      });
+
+      expect(exportSpy).toHaveBeenCalledWith(
+        "B-binding",
+        { nodeIds: ["frame-home"], format: "png", scale: 2 },
+        expectedStagingPath
+      );
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({ error_code: "PENCIL_APP_REQUIRED" });
+    } finally {
+      exportSpy.mockRestore();
+    }
   });
 
   it("requirement design session schemas enforce operations, intents, and forbidden operation paths", () => {
