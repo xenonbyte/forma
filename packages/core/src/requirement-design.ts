@@ -10,6 +10,7 @@ import { PencilAppSessionAdapter } from "./pencil-adapter.js";
 import { defaultPencilRunner } from "./pencil.js";
 import { requirementSchema, type Requirement, type RequirementPage } from "./requirement.js";
 import { deriveAllowedSemanticSurface, readSemanticScope } from "./semantic-scope.js";
+import { parseSessionId } from "./session-id.js";
 import { readYaml, readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
@@ -963,24 +964,33 @@ async function findRequirementSessionLoose(home: string, sessionId: string): Pro
   pencil_binding_id: string;
   status: string;
 }> {
+  const parsedSessionId = parseSessionId(sessionId);
   const dataDir = join(home, "data");
   for (const productId of await safeReaddir(dataDir)) {
     const productDir = join(dataDir, productId);
     for (const requirementId of await safeReaddir(productDir)) {
       if (requirementId === "sessions" || requirementId.startsWith("D-")) continue;
-      const file = join(productDir, requirementId, "sessions", sessionId, "design_session.yaml");
+      const file = join(productDir, requirementId, "sessions", parsedSessionId, "design_session.yaml");
       if (!await pathExists(file)) continue;
       const raw = await readYaml<Record<string, unknown>>(file);
+      if (
+        raw.session_id !== parsedSessionId
+        || raw.product_id !== productId
+        || raw.requirement_id !== requirementId
+        || raw.scope !== "requirement_canvas"
+      ) {
+        throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: parsedSessionId });
+      }
       const stagingFile = typeof raw.staging_file === "string" ? raw.staging_file : undefined;
       const semanticScopeFile = typeof raw.semantic_scope_file_relative === "string" ? raw.semantic_scope_file_relative : undefined;
       const lastControlledRevision = typeof raw.last_controlled_revision === "string" ? raw.last_controlled_revision : undefined;
       const pencilBindingId = typeof raw.pencil_binding_id === "string" ? raw.pencil_binding_id : undefined;
       const status = typeof raw.status === "string" ? raw.status : undefined;
       if (!stagingFile || !semanticScopeFile || !lastControlledRevision || !pencilBindingId || !status) {
-        throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: sessionId });
+        throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: parsedSessionId });
       }
       return {
-        session_id: sessionId,
+        session_id: parsedSessionId,
         product_id: productId,
         requirement_id: requirementId,
         session_file: file,

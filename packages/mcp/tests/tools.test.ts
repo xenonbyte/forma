@@ -557,6 +557,33 @@ describe("MCP forma tools", () => {
     });
   });
 
+  it("rejects malformed session ids for session-owned tools", () => {
+    const malformedSessionId = "S-1234567890abcdef/../S-fedcba0987654321";
+    const sessionInputs: Array<[FormaToolName, Record<string, unknown>]> = [
+      ["apply_requirement_design_operations", { session_id: malformedSessionId, operations: [{ tool: "batch_design", args: {}, intent: "generate" }] }],
+      ["commit_requirement_design_session", { session_id: malformedSessionId }],
+      ["discard_requirement_design_session", { session_id: malformedSessionId }],
+      ["recover_design_commit_journal", { session_id: malformedSessionId, scope: "requirement_canvas" }],
+      ["apply_product_component_operations", { session_id: malformedSessionId, operations: [{ tool: "set_variables", args: {}, intent: "change_style" }] }],
+      ["commit_product_component_session", { session_id: malformedSessionId }],
+      ["discard_product_component_session", { session_id: malformedSessionId }],
+      ["refresh_requirement_components", { session_id: malformedSessionId, product_id: "P-123abc", requirement_id: "R-12345678" }],
+      ["plan_import_metadata_normalization", { session_id: malformedSessionId, product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout", frame_id: "frame-1" }],
+      ["validate_requirement_design_quality", { session_id: malformedSessionId, product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout", frame_id: "frame-1" }],
+      ["session_get_editor_state", { session_id: malformedSessionId, include_schema: true }],
+      ["session_get_guidelines", { session_id: malformedSessionId, category: "guide", name: "Design System" }],
+      ["session_get_variables", { session_id: malformedSessionId }],
+      ["session_batch_get", { session_id: malformedSessionId, nodeIds: ["frame-1"] }],
+      ["session_snapshot_layout", { session_id: malformedSessionId, parentId: "frame-1" }],
+      ["session_get_screenshot", { session_id: malformedSessionId, nodeId: "frame-1" }],
+      ["session_export_nodes", { session_id: malformedSessionId, nodeIds: ["frame-1"] }]
+    ];
+
+    for (const [toolName, input] of sessionInputs) {
+      expectSchemaFailure(toolName, input);
+    }
+  });
+
   it("product component session schemas enforce seed requirements and operation tools", () => {
     expectSchemaFailure("begin_product_component_session", {
       product_id: "P-123abc",

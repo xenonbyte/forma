@@ -265,6 +265,7 @@ const productConfigSchema = z.object({
 });
 const styleNameSchema = z.object({ name: z.string().min(1) }).strict();
 const nonEmptyStringSchema = z.string().min(1);
+const sessionIdSchema = z.string().regex(/^S-[a-f0-9]{16}$/);
 const forbiddenPathFieldNames = new Set([
   "filePath",
   "file_path",
@@ -283,7 +284,7 @@ const forbiddenPathFieldSchemas = Object.fromEntries(
     z.never({ error: "FORBIDDEN_PATH_PARAMETER" }).optional()
   ])
 ) as Record<string, z.ZodType>;
-const sessionIdInputSchema = z.object({ session_id: nonEmptyStringSchema }).strict();
+const sessionIdInputSchema = z.object({ session_id: sessionIdSchema }).strict();
 const productRequirementSchema = z.object({
   product_id: nonEmptyStringSchema,
   requirement_id: nonEmptyStringSchema
@@ -318,7 +319,7 @@ const requirementDesignOperationIntentSchema = z.enum([
 ]);
 const operationArgsSchema = rejectForbiddenPathFields(z.record(z.string(), z.unknown()));
 const applyRequirementDesignOperationsSchema = z.object({
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   operations: z.array(z.object({
     tool: z.literal("batch_design"),
     args: operationArgsSchema,
@@ -343,7 +344,7 @@ const aiVisualReviewSchema = z.discriminatedUnion("status", [
   }).strict()
 ]);
 const commitRequirementDesignSessionSchema = rejectForbiddenPathFields(z.object({
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   page_id: nonEmptyStringSchema.optional(),
   frame_id: nonEmptyStringSchema.optional(),
   ai_visual_review: aiVisualReviewSchema.optional(),
@@ -385,7 +386,7 @@ const beginProductComponentSessionSchema = rejectForbiddenPathFields(z.object({
   }
 }));
 const applyProductComponentOperationsSchema = z.object({
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   operations: z.array(z.object({
     tool: z.enum(["batch_design", "set_variables"]),
     args: operationArgsSchema,
@@ -395,7 +396,7 @@ const applyProductComponentOperationsSchema = z.object({
   ...forbiddenPathFieldSchemas
 }).strict();
 const recoverDesignCommitJournalSchema = z.object({
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   scope: z.enum(["requirement_canvas", "product_component_library"])
 }).strict();
 const rollbackRequirementDesignSchema = z.object({
@@ -422,7 +423,7 @@ const indexComponentUsagesSchema = z.object({
   write: z.boolean().optional()
 }).strict();
 const refreshRequirementComponentsSchema = rejectForbiddenPathFields(z.object({
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   product_id: nonEmptyStringSchema,
   requirement_id: nonEmptyStringSchema,
   version: z.union([z.literal("latest"), z.number().int().positive()]).optional(),
@@ -430,7 +431,7 @@ const refreshRequirementComponentsSchema = rejectForbiddenPathFields(z.object({
   ...forbiddenPathFieldSchemas
 }).strict());
 const sessionProductRequirementPageFrameSchema = rejectForbiddenPathFields(z.object({
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   product_id: nonEmptyStringSchema,
   requirement_id: nonEmptyStringSchema,
   page_id: nonEmptyStringSchema,
@@ -438,7 +439,7 @@ const sessionProductRequirementPageFrameSchema = rejectForbiddenPathFields(z.obj
   ...forbiddenPathFieldSchemas
 }).strict());
 const sessionBaseSchema = {
-  session_id: nonEmptyStringSchema,
+  session_id: sessionIdSchema,
   pencil_binding_id: nonEmptyStringSchema.optional()
 };
 const sessionGetEditorStateSchema = rejectForbiddenPathFields(z.object({

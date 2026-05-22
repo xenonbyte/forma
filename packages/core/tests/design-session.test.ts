@@ -782,6 +782,36 @@ describe("v6 requirement design sessions", () => {
     });
   });
 
+  it("rejects malformed requirement commit session ids before touching matched session files", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+    await rm(session.staging_path, { force: true });
+    const previewExporter = vi.fn(async ({ output_file }: { output_file: string }) => writeFile(output_file, "preview"));
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: `${session.session_id}/../${session.session_id}`,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter
+    })).rejects.toMatchObject({
+      code: "INVALID_INPUT"
+    });
+    expect(previewExporter).not.toHaveBeenCalled();
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "running"
+    });
+  });
+
   it("rejects stale source staging revision candidates before sanitized promotion", async () => {
     const home = await createHome();
     const processFactory = createConvergedSessionProcessFactory();
