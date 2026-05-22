@@ -395,7 +395,9 @@ export class PencilAppSessionAdapter {
     const expected = expectedStagingPath ?? owned.binding.staging_path;
     rejectPathLikeParameters(args);
     await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
-    return this.sendJsonToProcess(owned.process, tool, args, timeoutMs);
+    const result = await this.sendJsonToProcess(owned.process, tool, args, timeoutMs);
+    await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
+    return result;
   }
 
   private requireLiveBinding(bindingId: string): { binding: PencilAppBinding; process: PencilInteractiveProcess } {

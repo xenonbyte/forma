@@ -1029,7 +1029,46 @@ describe("PencilService", () => {
       "batch_get({\"nodeIds\":[\"root\"]})",
       "get_editor_state({\"include_schema\":false})",
       expect.stringMatching(/^batch_get\(/),
-      "export_nodes({\"nodeIds\":[\"root\"]})"
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "export_nodes({\"nodeIds\":[\"root\"]})",
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/)
+    ]);
+  });
+
+  it("fails session export when the active editor drifts after the export command", async () => {
+    const home = await createHome("adapter-runtime-drift-export-after-command");
+    const staging = join(home, "staging.design.pen");
+    const other = join(home, "other.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+    const realStaging = await realpath(staging);
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: createDriftingProcessFactory(messages, {
+        driftAfterBatchGet: 2,
+        stagingPath: realStaging,
+        otherPath: await realpath(other)
+      })
+    });
+    const binding = await adapter.openSession({ session_id: "S-runtime-export-drift", staging_path: staging, expected_session_dir: home });
+    messages.length = 0;
+
+    await expect(adapter.sessionExportNodes(binding.pencil_binding_id, { nodeIds: ["root"] }, staging)).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        failed_phase: "active_editor_drift"
+      }
+    });
+    expect(messages).toEqual([
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "export_nodes({\"nodeIds\":[\"root\"]})",
+      "get_editor_state({\"include_schema\":false})"
     ]);
   });
 
