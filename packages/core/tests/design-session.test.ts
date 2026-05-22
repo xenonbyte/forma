@@ -1442,9 +1442,56 @@ describe("v6 product component sessions", () => {
     });
     const sessionId = (error as { details?: { session_id?: string } }).details?.session_id;
     expect(sessionId).toEqual(expect.any(String));
-    await expect(readYaml(join(home, "library", "P-123abc.sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
-      reason: "active_editor_path_mismatch"
+    const expectedStagingPath = join(home, "library", "P-123abc.sessions", sessionId!, "staging.lib.pen");
+    expect(error).toMatchObject({
+      details: {
+        staging_path: expectedStagingPath
+      }
     });
+    await expect(readYaml(join(home, "library", "P-123abc.sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
+      reason: "active_editor_path_mismatch",
+      staging_path: expectedStagingPath
+    });
+  });
+
+  it("opens component staging and then requirement staging after component commit", async () => {
+    const home = await createEmptyComponentHome();
+    await mkdir(join(home, "data", "P-123abc", "R-1234abcd"), { recursive: true });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "requirement.yaml"), requirementFixture());
+    const openedPaths: string[] = [];
+    const processFactory = createConvergedSessionProcessFactory(openedPaths);
+
+    const componentSession = await beginProductComponentSession({
+      home,
+      product_id: "P-123abc",
+      operation: "generate",
+      seed_components: [{ component_key: "button", name: "Button" }],
+      newly_required_component_keys: ["button"],
+      runner: createRunner(),
+      processFactory
+    });
+    expect(componentSession.staging_path.endsWith("staging.lib.pen")).toBe(true);
+
+    await applyProductComponentOperations({
+      home,
+      session_id: componentSession.session_id,
+      operations: [{ tool: "batch_design", args: { id: "button" }, intent: "generate" }],
+      runner: createRunner(),
+      processFactory
+    });
+    await commitProductComponentSession({ home, session_id: componentSession.session_id, processFactory });
+
+    const requirementSession = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    expect(openedPaths.map((path) => path.split("/").at(-1))).toEqual(["staging.lib.pen", "staging.design.pen"]);
+    expect(requirementSession.staging_path.endsWith("staging.design.pen")).toBe(true);
   });
 
   it("discards staging while keeping formal component library and audit files", async () => {

@@ -105,10 +105,10 @@ export async function beginProductComponentSession(input: {
   }
   const home = resolve(input.home);
   const productId = parseProductId(input.product_id);
+  const versionPlan = await readComponentVersionPlan(home, productId, input.operation);
   const runner = input.runner ?? defaultPencilRunner;
   const adapter = new PencilAppSessionAdapter({ home, runner, processFactory: input.processFactory });
   await adapter.preflight();
-  const versionPlan = await readComponentVersionPlan(home, productId, input.operation);
 
   return getProductMutationLock(home).run({ operation: "begin_product_component_session", product_id: productId, scope: "product_component_library" }, async () =>
     getPencilMutationLock(home).run({ operation: "begin_product_component_session", product_id: productId, scope: "pencil" }, async () => {
@@ -163,6 +163,7 @@ export async function beginProductComponentSession(input: {
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
         reason: failedReason,
+        staging_path: stagingPath,
         cleanup_status: cleanup,
         pencil_version: error instanceof FormaError ? error.details.pencil_version : undefined
       }).catch(async (writeError: unknown) => {
@@ -174,6 +175,7 @@ export async function beginProductComponentSession(input: {
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
         reason: failedReason,
+        staging_path: stagingPath,
         cleanup_status: cleanup,
         ...(error instanceof FormaError && error.details.pencil_version ? { pencil_version: error.details.pencil_version } : {})
       });
@@ -271,8 +273,8 @@ export async function applyProductComponentOperations(input: {
   }
   const stagingPath = record.staging_path;
   try {
-    await adapter.assertLiveBinding(record.pencil_binding_id, stagingPath);
-    await adapter.controlledSave(record.pencil_binding_id);
+    await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: stagingPath });
+    await adapter.controlledSave(record.pencil_binding_id, stagingPath);
   } catch (error) {
     if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
       await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -302,8 +304,8 @@ export async function applyProductComponentOperations(input: {
     let saveSucceeded = false;
     try {
       await appendComponentJsonl(currentRecord.operation_log_file, pendingEntry);
-      await adapter.executeWriteTool(currentRecord.pencil_binding_id, operation.tool, operation.args);
-      await adapter.controlledSave(currentRecord.pencil_binding_id);
+      await adapter.executeWriteTool(currentRecord.pencil_binding_id, operation.tool, operation.args, stagingPath);
+      await adapter.controlledSave(currentRecord.pencil_binding_id, stagingPath);
       saveSucceeded = true;
       const after = await hashFile(stagingPath);
       await replaceComponentJsonlBySequence(currentRecord.operation_log_file, sequence, (entry) => ({
@@ -357,8 +359,8 @@ export async function commitProductComponentSession(input: { home: string; sessi
     getPencilMutationLock(home).run({ operation: "commit_product_component_session", product_id: record.product_id, session_id: record.session_id, scope: "pencil" }, async () => {
   const stagingPath = record.staging_path;
   try {
-    await adapter.assertLiveBinding(record.pencil_binding_id, stagingPath);
-    await adapter.controlledSave(record.pencil_binding_id);
+    await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: stagingPath });
+    await adapter.controlledSave(record.pencil_binding_id, stagingPath);
   } catch (error) {
     if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
       await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -498,7 +500,7 @@ export async function discardProductComponentSession(input: {
       const allowDisconnectedDiscard = record.status === "failed_commit" || record.status === "recoverable";
       if (!allowDisconnectedDiscard) {
         try {
-          await adapter.assertLiveBinding(record.pencil_binding_id, record.staging_path);
+          await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: record.staging_path });
         } catch (error) {
           if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
             await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
