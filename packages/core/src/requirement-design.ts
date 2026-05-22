@@ -5,9 +5,12 @@ import { z } from "zod";
 import { assertDesignQualityPassed, runDesignQualityPipeline, type DesignQualityReport } from "./design-quality.js";
 import { commitRequirementDesignSessionWithCandidates, type RequirementCommitCandidate } from "./design-session.js";
 import { FormaError } from "./errors.js";
-import { nodeMetadataString, normalizeDesignName, parsePenDocument, walkPenNodes, type PenDocument, type PenNode } from "./pen-model.js";
+import { isRecord, nodeMetadataString, normalizeDesignName, parsePenDocument, walkPenNodes, type PenDocument, type PenNode } from "./pen-model.js";
+import { PencilAppSessionAdapter } from "./pencil-adapter.js";
+import { defaultPencilRunner } from "./pencil.js";
 import { requirementSchema, type Requirement, type RequirementPage } from "./requirement.js";
 import { deriveAllowedSemanticSurface, readSemanticScope } from "./semantic-scope.js";
+import { parseSessionId } from "./session-id.js";
 import { readYaml, readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
@@ -623,6 +626,7 @@ export async function commitRequirementDesignSession(input: {
   }
   const home = resolve(input.home);
   const session = await findRequirementSessionLoose(home, input.session_id);
+  await assertLiveStagingBeforeDefaultCommitCandidateBuild(home, session);
   const paths = requirementDesignPaths(home, session.product_id, session.requirement_id);
   const [stagingRaw, requirement] = await Promise.all([
     readFile(session.staging_path, "utf8"),
@@ -636,7 +640,9 @@ export async function commitRequirementDesignSession(input: {
       actual_revision: stagingRevision
     });
   }
-  const document = parsePenDocument(stagingRaw);
+  const noGuardRaw = stripSessionBindingGuardsFromRawStagingForMetadata(stagingRaw);
+  const canvasRevision = sha256(noGuardRaw);
+  const document = parsePenDocument(noGuardRaw);
   const page = requirement.pages.find((item) => item.page_id === input.page_id);
   if (!page) {
     throw new FormaError("INVALID_INPUT", "Page is not part of requirement", { page_id: input.page_id });
@@ -686,8 +692,8 @@ export async function commitRequirementDesignSession(input: {
   const historyYamlCandidate = join(candidateDir, `canvas.c${canvasVersion}.yaml`);
   const pageFragmentCandidate = join(candidateDir, `${input.page_id}.p${pageVersion}.pen-fragment`);
   const historyPreviewCandidate = join(candidateDir, `${input.page_id}.p${pageVersion}@2x.png`);
-  await writeFile(designCandidate, stagingRaw, "utf8");
-  await writeFile(historyPenCandidate, stagingRaw, "utf8");
+  await writeFile(designCandidate, noGuardRaw, "utf8");
+  await writeFile(historyPenCandidate, noGuardRaw, "utf8");
   await writeFile(pageFragmentCandidate, JSON.stringify(frame, null, 2), "utf8");
   await copyFile(previewCandidate, historyPreviewCandidate);
   const nextPages = requirement.pages.map((candidatePage) => {
@@ -713,7 +719,7 @@ export async function commitRequirementDesignSession(input: {
     requirement_id: session.requirement_id,
     canvas_file: "design.pen",
     canvas_version: canvasVersion,
-    canvas_revision: stagingRevision,
+    canvas_revision: canvasRevision,
     pages: nextPages,
     unmanaged_components: previousMetadata?.unmanaged_components ?? [],
     history: [
@@ -738,7 +744,7 @@ export async function commitRequirementDesignSession(input: {
     { target: paths.canvas_file, candidate: designCandidate, kind: "design_canvas", order: 6 },
     { target: paths.metadata_file, candidate: metadataCandidate, kind: "design_metadata", order: 7 },
     { target: join(paths.requirement_dir, "requirement.yaml"), candidate: requirementCandidate, kind: "requirement_metadata", order: 8 }
-  ]);
+  ], stagingRevision);
   const substrate = input.commitSubstrate ?? ((payload) => commitRequirementDesignSessionWithCandidates(payload));
   await substrate({ home, session_id: input.session_id, candidates });
   return { session_id: input.session_id, status: "committed", candidates };
@@ -880,9 +886,55 @@ async function restoreIndexPromotions(_home: string, promotedTargets: IndexPromo
   }
 }
 
+function stripSessionBindingGuardsFromRawStagingForMetadata(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must be valid JSON", {
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
+  if (!isRecord(parsed)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must be an object", {
+      cause: "document is not an object"
+    });
+  }
+  const children = parsed.children;
+  if (!Array.isArray(children)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must contain children[]", {
+      cause: "children is missing or not an array"
+    });
+  }
+  const document = {
+    ...parsed,
+    children: children.filter((node) => !isSessionBindingGuardMarker(node))
+  };
+  if (containsSessionBindingGuardMarker(document.children)) {
+    throw new FormaError("PEN_FILE_INVALID", "Sanitized candidate still contains a session binding guard");
+  }
+  return `${JSON.stringify(document, null, 2)}\n`;
+}
+
+function containsSessionBindingGuardMarker(nodes: unknown[]): boolean {
+  for (const node of nodes) {
+    if (!isRecord(node)) continue;
+    if (isSessionBindingGuardMarker(node)) return true;
+    if (Array.isArray(node.children) && containsSessionBindingGuardMarker(node.children)) return true;
+  }
+  return false;
+}
+
+function isSessionBindingGuardMarker(node: unknown): boolean {
+  if (!isRecord(node)) return false;
+  if (typeof node.id === "string" && node.id.startsWith("formaSessionBindingGuard")) return true;
+  return isRecord(node.metadata) && node.metadata.kind === "session_binding_guard";
+}
+
 async function buildCommitCandidates(
   home: string,
-  entries: Array<{ target: string; candidate: string; kind: string; order: number }>
+  entries: Array<{ target: string; candidate: string; kind: string; order: number }>,
+  sourceStagingRevision?: string
 ): Promise<RequirementCommitCandidate[]> {
   const candidates: RequirementCommitCandidate[] = [];
   for (const entry of entries.sort((left, right) => left.order - right.order)) {
@@ -893,6 +945,7 @@ async function buildCommitCandidates(
       replacement_kind: entry.kind,
       restore_order: entry.order,
       candidate_hash: sha256(await readFile(entry.candidate)),
+      ...(sourceStagingRevision ? { source_staging_revision: sourceStagingRevision } : {}),
       ...(targetExists ? { old_hash: sha256(await readFile(entry.target)) } : { old_file_missing: true })
     });
   }
@@ -903,37 +956,79 @@ async function findRequirementSessionLoose(home: string, sessionId: string): Pro
   session_id: string;
   product_id: string;
   requirement_id: string;
+  session_file: string;
   session_dir: string;
   staging_path: string;
   last_controlled_revision: string;
   semantic_scope_file: string;
+  pencil_binding_id: string;
+  status: string;
 }> {
+  const parsedSessionId = parseSessionId(sessionId);
   const dataDir = join(home, "data");
   for (const productId of await safeReaddir(dataDir)) {
     const productDir = join(dataDir, productId);
     for (const requirementId of await safeReaddir(productDir)) {
       if (requirementId === "sessions" || requirementId.startsWith("D-")) continue;
-      const file = join(productDir, requirementId, "sessions", sessionId, "design_session.yaml");
+      const file = join(productDir, requirementId, "sessions", parsedSessionId, "design_session.yaml");
       if (!await pathExists(file)) continue;
       const raw = await readYaml<Record<string, unknown>>(file);
+      if (
+        raw.session_id !== parsedSessionId
+        || raw.product_id !== productId
+        || raw.requirement_id !== requirementId
+        || raw.scope !== "requirement_canvas"
+      ) {
+        throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: parsedSessionId });
+      }
       const stagingFile = typeof raw.staging_file === "string" ? raw.staging_file : undefined;
       const semanticScopeFile = typeof raw.semantic_scope_file_relative === "string" ? raw.semantic_scope_file_relative : undefined;
       const lastControlledRevision = typeof raw.last_controlled_revision === "string" ? raw.last_controlled_revision : undefined;
-      if (!stagingFile || !semanticScopeFile || !lastControlledRevision) {
-        throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: sessionId });
+      const pencilBindingId = typeof raw.pencil_binding_id === "string" ? raw.pencil_binding_id : undefined;
+      const status = typeof raw.status === "string" ? raw.status : undefined;
+      if (!stagingFile || !semanticScopeFile || !lastControlledRevision || !pencilBindingId || !status) {
+        throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: parsedSessionId });
       }
       return {
-        session_id: sessionId,
+        session_id: parsedSessionId,
         product_id: productId,
         requirement_id: requirementId,
+        session_file: file,
         session_dir: dirname(file),
         staging_path: join(home, stagingFile),
         last_controlled_revision: lastControlledRevision,
-        semantic_scope_file: join(home, semanticScopeFile)
+        semantic_scope_file: join(home, semanticScopeFile),
+        pencil_binding_id: pencilBindingId,
+        status
       };
     }
   }
   throw new FormaError("INVALID_INPUT", "Design session not found", { session_id: sessionId });
+}
+
+async function assertLiveStagingBeforeDefaultCommitCandidateBuild(
+  home: string,
+  session: Awaited<ReturnType<typeof findRequirementSessionLoose>>
+): Promise<void> {
+  if (session.status !== "running") {
+    throw new FormaError("INVALID_INPUT", "Session is not running", { status: session.status });
+  }
+  const adapter = new PencilAppSessionAdapter({ home, runner: defaultPencilRunner });
+  try {
+    await adapter.assertActiveStagingBinding({
+      bindingId: session.pencil_binding_id,
+      expectedStagingPath: session.staging_path
+    });
+  } catch (error) {
+    if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
+      await writeYamlAtomic(session.session_file, {
+        ...(await readYaml<Record<string, unknown>>(session.session_file)),
+        status: "recoverable",
+        updated_at: new Date().toISOString()
+      });
+    }
+    throw error;
+  }
 }
 
 async function safeReaddir(path: string): Promise<string[]> {

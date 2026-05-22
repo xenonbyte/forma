@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   applyRequirementDesignOperations,
   beginRequirementDesignSession,
+  commitRequirementDesignSession,
   discardRequirementDesignSession,
+  planImportMetadataNormalization,
   recoverDesignCommitJournal,
   readDesignStartupRecoveryState,
   readYaml,
@@ -22,9 +24,17 @@ import {
 import { commitRequirementDesignSessionWithCandidates } from "../src/design-session.js";
 import { PencilAppSessionAdapter, type PencilInteractiveProcessFactory } from "../src/pencil-adapter.js";
 
-function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = {}): PencilRunner {
+const fullPencilCapabilityHelp = "get_editor_state get_guidelines get_variables batch_get batch_design set_variables export_nodes snapshot_layout get_screenshot save";
+
+function createRunner(options: {
+  failVersion?: boolean;
+  failWrite?: boolean;
+  calls?: string[][];
+  afterInteractiveHelp?: () => Promise<void> | void;
+} = {}): PencilRunner {
   return {
     async run(_command, args) {
+      options.calls?.push([...args]);
       if (options.failVersion && args[0] === "version") {
         throw Object.assign(new Error("missing"), { code: "ENOENT" });
       }
@@ -34,7 +44,8 @@ function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = 
       if (args[0] === "version") return { stdout: "pencil 1.2.3", stderr: "" };
       if (args[0] === "status") return { stdout: "active", stderr: "" };
       if (args[0] === "interactive" && args[1] === "--help") {
-        return { stdout: "get_editor_state get_guidelines batch_get batch_design export_nodes snapshot_layout set_variables save", stderr: "" };
+        await options.afterInteractiveHelp?.();
+        return { stdout: fullPencilCapabilityHelp, stderr: "" };
       }
       if (args[0] === "get_editor_state") return { stdout: "{\"schema\":true}", stderr: "" };
       return { stdout: "ok", stderr: "" };
@@ -42,8 +53,8 @@ function createRunner(options: { failVersion?: boolean; failWrite?: boolean } = 
   };
 }
 
-function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } = {}): PencilInteractiveProcessFactory {
-  return async () => {
+function createProcessFactory(options: { failOpen?: boolean; alive?: boolean; activePath?: string } = {}): PencilInteractiveProcessFactory {
+  return async (input) => {
     if (options.failOpen) {
       throw new Error("open failed");
     }
@@ -52,7 +63,35 @@ function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } =
       pid: process.pid + 3000,
       async send(message) {
         if (!alive) throw new Error("dead");
-        return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+        return createProcessResponse(message, input.stagingPath, options.activePath);
+      },
+      isAlive: () => alive,
+      async close() {
+        alive = false;
+      }
+    };
+  };
+}
+
+function createConvergedSessionProcessFactory(openedPaths: string[] = []): PencilInteractiveProcessFactory {
+  return async (input) => {
+    openedPaths.push(input.stagingPath);
+    let alive = true;
+    return {
+      pid: process.pid + 3500 + openedPaths.length,
+      async send(message) {
+        if (!alive) throw new Error("dead");
+        if (message.startsWith("get_editor_state")) {
+          return { stdout: `${JSON.stringify({ schema: true, filePath: input.stagingPath })}\n`, stderr: "" };
+        }
+        if (message.startsWith("batch_get")) {
+          return { stdout: `${JSON.stringify({ nodes: extractBatchGetNodeIds(message).map((id) => ({ id })) })}\n`, stderr: "" };
+        }
+        if (message.startsWith("batch_design(")) {
+          const payload = JSON.parse(message.slice("batch_design(".length, -1)) as Record<string, unknown>;
+          await writeFile(input.stagingPath, await minimalPenWithNodePreservingGuards(input.stagingPath, typeof payload.id === "string" ? payload.id : "batch-design"));
+        }
+        return { stdout: "ok\n", stderr: "" };
       },
       isAlive: () => alive,
       async close() {
@@ -65,14 +104,14 @@ function createProcessFactory(options: { failOpen?: boolean; alive?: boolean } =
 function createControllableProcessFactory(): { factory: PencilInteractiveProcessFactory; killAll: () => void } {
   const aliveFlags: Array<{ alive: boolean }> = [];
   return {
-    factory: async () => {
+    factory: async (input) => {
       const state = { alive: true };
       aliveFlags.push(state);
       return {
         pid: process.pid + 4000 + aliveFlags.length,
         async send(message) {
           if (!state.alive) throw new Error("dead");
-          return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+          return createProcessResponse(message, input.stagingPath);
         },
         isAlive: () => state.alive,
         async close() {
@@ -95,9 +134,8 @@ function createWritingProcessFactory(options: { failBatchWrites?: number[] } = {
       pid: process.pid + 7000 + Math.floor(Math.random() * 1000),
       async send(message) {
         if (!alive) throw new Error("dead");
-        if (message.startsWith("get_editor_state")) {
-          return { stdout: "{\"schema\":true}\n", stderr: "" };
-        }
+        const openTimeResponse = createOpenTimeProcessResponse(message, input.stagingPath);
+        if (openTimeResponse) return openTimeResponse;
         if (message.startsWith("batch_design(")) {
           batchWrites += 1;
           if (failBatchWrites.has(batchWrites)) {
@@ -114,6 +152,61 @@ function createWritingProcessFactory(options: { failBatchWrites?: number[] } = {
       }
     };
   };
+}
+
+function createProcessResponse(message: string, stagingPath: string, activePath?: string): { stdout: string; stderr: string } {
+  return createOpenTimeProcessResponse(message, stagingPath, activePath) ?? { stdout: "ok\n", stderr: "" };
+}
+
+function createOpenTimeProcessResponse(message: string, stagingPath: string, activePath?: string): { stdout: string; stderr: string } | undefined {
+  if (message.startsWith("get_editor_state")) {
+    return { stdout: `${JSON.stringify({ schema: true, filePath: activePath ?? stagingPath })}\n`, stderr: "" };
+  }
+  if (message.startsWith("batch_get")) {
+    return { stdout: `${JSON.stringify({ nodes: extractBatchGetNodeIds(message).map((id) => ({ id })) })}\n`, stderr: "" };
+  }
+  return undefined;
+}
+
+function extractBatchGetNodeIds(message: string): string[] {
+  const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
+  return payload.nodeIds ?? [];
+}
+
+function minimalPenWithNode(id: string): string {
+  return JSON.stringify({ children: [{ id, type: "frame" }] });
+}
+
+async function minimalPenWithNodePreservingGuards(stagingPath: string, id: string): Promise<string> {
+  const raw = await readFile(stagingPath, "utf8");
+  const document = JSON.parse(raw) as { children?: unknown[] };
+  const guards = Array.isArray(document.children)
+    ? document.children.filter((node) => {
+      if (!node || typeof node !== "object" || Array.isArray(node)) return false;
+      const record = node as Record<string, unknown>;
+      if (typeof record.id === "string" && record.id.startsWith("formaSessionBindingGuard")) return true;
+      const metadata = record.metadata;
+      return !!(metadata && typeof metadata === "object" && !Array.isArray(metadata) && (metadata as Record<string, unknown>).kind === "session_binding_guard");
+    })
+    : [];
+  return JSON.stringify({ children: [{ id, type: "frame" }, ...guards] });
+}
+
+async function fileContainsGuard(file: string): Promise<boolean> {
+  const raw = await readFile(file, "utf8");
+  return raw.includes("formaSessionBindingGuard") || raw.includes("session_binding_guard");
+}
+
+function sha256(bytes: Buffer | string): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+async function hashFileForTest(file: string): Promise<string> {
+  return sha256(await readFile(file));
+}
+
+function passedQualityReport() {
+  return { status: "passed" as const, hard_checks: { issues: [] }, warnings: [] };
 }
 
 async function readJsonl(file: string): Promise<Record<string, unknown>[]> {
@@ -193,6 +286,55 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("v6 requirement design sessions", () => {
+  it("returns generate_components before Pencil preflight when requirement components are missing", async () => {
+    const home = await createEmptyComponentHome();
+    await mkdir(join(home, "data", "P-123abc", "R-1234abcd"), { recursive: true });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "requirement.yaml"), requirementFixture());
+    const openedPaths: string[] = [];
+    const pencilCalls: string[][] = [];
+
+    await expect(beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner({ failVersion: true, calls: pencilCalls }),
+      processFactory: createConvergedSessionProcessFactory(openedPaths)
+    })).rejects.toMatchObject({
+      details: { required_action: "generate_components" }
+    });
+
+    expect(pencilCalls).toEqual([]);
+    expect(openedPaths).toEqual([]);
+    await expect(exists(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toBe(false);
+    await expect(exists(join(home, "data", "P-123abc", "R-1234abcd", "sessions"))).resolves.toBe(false);
+  });
+
+  it("rechecks component library under product lock before creating requirement session artifacts", async () => {
+    const home = await createHome();
+    const openedPaths: string[] = [];
+
+    await expect(beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner({
+        afterInteractiveHelp: async () => {
+          await rm(join(home, "library", "P-123abc.components.yaml"), { force: true });
+        }
+      }),
+      processFactory: createConvergedSessionProcessFactory(openedPaths)
+    })).rejects.toMatchObject({
+      code: "COMPONENT_LIBRARY_METADATA_MISSING",
+      details: { required_action: "generate_components", status: "metadata_missing" }
+    });
+
+    expect(openedPaths).toEqual([]);
+    await expect(exists(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toBe(false);
+    await expect(exists(join(home, "data", "P-123abc", "R-1234abcd", "sessions"))).resolves.toBe(false);
+  });
+
   it("runs preflight before leases or staging files", async () => {
     const home = await createHome();
     await expect(beginRequirementDesignSession({
@@ -252,6 +394,76 @@ describe("v6 requirement design sessions", () => {
     await expect(readYaml(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toMatchObject({
       owner_path: "data/P-123abc/R-1234abcd/sessions/active.yaml",
       local_active_path: "data/P-123abc/R-1234abcd/sessions/active.yaml"
+    });
+  });
+
+  it("keeps semantic scope current after inserting the session binding guard", async () => {
+    const home = await createHome();
+    await writeFile(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"), JSON.stringify({
+      children: [{
+        id: "home",
+        type: "frame",
+        name: "Home",
+        children: [{ id: "title", type: "text", text: "Home" }]
+      }]
+    }));
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory: createProcessFactory()
+    });
+    const revision = await hashFileForTest(session.staging_path);
+
+    await expect(planImportMetadataNormalization({
+      home,
+      session_id: session.session_id,
+      frame_id: "home"
+    })).resolves.toMatchObject({
+      status: "planned",
+      staging_revision: revision,
+      operations: [expect.objectContaining({ target_node_ids: ["title"] })]
+    });
+  });
+
+  it("preserves adapter reason when requirement begin fails during active editor convergence", async () => {
+    const home = await createHome();
+    const other = join(home, "other.pen");
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+
+    let error: unknown;
+    try {
+      await beginRequirementDesignSession({
+        home,
+        product_id: "P-123abc",
+        requirement_id: "R-1234abcd",
+        operation: "generate",
+        runner: createRunner(),
+        processFactory: createProcessFactory({ activePath: other })
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        reason: "active_editor_path_mismatch"
+      }
+    });
+    const sessionId = (error as { details?: { session_id?: string } }).details?.session_id;
+    expect(sessionId).toEqual(expect.any(String));
+    const expectedStagingPath = join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId!, "staging.design.pen");
+    expect(error).toMatchObject({
+      details: {
+        staging_path: expectedStagingPath
+      }
+    });
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
+      reason: "active_editor_path_mismatch",
+      staging_path: expectedStagingPath
     });
   });
 
@@ -369,13 +581,21 @@ describe("v6 requirement design sessions", () => {
     const home = await createHome();
     const formal = join(home, "data", "P-123abc", "R-1234abcd", "design.pen");
     await writeFile(formal, JSON.stringify({ children: [{ id: "old", type: "frame" }] }));
+    const processFactory = createConvergedSessionProcessFactory();
     const session = await beginRequirementDesignSession({
       home,
       product_id: "P-123abc",
       requirement_id: "R-1234abcd",
       operation: "refine",
       runner: createRunner(),
-      processFactory: createProcessFactory()
+      processFactory
+    });
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "new" }, intent: "refine" }]
     });
     const candidate = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "candidate.design.pen");
     await writeFile(candidate, JSON.stringify({ children: [{ id: "new", type: "frame" }] }));
@@ -384,7 +604,7 @@ describe("v6 requirement design sessions", () => {
       home,
       session_id: session.session_id,
       runner: createRunner(),
-      processFactory: createProcessFactory(),
+      processFactory,
       candidates: [{
         target_file: "data/P-123abc/R-1234abcd/design.pen",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
@@ -399,7 +619,7 @@ describe("v6 requirement design sessions", () => {
       home,
       session_id: session.session_id,
       runner: createRunner(),
-      processFactory: createProcessFactory(),
+      processFactory,
       candidates: [{
         target_file: "data/P-123abc/R-1234abcd/design.pen",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
@@ -422,6 +642,401 @@ describe("v6 requirement design sessions", () => {
       scope: "requirement_canvas"
     })).resolves.toMatchObject({ status: "failed_commit" });
     await expect(readFile(formal, "utf8")).resolves.toContain("old");
+  });
+
+  it("commits requirement design canvas without session binding guards", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await expect(fileContainsGuard(session.staging_path)).resolves.toBe(true);
+
+    const rawGuardedHash = `sha256:${createHash("sha256").update(await readFile(session.staging_path)).digest("hex")}`;
+    await expect(commitRequirementDesignSessionWithCandidates({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      candidates: [{
+        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/staging.design.pen`,
+        old_file_missing: true,
+        candidate_hash: rawGuardedHash,
+        replacement_kind: "design_canvas",
+        restore_order: 1
+      }]
+    })).resolves.toMatchObject({ status: "committed" });
+
+    await expect(fileContainsGuard(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"))).resolves.toBe(false);
+  });
+
+  it("rejects guarded requirement history pen candidates", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await expect(fileContainsGuard(session.staging_path)).resolves.toBe(true);
+
+    const rawGuardedHash = await hashFileForTest(session.staging_path);
+    await expect(commitRequirementDesignSessionWithCandidates({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      candidates: [{
+        target_file: "data/P-123abc/R-1234abcd/history/canvas/canvas.c1.pen",
+        candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/staging.design.pen`,
+        old_file_missing: true,
+        candidate_hash: rawGuardedHash,
+        replacement_kind: "canvas_history",
+        restore_order: 1
+      }]
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+
+    await expect(access(join(home, "data", "P-123abc", "R-1234abcd", "history", "canvas", "canvas.c1.pen"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("commits requirement formal artifacts without session binding guards and with matching revisions", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await expect(fileContainsGuard(session.staging_path)).resolves.toBe(true);
+    const sourceRevision = await hashFileForTest(session.staging_path);
+
+    const result = await commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview")
+    });
+    expect(result).toMatchObject({ status: "committed" });
+    expect(result.candidates.every((candidate) => candidate.source_staging_revision === sourceRevision)).toBe(true);
+
+    const designPath = join(home, "data", "P-123abc", "R-1234abcd", "design.pen");
+    const metadataPath = join(home, "data", "P-123abc", "R-1234abcd", "design.yaml");
+    const historyPath = join(home, "data", "P-123abc", "R-1234abcd", "history", "canvas", "canvas.c1.pen");
+    const designHash = await hashFileForTest(designPath);
+    await expect(readYaml(metadataPath)).resolves.toMatchObject({ canvas_revision: designHash });
+    await expect(hashFileForTest(historyPath)).resolves.toBe(designHash);
+    await expect(fileContainsGuard(designPath)).resolves.toBe(false);
+    await expect(fileContainsGuard(metadataPath)).resolves.toBe(false);
+    await expect(fileContainsGuard(historyPath)).resolves.toBe(false);
+  });
+
+  it("rejects session binding guard frame ids during requirement commit", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+    const document = JSON.parse(await readFile(session.staging_path, "utf8")) as { children: Array<Record<string, unknown>> };
+    const guard = document.children.find((node) => typeof node.id === "string" && node.id.startsWith("formaSessionBindingGuard"));
+    if (!guard || typeof guard.id !== "string") throw new Error("test setup expected a session guard");
+    const previewExporter = vi.fn(async ({ output_file }: { output_file: string }) => writeFile(output_file, "preview"));
+    const substrate = vi.fn().mockResolvedValue({ session_id: session.session_id, status: "committed" });
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: guard.id,
+      quality_report: passedQualityReport(),
+      previewExporter,
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "PAGE_FRAME_NOT_FOUND" });
+    expect(previewExporter).not.toHaveBeenCalled();
+    expect(substrate).not.toHaveBeenCalled();
+  });
+
+  it("marks requirement commit recoverable when staging disappears before candidate build", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await rm(session.staging_path, { force: true });
+    const previewExporter = vi.fn(async ({ output_file }: { output_file: string }) => writeFile(output_file, "preview"));
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter
+    })).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        failed_phase: "session_check",
+        staging_path: session.staging_path,
+        reason: expect.stringMatching(/no such file|ENOENT/i)
+      }
+    });
+    expect(previewExporter).not.toHaveBeenCalled();
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "recoverable"
+    });
+  });
+
+  it("marks requirement commit recoverable before injected substrate when staging disappears", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await rm(session.staging_path, { force: true });
+    const substrate = vi.fn();
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        failed_phase: "session_check",
+        staging_path: session.staging_path
+      }
+    });
+    expect(substrate).not.toHaveBeenCalled();
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "recoverable"
+    });
+  });
+
+  it("rejects malformed requirement commit session ids before touching matched session files", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+    await rm(session.staging_path, { force: true });
+    const previewExporter = vi.fn(async ({ output_file }: { output_file: string }) => writeFile(output_file, "preview"));
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: `${session.session_id}/../${session.session_id}`,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter
+    })).rejects.toMatchObject({
+      code: "INVALID_INPUT"
+    });
+    expect(previewExporter).not.toHaveBeenCalled();
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "running"
+    });
+  });
+
+  it("rejects stale source staging revision candidates before sanitized promotion", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    const sourceRevision = await hashFileForTest(session.staging_path);
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home-v2" }, intent: "refine" }]
+    });
+
+    await expect(commitRequirementDesignSessionWithCandidates({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      candidates: [{
+        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/staging.design.pen`,
+        old_file_missing: true,
+        candidate_hash: sourceRevision,
+        source_staging_revision: sourceRevision,
+        replacement_kind: "design_canvas",
+        restore_order: 1
+      }]
+    })).rejects.toMatchObject({ code: "MANUAL_EDIT_DETECTED" });
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "blocked_manual_edit"
+    });
+    await expect(access(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects residual nested session binding guards in requirement formal candidates", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    const document = JSON.parse(await readFile(session.staging_path, "utf8")) as { children: Array<Record<string, unknown>> };
+    const guard = document.children.find((node) => typeof node.id === "string" && node.id.startsWith("formaSessionBindingGuard"));
+    if (!guard) throw new Error("test setup expected a session guard");
+    document.children = [{ id: "home", type: "frame", children: [guard] }, guard];
+    await writeFile(session.staging_path, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+    const revision = await hashFileForTest(session.staging_path);
+    const sessionFile = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml");
+    await writeYamlAtomic(sessionFile, {
+      ...(await readYaml<Record<string, unknown>>(sessionFile)),
+      last_controlled_revision: revision,
+      last_saved_revision: revision
+    });
+
+    const substrate = vi.fn().mockResolvedValue({ session_id: session.session_id, status: "committed" });
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    expect(substrate).not.toHaveBeenCalled();
+  });
+
+  it("wraps malformed staging JSON as PEN_FILE_INVALID while building requirement formal candidates", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+    await writeFile(session.staging_path, "{not-json", "utf8");
+    const revision = await hashFileForTest(session.staging_path);
+    const sessionFile = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml");
+    await writeYamlAtomic(sessionFile, {
+      ...(await readYaml<Record<string, unknown>>(sessionFile)),
+      last_controlled_revision: revision,
+      last_saved_revision: revision
+    });
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview")
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
   it("does not report a committed requirement journal during startup recovery", async () => {
@@ -589,7 +1204,6 @@ describe("v6 requirement design sessions", () => {
     const siblingCandidate = join(home, "data", "P-123abc", "R-1234abcd", "sessions", `${session.session_id}-evil`, "candidate.design.pen");
     await mkdir(join(siblingCandidate, ".."), { recursive: true });
     await writeFile(siblingCandidate, JSON.stringify({ children: [{ id: "evil", type: "frame" }] }));
-    const oldHash = `sha256:${createHash("sha256").update(await readFile(formal)).digest("hex")}`;
     const candidateHash = `sha256:${createHash("sha256").update(await readFile(siblingCandidate)).digest("hex")}`;
 
     await expect(commitRequirementDesignSessionWithCandidates({
@@ -598,11 +1212,11 @@ describe("v6 requirement design sessions", () => {
       runner: createRunner(),
       processFactory: createProcessFactory(),
       candidates: [{
-        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        target_file: "data/P-123abc/R-1234abcd/design.yaml",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}-evil/candidate.design.pen`,
-        old_hash: oldHash,
+        old_file_missing: true,
         candidate_hash: candidateHash,
-        replacement_kind: "design_canvas",
+        replacement_kind: "design_metadata",
         restore_order: 1
       }]
     })).rejects.toMatchObject({ code: "INVALID_INPUT" });
@@ -624,7 +1238,6 @@ describe("v6 requirement design sessions", () => {
     });
     const candidateLink = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "candidate.design.pen");
     await symlink(outside, candidateLink);
-    const oldHash = `sha256:${createHash("sha256").update(await readFile(formal)).digest("hex")}`;
     const candidateHash = `sha256:${createHash("sha256").update(await readFile(outside)).digest("hex")}`;
 
     await expect(commitRequirementDesignSessionWithCandidates({
@@ -633,11 +1246,11 @@ describe("v6 requirement design sessions", () => {
       runner: createRunner(),
       processFactory: createProcessFactory(),
       candidates: [{
-        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        target_file: "data/P-123abc/R-1234abcd/design.yaml",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
-        old_hash: oldHash,
+        old_file_missing: true,
         candidate_hash: candidateHash,
-        replacement_kind: "design_canvas",
+        replacement_kind: "design_metadata",
         restore_order: 1
       }]
     })).rejects.toMatchObject({ code: "INVALID_INPUT" });
@@ -792,15 +1405,23 @@ describe("v6 requirement design sessions", () => {
       };
     });
     const designSession = await import("../src/design-session.js");
+    const processFactory = createConvergedSessionProcessFactory();
     const session = await designSession.beginRequirementDesignSession({
       home,
       product_id: "P-123abc",
       requirement_id: "R-1234abcd",
       operation: "refine",
       runner: createRunner(),
-      processFactory: createProcessFactory()
+      processFactory
     });
     activeSessionId = session.session_id;
+    await designSession.applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "new" }, intent: "refine" }]
+    });
     const candidate = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "candidate.design.pen");
     await writeFile(candidate, candidateContent);
     const oldHash = `sha256:${createHash("sha256").update(original).digest("hex")}`;
@@ -810,7 +1431,7 @@ describe("v6 requirement design sessions", () => {
       home,
       session_id: session.session_id,
       runner: createRunner(),
-      processFactory: createProcessFactory(),
+      processFactory,
       candidates: [{
         target_file: "data/P-123abc/R-1234abcd/design.pen",
         candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/candidate.design.pen`,
@@ -826,7 +1447,8 @@ describe("v6 requirement design sessions", () => {
       })
     });
 
-    await expect(readFile(formal, "utf8")).resolves.toBe(candidateContent);
+    await expect(readFile(formal, "utf8")).resolves.toContain("new");
+    await expect(fileContainsGuard(formal)).resolves.toBe(false);
     await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
       status: "commit_recovery_required"
     });
@@ -955,7 +1577,8 @@ describe("v6 requirement design sessions", () => {
   it("rejects recovery backups outside the requirement session backup directory", async () => {
     const home = await createHome();
     const formal = join(home, "data", "P-123abc", "R-1234abcd", "design.pen");
-    await writeFile(formal, "partial-current");
+    const currentFormal = JSON.stringify({ children: [{ id: "partial-current", type: "frame" }] });
+    await writeFile(formal, currentFormal);
     const outsideBackup = join(home, "data", "P-123abc", "outside-design.bak");
     await writeFile(outsideBackup, "old-formal");
     const oldHash = `sha256:${createHash("sha256").update(await readFile(outsideBackup)).digest("hex")}`;
@@ -993,7 +1616,7 @@ describe("v6 requirement design sessions", () => {
       failed_files: [expect.objectContaining({ reason: expect.stringContaining("session backup directory") })]
     });
 
-    await expect(readFile(formal, "utf8")).resolves.toBe("partial-current");
+    await expect(readFile(formal, "utf8")).resolves.toBe(currentFormal);
     await expect(readYaml(join(sessionDir, "design_session.yaml"))).resolves.toMatchObject({ status: "commit_recovery_required" });
   });
 
@@ -1268,6 +1891,94 @@ describe("v6 product component sessions", () => {
     await expect(exists(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toBe(false);
   });
 
+  it("preserves adapter reason when component begin fails during active editor convergence", async () => {
+    const home = await createHome();
+    const other = join(home, "other.pen");
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+
+    let error: unknown;
+    try {
+      await beginProductComponentSession({
+        home,
+        product_id: "P-123abc",
+        operation: "refine",
+        seed_components: [{ component_key: "button" }],
+        runner: createRunner(),
+        processFactory: createProcessFactory({ activePath: other })
+      });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        reason: "active_editor_path_mismatch"
+      }
+    });
+    const sessionId = (error as { details?: { session_id?: string } }).details?.session_id;
+    expect(sessionId).toEqual(expect.any(String));
+    const expectedStagingPath = join(home, "library", "P-123abc.sessions", sessionId!, "staging.lib.pen");
+    expect(error).toMatchObject({
+      details: {
+        staging_path: expectedStagingPath
+      }
+    });
+    await expect(readYaml(join(home, "library", "P-123abc.sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
+      reason: "active_editor_path_mismatch",
+      staging_path: expectedStagingPath
+    });
+  });
+
+  it("opens component staging and then requirement staging after component commit", async () => {
+    const home = await createEmptyComponentHome();
+    await mkdir(join(home, "data", "P-123abc", "R-1234abcd"), { recursive: true });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "requirement.yaml"), requirementFixture());
+    const openedPaths: string[] = [];
+    const processFactory = createConvergedSessionProcessFactory(openedPaths);
+
+    const componentSession = await beginProductComponentSession({
+      home,
+      product_id: "P-123abc",
+      operation: "generate",
+      seed_components: [{ component_key: "button", name: "Button" }],
+      newly_required_component_keys: ["button"],
+      runner: createRunner(),
+      processFactory
+    });
+    expect(componentSession.staging_path.endsWith("staging.lib.pen")).toBe(true);
+
+    await applyProductComponentOperations({
+      home,
+      session_id: componentSession.session_id,
+      operations: [{ tool: "batch_design", args: { id: "button" }, intent: "generate" }],
+      runner: createRunner(),
+      processFactory
+    });
+    await commitProductComponentSession({ home, session_id: componentSession.session_id, processFactory });
+
+    const requirementSession = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    expect(openedPaths).toEqual([await realpath(componentSession.staging_path), await realpath(requirementSession.staging_path)]);
+    expect(requirementSession.staging_path.endsWith("staging.design.pen")).toBe(true);
+    const latestPath = join(home, "library", "P-123abc.lib.pen");
+    const versionPath = join(home, "library", "P-123abc.versions", "1.lib.pen");
+    const metadata = await readYaml<{ versions: Array<{ checksum: string }> }>(join(home, "library", "P-123abc.components.yaml"));
+    const latestHash = await hashFileForTest(latestPath);
+    await expect(fileContainsGuard(latestPath)).resolves.toBe(false);
+    await expect(fileContainsGuard(versionPath)).resolves.toBe(false);
+    expect(metadata).toMatchObject({ versions: [expect.objectContaining({ checksum: expect.not.stringMatching(/^sha256:0+$/) })] });
+    expect(metadata.versions[0]?.checksum).toBe(latestHash);
+    await expect(hashFileForTest(versionPath)).resolves.toBe(latestHash);
+  });
+
   it("discards staging while keeping formal component library and audit files", async () => {
     const home = await createHome();
     const formal = join(home, "library", "P-123abc.lib.pen");
@@ -1470,10 +2181,10 @@ describe("v6 product component sessions", () => {
     const processFactory: PencilInteractiveProcessFactory = async (input) => ({
       pid: process.pid + 5000,
       async send(message) {
-        if (message.startsWith("save()") && input.stagingPath.endsWith("staging.lib.pen")) {
+        if (message.startsWith("batch_get") && input.stagingPath.endsWith("staging.lib.pen")) {
           await mkdir(join(input.stagingPath, "..", "design_session.yaml"), { recursive: true });
         }
-        return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+        return createProcessResponse(message, input.stagingPath);
       },
       isAlive: () => !closed.value,
       async close() {
@@ -1518,10 +2229,10 @@ describe("v6 product component sessions", () => {
       return {
         pid: process.pid + 6000,
         async send(message) {
-          if (isComponentOpen && message.startsWith("save()")) {
+          if (isComponentOpen && message.startsWith("batch_get")) {
             await rm(input.stagingPath, { force: true });
           }
-          return { stdout: message.startsWith("get_editor_state") ? "{\"schema\":true}\n" : "ok\n", stderr: "" };
+          return createProcessResponse(message, input.stagingPath);
         },
         isAlive: () => !openBinding.closed,
         async close() {
@@ -2174,7 +2885,6 @@ describe("v6 product component sessions", () => {
   it("reports component recovery failure without applying a corrupted backup", async () => {
     const home = await createHome();
     const latestPath = join(home, "library", "P-123abc.lib.pen");
-    const originalLatest = await readFile(latestPath, "utf8");
     let activeSessionId = "";
 
     vi.resetModules();
@@ -2212,7 +2922,11 @@ describe("v6 product component sessions", () => {
       code: "DESIGN_COMMIT_RECOVERY_REQUIRED"
     });
 
-    await expect(readFile(latestPath, "utf8")).resolves.toBe(originalLatest);
+    const latestAfterFailedRecovery = await readFile(latestPath, "utf8");
+    expect(latestAfterFailedRecovery).not.toBe("corrupted latest backup");
+    expect(JSON.parse(latestAfterFailedRecovery) as unknown).toMatchObject({
+      children: expect.arrayContaining([expect.objectContaining({ id: "button", type: "component" })])
+    });
     await expect(readYaml(join(home, "library", "P-123abc.sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
       status: "commit_recovery_required"
     });

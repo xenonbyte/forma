@@ -1,12 +1,14 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { access, copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { componentLibraryMetadataSchema, getProductComponentLibrary, type ComponentLibraryMetadata } from "./components.js";
 import { indexRequirementComponentUsageDocument } from "./component-usage.js";
 import { FormaError } from "./errors.js";
+import { hashFile } from "./file-hash.js";
 import { PencilAppSessionAdapter, rejectPathLikeParameters, type PencilInteractiveProcessFactory } from "./pencil-adapter.js";
 import { defaultPencilRunner, type PencilRunner } from "./pencil.js";
+import { createSanitizedCommitCandidate } from "./pencil-session-guard.js";
 import { parsePenDocument, walkPenNodes } from "./pen-model.js";
 import { productIdSchema } from "./product.js";
 import { getPencilMutationLock, getProductMutationLock } from "./product-mutation-lock.js";
@@ -53,6 +55,7 @@ const componentSessionSchema = z.object({
   pencil_version: z.string(),
   previous_version: z.number().int().min(0),
   target_version: z.number().int().min(1),
+  base_canvas_revision: z.string().optional(),
   started_revision: z.string(),
   last_saved_revision: z.string(),
   last_controlled_revision: z.string(),
@@ -104,10 +107,10 @@ export async function beginProductComponentSession(input: {
   }
   const home = resolve(input.home);
   const productId = parseProductId(input.product_id);
+  const versionPlan = await readComponentVersionPlan(home, productId, input.operation);
   const runner = input.runner ?? defaultPencilRunner;
   const adapter = new PencilAppSessionAdapter({ home, runner, processFactory: input.processFactory });
   await adapter.preflight();
-  const versionPlan = await readComponentVersionPlan(home, productId, input.operation);
 
   return getProductMutationLock(home).run({ operation: "begin_product_component_session", product_id: productId, scope: "product_component_library" }, async () =>
     getPencilMutationLock(home).run({ operation: "begin_product_component_session", product_id: productId, scope: "pencil" }, async () => {
@@ -121,9 +124,11 @@ export async function beginProductComponentSession(input: {
     const sessionDir = join(sessionsRoot, sessionId);
     const canvasPath = join(home, "library", `${productId}.lib.pen`);
     const stagingPath = join(sessionDir, "staging.lib.pen");
+    let baseCanvasRevision: string | undefined;
     await mkdir(sessionDir, { recursive: true });
     if (await pathExists(canvasPath)) {
       await copyFile(canvasPath, stagingPath);
+      baseCanvasRevision = await hashFile(canvasPath);
     } else {
       await writeFile(stagingPath, JSON.stringify({ schema_version: 1, children: [{ id: "components", type: "frame" }] }, null, 2));
     }
@@ -148,17 +153,19 @@ export async function beginProductComponentSession(input: {
     });
     let binding;
     try {
-      binding = await adapter.openSession({ session_id: sessionId, staging_path: stagingPath });
+      binding = await adapter.openSession({ session_id: sessionId, staging_path: stagingPath, expected_session_dir: sessionDir });
     } catch (error) {
       const cleanup = await rollbackComponentBegin({ productLease, activeFile, stagingPath, sessionDir, sessionId });
       const failedDir = join(sessionsRoot, "failed-begins");
+      const failedReason = error instanceof FormaError && typeof error.details.reason === "string" ? error.details.reason : errorMessage(error);
       await writeYamlAtomic(join(failedDir, `${sessionId}.yaml`), {
         session_id: sessionId,
         status: "failed_begin",
         error_code: error instanceof FormaError ? error.code : "PENCIL_APP_REQUIRED",
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
-        reason: errorMessage(error),
+        reason: failedReason,
+        staging_path: stagingPath,
         cleanup_status: cleanup,
         pencil_version: error instanceof FormaError ? error.details.pencil_version : undefined
       }).catch(async (writeError: unknown) => {
@@ -169,7 +176,8 @@ export async function beginProductComponentSession(input: {
         session_id: sessionId,
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
-        reason: errorMessage(error),
+        reason: failedReason,
+        staging_path: stagingPath,
         cleanup_status: cleanup,
         ...(error instanceof FormaError && error.details.pencil_version ? { pencil_version: error.details.pencil_version } : {})
       });
@@ -196,6 +204,7 @@ export async function beginProductComponentSession(input: {
         pencil_version: binding.version,
         previous_version: versionPlan.previous_version,
         target_version: versionPlan.target_version,
+        ...(baseCanvasRevision ? { base_canvas_revision: baseCanvasRevision } : {}),
         started_revision: revision,
         last_saved_revision: revision,
         last_controlled_revision: revision,
@@ -266,8 +275,8 @@ export async function applyProductComponentOperations(input: {
   }
   const stagingPath = record.staging_path;
   try {
-    await adapter.assertLiveBinding(record.pencil_binding_id, stagingPath);
-    await adapter.controlledSave(record.pencil_binding_id);
+    await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: stagingPath });
+    await adapter.controlledSave(record.pencil_binding_id, stagingPath);
   } catch (error) {
     if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
       await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -297,8 +306,8 @@ export async function applyProductComponentOperations(input: {
     let saveSucceeded = false;
     try {
       await appendComponentJsonl(currentRecord.operation_log_file, pendingEntry);
-      await adapter.executeWriteTool(currentRecord.pencil_binding_id, operation.tool, operation.args);
-      await adapter.controlledSave(currentRecord.pencil_binding_id);
+      await adapter.executeWriteTool(currentRecord.pencil_binding_id, operation.tool, operation.args, stagingPath);
+      await adapter.controlledSave(currentRecord.pencil_binding_id, stagingPath);
       saveSucceeded = true;
       const after = await hashFile(stagingPath);
       await replaceComponentJsonlBySequence(currentRecord.operation_log_file, sequence, (entry) => ({
@@ -352,8 +361,8 @@ export async function commitProductComponentSession(input: { home: string; sessi
     getPencilMutationLock(home).run({ operation: "commit_product_component_session", product_id: record.product_id, session_id: record.session_id, scope: "pencil" }, async () => {
   const stagingPath = record.staging_path;
   try {
-    await adapter.assertLiveBinding(record.pencil_binding_id, stagingPath);
-    await adapter.controlledSave(record.pencil_binding_id);
+    await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: stagingPath });
+    await adapter.controlledSave(record.pencil_binding_id, stagingPath);
   } catch (error) {
     if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
       await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -365,6 +374,21 @@ export async function commitProductComponentSession(input: { home: string; sessi
     await writeComponentSessionRecord(home, sessionFile, { ...record, status: "blocked_manual_edit", updated_at: new Date().toISOString() });
     throw new FormaError("MANUAL_EDIT_DETECTED", "Current component canvas has uncontrolled changes", { session_id: record.session_id });
   }
+  const binding = adapter.getBinding(record.pencil_binding_id);
+  if (!binding?.binding_guard_id) {
+    await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
+    throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App session is missing a binding guard", {
+      session_id: record.session_id,
+      failed_phase: "session_check",
+      pencil_binding_id: record.pencil_binding_id
+    });
+  }
+  const sanitized = await createSanitizedCommitCandidate({
+    source_staging_path: stagingPath,
+    candidate_path: join(dirname(sessionFile), "commit-candidates", "staging.no-guard.pen"),
+    binding_guard_id: binding.binding_guard_id,
+    expected_source_hash: controlledRevision
+  });
   validateComponentSeeds(record.seed_components);
   const canvasPath = record.canvas_path;
   const version = Number(record.target_version);
@@ -374,7 +398,7 @@ export async function commitProductComponentSession(input: { home: string; sessi
   const versionFile = join(home, "library", `${record.product_id}.versions`, `${version}.lib.pen`);
   const metadataPath = join(home, "library", `${record.product_id}.components.yaml`);
   const metadataCandidate = join(dirname(sessionFile), "candidate.components.yaml");
-  const checksum = await hashFile(stagingPath);
+  const checksum = sanitized.candidate_hash;
   await mkdir(dirname(versionFile), { recursive: true });
   await validateComponentCommitTarget(home, versionFile, "component_version");
   await validateComponentCommitTarget(home, metadataPath, "component_metadata");
@@ -411,7 +435,7 @@ export async function commitProductComponentSession(input: { home: string; sessi
   const entries = await prepareComponentCommitEntries(home, [
     {
       targetPath: versionFile,
-      candidatePath: stagingPath,
+      candidatePath: sanitized.candidate_path,
       candidateHash: checksum,
       backupPath: join(backupDir, `1-${version}.lib.pen.bak`),
       replacementKind: "component_version",
@@ -419,7 +443,7 @@ export async function commitProductComponentSession(input: { home: string; sessi
     },
     {
       targetPath: canvasPath,
-      candidatePath: stagingPath,
+      candidatePath: sanitized.candidate_path,
       candidateHash: checksum,
       backupPath: join(backupDir, "2-latest.lib.pen.bak"),
       replacementKind: "component_latest",
@@ -493,7 +517,7 @@ export async function discardProductComponentSession(input: {
       const allowDisconnectedDiscard = record.status === "failed_commit" || record.status === "recoverable";
       if (!allowDisconnectedDiscard) {
         try {
-          await adapter.assertLiveBinding(record.pencil_binding_id, record.staging_path);
+          await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: record.staging_path });
         } catch (error) {
           if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
             await writeComponentSessionRecord(home, sessionFile, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -995,17 +1019,18 @@ async function assertComponentCommitBaseline(
     throw new FormaError("INVALID_INPUT", "Component latest baseline changed since session begin", {
       session_id: record.session_id,
       product_id: record.product_id,
-      expected_latest_hash: record.started_revision,
+      expected_latest_hash: record.base_canvas_revision ?? record.started_revision,
       actual_latest_missing: true,
       latest_file: relative(home, canvasPath)
     });
   }
+  const expectedLatestHash = record.base_canvas_revision ?? record.started_revision;
   const latestHash = await hashFile(canvasPath);
-  if (latestHash !== record.started_revision) {
+  if (latestHash !== expectedLatestHash) {
     throw new FormaError("INVALID_INPUT", "Component latest baseline changed since session begin", {
       session_id: record.session_id,
       product_id: record.product_id,
-      expected_latest_hash: record.started_revision,
+      expected_latest_hash: expectedLatestHash,
       actual_latest_hash: latestHash,
       latest_file: relative(home, canvasPath)
     });
@@ -1266,10 +1291,6 @@ function resolveInside(home: string, relativePath: string): string {
 function isSameOrChildPath(parent: string, child: string): boolean {
   const relativePath = relative(parent, child);
   return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
-}
-
-async function hashFile(file: string): Promise<string> {
-  return `sha256:${createHash("sha256").update(await readFile(file)).digest("hex")}`;
 }
 
 async function restoreVerifiedBackup(backup: string, tempTarget: string, target: string, oldHash: string): Promise<void> {

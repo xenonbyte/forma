@@ -12,6 +12,7 @@ import {
   getRequirementDesignScene,
   indexRequirementComponentUsage,
   indexRequirementDesignCanvas,
+  loadRequiredPencilDesignContext,
   planImportMetadataNormalization,
   planColorRepairOperations,
   readYaml,
@@ -26,6 +27,7 @@ import {
   type DesignQualityReport,
   type Requirement
 } from "../src/index.js";
+import { PencilAppSessionAdapter } from "../src/pencil-adapter.js";
 
 const productId = "P-123abc";
 const requirementId = "R-c9b123bf";
@@ -153,6 +155,31 @@ describe("stage 07 requirement design model", () => {
       document: { children: [{ id: "n1", fill: "#FF0000" }] },
       ai_visual_review: { status: "warning" }
     })).resolves.toMatchObject({ status: "warning", warnings: ["AI_VISUAL_REVIEW_WARNING"] });
+  });
+
+  it("passes expected staging path while loading required Pencil design context", async () => {
+    const adapter = {
+      sessionGetEditorState: vi.fn(async () => ({ ok: "editor" })),
+      sessionGetGuidelines: vi.fn(async () => ({ ok: "guide" })),
+      sessionGetVariables: vi.fn(async () => ({ ok: "variables" }))
+    };
+
+    await expect(loadRequiredPencilDesignContext({
+      adapter,
+      binding_id: "B-binding",
+      expected_staging_path: "/tmp/staging.design.pen",
+      platform: "desktop",
+      table_heavy: true
+    })).resolves.toMatchObject({
+      editor_state: { ok: "editor" },
+      variables: { ok: "variables" }
+    });
+
+    expect(adapter.sessionGetEditorState).toHaveBeenCalledWith("B-binding", { include_schema: true }, "/tmp/staging.design.pen");
+    expect(adapter.sessionGetGuidelines).toHaveBeenCalledWith("B-binding", { category: "guide", name: "Design System" }, "/tmp/staging.design.pen");
+    expect(adapter.sessionGetGuidelines).toHaveBeenCalledWith("B-binding", { category: "guide", name: "desktop" }, "/tmp/staging.design.pen");
+    expect(adapter.sessionGetGuidelines).toHaveBeenCalledWith("B-binding", { category: "guide", name: "Table" }, "/tmp/staging.design.pen");
+    expect(adapter.sessionGetVariables).toHaveBeenCalledWith("B-binding", "/tmp/staging.design.pen");
   });
 
   it("plans deterministic color repairs without mutating validation", () => {
@@ -607,52 +634,62 @@ describe("stage 07 commit candidate builder", () => {
       }]
     }));
     const substrate = vi.fn();
+    const assertBindingSpy = stubActiveStagingBinding();
 
-    await expect(commitRequirementDesignSession({
-      home,
-      session_id: sessionId,
-      page_id: "home",
-      frame_id: "frame-home",
-      quality_report: passedQualityReport(),
-      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
-      commitSubstrate: substrate
-    })).rejects.toMatchObject({ code: "PENCIL_COLOR_INVALID" });
-    expect(substrate).not.toHaveBeenCalled();
+    try {
+      await expect(commitRequirementDesignSession({
+        home,
+        session_id: sessionId,
+        page_id: "home",
+        frame_id: "frame-home",
+        quality_report: passedQualityReport(),
+        previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+        commitSubstrate: substrate
+      })).rejects.toMatchObject({ code: "PENCIL_COLOR_INVALID" });
+      expect(substrate).not.toHaveBeenCalled();
+    } finally {
+      assertBindingSpy.mockRestore();
+    }
   });
 
   it("builds all required candidates in fixed promotion order on success", async () => {
     const home = await createSessionHome();
     const substrate = vi.fn().mockResolvedValue({ session_id: sessionId, status: "committed" });
+    const assertBindingSpy = stubActiveStagingBinding();
 
-    const result = await commitRequirementDesignSession({
-      home,
-      session_id: sessionId,
-      page_id: "home",
-      frame_id: "frame-home",
-      quality_report: passedQualityReport(),
-      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
-      commitSubstrate: substrate
-    });
+    try {
+      const result = await commitRequirementDesignSession({
+        home,
+        session_id: sessionId,
+        page_id: "home",
+        frame_id: "frame-home",
+        quality_report: passedQualityReport(),
+        previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+        commitSubstrate: substrate
+      });
 
-    expect(result.status).toBe("committed");
-    expect(substrate).toHaveBeenCalledTimes(1);
-    const payload = substrate.mock.calls[0]![0] as { candidates: Array<{ replacement_kind: string; restore_order: number; target_file: string }> };
-    expect(payload.candidates.map((candidate) => [candidate.restore_order, candidate.replacement_kind])).toEqual([
-      [1, "canvas_history"],
-      [2, "canvas_history_metadata"],
-      [3, "page_fragment"],
-      [4, "history_preview"],
-      [5, "preview"],
-      [6, "design_canvas"],
-      [7, "design_metadata"],
-      [8, "requirement_metadata"]
-    ]);
-    expect(payload.candidates.map((candidate) => candidate.target_file)).toEqual(expect.arrayContaining([
-      `data/${productId}/${requirementId}/design.pen`,
-      `data/${productId}/${requirementId}/design.yaml`,
-      `data/${productId}/${requirementId}/requirement.yaml`,
-      `data/${productId}/${requirementId}/previews/home@2x.png`
-    ]));
+      expect(result.status).toBe("committed");
+      expect(substrate).toHaveBeenCalledTimes(1);
+      const payload = substrate.mock.calls[0]![0] as { candidates: Array<{ replacement_kind: string; restore_order: number; target_file: string }> };
+      expect(payload.candidates.map((candidate) => [candidate.restore_order, candidate.replacement_kind])).toEqual([
+        [1, "canvas_history"],
+        [2, "canvas_history_metadata"],
+        [3, "page_fragment"],
+        [4, "history_preview"],
+        [5, "preview"],
+        [6, "design_canvas"],
+        [7, "design_metadata"],
+        [8, "requirement_metadata"]
+      ]);
+      expect(payload.candidates.map((candidate) => candidate.target_file)).toEqual(expect.arrayContaining([
+        `data/${productId}/${requirementId}/design.pen`,
+        `data/${productId}/${requirementId}/design.yaml`,
+        `data/${productId}/${requirementId}/requirement.yaml`,
+        `data/${productId}/${requirementId}/previews/home@2x.png`
+      ]));
+    } finally {
+      assertBindingSpy.mockRestore();
+    }
   });
 });
 
@@ -909,6 +946,22 @@ function semanticScopeFixture() {
 
 function passedQualityReport(): DesignQualityReport {
   return { status: "passed", hard_checks: { issues: [] }, warnings: [] };
+}
+
+function stubActiveStagingBinding() {
+  return vi.spyOn(PencilAppSessionAdapter.prototype, "assertActiveStagingBinding").mockResolvedValue({
+    session_id: sessionId,
+    pencil_binding_id: "B-1234567890abcdef",
+    mode: "app",
+    pid: process.pid,
+    command: "pencil interactive",
+    capabilities: [],
+    version: "pencil 1.2.3",
+    staging_path: "staging.design.pen",
+    binding_guard_id: "formaSessionBindingGuardTest",
+    stdin: "interactive-shell",
+    stdout: "interactive-shell"
+  });
 }
 
 async function exists(path: string): Promise<boolean> {
