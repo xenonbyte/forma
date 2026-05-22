@@ -141,6 +141,7 @@ function createMockInteractiveChild(options: {
   neverRespond?: boolean;
   responseDelayMs?: number;
   writes?: string[];
+  activePath?: string;
 }) {
   const child = new EventEmitter() as EventEmitter & {
     pid: number;
@@ -169,7 +170,7 @@ function createMockInteractiveChild(options: {
         if (options.stderrBeforeStdout) {
           stderr.write("warning before completion\n");
         }
-        stdout.write(`${mockInteractiveOutputForText(text)}\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
+        stdout.write(`${mockInteractiveOutputForText(text, options.activePath)}\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
       }, options.responseDelayMs ?? 0);
     }
   }) as Writable & { setDefaultEncoding(encoding: BufferEncoding): Writable };
@@ -177,7 +178,7 @@ function createMockInteractiveChild(options: {
   return { child, writes };
 }
 
-function createPromptTerminatedInteractiveChild(options: { writes?: string[] }) {
+function createPromptTerminatedInteractiveChild(options: { writes?: string[]; activePath?: string }) {
   const child = new EventEmitter() as EventEmitter & {
     pid: number;
     stdin: Writable & { setDefaultEncoding(encoding: BufferEncoding): Writable };
@@ -201,7 +202,7 @@ function createPromptTerminatedInteractiveChild(options: { writes?: string[] }) 
       writes.push(text);
       callback();
       if (/^\w+\(.*\)\n$/.test(text)) {
-        stdout.write(`${mockInteractiveOutputForText(text)}\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
+        stdout.write(`${mockInteractiveOutputForText(text, options.activePath)}\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
       } else {
         stdout.write(`\u001b[31mInvalid syntax. Expected: tool_name({ key: value })\u001b[39m\n\u001b[36mpencil\u001b[39m \u001b[2m>\u001b[22m `);
       }
@@ -211,9 +212,9 @@ function createPromptTerminatedInteractiveChild(options: { writes?: string[] }) 
   return { child, writes };
 }
 
-function mockInteractiveOutputForText(text: string): string {
+function mockInteractiveOutputForText(text: string, activePath?: string): string {
   if (text.startsWith("get_editor_state")) {
-    return JSON.stringify({ schema: true });
+    return JSON.stringify({ schema: true, ...(activePath ? { filePath: activePath } : {}) });
   }
   if (text.startsWith("batch_get")) {
     const payload = JSON.parse(text.slice("batch_get(".length, -2)) as { nodeIds?: string[] };
@@ -583,6 +584,51 @@ describe("PencilService", () => {
         staging_path: await realpath(staging)
       }
     });
+  });
+
+  it("fails openSession when editor state omits the active editor path", async () => {
+    const home = await createHome("foreground-missing-active-path");
+    const sessionDir = join(home, "S-missing-active-path");
+    const staging = join(sessionDir, "staging.design.pen");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: async () => ({
+        pid: process.pid + 4242,
+        async send(message) {
+          messages.push(message);
+          if (message.startsWith("get_editor_state")) {
+            return { stdout: JSON.stringify({ schema: true }), stderr: "" };
+          }
+          if (message.startsWith("batch_get")) {
+            const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
+            return { stdout: JSON.stringify({ nodes: (payload.nodeIds ?? []).map((id) => ({ id })) }), stderr: "" };
+          }
+          return { stdout: "ok\n", stderr: "" };
+        },
+        isAlive: () => true,
+        async close() {
+          messages.push("close");
+        }
+      })
+    });
+
+    await expect(adapter.openSession({ session_id: "S-missing-active-path", staging_path: staging, expected_session_dir: sessionDir })).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        failed_phase: "staging_document_check",
+        reason: "active_editor_path_missing",
+        staging_path: await realpath(staging)
+      }
+    });
+    expect(messages).toEqual([
+      "get_editor_state({\"include_schema\":true})",
+      "close"
+    ]);
   });
 
   it("rejects openSession without expected_session_dir instead of falling back to the staging parent", async () => {
@@ -990,13 +1036,13 @@ describe("PencilService", () => {
   it("does not treat stderr warnings as interactive command completion", async () => {
     vi.resetModules();
     const writes: string[] = [];
-    vi.doMock("node:child_process", () => ({
-      spawn: vi.fn(() => createMockInteractiveChild({ stderrBeforeStdout: true, writes }).child)
-    }));
-    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
     const home = await createHome("adapter-stderr-frame");
     const staging = join(home, "staging.design.pen");
     await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => createMockInteractiveChild({ stderrBeforeStdout: true, writes, activePath: staging }).child)
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
     const adapter = new FreshAdapter({ home, platform: "darwin", runner: createHealthyRunner() });
 
     const binding = await adapter.openSession({ session_id: "S-stderr", staging_path: staging, expected_session_dir: home });
@@ -1010,13 +1056,13 @@ describe("PencilService", () => {
   it("uses Pencil function-call syntax and completes on the returned prompt", async () => {
     vi.resetModules();
     const writes: string[] = [];
-    vi.doMock("node:child_process", () => ({
-      spawn: vi.fn(() => createPromptTerminatedInteractiveChild({ writes }).child)
-    }));
-    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
     const home = await createHome("adapter-prompt-completion");
     const staging = join(home, "staging.design.pen");
     await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => createPromptTerminatedInteractiveChild({ writes, activePath: staging }).child)
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
     const adapter = new FreshAdapter({ home, platform: "darwin", runner: createHealthyRunner() });
 
     try {
@@ -1033,13 +1079,13 @@ describe("PencilService", () => {
   it("serializes concurrent interactive sends for one child process", async () => {
     vi.resetModules();
     const writes: string[] = [];
-    vi.doMock("node:child_process", () => ({
-      spawn: vi.fn(() => createMockInteractiveChild({ responseDelayMs: 5, writes }).child)
-    }));
-    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
     const home = await createHome("adapter-serialized");
     const staging = join(home, "staging.design.pen");
     await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    vi.doMock("node:child_process", () => ({
+      spawn: vi.fn(() => createMockInteractiveChild({ responseDelayMs: 5, writes, activePath: staging }).child)
+    }));
+    const { PencilAppSessionAdapter: FreshAdapter } = await import("../src/pencil-adapter.js");
     const adapter = new FreshAdapter({ home, platform: "darwin", runner: createHealthyRunner() });
     const binding = await adapter.openSession({ session_id: "S-serial", staging_path: staging, expected_session_dir: home });
     writes.length = 0;

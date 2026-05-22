@@ -453,6 +453,19 @@ describe("MCP forma tools", () => {
     const expectedStagingPath = await writeCommitSessionRecord(home, sessionId);
     const exportedPreview = join(home, "preview-export.png");
     await writeFile(exportedPreview, "preview");
+    const assertBindingSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "assertActiveStagingBinding").mockResolvedValue({
+      session_id: sessionId,
+      pencil_binding_id: "B-binding",
+      mode: "app",
+      pid: process.pid,
+      command: "pencil interactive",
+      capabilities: [],
+      version: "pencil 1.2.3",
+      staging_path: expectedStagingPath,
+      binding_guard_id: "formaSessionBindingGuardTest",
+      stdin: "interactive-shell",
+      stdout: "interactive-shell"
+    });
     const exportSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionExportNodes").mockResolvedValue({
       files: [{ path: exportedPreview }]
     });
@@ -473,6 +486,7 @@ describe("MCP forma tools", () => {
       expect(result.isError).toBe(true);
       expect(textPayload(result)).toMatchObject({ error_code: "PENCIL_APP_REQUIRED" });
     } finally {
+      assertBindingSpy.mockRestore();
       exportSpy.mockRestore();
     }
   });

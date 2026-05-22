@@ -334,29 +334,35 @@ export class PencilAppSessionAdapter {
       });
     }
     const activePath = extractActiveEditorPath(state);
-    if (activePath) {
-      let activeRealPath: string;
-      try {
-        activeRealPath = await realpath(activePath);
-      } catch (error) {
-        throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
-          session_id: input.sessionId,
-          failed_phase: input.phase,
-          reason: "active_editor_path_invalid",
-          active_editor_path: activePath,
-          staging_path: input.stagingPath,
-          cause: errorMessage(error)
-        });
-      }
-      if (activeRealPath !== input.stagingPath) {
-        throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
-          session_id: input.sessionId,
-          failed_phase: input.phase,
-          reason: "active_editor_path_mismatch",
-          active_editor_path: activeRealPath,
-          staging_path: input.stagingPath
-        });
-      }
+    if (!activePath) {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+        session_id: input.sessionId,
+        failed_phase: input.phase,
+        reason: "active_editor_path_missing",
+        staging_path: input.stagingPath
+      });
+    }
+    let activeRealPath: string;
+    try {
+      activeRealPath = await realpath(activePath);
+    } catch (error) {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+        session_id: input.sessionId,
+        failed_phase: input.phase,
+        reason: "active_editor_path_invalid",
+        active_editor_path: activePath,
+        staging_path: input.stagingPath,
+        cause: errorMessage(error)
+      });
+    }
+    if (activeRealPath !== input.stagingPath) {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+        session_id: input.sessionId,
+        failed_phase: input.phase,
+        reason: "active_editor_path_mismatch",
+        active_editor_path: activeRealPath,
+        staging_path: input.stagingPath
+      });
     }
 
     const guardRead = await this.sendJsonToProcess(process, "batch_get", { nodeIds: [input.guardId], readDepth: 0 }, PENCIL_BATCH_GET_TIMEOUT_MS);

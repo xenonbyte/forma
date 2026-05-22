@@ -696,6 +696,49 @@ describe("v6 requirement design sessions", () => {
     await expect(fileContainsGuard(historyPath)).resolves.toBe(false);
   });
 
+  it("marks requirement commit recoverable when staging disappears before candidate build", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await rm(session.staging_path, { force: true });
+    const previewExporter = vi.fn(async ({ output_file }: { output_file: string }) => writeFile(output_file, "preview"));
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter
+    })).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        failed_phase: "session_check",
+        staging_path: session.staging_path,
+        reason: expect.stringMatching(/no such file|ENOENT/i)
+      }
+    });
+    expect(previewExporter).not.toHaveBeenCalled();
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "recoverable"
+    });
+  });
+
   it("rejects stale source staging revision candidates before sanitized promotion", async () => {
     const home = await createHome();
     const processFactory = createConvergedSessionProcessFactory();

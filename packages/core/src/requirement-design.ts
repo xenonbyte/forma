@@ -6,6 +6,8 @@ import { assertDesignQualityPassed, runDesignQualityPipeline, type DesignQuality
 import { commitRequirementDesignSessionWithCandidates, type RequirementCommitCandidate } from "./design-session.js";
 import { FormaError } from "./errors.js";
 import { isRecord, nodeMetadataString, normalizeDesignName, parsePenDocument, walkPenNodes, type PenDocument, type PenNode } from "./pen-model.js";
+import { PencilAppSessionAdapter } from "./pencil-adapter.js";
+import { defaultPencilRunner } from "./pencil.js";
 import { requirementSchema, type Requirement, type RequirementPage } from "./requirement.js";
 import { deriveAllowedSemanticSurface, readSemanticScope } from "./semantic-scope.js";
 import { readYaml, readYamlAs, writeYamlAtomic } from "./yaml.js";
@@ -623,6 +625,9 @@ export async function commitRequirementDesignSession(input: {
   }
   const home = resolve(input.home);
   const session = await findRequirementSessionLoose(home, input.session_id);
+  if (!input.commitSubstrate) {
+    await assertLiveStagingBeforeDefaultCommitCandidateBuild(home, session);
+  }
   const paths = requirementDesignPaths(home, session.product_id, session.requirement_id);
   const [stagingRaw, requirement] = await Promise.all([
     readFile(session.staging_path, "utf8"),
@@ -952,10 +957,13 @@ async function findRequirementSessionLoose(home: string, sessionId: string): Pro
   session_id: string;
   product_id: string;
   requirement_id: string;
+  session_file: string;
   session_dir: string;
   staging_path: string;
   last_controlled_revision: string;
   semantic_scope_file: string;
+  pencil_binding_id: string;
+  status: string;
 }> {
   const dataDir = join(home, "data");
   for (const productId of await safeReaddir(dataDir)) {
@@ -968,21 +976,51 @@ async function findRequirementSessionLoose(home: string, sessionId: string): Pro
       const stagingFile = typeof raw.staging_file === "string" ? raw.staging_file : undefined;
       const semanticScopeFile = typeof raw.semantic_scope_file_relative === "string" ? raw.semantic_scope_file_relative : undefined;
       const lastControlledRevision = typeof raw.last_controlled_revision === "string" ? raw.last_controlled_revision : undefined;
-      if (!stagingFile || !semanticScopeFile || !lastControlledRevision) {
+      const pencilBindingId = typeof raw.pencil_binding_id === "string" ? raw.pencil_binding_id : undefined;
+      const status = typeof raw.status === "string" ? raw.status : undefined;
+      if (!stagingFile || !semanticScopeFile || !lastControlledRevision || !pencilBindingId || !status) {
         throw new FormaError("INVALID_INPUT", "Requirement session metadata is invalid", { session_id: sessionId });
       }
       return {
         session_id: sessionId,
         product_id: productId,
         requirement_id: requirementId,
+        session_file: file,
         session_dir: dirname(file),
         staging_path: join(home, stagingFile),
         last_controlled_revision: lastControlledRevision,
-        semantic_scope_file: join(home, semanticScopeFile)
+        semantic_scope_file: join(home, semanticScopeFile),
+        pencil_binding_id: pencilBindingId,
+        status
       };
     }
   }
   throw new FormaError("INVALID_INPUT", "Design session not found", { session_id: sessionId });
+}
+
+async function assertLiveStagingBeforeDefaultCommitCandidateBuild(
+  home: string,
+  session: Awaited<ReturnType<typeof findRequirementSessionLoose>>
+): Promise<void> {
+  if (session.status !== "running") {
+    throw new FormaError("INVALID_INPUT", "Session is not running", { status: session.status });
+  }
+  const adapter = new PencilAppSessionAdapter({ home, runner: defaultPencilRunner });
+  try {
+    await adapter.assertActiveStagingBinding({
+      bindingId: session.pencil_binding_id,
+      expectedStagingPath: session.staging_path
+    });
+  } catch (error) {
+    if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
+      await writeYamlAtomic(session.session_file, {
+        ...(await readYaml<Record<string, unknown>>(session.session_file)),
+        status: "recoverable",
+        updated_at: new Date().toISOString()
+      });
+    }
+    throw error;
+  }
 }
 
 async function safeReaddir(path: string): Promise<string[]> {
