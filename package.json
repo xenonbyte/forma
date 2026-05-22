@@ -16,7 +16,8 @@
     "pack:publish": "pnpm build && pnpm --filter @xenonbyte/forma-core pack --dry-run && pnpm --filter @xenonbyte/forma-mcp pack --dry-run && pnpm --filter @xenonbyte/forma-server pack --dry-run && pnpm --filter @xenonbyte/forma-cli pack --dry-run",
     "publish:npm": "pnpm build && pnpm --filter @xenonbyte/forma-core publish && pnpm --filter @xenonbyte/forma-mcp publish && pnpm --filter @xenonbyte/forma-server publish && pnpm --filter @xenonbyte/forma-cli publish",
     "dev:web": "pnpm --filter @xenonbyte/forma-web dev",
-    "smoke:pencil": "pnpm --filter @xenonbyte/forma-core build && pnpm --filter @xenonbyte/forma-server build && tsx scripts/smoke-pencil.ts"
+    "smoke:pencil": "pnpm --filter @xenonbyte/forma-core build && pnpm --filter @xenonbyte/forma-server build && tsx scripts/smoke-pencil.ts",
+    "smoke:pencil:foreground": "pnpm --filter @xenonbyte/forma-core build && pnpm --filter @xenonbyte/forma-server build && tsx scripts/smoke-pencil-foreground.ts"
   },
   "dependencies": {
     "@xenonbyte/forma-cli": "workspace:*",
