@@ -22,6 +22,7 @@ import {
   PENCIL_STATUS_TIMEOUT_MS,
   PENCIL_VARIABLES_TIMEOUT_MS,
   PENCIL_VERSION_TIMEOUT_MS,
+  type OpenPencilSessionInput,
   PencilAppSessionAdapter,
   PencilReadExportAdapter,
   type PencilInteractiveProcess,
@@ -538,6 +539,87 @@ describe("PencilService", () => {
         staging_path: await realpath(staging)
       }
     });
+  });
+
+  it("rejects openSession without expected_session_dir instead of falling back to the staging parent", async () => {
+    const home = await createHome("foreground-missing-session-dir");
+    const sessionDir = join(home, "S-missing-dir");
+    const staging = join(sessionDir, "staging.design.pen");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    let processFactoryCalls = 0;
+    const runner = createHealthyRunner();
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner,
+      processFactory: async (input) => {
+        processFactoryCalls += 1;
+        return createConvergedProcessFactory()(input);
+      }
+    });
+    const openWithoutExpectedSessionDir = (input: { session_id: string; staging_path: string }) => {
+      return adapter.openSession(input as unknown as OpenPencilSessionInput);
+    };
+
+    await expect(openWithoutExpectedSessionDir({ session_id: "S-missing-dir", staging_path: staging })).rejects.toMatchObject({
+      code: "INVALID_INPUT",
+      details: {
+        field: "expected_session_dir"
+      }
+    });
+    expect(processFactoryCalls).toBe(0);
+    expect(runner.calls).toEqual([]);
+  });
+
+  it("uses top-level filePath for active editor path when activeEditor is not a string", async () => {
+    const home = await createHome("foreground-active-editor-priority");
+    const sessionDir = join(home, "S-priority");
+    const staging = join(sessionDir, "staging.design.pen");
+    const other = join(home, "other.pen");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    await writeFile(other, JSON.stringify({ schema_version: 1, children: [{ id: "other", type: "frame" }] }, null, 2));
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: async (input) => ({
+        pid: process.pid + 4242,
+        async send(message) {
+          messages.push(message);
+          if (message.startsWith("get_editor_state")) {
+            return {
+              stdout: JSON.stringify({
+                schema: true,
+                activeEditor: { filePath: other },
+                filePath: input.stagingPath,
+                editor: { filePath: other }
+              }),
+              stderr: ""
+            };
+          }
+          if (message.startsWith("batch_get")) {
+            const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
+            return { stdout: JSON.stringify({ nodes: (payload.nodeIds ?? []).map((id) => ({ id })) }), stderr: "" };
+          }
+          return { stdout: "ok\n", stderr: "" };
+        },
+        isAlive: () => true,
+        async close() {
+          messages.push("close");
+        }
+      })
+    });
+
+    await expect(adapter.openSession({ session_id: "S-priority", staging_path: staging, expected_session_dir: sessionDir })).resolves.toMatchObject({
+      staging_path: await realpath(staging)
+    });
+    expect(messages).toEqual([
+      "get_editor_state({\"include_schema\":true})",
+      expect.stringMatching(/^batch_get\(/)
+    ]);
   });
 
   it("maps foreground open failures to foreground_open", async () => {

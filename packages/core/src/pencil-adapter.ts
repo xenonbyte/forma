@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { realpath } from "node:fs/promises";
-import { dirname } from "node:path";
 import { FormaError } from "./errors.js";
 import type { PencilRunner } from "./pencil.js";
 import { createSessionBindingGuard, insertSessionBindingGuard } from "./pencil-session-guard.js";
@@ -74,8 +73,6 @@ export interface OpenPencilSessionInput {
   expected_session_dir: string;
 }
 
-type LegacyOpenPencilSessionInput = Omit<OpenPencilSessionInput, "expected_session_dir">;
-
 export interface PencilInteractiveProcess {
   pid: number;
   send(input: string, timeoutMs: number): Promise<{ stdout: string; stderr: string }>;
@@ -125,13 +122,15 @@ export class PencilAppSessionAdapter {
     return result;
   }
 
-  async openSession(input: OpenPencilSessionInput | LegacyOpenPencilSessionInput): Promise<PencilAppBinding> {
-    const expectedSessionDir = "expected_session_dir" in input && typeof input.expected_session_dir === "string"
-      ? input.expected_session_dir
-      : dirname(input.staging_path);
+  async openSession(input: OpenPencilSessionInput): Promise<PencilAppBinding> {
+    if (typeof input.expected_session_dir !== "string" || input.expected_session_dir.length === 0) {
+      throw new FormaError("INVALID_INPUT", "Expected session directory is required", {
+        field: "expected_session_dir"
+      });
+    }
     const staging = await realpathInsideDirectory({
       path: input.staging_path,
-      expectedDirectory: expectedSessionDir,
+      expectedDirectory: input.expected_session_dir,
       field: "staging_path",
       requireFile: true,
       requirePen: true
@@ -640,9 +639,6 @@ function extractActiveEditorPath(state: unknown): string | undefined {
   }
   if (typeof state.activeEditor === "string") {
     return state.activeEditor;
-  }
-  if (isRecord(state.activeEditor) && typeof state.activeEditor.filePath === "string") {
-    return state.activeEditor.filePath;
   }
   if (typeof state.filePath === "string") {
     return state.filePath;

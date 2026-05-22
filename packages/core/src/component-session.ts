@@ -151,7 +151,7 @@ export async function beginProductComponentSession(input: {
     });
     let binding;
     try {
-      binding = await adapter.openSession({ session_id: sessionId, staging_path: stagingPath });
+      binding = await adapter.openSession({ session_id: sessionId, staging_path: stagingPath, expected_session_dir: sessionDir });
     } catch (error) {
       const cleanup = await rollbackComponentBegin({ productLease, activeFile, stagingPath, sessionDir, sessionId });
       const failedDir = join(sessionsRoot, "failed-begins");

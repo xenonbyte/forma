@@ -211,7 +211,7 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
 
     let binding;
     try {
-      binding = await appAdapter.openSession({ session_id: sessionId, staging_path: stagingPath });
+      binding = await appAdapter.openSession({ session_id: sessionId, staging_path: stagingPath, expected_session_dir: sessionDir });
       const revision = await hashFile(stagingPath);
       const now = new Date().toISOString();
       const record: RequirementSessionRecord = {
