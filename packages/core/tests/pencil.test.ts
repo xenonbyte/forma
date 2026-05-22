@@ -33,7 +33,7 @@ import {
   insertSessionBindingGuard,
   penDocumentHasSessionBindingGuard
 } from "../src/pencil-session-guard.js";
-import { realpathInsideDirectory } from "../src/path-boundary.js";
+import { isSameOrChildPath, realpathInsideDirectory } from "../src/path-boundary.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -247,6 +247,81 @@ describe("PencilService", () => {
       expected_source_hash: await hashFile(staging)
     })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
     await expect(access(candidate)).rejects.toThrow();
+  });
+
+  it("wraps malformed session binding guard documents as pen file invalid", async () => {
+    const home = await createHome("guard-malformed-json");
+    const staging = join(home, "session", "staging.design.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, "{");
+
+    await expect(penDocumentHasSessionBindingGuard(staging)).rejects.toMatchObject({
+      code: "PEN_FILE_INVALID",
+      details: expect.objectContaining({ cause: expect.any(String) })
+    });
+  });
+
+  it("treats dot-prefixed session binding guard child path segments as inside", async () => {
+    const home = await createHome("guard-dot-prefixed-child");
+    const sessionDir = join(home, "session");
+
+    expect(isSameOrChildPath(sessionDir, join(sessionDir, "..cache", "staging.no-guard.pen"))).toBe(true);
+    expect(isSameOrChildPath(sessionDir, join(sessionDir, "..", "staging.no-guard.pen"))).toBe(false);
+  });
+
+  it("rejects session binding guard sanitized candidates on source hash mismatch without writing", async () => {
+    const home = await createHome("guard-hash-mismatch");
+    const staging = join(home, "session", "staging.design.pen");
+    const candidate = join(home, "session", "commit-candidates", "staging.no-guard.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const guard = createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24));
+    await insertSessionBindingGuard(staging, guard);
+
+    await expect(createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: guard.id,
+      expected_source_hash: "sha256:000000"
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(access(candidate)).rejects.toThrow();
+  });
+
+  it("rejects session binding guard sanitized candidates with the wrong basename", async () => {
+    const home = await createHome("guard-wrong-basename");
+    const staging = join(home, "session", "staging.design.pen");
+    const candidate = join(home, "session", "commit-candidates", "wrong.no-guard.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const guard = createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24));
+    await insertSessionBindingGuard(staging, guard);
+
+    await expect(createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: guard.id,
+      expected_source_hash: await hashFile(staging)
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    await expect(access(candidate)).rejects.toThrow();
+  });
+
+  it("creates session binding guard sanitized candidate parent directories", async () => {
+    const home = await createHome("guard-create-parent");
+    const staging = join(home, "session", "staging.design.pen");
+    const candidate = join(home, "session", "commit-candidates", "staging.no-guard.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const guard = createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24));
+    await insertSessionBindingGuard(staging, guard);
+
+    await expect(access(dirname(candidate))).rejects.toThrow();
+    await createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: guard.id,
+      expected_source_hash: await hashFile(staging)
+    });
+    await expect(access(candidate)).resolves.toBeUndefined();
   });
 
   it("rejects session binding guard sanitized candidates that overwrite source staging", async () => {

@@ -1,10 +1,10 @@
 import { lstat, mkdir, realpath } from "node:fs/promises";
-import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import { FormaError } from "./errors.js";
 
 export function isSameOrChildPath(parent: string, child: string): boolean {
   const relativePath = relative(parent, child);
-  return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+  return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
 }
 
 export async function realpathInsideDirectory(input: {

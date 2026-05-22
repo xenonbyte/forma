@@ -112,9 +112,23 @@ export async function penDocumentHasSessionBindingGuard(file: string): Promise<b
 }
 
 function parseMutablePenDocument(raw: string): { children: unknown[]; [key: string]: unknown } {
-  const parsed = JSON.parse(raw) as unknown;
-  if (!isRecord(parsed) || !Array.isArray(parsed.children)) {
-    throw new FormaError("PEN_FILE_INVALID", "Pencil document must contain children[]");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must be valid JSON", {
+      cause: error instanceof Error ? error.message : String(error)
+    });
+  }
+  if (!isRecord(parsed)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must be an object", {
+      cause: "document is not an object"
+    });
+  }
+  if (!Array.isArray(parsed.children)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must contain children[]", {
+      cause: "children is missing or not an array"
+    });
   }
   return { ...parsed, children: [...parsed.children] };
 }
