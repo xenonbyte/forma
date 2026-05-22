@@ -213,6 +213,7 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
     try {
       binding = await appAdapter.openSession({ session_id: sessionId, staging_path: stagingPath, expected_session_dir: sessionDir });
       const revision = await hashFile(stagingPath);
+      await updateSemanticScopeStagingRevision(semanticScopeFile, revision);
       const now = new Date().toISOString();
       const record: RequirementSessionRecord = {
         schema_version: 1,
@@ -833,6 +834,13 @@ async function writeRequirementSemanticScope(input: {
       reason: errorMessage(error)
     });
   }
+}
+
+async function updateSemanticScopeStagingRevision(file: string, revision: string): Promise<void> {
+  await writeYamlAtomic(file, {
+    ...(await readYaml<Record<string, unknown>>(file)),
+    staging_revision: revision
+  });
 }
 
 async function rollbackBegin(input: { productLease: string; localLease: string; stagingPath: string; sessionDir: string; sessionId: string }): Promise<"completed" | "partial"> {

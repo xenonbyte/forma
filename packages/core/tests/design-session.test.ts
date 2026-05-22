@@ -8,6 +8,7 @@ import {
   beginRequirementDesignSession,
   commitRequirementDesignSession,
   discardRequirementDesignSession,
+  planImportMetadataNormalization,
   recoverDesignCommitJournal,
   readDesignStartupRecoveryState,
   readYaml,
@@ -393,6 +394,37 @@ describe("v6 requirement design sessions", () => {
     await expect(readYaml(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toMatchObject({
       owner_path: "data/P-123abc/R-1234abcd/sessions/active.yaml",
       local_active_path: "data/P-123abc/R-1234abcd/sessions/active.yaml"
+    });
+  });
+
+  it("keeps semantic scope current after inserting the session binding guard", async () => {
+    const home = await createHome();
+    await writeFile(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"), JSON.stringify({
+      children: [{
+        id: "home",
+        type: "frame",
+        name: "Home",
+        children: [{ id: "title", type: "text", text: "Home" }]
+      }]
+    }));
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory: createProcessFactory()
+    });
+    const revision = await hashFileForTest(session.staging_path);
+
+    await expect(planImportMetadataNormalization({
+      home,
+      session_id: session.session_id,
+      frame_id: "home"
+    })).resolves.toMatchObject({
+      status: "planned",
+      staging_revision: revision,
+      operations: [expect.objectContaining({ target_node_ids: ["title"] })]
     });
   });
 
