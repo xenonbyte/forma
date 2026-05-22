@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { lstat, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { FormaError } from "./errors.js";
-import { hashFile } from "./file-hash.js";
+import { hashBytes, hashFile } from "./file-hash.js";
 import { ensureParentInsideDirectory, realpathInsideDirectory } from "./path-boundary.js";
 import { isRecord } from "./pen-model.js";
 
@@ -77,14 +77,15 @@ export async function createSanitizedCommitCandidate(input: {
   });
   await ensureParentInsideDirectory(input.candidate_path, source.expectedDirectory, "candidate_path");
   await validateSanitizedCandidatePath(input.candidate_path, source.path);
-  const sourceHash = await hashFile(source.path);
+  const sourceBytes = await readFile(source.path);
+  const sourceHash = hashBytes(sourceBytes);
   if (sourceHash !== input.expected_source_hash) {
     throw new FormaError("INVALID_INPUT", "Sanitized candidate source hash mismatch", {
       expected_source_hash: input.expected_source_hash,
       actual_source_hash: sourceHash
     });
   }
-  const document = parseMutablePenDocument(await readFile(source.path, "utf8"));
+  const document = parseMutablePenDocument(sourceBytes.toString("utf8"));
   const guardIndex = document.children.findIndex((node) => isRecord(node) && node.id === input.binding_guard_id);
   if (guardIndex === -1) {
     throw new FormaError("PEN_FILE_INVALID", "Binding guard was not found in staging document", {
