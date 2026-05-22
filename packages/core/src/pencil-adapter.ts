@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { realpath } from "node:fs/promises";
+import { dirname } from "node:path";
 import { FormaError } from "./errors.js";
 import type { PencilRunner } from "./pencil.js";
+import { createSessionBindingGuard, insertSessionBindingGuard } from "./pencil-session-guard.js";
+import { realpathInsideDirectory } from "./path-boundary.js";
 
 export const PENCIL_VERSION_TIMEOUT_MS = 10_000;
 export const PENCIL_STATUS_TIMEOUT_MS = 10_000;
@@ -19,14 +21,20 @@ export const PENCIL_GUIDELINES_TIMEOUT_MS = 20_000;
 export const PENCIL_BATCH_GET_TIMEOUT_MS = 15_000;
 export const PENCIL_SNAPSHOT_LAYOUT_TIMEOUT_MS = 15_000;
 export const PENCIL_SCREENSHOT_TIMEOUT_MS = 60_000;
+export const PENCIL_FOREGROUND_OPEN_TIMEOUT_MS = 10_000;
+export const PENCIL_STAGING_DOCUMENT_CHECK_ATTEMPTS = 8;
+export const PENCIL_STAGING_DOCUMENT_CHECK_RETRY_DELAY_MS = 750;
 
 const requiredCapabilities = [
   "get_editor_state",
   "get_guidelines",
+  "get_variables",
   "batch_get",
   "batch_design",
+  "set_variables",
   "export_nodes",
   "snapshot_layout",
+  "get_screenshot",
   "save"
 ] as const;
 
@@ -46,6 +54,7 @@ export interface PencilAppBinding {
   capabilities: string[];
   version: string;
   staging_path: string;
+  binding_guard_id: string;
   stdin: "interactive-shell";
   stdout: "interactive-shell";
 }
@@ -55,12 +64,17 @@ export interface PencilAppSessionAdapterOptions {
   runner: PencilRunner;
   isPidAlive?: (pid: number) => boolean;
   processFactory?: PencilInteractiveProcessFactory;
+  platform?: NodeJS.Platform;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface OpenPencilSessionInput {
   session_id: string;
   staging_path: string;
+  expected_session_dir: string;
 }
+
+type LegacyOpenPencilSessionInput = Omit<OpenPencilSessionInput, "expected_session_dir">;
 
 export interface PencilInteractiveProcess {
   pid: number;
@@ -81,6 +95,8 @@ export class PencilAppSessionAdapter {
   private readonly runner: PencilRunner;
   private readonly isPidAlive: (pid: number) => boolean;
   private readonly processFactory: PencilInteractiveProcessFactory;
+  private readonly platform: NodeJS.Platform;
+  private readonly sleep: (ms: number) => Promise<void>;
   private lastPreflight?: PencilPreflightResult;
 
   constructor(options: PencilAppSessionAdapterOptions) {
@@ -88,6 +104,8 @@ export class PencilAppSessionAdapter {
     this.runner = options.runner;
     this.isPidAlive = options.isPidAlive ?? defaultIsPidAlive;
     this.processFactory = options.processFactory ?? spawnInteractiveProcess;
+    this.platform = options.platform ?? process.platform;
+    this.sleep = options.sleep ?? defaultSleep;
   }
 
   async preflight(): Promise<PencilPreflightResult> {
@@ -98,103 +116,95 @@ export class PencilAppSessionAdapter {
     );
     assertCapabilities(capabilities, requiredCapabilities, "PENCIL_CAPABILITY_UNAVAILABLE");
 
-    const probeId = `probe-${randomBytes(8).toString("hex")}`;
-    const probeDir = join(this.home, ".pencil-preflight", probeId);
-    const probePen = join(probeDir, "probe.pen");
-    await mkdir(probeDir, { recursive: true });
-    let cleanupWarning: string | undefined;
-    try {
-      await writeFile(probePen, minimalLegalPen(), "utf8");
-      const probe = await this.processFactory({
-        command: "pencil",
-        args: ["interactive", "--app", "desktop", "--in", probePen],
-        stagingPath: probePen,
-        runner: this.runner
-      });
-      try {
-        if (!probe.isAlive()) {
-          throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", { failed_phase: "preflight_app_probe", reason: "process_not_alive" });
-        }
-        await this.getEditorStateFromProcess(probe, "probe");
-        await this.controlledSaveProcess(probe);
-      } finally {
-        await probe.close().catch(() => undefined);
-      }
-    } catch (error) {
-      if (error instanceof FormaError) {
-        throw error;
-      }
-      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", { failed_phase: "preflight_app_probe", reason: errorMessage(error) });
-    } finally {
-      try {
-        await rm(probeDir, { recursive: true, force: true });
-        await rm(join(this.home, ".pencil-preflight"), { recursive: true, force: true });
-      } catch (error) {
-        cleanupWarning = `preflight_cleanup_warning:${errorMessage(error)}`;
-      }
-    }
-
     const result: PencilPreflightResult = {
       ok: true,
       version,
-      capabilities,
-      ...(cleanupWarning ? { preflight_cleanup_warning: cleanupWarning } : {})
+      capabilities
     };
     this.lastPreflight = result;
     return result;
   }
 
-  async openSession(input: OpenPencilSessionInput): Promise<PencilAppBinding> {
-    const stagingPath = await realpath(input.staging_path);
+  async openSession(input: OpenPencilSessionInput | LegacyOpenPencilSessionInput): Promise<PencilAppBinding> {
+    const expectedSessionDir = "expected_session_dir" in input && typeof input.expected_session_dir === "string"
+      ? input.expected_session_dir
+      : dirname(input.staging_path);
+    const staging = await realpathInsideDirectory({
+      path: input.staging_path,
+      expectedDirectory: expectedSessionDir,
+      field: "staging_path",
+      requireFile: true,
+      requirePen: true
+    });
+    const stagingPath = staging.path;
     const preflight = this.lastPreflight ?? await this.preflight();
+    const guard = createSessionBindingGuard(input.session_id);
+    await insertSessionBindingGuard(stagingPath, guard);
     const command = `pencil interactive --app desktop --in ${stagingPath}`;
-    let process: PencilInteractiveProcess | undefined;
-    try {
-      process = await this.processFactory({
-        command: "pencil",
-        args: ["interactive", "--app", "desktop", "--in", stagingPath],
-        stagingPath,
-        runner: this.runner
-      });
-      if (!process.isAlive()) {
-        throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", { failed_phase: "open_app", reason: "process_not_alive" });
-      }
-      await this.getEditorStateFromProcess(process, input.session_id);
-      await this.controlledSaveProcess(process);
-    } catch (error) {
-      await process?.close().catch(() => undefined);
-      if (error instanceof FormaError) {
-        throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
-          ...error.details,
-          session_id: input.session_id,
-          failed_phase: error.details.failed_phase ?? "open_app",
-          command,
-          pencil_version: preflight.version
+
+    for (let attempt = 1; attempt <= PENCIL_STAGING_DOCUMENT_CHECK_ATTEMPTS; attempt += 1) {
+      let process: PencilInteractiveProcess | undefined;
+      try {
+        await this.openPencilDocumentInForeground(stagingPath);
+        process = await this.processFactory({
+          command: "pencil",
+          args: ["interactive", "--app", "desktop", "--in", stagingPath],
+          stagingPath,
+          runner: this.runner
         });
+        if (!process.isAlive()) {
+          throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", { failed_phase: "open_app", reason: "process_not_alive" });
+        }
+        await this.assertProcessConvergedToStaging(process, {
+          sessionId: input.session_id,
+          stagingPath,
+          guardId: guard.id,
+          phase: "staging_document_check",
+          includeSchema: true
+        });
+
+        const binding: PencilAppBinding = {
+          session_id: input.session_id,
+          pencil_binding_id: `B-${randomBytes(8).toString("hex")}`,
+          mode: "app",
+          pid: process.pid,
+          command,
+          capabilities: preflight.capabilities,
+          version: preflight.version,
+          staging_path: stagingPath,
+          binding_guard_id: guard.id,
+          stdin: "interactive-shell",
+          stdout: "interactive-shell"
+        };
+        bindingRegistry.set(binding.pencil_binding_id, { binding, process });
+        return binding;
+      } catch (error) {
+        await process?.close().catch(() => undefined);
+        const wrapped = wrapOpenSessionError(error, {
+          sessionId: input.session_id,
+          command,
+          pencilVersion: preflight.version,
+          stagingPath,
+          guardId: guard.id,
+          defaultPhase: "open_app"
+        });
+        if (isGuardMissingError(wrapped) && attempt < PENCIL_STAGING_DOCUMENT_CHECK_ATTEMPTS) {
+          await this.sleep(PENCIL_STAGING_DOCUMENT_CHECK_RETRY_DELAY_MS);
+          continue;
+        }
+        throw wrapped;
       }
-      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
-        session_id: input.session_id,
-        failed_phase: "open_app",
-        command,
-        reason: errorMessage(error),
-        pencil_version: preflight.version
-      });
     }
 
-    const binding: PencilAppBinding = {
+    throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
       session_id: input.session_id,
-      pencil_binding_id: `B-${randomBytes(8).toString("hex")}`,
-      mode: "app",
-      pid: process.pid,
+      failed_phase: "staging_document_check",
       command,
-      capabilities: preflight.capabilities,
-      version: preflight.version,
+      reason: "guard_missing",
+      pencil_version: preflight.version,
       staging_path: stagingPath,
-      stdin: "interactive-shell",
-      stdout: "interactive-shell"
-    };
-    bindingRegistry.set(binding.pencil_binding_id, { binding, process });
-    return binding;
+      binding_guard_id: guard.id
+    });
   }
 
   async controlledSave(bindingId: string): Promise<void> {
@@ -262,10 +272,80 @@ export class PencilAppSessionAdapter {
     }
   }
 
-  private async executeReadTool(bindingId: string, tool: string, args: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
-    const owned = this.requireLiveBinding(bindingId);
-    rejectPathLikeParameters(args);
-    const result = await owned.process.send(formatInteractiveToolCall(tool, args), timeoutMs);
+  private async openPencilDocumentInForeground(stagingPath: string): Promise<void> {
+    if (this.platform !== "darwin") {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+        failed_phase: "foreground_open",
+        reason: "unsupported_platform",
+        platform: this.platform,
+        command: `open -a Pencil ${stagingPath}`
+      });
+    }
+    try {
+      await this.runner.run("open", ["-a", "Pencil", stagingPath], { timeoutMs: PENCIL_FOREGROUND_OPEN_TIMEOUT_MS });
+    } catch (error) {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+        failed_phase: "foreground_open",
+        command: `open -a Pencil ${stagingPath}`,
+        reason: isTimeoutError(error) ? "timeout" : errorMessage(error)
+      });
+    }
+  }
+
+  private async assertProcessConvergedToStaging(process: PencilInteractiveProcess, input: {
+    sessionId: string;
+    stagingPath: string;
+    guardId: string;
+    phase: string;
+    includeSchema: boolean;
+  }): Promise<void> {
+    const state = await this.sendJsonToProcess(process, "get_editor_state", { include_schema: input.includeSchema }, PENCIL_EDITOR_STATE_TIMEOUT_MS);
+    if (input.includeSchema && (state === undefined || state === null || state === "")) {
+      throw new FormaError("PENCIL_CAPABILITY_UNAVAILABLE", "Pencil editor state schema is unavailable", {
+        session_id: input.sessionId,
+        failed_phase: "editor_state_schema"
+      });
+    }
+    const activePath = extractActiveEditorPath(state);
+    if (activePath) {
+      let activeRealPath: string;
+      try {
+        activeRealPath = await realpath(activePath);
+      } catch (error) {
+        throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+          session_id: input.sessionId,
+          failed_phase: input.phase,
+          reason: "active_editor_path_invalid",
+          active_editor_path: activePath,
+          staging_path: input.stagingPath,
+          cause: errorMessage(error)
+        });
+      }
+      if (activeRealPath !== input.stagingPath) {
+        throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+          session_id: input.sessionId,
+          failed_phase: input.phase,
+          reason: "active_editor_path_mismatch",
+          active_editor_path: activeRealPath,
+          staging_path: input.stagingPath
+        });
+      }
+    }
+
+    const guardRead = await this.sendJsonToProcess(process, "batch_get", { nodeIds: [input.guardId], readDepth: 0 }, PENCIL_BATCH_GET_TIMEOUT_MS);
+    if (!batchGetContainsNode(guardRead, input.guardId)) {
+      throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App is required", {
+        session_id: input.sessionId,
+        failed_phase: input.phase,
+        reason: "guard_missing",
+        staging_path: input.stagingPath,
+        binding_guard_id: input.guardId
+      });
+    }
+  }
+
+  private async sendJsonToProcess(process: PencilInteractiveProcess, tool: string, args: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+    const result = await process.send(formatInteractiveToolCall(tool, args), timeoutMs);
     const trimmed = result.stdout.trim();
     if (!trimmed) {
       return undefined;
@@ -275,6 +355,12 @@ export class PencilAppSessionAdapter {
     } catch {
       return trimmed;
     }
+  }
+
+  private async executeReadTool(bindingId: string, tool: string, args: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+    const owned = this.requireLiveBinding(bindingId);
+    rejectPathLikeParameters(args);
+    return this.sendJsonToProcess(owned.process, tool, args, timeoutMs);
   }
 
   private requireLiveBinding(bindingId: string): { binding: PencilAppBinding; process: PencilInteractiveProcess } {
@@ -336,6 +422,38 @@ export class PencilAppSessionAdapter {
 }
 
 const bindingRegistry = new Map<string, { binding: PencilAppBinding; process: PencilInteractiveProcess }>();
+
+function wrapOpenSessionError(error: unknown, context: {
+  sessionId: string;
+  command: string;
+  pencilVersion: string;
+  stagingPath: string;
+  guardId: string;
+  defaultPhase: string;
+}): FormaError {
+  const details = error instanceof FormaError ? error.details : {};
+  const failedPhase = typeof details.failed_phase === "string" ? details.failed_phase : context.defaultPhase;
+  const command = typeof details.command === "string" ? details.command : context.command;
+  const reason = typeof details.reason === "string" ? details.reason : errorMessage(error);
+  const code = error instanceof FormaError ? error.code : "PENCIL_APP_REQUIRED";
+  const message = error instanceof FormaError ? error.message : "Pencil App is required";
+  return new FormaError(code, message, {
+    ...details,
+    session_id: context.sessionId,
+    failed_phase: failedPhase,
+    command,
+    reason,
+    pencil_version: context.pencilVersion,
+    staging_path: context.stagingPath,
+    binding_guard_id: context.guardId
+  });
+}
+
+function isGuardMissingError(error: FormaError): boolean {
+  return error.code === "PENCIL_APP_REQUIRED"
+    && error.details.failed_phase === "staging_document_check"
+    && error.details.reason === "guard_missing";
+}
 
 async function spawnInteractiveProcess(input: {
   command: string;
@@ -513,19 +631,47 @@ async function assertReadableEditorState(runner: PencilRunner, sessionId: string
   }
 }
 
+function extractActiveEditorPath(state: unknown): string | undefined {
+  if (!isRecord(state)) {
+    return undefined;
+  }
+  if (typeof state.activeEditorPath === "string") {
+    return state.activeEditorPath;
+  }
+  if (typeof state.activeEditor === "string") {
+    return state.activeEditor;
+  }
+  if (isRecord(state.activeEditor) && typeof state.activeEditor.filePath === "string") {
+    return state.activeEditor.filePath;
+  }
+  if (typeof state.filePath === "string") {
+    return state.filePath;
+  }
+  if (isRecord(state.editor) && typeof state.editor.filePath === "string") {
+    return state.editor.filePath;
+  }
+  return undefined;
+}
+
+function batchGetContainsNode(value: unknown, nodeId: string): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => batchGetContainsNode(item, nodeId));
+  }
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.id === nodeId) {
+    return true;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, nodeId)) {
+    return true;
+  }
+  return Object.values(value).some((item) => batchGetContainsNode(item, nodeId));
+}
+
 function parseCapabilities(help: string): string[] {
   const capabilities = new Set<string>();
-  for (const name of [
-    "get_editor_state",
-    "get_guidelines",
-    "batch_get",
-    "batch_design",
-    "export_nodes",
-    "snapshot_layout",
-    "get_screenshot",
-    "set_variables",
-    "save"
-  ]) {
+  for (const name of requiredCapabilities) {
     if (help.includes(name)) {
       capabilities.add(name);
     }
@@ -543,10 +689,6 @@ function assertCapabilities(capabilities: string[], required: readonly string[],
   }
 }
 
-function minimalLegalPen(): string {
-  return `${JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame", name: basename("Probe") }] }, null, 2)}\n`;
-}
-
 function defaultIsPidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -554,6 +696,10 @@ function defaultIsPidAlive(pid: number): boolean {
   } catch (error) {
     return error instanceof Error && "code" in error && error.code === "EPERM";
   }
+}
+
+async function defaultSleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
