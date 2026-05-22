@@ -85,13 +85,19 @@ export async function createSanitizedCommitCandidate(input: {
     });
   }
   const document = parseMutablePenDocument(await readFile(source.path, "utf8"));
-  const before = document.children.length;
-  document.children = document.children.filter((node) => !(isRecord(node) && node.id === input.binding_guard_id));
-  if (document.children.length !== before - 1) {
+  const guardIndex = document.children.findIndex((node) => isRecord(node) && node.id === input.binding_guard_id);
+  if (guardIndex === -1) {
     throw new FormaError("PEN_FILE_INVALID", "Binding guard was not found in staging document", {
       binding_guard_id: input.binding_guard_id
     });
   }
+  const guard = document.children[guardIndex];
+  if (!isSessionBindingGuardNode(guard)) {
+    throw new FormaError("PEN_FILE_INVALID", "Binding guard target is not a session binding guard", {
+      binding_guard_id: input.binding_guard_id
+    });
+  }
+  document.children.splice(guardIndex, 1);
   if (containsSessionBindingGuard(document.children)) {
     throw new FormaError("PEN_FILE_INVALID", "Sanitized candidate still contains a session binding guard", {
       binding_guard_id: input.binding_guard_id

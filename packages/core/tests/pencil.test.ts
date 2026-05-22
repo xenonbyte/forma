@@ -233,6 +233,22 @@ describe("PencilService", () => {
     })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
+  it("rejects session binding guard sanitized candidates when the target id is not a guard", async () => {
+    const home = await createHome("guard-non-guard-target");
+    const staging = join(home, "session", "staging.design.pen");
+    const candidate = join(home, "session", "commit-candidates", "staging.no-guard.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+
+    await expect(createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: "root",
+      expected_source_hash: await hashFile(staging)
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    await expect(access(candidate)).rejects.toThrow();
+  });
+
   it("rejects session binding guard sanitized candidates that overwrite source staging", async () => {
     const home = await createHome("guard-overwrite-source");
     const staging = join(home, "session", "staging.design.pen");
