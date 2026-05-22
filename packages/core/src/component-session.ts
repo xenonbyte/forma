@@ -53,6 +53,7 @@ const componentSessionSchema = z.object({
   pencil_version: z.string(),
   previous_version: z.number().int().min(0),
   target_version: z.number().int().min(1),
+  base_canvas_revision: z.string().optional(),
   started_revision: z.string(),
   last_saved_revision: z.string(),
   last_controlled_revision: z.string(),
@@ -121,9 +122,11 @@ export async function beginProductComponentSession(input: {
     const sessionDir = join(sessionsRoot, sessionId);
     const canvasPath = join(home, "library", `${productId}.lib.pen`);
     const stagingPath = join(sessionDir, "staging.lib.pen");
+    let baseCanvasRevision: string | undefined;
     await mkdir(sessionDir, { recursive: true });
     if (await pathExists(canvasPath)) {
       await copyFile(canvasPath, stagingPath);
+      baseCanvasRevision = await hashFile(canvasPath);
     } else {
       await writeFile(stagingPath, JSON.stringify({ schema_version: 1, children: [{ id: "components", type: "frame" }] }, null, 2));
     }
@@ -196,6 +199,7 @@ export async function beginProductComponentSession(input: {
         pencil_version: binding.version,
         previous_version: versionPlan.previous_version,
         target_version: versionPlan.target_version,
+        ...(baseCanvasRevision ? { base_canvas_revision: baseCanvasRevision } : {}),
         started_revision: revision,
         last_saved_revision: revision,
         last_controlled_revision: revision,
@@ -995,17 +999,18 @@ async function assertComponentCommitBaseline(
     throw new FormaError("INVALID_INPUT", "Component latest baseline changed since session begin", {
       session_id: record.session_id,
       product_id: record.product_id,
-      expected_latest_hash: record.started_revision,
+      expected_latest_hash: record.base_canvas_revision ?? record.started_revision,
       actual_latest_missing: true,
       latest_file: relative(home, canvasPath)
     });
   }
+  const expectedLatestHash = record.base_canvas_revision ?? record.started_revision;
   const latestHash = await hashFile(canvasPath);
-  if (latestHash !== record.started_revision) {
+  if (latestHash !== expectedLatestHash) {
     throw new FormaError("INVALID_INPUT", "Component latest baseline changed since session begin", {
       session_id: record.session_id,
       product_id: record.product_id,
-      expected_latest_hash: record.started_revision,
+      expected_latest_hash: expectedLatestHash,
       actual_latest_hash: latestHash,
       latest_file: relative(home, canvasPath)
     });

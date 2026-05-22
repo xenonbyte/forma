@@ -102,6 +102,7 @@ const componentRecoverySessionSchema = z.object({
   pencil_version: z.string(),
   previous_version: z.number().int().min(0),
   target_version: z.number().int().min(1),
+  base_canvas_revision: z.string().optional(),
   started_revision: z.string(),
   last_saved_revision: z.string(),
   last_controlled_revision: z.string(),
@@ -1513,7 +1514,7 @@ async function pathExists(file: string): Promise<boolean> {
     await access(file);
     return true;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) return false;
     throw error;
   }
 }
