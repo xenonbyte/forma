@@ -1,4 +1,4 @@
-export const formaCoreVersion = "0.1.7";
+export const formaCoreVersion = "0.1.8";
 export * from "./errors.js";
 export * from "./ids.js";
 export * from "./paths.js";

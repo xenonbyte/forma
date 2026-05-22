@@ -1,6 +1,6 @@
 {
   "name": "@xenonbyte/forma-server",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Fastify API and static web server for the Forma local design workspace.",
   "license": "UNLICENSED",
   "type": "module",

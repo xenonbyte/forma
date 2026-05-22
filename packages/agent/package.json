@@ -1,6 +1,6 @@
 {
   "name": "@xenonbyte/forma-agent",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": true,
   "description": "Workspace-only agent command templates bundled into @xenonbyte/forma-cli during packaging.",
   "type": "module",

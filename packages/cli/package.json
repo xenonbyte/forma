@@ -1,6 +1,6 @@
 {
   "name": "@xenonbyte/forma-cli",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "User-facing Forma CLI for local design workspace, MCP startup, web serving, and agent installation.",
   "license": "UNLICENSED",
   "type": "module",
