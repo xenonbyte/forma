@@ -70,14 +70,18 @@ Missing components, invalid seeds, schema errors, active lease conflicts, and se
 Add an internal helper:
 
 ```text
-openPencilDocumentInForeground(stagingPath)
+openPencilDocumentInForeground({
+  stagingPath,
+  expectedSessionDir
+})
 ```
 
 Behavior:
 
 - resolve `stagingPath` with `realpath()`;
+- resolve `expectedSessionDir` with `realpath()`;
 - require `.pen` extension;
-- require the real path to be inside the current session directory;
+- require the staging realpath to be inside the expected session directory;
 - on macOS, run `open -a Pencil <stagingPath>` with a 10 second timeout;
 - on non-macOS, fail with `PENCIL_APP_REQUIRED` / `failed_phase: foreground_open`;
 - treat `open -a Pencil` success only as a request to the desktop app, not proof of active editor convergence.
@@ -124,7 +128,7 @@ The guard is transient runtime evidence, not user design content.
 
 `PencilAppSessionAdapter.openSession()` must:
 
-1. resolve and validate staging realpath;
+1. resolve and validate staging realpath against the session module's `expected_session_dir`;
 2. insert the session binding guard;
 3. run foreground open;
 4. start `pencil interactive --app desktop --in <stagingPath>`;
@@ -157,13 +161,17 @@ On success, register the binding with:
 Add:
 
 ```text
-assertActiveStagingBinding(bindingId)
+assertActiveStagingBinding({
+  bindingId,
+  expectedStagingPath
+})
 ```
 
 It must:
 
 - require a live binding and live process;
-- require the binding staging realpath to match the session record staging realpath when a session path is supplied;
+- resolve `expectedStagingPath` from the session record;
+- require the binding staging realpath to match the expected staging realpath;
 - call `get_editor_state({"include_schema":false})`;
 - if path channel is present, require it to resolve to the binding staging path;
 - call `batch_get({"nodeIds":["<binding_guard_id>"],"readDepth":0})`;
@@ -332,7 +340,7 @@ The smoke should:
 3. create a temporary `FORMA_HOME`;
 4. call requirement begin before components exist and verify Pencil is not opened by Forma;
 5. call component begin and verify active editor convergence to `staging.lib.pen`;
-6. commit or discard the component session according to the smoke's minimal safe setup;
+6. commit the component session so the product component library becomes `complete`;
 7. call requirement begin and verify active editor convergence to `staging.design.pen`;
 8. clean up temporary session state.
 
