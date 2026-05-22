@@ -417,6 +417,7 @@ export interface RequirementCommitCandidate {
   old_hash?: string;
   old_file_missing?: boolean;
   candidate_hash?: string;
+  source_staging_revision?: string;
 }
 
 export async function commitRequirementDesignSessionWithCandidates(input: {
@@ -451,6 +452,18 @@ export async function commitRequirementDesignSessionWithCandidates(input: {
   if (stagingRevision !== record.last_controlled_revision) {
     await updateSessionRecord(home, file, { ...record, status: "blocked_manual_edit", updated_at: new Date().toISOString() });
     throw new FormaError("MANUAL_EDIT_DETECTED", "Current canvas has uncontrolled changes", { session_id: input.session_id });
+  }
+  const staleSourceCandidate = candidates.find((candidate) =>
+    candidate.source_staging_revision !== undefined && candidate.source_staging_revision !== stagingRevision
+  );
+  if (staleSourceCandidate) {
+    await updateSessionRecord(home, file, { ...record, status: "blocked_manual_edit", updated_at: new Date().toISOString() });
+    throw new FormaError("MANUAL_EDIT_DETECTED", "Commit candidates were built from a stale staging revision", {
+      session_id: input.session_id,
+      target_file: staleSourceCandidate.target_file,
+      expected_source_staging_revision: staleSourceCandidate.source_staging_revision,
+      actual_source_staging_revision: stagingRevision
+    });
   }
   const binding = adapter.getBinding(record.pencil_binding_id);
   if (!binding?.binding_guard_id) {

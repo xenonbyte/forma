@@ -5,7 +5,7 @@ import { z } from "zod";
 import { assertDesignQualityPassed, runDesignQualityPipeline, type DesignQualityReport } from "./design-quality.js";
 import { commitRequirementDesignSessionWithCandidates, type RequirementCommitCandidate } from "./design-session.js";
 import { FormaError } from "./errors.js";
-import { nodeMetadataString, normalizeDesignName, parsePenDocument, walkPenNodes, type PenDocument, type PenNode } from "./pen-model.js";
+import { isRecord, nodeMetadataString, normalizeDesignName, parsePenDocument, walkPenNodes, type PenDocument, type PenNode } from "./pen-model.js";
 import { requirementSchema, type Requirement, type RequirementPage } from "./requirement.js";
 import { deriveAllowedSemanticSurface, readSemanticScope } from "./semantic-scope.js";
 import { readYaml, readYamlAs, writeYamlAtomic } from "./yaml.js";
@@ -740,7 +740,7 @@ export async function commitRequirementDesignSession(input: {
     { target: paths.canvas_file, candidate: designCandidate, kind: "design_canvas", order: 6 },
     { target: paths.metadata_file, candidate: metadataCandidate, kind: "design_metadata", order: 7 },
     { target: join(paths.requirement_dir, "requirement.yaml"), candidate: requirementCandidate, kind: "requirement_metadata", order: 8 }
-  ]);
+  ], stagingRevision);
   const substrate = input.commitSubstrate ?? ((payload) => commitRequirementDesignSessionWithCandidates(payload));
   await substrate({ home, session_id: input.session_id, candidates });
   return { session_id: input.session_id, status: "committed", candidates };
@@ -883,23 +883,54 @@ async function restoreIndexPromotions(_home: string, promotedTargets: IndexPromo
 }
 
 function stripSessionBindingGuardsFromRawStagingForMetadata(raw: string): string {
-  const document = JSON.parse(raw) as { children?: unknown[]; [key: string]: unknown };
-  if (!Array.isArray(document.children)) {
-    throw new FormaError("PEN_FILE_INVALID", "Pencil document must contain children[]");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw) as unknown;
+  } catch (error) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must be valid JSON", {
+      cause: error instanceof Error ? error.message : String(error)
+    });
   }
-  document.children = document.children.filter((node) => {
-    if (!node || typeof node !== "object" || Array.isArray(node)) return true;
-    const record = node as Record<string, unknown>;
-    if (typeof record.id === "string" && record.id.startsWith("formaSessionBindingGuard")) return false;
-    const metadata = record.metadata;
-    return !(metadata && typeof metadata === "object" && !Array.isArray(metadata) && (metadata as Record<string, unknown>).kind === "session_binding_guard");
-  });
+  if (!isRecord(parsed)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must be an object", {
+      cause: "document is not an object"
+    });
+  }
+  const children = parsed.children;
+  if (!Array.isArray(children)) {
+    throw new FormaError("PEN_FILE_INVALID", "Pencil document must contain children[]", {
+      cause: "children is missing or not an array"
+    });
+  }
+  const document = {
+    ...parsed,
+    children: children.filter((node) => !isSessionBindingGuardMarker(node))
+  };
+  if (containsSessionBindingGuardMarker(document.children)) {
+    throw new FormaError("PEN_FILE_INVALID", "Sanitized candidate still contains a session binding guard");
+  }
   return `${JSON.stringify(document, null, 2)}\n`;
+}
+
+function containsSessionBindingGuardMarker(nodes: unknown[]): boolean {
+  for (const node of nodes) {
+    if (!isRecord(node)) continue;
+    if (isSessionBindingGuardMarker(node)) return true;
+    if (Array.isArray(node.children) && containsSessionBindingGuardMarker(node.children)) return true;
+  }
+  return false;
+}
+
+function isSessionBindingGuardMarker(node: unknown): boolean {
+  if (!isRecord(node)) return false;
+  if (typeof node.id === "string" && node.id.startsWith("formaSessionBindingGuard")) return true;
+  return isRecord(node.metadata) && node.metadata.kind === "session_binding_guard";
 }
 
 async function buildCommitCandidates(
   home: string,
-  entries: Array<{ target: string; candidate: string; kind: string; order: number }>
+  entries: Array<{ target: string; candidate: string; kind: string; order: number }>,
+  sourceStagingRevision?: string
 ): Promise<RequirementCommitCandidate[]> {
   const candidates: RequirementCommitCandidate[] = [];
   for (const entry of entries.sort((left, right) => left.order - right.order)) {
@@ -910,6 +941,7 @@ async function buildCommitCandidates(
       replacement_kind: entry.kind,
       restore_order: entry.order,
       candidate_hash: sha256(await readFile(entry.candidate)),
+      ...(sourceStagingRevision ? { source_staging_revision: sourceStagingRevision } : {}),
       ...(targetExists ? { old_hash: sha256(await readFile(entry.target)) } : { old_file_missing: true })
     });
   }

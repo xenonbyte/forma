@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyRequirementDesignOperations,
   beginRequirementDesignSession,
+  commitRequirementDesignSession,
   discardRequirementDesignSession,
   recoverDesignCommitJournal,
   readDesignStartupRecoveryState,
@@ -193,6 +194,18 @@ async function minimalPenWithNodePreservingGuards(stagingPath: string, id: strin
 async function fileContainsGuard(file: string): Promise<boolean> {
   const raw = await readFile(file, "utf8");
   return raw.includes("formaSessionBindingGuard") || raw.includes("session_binding_guard");
+}
+
+function sha256(bytes: Buffer | string): string {
+  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+}
+
+async function hashFileForTest(file: string): Promise<string> {
+  return sha256(await readFile(file));
+}
+
+function passedQualityReport() {
+  return { status: "passed" as const, hard_checks: { issues: [] }, warnings: [] };
 }
 
 async function readJsonl(file: string): Promise<Record<string, unknown>[]> {
@@ -637,6 +650,175 @@ describe("v6 requirement design sessions", () => {
     })).resolves.toMatchObject({ status: "committed" });
 
     await expect(fileContainsGuard(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"))).resolves.toBe(false);
+  });
+
+  it("commits requirement formal artifacts without session binding guards and with matching revisions", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    await expect(fileContainsGuard(session.staging_path)).resolves.toBe(true);
+    const sourceRevision = await hashFileForTest(session.staging_path);
+
+    const result = await commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview")
+    });
+    expect(result).toMatchObject({ status: "committed" });
+    expect(result.candidates.every((candidate) => candidate.source_staging_revision === sourceRevision)).toBe(true);
+
+    const designPath = join(home, "data", "P-123abc", "R-1234abcd", "design.pen");
+    const metadataPath = join(home, "data", "P-123abc", "R-1234abcd", "design.yaml");
+    const historyPath = join(home, "data", "P-123abc", "R-1234abcd", "history", "canvas", "canvas.c1.pen");
+    const designHash = await hashFileForTest(designPath);
+    await expect(readYaml(metadataPath)).resolves.toMatchObject({ canvas_revision: designHash });
+    await expect(hashFileForTest(historyPath)).resolves.toBe(designHash);
+    await expect(fileContainsGuard(designPath)).resolves.toBe(false);
+    await expect(fileContainsGuard(metadataPath)).resolves.toBe(false);
+    await expect(fileContainsGuard(historyPath)).resolves.toBe(false);
+  });
+
+  it("rejects stale source staging revision candidates before sanitized promotion", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    const sourceRevision = await hashFileForTest(session.staging_path);
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home-v2" }, intent: "refine" }]
+    });
+
+    await expect(commitRequirementDesignSessionWithCandidates({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      candidates: [{
+        target_file: "data/P-123abc/R-1234abcd/design.pen",
+        candidate_file: `data/P-123abc/R-1234abcd/sessions/${session.session_id}/staging.design.pen`,
+        old_file_missing: true,
+        candidate_hash: sourceRevision,
+        source_staging_revision: sourceRevision,
+        replacement_kind: "design_canvas",
+        restore_order: 1
+      }]
+    })).rejects.toMatchObject({ code: "MANUAL_EDIT_DETECTED" });
+    await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml"))).resolves.toMatchObject({
+      status: "blocked_manual_edit"
+    });
+    await expect(access(join(home, "data", "P-123abc", "R-1234abcd", "design.pen"))).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("rejects residual nested session binding guards in requirement formal candidates", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+
+    await applyRequirementDesignOperations({
+      home,
+      session_id: session.session_id,
+      runner: createRunner(),
+      processFactory,
+      operations: [{ tool: "batch_design", args: { id: "home" }, intent: "generate" }]
+    });
+    const document = JSON.parse(await readFile(session.staging_path, "utf8")) as { children: Array<Record<string, unknown>> };
+    const guard = document.children.find((node) => typeof node.id === "string" && node.id.startsWith("formaSessionBindingGuard"));
+    if (!guard) throw new Error("test setup expected a session guard");
+    document.children = [{ id: "home", type: "frame", children: [guard] }, guard];
+    await writeFile(session.staging_path, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+    const revision = await hashFileForTest(session.staging_path);
+    const sessionFile = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml");
+    await writeYamlAtomic(sessionFile, {
+      ...(await readYaml<Record<string, unknown>>(sessionFile)),
+      last_controlled_revision: revision,
+      last_saved_revision: revision
+    });
+
+    const substrate = vi.fn().mockResolvedValue({ session_id: session.session_id, status: "committed" });
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview"),
+      commitSubstrate: substrate
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+    expect(substrate).not.toHaveBeenCalled();
+  });
+
+  it("wraps malformed staging JSON as PEN_FILE_INVALID while building requirement formal candidates", async () => {
+    const home = await createHome();
+    const processFactory = createConvergedSessionProcessFactory();
+    const session = await beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner(),
+      processFactory
+    });
+    await writeFile(session.staging_path, "{not-json", "utf8");
+    const revision = await hashFileForTest(session.staging_path);
+    const sessionFile = join(home, "data", "P-123abc", "R-1234abcd", "sessions", session.session_id, "design_session.yaml");
+    await writeYamlAtomic(sessionFile, {
+      ...(await readYaml<Record<string, unknown>>(sessionFile)),
+      last_controlled_revision: revision,
+      last_saved_revision: revision
+    });
+
+    await expect(commitRequirementDesignSession({
+      home,
+      session_id: session.session_id,
+      page_id: "home",
+      frame_id: "home",
+      quality_report: passedQualityReport(),
+      previewExporter: async ({ output_file }) => writeFile(output_file, "preview")
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
   it("does not report a committed requirement journal during startup recovery", async () => {
@@ -1568,11 +1750,15 @@ describe("v6 product component sessions", () => {
 
     expect(openedPaths).toEqual([await realpath(componentSession.staging_path), await realpath(requirementSession.staging_path)]);
     expect(requirementSession.staging_path.endsWith("staging.design.pen")).toBe(true);
-    await expect(fileContainsGuard(join(home, "library", "P-123abc.lib.pen"))).resolves.toBe(false);
-    await expect(fileContainsGuard(join(home, "library", "P-123abc.versions", "1.lib.pen"))).resolves.toBe(false);
-    await expect(readYaml(join(home, "library", "P-123abc.components.yaml"))).resolves.toMatchObject({
-      versions: [expect.objectContaining({ checksum: expect.not.stringMatching(/^sha256:0+$/) })]
-    });
+    const latestPath = join(home, "library", "P-123abc.lib.pen");
+    const versionPath = join(home, "library", "P-123abc.versions", "1.lib.pen");
+    const metadata = await readYaml<{ versions: Array<{ checksum: string }> }>(join(home, "library", "P-123abc.components.yaml"));
+    const latestHash = await hashFileForTest(latestPath);
+    await expect(fileContainsGuard(latestPath)).resolves.toBe(false);
+    await expect(fileContainsGuard(versionPath)).resolves.toBe(false);
+    expect(metadata).toMatchObject({ versions: [expect.objectContaining({ checksum: expect.not.stringMatching(/^sha256:0+$/) })] });
+    expect(metadata.versions[0]?.checksum).toBe(latestHash);
+    await expect(hashFileForTest(versionPath)).resolves.toBe(latestHash);
   });
 
   it("discards staging while keeping formal component library and audit files", async () => {
