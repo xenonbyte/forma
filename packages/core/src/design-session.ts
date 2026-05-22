@@ -147,12 +147,12 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
   const requirementId = parseRequirementId(input.requirement_id);
   const runner = input.runner ?? defaultPencilRunner;
   const appAdapter = new PencilAppSessionAdapter({ home, runner, processFactory: input.processFactory });
-  await appAdapter.preflight();
 
   const componentLibrary = await getProductComponentLibrary(home, productId);
   if (componentLibrary.status !== "complete") {
     throw componentLibraryError(productId, componentLibrary.status, { ...componentLibrary });
   }
+  await appAdapter.preflight();
 
   const lock = getProductMutationLock(home);
   return await lock.run({ operation: "begin_requirement_design_session", product_id: productId, scope: "requirement_canvas" }, async () =>
@@ -268,6 +268,7 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
         error_code: error instanceof FormaError ? error.code : "PENCIL_APP_REQUIRED",
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
+        staging_path: stagingPath,
         reason: failedReason,
         cleanup_status: cleanup,
         pencil_version: error instanceof FormaError ? error.details.pencil_version : undefined
@@ -279,6 +280,7 @@ export async function beginRequirementDesignSession(input: BeginRequirementDesig
         session_id: sessionId,
         failed_phase: error instanceof FormaError ? error.details.failed_phase ?? "open_app" : "open_app",
         command: `pencil interactive --app desktop --in ${stagingPath}`,
+        staging_path: stagingPath,
         reason: failedReason,
         cleanup_status: cleanup,
         ...(error instanceof FormaError && error.details.pencil_version ? { pencil_version: error.details.pencil_version } : {})
@@ -326,8 +328,8 @@ export async function applyRequirementDesignOperations(input: ApplyRequirementDe
   }
 
   try {
-    await adapter.assertLiveBinding(record.pencil_binding_id, record.staging_path);
-    await adapter.controlledSave(record.pencil_binding_id);
+    await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: record.staging_path });
+    await adapter.controlledSave(record.pencil_binding_id, record.staging_path);
   } catch (error) {
     if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
       await updateSessionRecord(home, file, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -361,8 +363,8 @@ export async function applyRequirementDesignOperations(input: ApplyRequirementDe
     let saveSucceeded = false;
     try {
       await appendJsonl(currentRecord.operation_log_file, pendingEntry);
-      await adapter.executeWriteTool(currentRecord.pencil_binding_id, operation.tool, operation.args);
-      await adapter.controlledSave(currentRecord.pencil_binding_id);
+      await adapter.executeWriteTool(currentRecord.pencil_binding_id, operation.tool, operation.args, currentRecord.staging_path);
+      await adapter.controlledSave(currentRecord.pencil_binding_id, currentRecord.staging_path);
       saveSucceeded = true;
       afterRevision = await hashFile(currentRecord.staging_path);
       await replaceJsonlBySequence(currentRecord.operation_log_file, sequence, (entry) => ({
@@ -436,8 +438,8 @@ export async function commitRequirementDesignSessionWithCandidates(input: {
     throw new FormaError("INVALID_INPUT", "Session is not running", { status: record.status });
   }
   try {
-    await adapter.assertLiveBinding(record.pencil_binding_id, record.staging_path);
-    await adapter.controlledSave(record.pencil_binding_id);
+    await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: record.staging_path });
+    await adapter.controlledSave(record.pencil_binding_id, record.staging_path);
   } catch (error) {
     if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
       await updateSessionRecord(home, file, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -640,7 +642,7 @@ export async function discardRequirementDesignSession(input: { home: string; ses
       const adapter = new PencilAppSessionAdapter({ home, runner: defaultPencilRunner });
       if (!allowDisconnectedDiscard) {
         try {
-          await adapter.assertLiveBinding(record.pencil_binding_id, record.staging_path);
+          await adapter.assertActiveStagingBinding({ bindingId: record.pencil_binding_id, expectedStagingPath: record.staging_path });
         } catch (error) {
           if (error instanceof FormaError && error.code === "PENCIL_APP_REQUIRED") {
             await updateSessionRecord(home, file, { ...record, status: "recoverable", updated_at: new Date().toISOString() });
@@ -1498,10 +1500,10 @@ function componentLibraryError(productId: string, status: string, details: Recor
     required_action: "generate_components",
     ...details
   };
-  if (status === "metadata_missing") {
+  if (status === "missing" || status === "metadata_missing") {
     return new FormaError("COMPONENT_LIBRARY_METADATA_MISSING", "Product component library metadata is missing", payload);
   }
-  if (status === "missing" || status === "version_snapshot_missing") {
+  if (status === "version_snapshot_missing") {
     return new FormaError("COMPONENT_LIBRARY_VERSION_MISSING", "Product component library version snapshot is missing", payload);
   }
   if (status === "latest_file_missing") {

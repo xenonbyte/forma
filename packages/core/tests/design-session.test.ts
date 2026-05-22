@@ -64,6 +64,33 @@ function createProcessFactory(options: { failOpen?: boolean; alive?: boolean; ac
   };
 }
 
+function createConvergedSessionProcessFactory(openedPaths: string[] = []): PencilInteractiveProcessFactory {
+  return async (input) => {
+    openedPaths.push(input.stagingPath);
+    let alive = true;
+    return {
+      pid: process.pid + 3500 + openedPaths.length,
+      async send(message) {
+        if (!alive) throw new Error("dead");
+        if (message.startsWith("get_editor_state")) {
+          return { stdout: `${JSON.stringify({ schema: true, filePath: input.stagingPath })}\n`, stderr: "" };
+        }
+        if (message.startsWith("batch_get")) {
+          return { stdout: `${JSON.stringify({ nodes: extractBatchGetNodeIds(message).map((id) => ({ id })) })}\n`, stderr: "" };
+        }
+        if (message.startsWith("batch_design(")) {
+          await writeFile(input.stagingPath, minimalPenWithNode("batch-design"));
+        }
+        return { stdout: "ok\n", stderr: "" };
+      },
+      isAlive: () => alive,
+      async close() {
+        alive = false;
+      }
+    };
+  };
+}
+
 function createControllableProcessFactory(): { factory: PencilInteractiveProcessFactory; killAll: () => void } {
   const aliveFlags: Array<{ alive: boolean }> = [];
   return {
@@ -134,6 +161,10 @@ function createOpenTimeProcessResponse(message: string, stagingPath: string, act
 function extractBatchGetNodeIds(message: string): string[] {
   const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
   return payload.nodeIds ?? [];
+}
+
+function minimalPenWithNode(id: string): string {
+  return JSON.stringify({ children: [{ id, type: "frame" }] });
 }
 
 async function readJsonl(file: string): Promise<Record<string, unknown>[]> {
@@ -213,6 +244,29 @@ async function exists(path: string): Promise<boolean> {
 }
 
 describe("v6 requirement design sessions", () => {
+  it("returns generate_components before Pencil preflight when requirement components are missing", async () => {
+    const home = await createEmptyComponentHome();
+    await mkdir(join(home, "data", "P-123abc", "R-1234abcd"), { recursive: true });
+    await writeYamlAtomic(join(home, "data", "P-123abc", "R-1234abcd", "requirement.yaml"), requirementFixture());
+    const openedPaths: string[] = [];
+
+    await expect(beginRequirementDesignSession({
+      home,
+      product_id: "P-123abc",
+      requirement_id: "R-1234abcd",
+      operation: "generate",
+      runner: createRunner({ failVersion: true }),
+      processFactory: createConvergedSessionProcessFactory(openedPaths)
+    })).rejects.toMatchObject({
+      code: "COMPONENT_LIBRARY_METADATA_MISSING",
+      details: { required_action: "generate_components" }
+    });
+
+    expect(openedPaths).toEqual([]);
+    await expect(exists(join(home, "data", "P-123abc", "sessions", "active-design-session.yaml"))).resolves.toBe(false);
+    await expect(exists(join(home, "data", "P-123abc", "R-1234abcd", "sessions"))).resolves.toBe(false);
+  });
+
   it("runs preflight before leases or staging files", async () => {
     const home = await createHome();
     await expect(beginRequirementDesignSession({
@@ -302,8 +356,15 @@ describe("v6 requirement design sessions", () => {
     });
     const sessionId = (error as { details?: { session_id?: string } }).details?.session_id;
     expect(sessionId).toEqual(expect.any(String));
+    const expectedStagingPath = join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId!, "staging.design.pen");
+    expect(error).toMatchObject({
+      details: {
+        staging_path: expectedStagingPath
+      }
+    });
     await expect(readYaml(join(home, "data", "P-123abc", "R-1234abcd", "sessions", "failed-begins", `${sessionId}.yaml`))).resolves.toMatchObject({
-      reason: "active_editor_path_mismatch"
+      reason: "active_editor_path_mismatch",
+      staging_path: expectedStagingPath
     });
   });
 
