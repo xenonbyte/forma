@@ -206,59 +206,77 @@ export class PencilAppSessionAdapter {
     });
   }
 
-  async controlledSave(bindingId: string): Promise<void> {
+  async controlledSave(bindingId: string, expectedStagingPath?: string): Promise<void> {
     const owned = this.requireLiveBinding(bindingId);
+    const expected = expectedStagingPath ?? owned.binding.staging_path;
+    await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
     await this.controlledSaveProcess(owned.process);
+    await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
   }
 
-  async executeWriteTool(bindingId: string, tool: "batch_design" | "set_variables", args: Record<string, unknown>): Promise<void> {
+  async executeWriteTool(bindingId: string, tool: "batch_design" | "set_variables", args: Record<string, unknown>, expectedStagingPath?: string): Promise<void> {
     const owned = this.requireLiveBinding(bindingId);
+    const expected = expectedStagingPath ?? owned.binding.staging_path;
     rejectPathLikeParameters(args);
+    await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
     await owned.process.send(formatInteractiveToolCall(tool, args), tool === "batch_design" ? PENCIL_BATCH_GET_TIMEOUT_MS : PENCIL_VARIABLES_TIMEOUT_MS);
+    await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
   }
 
-  async sessionGetEditorState(bindingId: string, args: { include_schema: true }): Promise<unknown> {
-    return this.executeReadTool(bindingId, "get_editor_state", args, PENCIL_EDITOR_STATE_TIMEOUT_MS);
+  async sessionGetEditorState(bindingId: string, args: { include_schema: true }, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "get_editor_state", args, PENCIL_EDITOR_STATE_TIMEOUT_MS, expectedStagingPath);
   }
 
-  async sessionGetGuidelines(bindingId: string, args: { category: string; name: string }): Promise<unknown> {
-    return this.executeReadTool(bindingId, "get_guidelines", args, PENCIL_GUIDELINES_TIMEOUT_MS);
+  async sessionGetGuidelines(bindingId: string, args: { category: string; name: string }, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "get_guidelines", args, PENCIL_GUIDELINES_TIMEOUT_MS, expectedStagingPath);
   }
 
-  async sessionGetVariables(bindingId: string): Promise<unknown> {
-    return this.executeReadTool(bindingId, "get_variables", {}, PENCIL_VARIABLES_TIMEOUT_MS);
+  async sessionGetVariables(bindingId: string, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "get_variables", {}, PENCIL_VARIABLES_TIMEOUT_MS, expectedStagingPath);
   }
 
-  async sessionBatchGet(bindingId: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.executeReadTool(bindingId, "batch_get", args, PENCIL_BATCH_GET_TIMEOUT_MS);
+  async sessionBatchGet(bindingId: string, args: Record<string, unknown>, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "batch_get", args, PENCIL_BATCH_GET_TIMEOUT_MS, expectedStagingPath);
   }
 
-  async sessionSnapshotLayout(bindingId: string, args: { problemsOnly: false; parentId: string; maxDepth: 8 }): Promise<unknown> {
-    return this.executeReadTool(bindingId, "snapshot_layout", args, PENCIL_SNAPSHOT_LAYOUT_TIMEOUT_MS);
+  async sessionSnapshotLayout(bindingId: string, args: { problemsOnly: false; parentId: string; maxDepth: 8 }, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "snapshot_layout", args, PENCIL_SNAPSHOT_LAYOUT_TIMEOUT_MS, expectedStagingPath);
   }
 
-  async sessionGetScreenshot(bindingId: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.executeReadTool(bindingId, "get_screenshot", args, PENCIL_SCREENSHOT_TIMEOUT_MS);
+  async sessionGetScreenshot(bindingId: string, args: Record<string, unknown>, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "get_screenshot", args, PENCIL_SCREENSHOT_TIMEOUT_MS, expectedStagingPath);
   }
 
-  async sessionExportNodes(bindingId: string, args: Record<string, unknown>): Promise<unknown> {
-    return this.executeReadTool(bindingId, "export_nodes", args, PENCIL_SESSION_EXPORT_TIMEOUT_MS);
+  async sessionExportNodes(bindingId: string, args: Record<string, unknown>, expectedStagingPath?: string): Promise<unknown> {
+    return this.executeReadTool(bindingId, "export_nodes", args, PENCIL_SESSION_EXPORT_TIMEOUT_MS, expectedStagingPath);
   }
 
   getBinding(bindingId: string): PencilAppBinding | undefined {
     return bindingRegistry.get(bindingId)?.binding;
   }
 
-  async assertLiveBinding(bindingId: string, stagingPath: string): Promise<PencilAppBinding> {
-    const owned = this.requireLiveBinding(bindingId);
-    const expected = await realpath(stagingPath);
+  async assertActiveStagingBinding(input: { bindingId: string; expectedStagingPath: string }): Promise<PencilAppBinding> {
+    const owned = this.requireLiveBinding(input.bindingId);
+    const expected = await realpath(input.expectedStagingPath);
     if (owned.binding.staging_path !== expected) {
       throw new FormaError("PENCIL_APP_REQUIRED", "Pencil App session is not bound to this staging file", {
         failed_phase: "session_check",
-        pencil_binding_id: bindingId
+        pencil_binding_id: input.bindingId,
+        staging_path: expected
       });
     }
+    await this.assertProcessConvergedToStaging(owned.process, {
+      sessionId: owned.binding.session_id,
+      stagingPath: expected,
+      guardId: owned.binding.binding_guard_id,
+      phase: "active_editor_drift",
+      includeSchema: false
+    });
     return owned.binding;
+  }
+
+  async assertLiveBinding(bindingId: string, stagingPath: string): Promise<PencilAppBinding> {
+    return this.assertActiveStagingBinding({ bindingId, expectedStagingPath: stagingPath });
   }
 
   async closeBinding(bindingId: string): Promise<void> {
@@ -356,9 +374,11 @@ export class PencilAppSessionAdapter {
     }
   }
 
-  private async executeReadTool(bindingId: string, tool: string, args: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  private async executeReadTool(bindingId: string, tool: string, args: Record<string, unknown>, timeoutMs: number, expectedStagingPath?: string): Promise<unknown> {
     const owned = this.requireLiveBinding(bindingId);
+    const expected = expectedStagingPath ?? owned.binding.staging_path;
     rejectPathLikeParameters(args);
+    await this.assertActiveStagingBinding({ bindingId, expectedStagingPath: expected });
     return this.sendJsonToProcess(owned.process, tool, args, timeoutMs);
   }
 

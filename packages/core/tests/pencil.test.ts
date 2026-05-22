@@ -109,6 +109,33 @@ function createConvergedProcessFactory(
   });
 }
 
+function createDriftingProcessFactory(
+  messages: string[],
+  options: { driftAfterBatchGet: number; stagingPath: string; otherPath: string }
+): PencilInteractiveProcessFactory {
+  let batchGetReads = 0;
+  return async () => ({
+    pid: process.pid + 5050 + messages.length,
+    async send(message) {
+      messages.push(message);
+      if (message.startsWith("get_editor_state")) {
+        const path = batchGetReads >= options.driftAfterBatchGet ? options.otherPath : options.stagingPath;
+        return { stdout: JSON.stringify({ filePath: path, schema: true }), stderr: "" };
+      }
+      if (message.startsWith("batch_get")) {
+        batchGetReads += 1;
+        const payload = JSON.parse(message.slice("batch_get(".length, -1)) as { nodeIds?: string[] };
+        return { stdout: JSON.stringify({ nodes: (payload.nodeIds ?? []).map((id) => ({ id })) }), stderr: "" };
+      }
+      return { stdout: "ok\n", stderr: "" };
+    },
+    isAlive: () => true,
+    async close() {
+      messages.push("close");
+    }
+  });
+}
+
 function createMockInteractiveChild(options: {
   stderrBeforeStdout?: boolean;
   neverRespond?: boolean;
@@ -811,13 +838,123 @@ describe("PencilService", () => {
     expect(messages[0]).toBe("get_editor_state({\"include_schema\":true})");
     expect(messages[1]).toMatch(/^batch_get\(/);
     expect(messages.slice(2)).toEqual([
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
       "save()",
-      "batch_design({\"nodes\":[]})"
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "batch_design({\"nodes\":[]})",
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/)
     ]);
     expect(runner.calls.filter((call) => call.args[0] === "batch_design" || (call.args[0] === "save" && call.args[1] === staging))).toEqual([]);
 
     aliveStates[0] = false;
     await expect(adapter.controlledSave(binding.pencil_binding_id)).rejects.toMatchObject({ code: "PENCIL_APP_REQUIRED" });
+  });
+
+  it("asserts active staging before and after controlled save and write tools", async () => {
+    const home = await createHome("adapter-runtime-drift-write");
+    const staging = join(home, "staging.design.pen");
+    const other = join(home, "other.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+    const realStaging = await realpath(staging);
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: createDriftingProcessFactory(messages, {
+        driftAfterBatchGet: 99,
+        stagingPath: realStaging,
+        otherPath: await realpath(other)
+      })
+    });
+    const binding = await adapter.openSession({ session_id: "S-runtime-write", staging_path: staging, expected_session_dir: home });
+    messages.length = 0;
+
+    await adapter.controlledSave(binding.pencil_binding_id, staging);
+    await adapter.executeWriteTool(binding.pencil_binding_id, "batch_design", { nodes: [] }, staging);
+
+    expect(messages).toEqual([
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "save()",
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "batch_design({\"nodes\":[]})",
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/)
+    ]);
+  });
+
+  it("fails controlled save with active_editor_drift after the user switches documents", async () => {
+    const home = await createHome("adapter-runtime-drift-save");
+    const staging = join(home, "staging.design.pen");
+    const other = join(home, "other.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+    const realStaging = await realpath(staging);
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: createDriftingProcessFactory(messages, {
+        driftAfterBatchGet: 1,
+        stagingPath: realStaging,
+        otherPath: await realpath(other)
+      })
+    });
+    const binding = await adapter.openSession({ session_id: "S-runtime-drift", staging_path: staging, expected_session_dir: home });
+    messages.length = 0;
+
+    await expect(adapter.controlledSave(binding.pencil_binding_id, staging)).rejects.toMatchObject({
+      code: "PENCIL_APP_REQUIRED",
+      details: {
+        failed_phase: "active_editor_drift"
+      }
+    });
+    expect(messages).toEqual(["get_editor_state({\"include_schema\":false})"]);
+  });
+
+  it("asserts active staging before session read and export tools", async () => {
+    const home = await createHome("adapter-runtime-drift-read");
+    const staging = join(home, "staging.design.pen");
+    const other = join(home, "other.pen");
+    await writeFile(staging, JSON.stringify({ children: [{ id: "root", type: "frame" }] }));
+    await writeFile(other, JSON.stringify({ children: [{ id: "other", type: "frame" }] }));
+    const realStaging = await realpath(staging);
+    const messages: string[] = [];
+    const adapter = new PencilAppSessionAdapter({
+      home,
+      platform: "darwin",
+      runner: createHealthyRunner(),
+      processFactory: createDriftingProcessFactory(messages, {
+        driftAfterBatchGet: 99,
+        stagingPath: realStaging,
+        otherPath: await realpath(other)
+      })
+    });
+    const binding = await adapter.openSession({ session_id: "S-runtime-read", staging_path: staging, expected_session_dir: home });
+    messages.length = 0;
+
+    await expect(adapter.sessionBatchGet(binding.pencil_binding_id, { nodeIds: ["root"] }, staging)).resolves.toEqual({ nodes: [{ id: "root" }] });
+    await expect(adapter.sessionExportNodes(binding.pencil_binding_id, { nodeIds: ["root"] }, staging)).resolves.toBe("ok");
+
+    expect(messages).toEqual([
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "batch_get({\"nodeIds\":[\"root\"]})",
+      "get_editor_state({\"include_schema\":false})",
+      expect.stringMatching(/^batch_get\(/),
+      "export_nodes({\"nodeIds\":[\"root\"]})"
+    ]);
   });
 
   it("does not treat stderr warnings as interactive command completion", async () => {
@@ -882,9 +1019,11 @@ describe("PencilService", () => {
       adapter.executeWriteTool(binding.pencil_binding_id, "batch_design", { nodes: [] })
     ]);
 
-    expect(writes).toHaveLength(2);
-    expect(writes[0]).toContain("save()");
-    expect(writes[1]).toContain("batch_design");
+    expect(writes).toHaveLength(10);
+    expect(writes.filter((write) => write.includes("get_editor_state"))).toHaveLength(4);
+    expect(writes.filter((write) => write.includes("batch_get"))).toHaveLength(4);
+    expect(writes.some((write) => write.includes("save()"))).toBe(true);
+    expect(writes.some((write) => write.includes("batch_design"))).toBe(true);
     vi.doUnmock("node:child_process");
     vi.resetModules();
   });
