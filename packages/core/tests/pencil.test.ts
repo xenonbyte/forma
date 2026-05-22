@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
+import { hashFile } from "../src/file-hash.js";
 import { PencilService, type PencilRunner } from "../src/index.js";
 import { defaultPencilRunner } from "../src/pencil.js";
 import {
@@ -26,6 +27,12 @@ import {
   type PencilInteractiveProcess,
   type PencilInteractiveProcessFactory
 } from "../src/pencil-adapter.js";
+import {
+  createSanitizedCommitCandidate,
+  createSessionBindingGuard,
+  insertSessionBindingGuard,
+  penDocumentHasSessionBindingGuard
+} from "../src/pencil-session-guard.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -173,6 +180,56 @@ describe("PencilService", () => {
     expect(PENCIL_BATCH_GET_TIMEOUT_MS).toBe(15_000);
     expect(PENCIL_SNAPSHOT_LAYOUT_TIMEOUT_MS).toBe(15_000);
     expect(PENCIL_SCREENSHOT_TIMEOUT_MS).toBe(60_000);
+  });
+
+  it("inserts a top-level session binding guard and writes sanitized no-guard candidates", async () => {
+    const home = await createHome("guard-sanitize");
+    const staging = join(home, "session", "staging.design.pen");
+    const candidate = join(home, "session", "commit-candidates", "staging.no-guard.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const guard = createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24));
+
+    await insertSessionBindingGuard(staging, guard);
+    const withGuard = JSON.parse(await readFile(staging, "utf8")) as { children: Array<{ id: string; metadata?: Record<string, unknown> }> };
+    expect(withGuard.children.map((node) => node.id)).toEqual(["root", guard.id]);
+    expect(withGuard.children.at(-1)?.metadata).toMatchObject({ kind: "session_binding_guard", session_id: "S-1234567890abcdef" });
+    await expect(insertSessionBindingGuard(staging, guard)).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+
+    const sourceHash = await hashFile(staging);
+    const result = await createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: guard.id,
+      expected_source_hash: sourceHash
+    });
+
+    expect(result.candidate_hash).toBe(await hashFile(candidate));
+    expect(await penDocumentHasSessionBindingGuard(staging)).toBe(true);
+    expect(await penDocumentHasSessionBindingGuard(candidate)).toBe(false);
+    const sanitized = JSON.parse(await readFile(candidate, "utf8")) as { children: Array<{ id: string }> };
+    expect(sanitized.children.map((node) => node.id)).toEqual(["root"]);
+  });
+
+  it("rejects sanitized candidates when residual session binding guards remain", async () => {
+    const home = await createHome("guard-residual");
+    const staging = join(home, "session", "staging.lib.pen");
+    const candidate = join(home, "session", "commit-candidates", "staging.no-guard.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({
+      schema_version: 1,
+      children: [
+        createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24)),
+        createSessionBindingGuard("S-fedcba0987654321", "b".repeat(24))
+      ]
+    }, null, 2));
+
+    await expect(createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: "formaSessionBindingGuardS-1234567890abcdef_aaaaaaaaaaaaaaaaaaaaaaaa",
+      expected_source_hash: await hashFile(staging)
+    })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
   });
 
   it("runs Pencil preflight before session files and cleans the probe directory", async () => {
