@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { access, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { PassThrough, Writable } from "node:stream";
@@ -33,6 +33,7 @@ import {
   insertSessionBindingGuard,
   penDocumentHasSessionBindingGuard
 } from "../src/pencil-session-guard.js";
+import { realpathInsideDirectory } from "../src/path-boundary.js";
 
 const minimalPng = Buffer.from([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
@@ -230,6 +231,79 @@ describe("PencilService", () => {
       binding_guard_id: "formaSessionBindingGuardS-1234567890abcdef_aaaaaaaaaaaaaaaaaaaaaaaa",
       expected_source_hash: await hashFile(staging)
     })).rejects.toMatchObject({ code: "PEN_FILE_INVALID" });
+  });
+
+  it("rejects session binding guard sanitized candidates that overwrite source staging", async () => {
+    const home = await createHome("guard-overwrite-source");
+    const staging = join(home, "session", "staging.design.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    const guard = createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24));
+    await insertSessionBindingGuard(staging, guard);
+    const sourceHash = await hashFile(staging);
+
+    await expect(createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: staging,
+      binding_guard_id: guard.id,
+      expected_source_hash: sourceHash
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(await hashFile(staging)).toBe(sourceHash);
+    expect(await penDocumentHasSessionBindingGuard(staging)).toBe(true);
+  });
+
+  it("rejects session binding guard sanitized candidates that target existing outside symlinks", async () => {
+    const home = await createHome("guard-candidate-symlink");
+    const staging = join(home, "session", "staging.design.pen");
+    const candidate = join(home, "session", "commit-candidates", "staging.no-guard.pen");
+    const outside = join(home, "outside.pen");
+    await mkdir(dirname(staging), { recursive: true });
+    await mkdir(dirname(candidate), { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [{ id: "root", type: "frame" }] }, null, 2));
+    await writeFile(outside, "outside");
+    await symlink(outside, candidate);
+    const guard = createSessionBindingGuard("S-1234567890abcdef", "a".repeat(24));
+    await insertSessionBindingGuard(staging, guard);
+
+    await expect(createSanitizedCommitCandidate({
+      source_staging_path: staging,
+      candidate_path: candidate,
+      binding_guard_id: guard.id,
+      expected_source_hash: await hashFile(staging)
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(await readFile(outside, "utf8")).toBe("outside");
+  });
+
+  it("rejects session binding guard source files that are symlinks to internal files", async () => {
+    const home = await createHome("guard-source-symlink");
+    const sessionDir = join(home, "session");
+    const staging = join(sessionDir, "staging.design.pen");
+    const stagingLink = join(sessionDir, "staging-link.design.pen");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(staging, JSON.stringify({ schema_version: 1, children: [] }, null, 2));
+    await symlink(staging, stagingLink);
+
+    await expect(realpathInsideDirectory({
+      path: stagingLink,
+      expectedDirectory: sessionDir,
+      field: "source_staging_path",
+      requireFile: true,
+      requirePen: true
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  });
+
+  it("wraps missing session binding guard source path errors as invalid input", async () => {
+    const home = await createHome("guard-missing-source");
+    const sessionDir = join(home, "session");
+    await mkdir(sessionDir, { recursive: true });
+
+    await expect(realpathInsideDirectory({
+      path: join(sessionDir, "missing.pen"),
+      expectedDirectory: sessionDir,
+      field: "source_staging_path",
+      requireFile: true,
+      requirePen: true
+    })).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 
   it("runs Pencil preflight before session files and cleans the probe directory", async () => {
