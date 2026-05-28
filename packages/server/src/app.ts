@@ -22,9 +22,6 @@ export interface BuildServerOptions {
 export type FormaServer = FastifyInstance;
 export interface FormaServerStore extends FormaRoutesStore {
   recoverPendingProductDeletes(): Promise<{ warnings: string[] }>;
-  sync: FormaRoutesStore["sync"] & {
-    recoverFromCrash(): Promise<unknown>;
-  };
 }
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FormaServer> {
@@ -94,7 +91,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
     app.log.warn({ warning }, "Forma product deletion recovery warning");
   }
 
-  void store.sync.recoverFromCrash().catch(() => undefined);
   registerRoutes(app, store);
   return app;
 }
@@ -202,29 +198,19 @@ function statusForError(error: unknown): number {
     return error.statusCode;
   }
   if (error instanceof FormaError) {
-    if (error.code === "SYNC_ALREADY_RUNNING") {
+    if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
       return 409;
     }
-    if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PENCIL_LOCK_HELD" || error.code === "LOCK_CORRUPT" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
-      return 409;
-    }
-    if (error.code === "SYNC_GIT_NOT_FOUND" || error.code.startsWith("PENCIL_")) {
+    if (error.code === "FORMA_LOCK_TIMEOUT") {
       return 503;
     }
-    if (error.code.endsWith("_NOT_FOUND") || error.code === "HISTORY_FILE_MISSING" || error.code === "NODE_NOT_FOUND") {
+    if (error.code === "FORMA_DESKTOP_CONFIG_UNSUPPORTED") {
+      return 500;
+    }
+    if (error.code.endsWith("_NOT_FOUND")) {
       return 404;
     }
-    if (
-      error.code === "REQUIREMENT_STATUS_INVALID" ||
-      error.code === "PRODUCT_CONFIG_INCOMPLETE" ||
-      error.code === "PAGE_NOT_OWNED" ||
-      error.code === "PAGE_NOT_DONE" ||
-      error.code === "DESIGN_MODE_INVALID" ||
-      error.code === "VERSION_TOO_LOW"
-    ) {
-      return 409;
-    }
-    if (error.code.startsWith("COMPONENT_LIBRARY_") || error.code === "COMPONENT_SEED_REQUIRED" || error.code === "MANUAL_EDIT_DETECTED" || error.code === "DESIGN_CANVAS_CHANGED" || error.code === "DESIGN_COMMIT_RECOVERY_REQUIRED") {
+    if (error.code === "REQUIREMENT_STATUS_INVALID" || error.code === "PRODUCT_CONFIG_INCOMPLETE") {
       return 409;
     }
     return 400;
