@@ -317,7 +317,7 @@ describe("createPackageManagerInvocation", () => {
 
   it("wraps pnpm through cmd.exe with verbatim arguments on Windows", () => {
     setPlatform("win32");
-    const invocation = createPackageManagerInvocation(["--filter", "@open-design/desktop", "build"], {
+    const invocation = createPackageManagerInvocation(["--filter", "@xenonbyte/od-desktop", "build"], {
       ComSpec: "cmd.exe",
     } as NodeJS.ProcessEnv);
     expect(invocation.command).toBe("cmd.exe");
@@ -326,7 +326,7 @@ describe("createPackageManagerInvocation", () => {
       "/d",
       "/s",
       "/c",
-      '"pnpm --filter @open-design/desktop build"',
+      '"pnpm --filter @xenonbyte/od-desktop build"',
     ]);
   });
 });
