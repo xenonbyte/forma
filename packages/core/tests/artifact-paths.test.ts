@@ -41,8 +41,7 @@ describe('artifact-paths', () => {
     expect(getOdProjectManifestPath(root, pid)).toBe('/data/products/prod-abc/od-project/manifest.json');
   });
 
-  it('no old data/designs or library paths', () => {
-    // Static verification: all returned paths contain od-project
+  it('all artifact paths use od-project directory', () => {
     const paths = [
       getProductOdProjectDir(root, pid),
       getArtifactsDir(root, pid),
@@ -51,8 +50,6 @@ describe('artifact-paths', () => {
     ];
     for (const p of paths) {
       expect(p).toContain('od-project');
-      expect(p).not.toContain('data/designs');
-      expect(p).not.toContain('library');
     }
   });
 });

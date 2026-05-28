@@ -61,8 +61,6 @@ const activeSession: ActiveDesignSession = {
   lock_owner: { agent: "codex", pid: 70604 },
   operation: "generate",
   page_id: "checkout",
-  pencil_pid: 70604,
-  pencil_status: "running",
   product_id: "P-123abc",
   requirement_id: "R-12345678",
   session_id: "S-active",
@@ -154,7 +152,6 @@ describe("RequirementDetail", () => {
     expect(container.textContent).toContain("design.pen");
     expect(container.textContent).toContain("Pinned components v7");
     expect(container.textContent).toContain("Latest components v8");
-    expect(container.textContent).toContain("Pencil PID 70604");
     expect(container.textContent).toContain("03:12");
     expect(container.textContent).toContain("codex");
     expect(container.textContent).toContain("stale");

@@ -281,10 +281,9 @@ describe("MCP forma tools", () => {
     expect(failures).toEqual([]);
   });
 
-  it("v6 session wrapper schemas accept scoped inputs and reject caller path fields", () => {
+  it("v6 session wrapper schemas reject caller path fields", () => {
     for (const [toolName, validInput] of Object.entries(wrapperToolInputs) as Array<[FormaToolName, Record<string, unknown>]>) {
       expectSchemaSuccess(toolName, validInput);
-      expectSchemaSuccess(toolName, { ...validInput, pencil_binding_id: "PB-123" });
       for (const field of forbiddenPathFields) {
         expectSchemaFailure(toolName, { ...validInput, [field]: "/tmp/agent-owned" }, "FORBIDDEN_PATH_PARAMETER");
       }

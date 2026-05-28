@@ -32,7 +32,6 @@ export function DesignSessionPanel({ canvas, componentLibrary, session }: Design
             <Fact label={t("design.sessionStatus")} value={status} />
             <Fact label={t("design.sessionOperation")} value={sessionString(session, "operation")} />
             <Fact label={t("design.pageFrame")} value={sessionString(session, "page_id")} />
-            <Fact label={t("design.sessionPencilPid")} value={sessionString(session, "pencil_pid")} />
             <Fact label={t("design.sessionElapsed")} value={formatElapsed(session?.elapsed_ms)} />
             <Fact label={t("design.sessionLockOwner")} value={formatLockOwner(session?.lock_owner)} />
             <Fact label={t("design.qualityResult")} value={sessionString(session, "quality_result")} />

@@ -257,8 +257,7 @@ const forbiddenPathFieldSchemas = Object.fromEntries(
   ])
 ) as Record<string, z.ZodType>;
 const sessionBaseSchema = {
-  session_id: sessionIdSchema,
-  pencil_binding_id: nonEmptyStringSchema.optional()
+  session_id: sessionIdSchema
 };
 const sessionGetGuidelinesSchema = rejectForbiddenPathFields(z.object({
   ...sessionBaseSchema,

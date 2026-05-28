@@ -8,8 +8,8 @@ import { randomBytes } from 'node:crypto';
 // We need to test that product.yaml with .pen fields loads without error
 // and without console output.
 
-describe('SPEC-PLAN-017: product.yaml .pen field backward compat', () => {
-  it('loads product.yaml with .pen fields, drops them silently, no console output', async () => {
+describe('SPEC-PLAN-017: product.yaml unknown field backward compat', () => {
+  it('loads product.yaml with unknown legacy fields, drops them silently, no console output', async () => {
     // Find and import ProductService
     const { ProductService } = await import('../src/product.js');
     const { getProductMutationLock } = await import('../src/product-mutation-lock.js');
@@ -21,7 +21,7 @@ describe('SPEC-PLAN-017: product.yaml .pen field backward compat', () => {
 
     await mkdir(productDir, { recursive: true });
 
-    // Write a product.yaml that includes .pen legacy fields
+    // Write a product.yaml that includes unknown legacy fields
     const productYaml = `
 id: ${productId}
 name: Test Product
@@ -42,8 +42,8 @@ style:
 languages:
   - en
 default_language: en
-pencil_document_id: some-old-pencil-id
-design_canvas_path: /old/pencil/path.pen
+legacy_integration_id: some-old-integration-id
+legacy_canvas_path: /old/integration/path
 `.trim();
 
     await writeFile(join(productDir, 'product.yaml'), productYaml, 'utf8');
@@ -73,13 +73,13 @@ design_canvas_path: /old/pencil/path.pen
     try {
       const product = await service.getProduct(productId);
 
-      // .pen fields must not appear in loaded product
-      expect((product as unknown as Record<string, unknown>).pencil_document_id).toBeUndefined();
-      expect((product as unknown as Record<string, unknown>).design_canvas_path).toBeUndefined();
+      // Unknown legacy fields must not appear in loaded product
+      expect((product as unknown as Record<string, unknown>).legacy_integration_id).toBeUndefined();
+      expect((product as unknown as Record<string, unknown>).legacy_canvas_path).toBeUndefined();
 
-      // No console output related to pen fields
-      const penRelated = consoleLogs.filter(l => l.includes('pencil') || l.includes('.pen'));
-      expect(penRelated).toHaveLength(0);
+      // No console output related to unknown fields
+      const unknownRelated = consoleLogs.filter(l => l.includes('legacy_integration_id') || l.includes('legacy_canvas_path'));
+      expect(unknownRelated).toHaveLength(0);
     } finally {
       console.log = origLog;
       console.warn = origWarn;

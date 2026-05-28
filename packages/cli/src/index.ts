@@ -7,7 +7,6 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   InstallService,
-  PencilService,
   formaCoreVersion,
   normalizeFormaHomeForV6,
   recoverV6NormalizationJournal,
@@ -60,11 +59,6 @@ export interface CliInstallService {
 
 export type CliInstallServiceOptions = Pick<InstallServiceOptions, "formaHome" | "templatesDir" | "mcpCommand">;
 
-export type CliPencilStatus =
-  | { available: true; authenticated: true; message?: string }
-  | { available: true; authenticated: false; message?: string }
-  | { available: false; authenticated: false; message?: string };
-
 export interface CliEnv {
   formaHome?: string;
   currentPid?: number;
@@ -73,7 +67,6 @@ export interface CliEnv {
   startServer?: (options?: CliServeOptions) => Promise<CliServerStartResult>;
   startWebServer?: (options: { home: string; bundledStylesDir?: string; webAssetsDir?: string }) => Promise<void>;
   createInstallService?: (options: CliInstallServiceOptions) => CliInstallService;
-  checkPencil?: () => Promise<CliPencilStatus>;
   installedPlatforms?: () => Promise<AgentInstallPlatform[]>;
   isServerRunning?: () => Promise<boolean>;
   isPidAlive?: (pid: number) => boolean;
@@ -107,7 +100,6 @@ interface RuntimeCliEnv {
   startMcp: () => Promise<string | void>;
   startServer: (options?: CliServeOptions) => Promise<CliServerStartResult>;
   createInstallService: () => CliInstallService;
-  checkPencil: () => Promise<CliPencilStatus>;
   getInstalledPlatforms: () => Promise<CliInstalledPlatformsStatus>;
   getServerStatus: () => Promise<CliServerStatus>;
   isPidAlive: (pid: number) => boolean;
@@ -331,9 +323,8 @@ async function runRestoreV6NormalizationBackup(args: string[], env: RuntimeCliEn
 async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
   assertNoExtraArgs(args);
 
-  const [installed, pencil, serverStatus] = await Promise.all([
+  const [installed, serverStatus] = await Promise.all([
     env.getInstalledPlatforms(),
-    env.checkPencil(),
     env.getServerStatus()
   ]);
 
@@ -346,8 +337,6 @@ async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput):
 
   output.stdout(`Data directory: ${env.formaHome}\n`);
   output.stdout(`Installed platforms: ${installed.platforms.length > 0 ? formatPlatforms(installed.platforms) : "none"}\n`);
-  output.stdout(`Pencil CLI: ${pencil.available ? "available" : "not found"}\n`);
-  output.stdout(`Pencil authentication: ${pencil.authenticated ? "authenticated" : "not authenticated"}\n`);
   output.stdout(`Web server: ${serverStatus.running ? "running" : "stopped"}\n`);
   return output.result(0);
 }
@@ -592,7 +581,6 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
         return undefined;
       }),
     createInstallService: () => (env.createInstallService ? env.createInstallService(installServiceOptions) : new InstallService(installServiceOptions)),
-    checkPencil: env.checkPencil ?? (() => checkPencil(formaHome)),
     getInstalledPlatforms: env.installedPlatforms
       ? async () => ({ platforms: await env.installedPlatforms!(), warnings: [] })
       : () => readInstalledPlatforms(formaHome, pathExists),
@@ -622,21 +610,6 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
     pathExists
   };
   return runtimeEnv;
-}
-
-async function checkPencil(formaHome: string): Promise<CliPencilStatus> {
-  try {
-    await new PencilService({ home: formaHome }).checkAvailability();
-    return { available: true, authenticated: true };
-  } catch (error) {
-    if (isFormaErrorCode(error, "PENCIL_CLI_NOT_FOUND")) {
-      return { available: false, authenticated: false, message: errorMessage(error) };
-    }
-    if (isFormaErrorCode(error, "PENCIL_NOT_AUTHENTICATED")) {
-      return { available: true, authenticated: false, message: errorMessage(error) };
-    }
-    throw error;
-  }
 }
 
 async function readInstalledPlatforms(
@@ -1177,10 +1150,6 @@ function cleanupServeFileSync(file: string, metadata: ServeMetadata): void {
 
 function isMissingProcessError(error: unknown): boolean {
   return isNodeError(error) && error.code === "ESRCH";
-}
-
-function isFormaErrorCode(error: unknown, code: string): boolean {
-  return Boolean(error && typeof error === "object" && "code" in error && error.code === code);
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

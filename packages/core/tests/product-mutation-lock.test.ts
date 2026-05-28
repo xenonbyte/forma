@@ -630,11 +630,10 @@ describe("v6 transaction locks", () => {
     });
   });
 
-  it("lock file uses product-mutation.lock (not pencil.lock)", async () => {
+  it("lock file uses product-mutation.lock", async () => {
     const home = await createHome();
     const lockPath = productMutationLockPath(home, "P-123abc");
     expect(lockPath).toContain("product-mutation.lock");
-    expect(lockPath).not.toContain("pencil.lock");
   });
 
   it("FORMA_LOCK_TIMEOUT is a valid FormaError code", () => {

@@ -23,10 +23,6 @@ interface TestState {
   installed: AgentInstallPlatform[][];
   uninstalled: AgentInstallPlatform[][];
   installServiceOptions: InstallServiceOptions[];
-  pencil:
-    | { available: true; authenticated: true }
-    | { available: false; authenticated: false; message: string }
-    | { available: true; authenticated: false; message: string };
 }
 
 let states: TestState[] = [];
@@ -129,7 +125,7 @@ describe("runCli", () => {
     const backupDir = join(env.state.formaHome, "normalization-backups");
     const selected = `normalization-backups/${(await readdir(backupDir))[0]!}`;
 
-    const outside = await mkdtemp(join(tmpdir(), "forma-cli-outside-backup-"));
+    const outside = await mkdtemp();
     const rejected = await runCli(["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", outside], env);
     const recovered = await runCli(["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", selected], env);
 
@@ -613,11 +609,10 @@ describe("runCli", () => {
     expect(env.state.installed).toEqual([]);
   });
 
-  it("prints status with data directory, installed platforms, pencil state, and server state", async () => {
+  it("prints status with data directory, installed platforms, and server state", async () => {
     const env = await testEnv({
       installedPlatforms: async () => ["claude", "gemini"],
-      isServerRunning: async () => true,
-      pencil: { available: true, authenticated: true }
+      isServerRunning: async () => true
     });
 
     const result = await runCli(["status"], env);
@@ -625,9 +620,8 @@ describe("runCli", () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain(`Data directory: ${env.state.formaHome}`);
     expect(result.stdout).toContain("Installed platforms: claude, gemini");
-    expect(result.stdout).toContain("Pencil CLI: available");
-    expect(result.stdout).toContain("Pencil authentication: authenticated");
     expect(result.stdout).toContain("Web server: running");
+    expect(result.stdout).not.toContain("Pencil");
   });
 
   it("prints status when one platform manifest is damaged", async () => {
@@ -656,19 +650,17 @@ describe("runCli", () => {
 
     expect(result.stdout).toContain(`Data directory: ${env.state.formaHome}`);
     expect(result.stdout).toContain("Installed platforms: codex");
-    expect(result.stdout).toContain("Pencil CLI: available");
     expect(result.stdout).toContain("Web server: stopped");
     expect(result.stderr).toContain("Invalid manifest for claude");
   });
 });
 
-type TestEnvOverrides = Partial<CliEnv> &
-  Partial<Pick<TestState, "pencil">> & {
-    useDefaultInstalledPlatforms?: boolean;
-    useDefaultServerStatus?: boolean;
-    useDefaultStartServer?: boolean;
-    useDefaultVerifyServerProcess?: boolean;
-  };
+type TestEnvOverrides = Partial<CliEnv> & {
+  useDefaultInstalledPlatforms?: boolean;
+  useDefaultServerStatus?: boolean;
+  useDefaultStartServer?: boolean;
+  useDefaultVerifyServerProcess?: boolean;
+};
 
 async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { state: TestState }> {
   const tmp = await mkdtemp();
@@ -684,8 +676,7 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
     killed: [],
     installed: [],
     uninstalled: [],
-    installServiceOptions: [],
-    pencil: overrides.pencil ?? { available: true, authenticated: true }
+    installServiceOptions: []
   };
   states.push(state);
 
@@ -728,11 +719,6 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
             state.uninstalled.push([...platforms]);
           }
         };
-      }),
-    checkPencil:
-      overrides.checkPencil ??
-      (async () => {
-        return state.pencil;
       }),
     installedPlatforms: overrides.useDefaultInstalledPlatforms
       ? undefined
