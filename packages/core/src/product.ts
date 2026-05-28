@@ -33,7 +33,8 @@ const productSchema = productIndexEntrySchema.extend({
   default_language: z.enum(languages).optional(),
   requirements: z.record(z.string(), z.object({
     latestArtifactId: z.string().optional()
-  })).optional()
+  })).optional(),
+  designSystemArtifactId: z.string().optional()
 }).superRefine((product, context) => {
   const hasLanguages = product.languages !== undefined;
   const hasDefaultLanguage = product.default_language !== undefined;
@@ -185,6 +186,12 @@ export class ProductService {
     const updated = productSchema.parse({ ...product, requirements: updatedRequirements });
     await writeYamlAtomic(this.productFile(productId), updated);
     return previous;
+  }
+
+  async setDesignSystemArtifactPointerLocked(productId: string, artifactId: string): Promise<void> {
+    const product = await this.getProduct(productId);
+    const updated = productSchema.parse({ ...product, designSystemArtifactId: artifactId });
+    await writeYamlAtomic(this.productFile(updated.id), updated);
   }
 
   private async readProductIndex(): Promise<z.infer<typeof productIndexSchema>> {
