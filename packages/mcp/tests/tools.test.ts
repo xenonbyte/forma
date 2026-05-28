@@ -1,7 +1,7 @@
 import { FormaError, createFormaStore, type FormaStore } from "@xenonbyte/forma-core";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod/v4";
 import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
@@ -18,9 +18,7 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
           ["preview/1x.png", new Uint8Array()]
         ])
       }))
-    })),
-    // Stub removed Pencil function so retained get_baseline_image tests don't throw INTERNAL_ERROR
-    findBaselinePreviewMetadata: vi.fn(async () => null)
+    }))
   };
 });
 
@@ -33,7 +31,9 @@ const removedLegacyToolNames = [
   "rollback_design",
   "diff_designs",
   "get_design_annotations",
-  "export_design_asset"
+  "export_design_asset",
+  "get_current_session",
+  "set_current_session"
 ] as const;
 
 const v6ToolNames = [
@@ -142,9 +142,6 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       listArtifacts: vi.fn(async () => []),
       deleteArtifact: vi.fn(async () => undefined)
     },
-    baseline: {
-      getProductBaseline: vi.fn(async () => ({ product_id: "P-123abc", pages: [], navigation: [] }))
-    },
     copy: {
       getTranslations: vi.fn(async () => []),
       updatePageTranslations: vi.fn(async () => undefined)
@@ -166,13 +163,15 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         style: { name: "linear" },
         languages: ["en", "zh-CN"],
         default_language: "en",
+        designSystemArtifactId: "DS_ARTIFACT123456",
         requirements: {
           "R-12345678": { latestArtifactId: "OLDARTIFACT12345" }
         }
       })),
       initProductConfig: vi.fn(async (_productId: string, config: unknown) => ({ id: "P-123abc", ...config as object })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
-      setRequirementArtifactPointerLocked: vi.fn(async () => undefined as string | undefined)
+      setRequirementArtifactPointerLocked: vi.fn(async () => undefined as string | undefined),
+      setDesignSystemArtifactPointerLocked: vi.fn(async () => undefined)
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
     requirements: {
@@ -230,6 +229,8 @@ describe("MCP forma tools", () => {
       "get_page_copy",
       "update_page_copy",
       "delete_product",
+      "confirm_product_id",
+      "change_style",
       "session_get_guidelines",
       "session_get_variables",
       "session_batch_get",
@@ -475,26 +476,26 @@ describe("MCP forma tools", () => {
     });
   });
 
-  it("get_current_session never points to a product while delete_product is clearing or removing it", async () => {
+  it("sessions.getCurrentSession never points to a product while delete_product is clearing or removing it", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-delete-session-"));
     await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
     const observations: Array<{ phase: string; current_product: string | null }> = [];
-    let tools: ReturnType<typeof createFormaTools>;
+    let store: Awaited<ReturnType<typeof createFormaStore>>;
     const productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]> = {
       afterPhasePersisted: async (state) => {
         if (["session_written", "index_written", "moved"].includes(state.phase)) {
-          const session = textPayload(await tools.get_current_session({})) as { current_product: string | null };
+          const session = await store.sessions.getCurrentSession() as { current_product: string | null };
           expect(session.current_product).not.toBe(state.product_id);
           observations.push({ phase: state.phase, current_product: session.current_product });
         }
       }
     };
-    const store = await createFormaStore({
+    store = await createFormaStore({
       home,
       bundledStylesDir: resolve("styles"),
       productDeletionHooks
     });
-    tools = createFormaTools(store);
+    const tools = createFormaTools(store);
     const product = await store.products.createProduct({ name: "Delete Me", description: "Temporary" });
     await store.products.initProductConfig(product.id, {
       platform: "web",
@@ -513,7 +514,8 @@ describe("MCP forma tools", () => {
 
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({ product_id: product.id, session_cleared: true });
-    expect(textPayload(await tools.get_current_session({}))).toEqual({ current_product: null });
+    const finalSession = await store.sessions.getCurrentSession() as { current_product: string | null };
+    expect(finalSession).toEqual({ current_product: null });
     expect(observations).toEqual([
       { phase: "session_written", current_product: null },
       { phase: "index_written", current_product: null },
@@ -863,20 +865,8 @@ describe("MCP forma tools", () => {
     });
   });
 
-  it("update_page_copy updates selected page translations and returns the updated translation set", async () => {
-    const updatedTranslations = [{
-      page_id: "checkout",
-      entries: [
-        { context: "submit", texts: { "zh-CN": "现在支付" } },
-        { context: "headline", texts: { "zh-CN": "结账" } }
-      ]
-    }];
+  it("update_page_copy delegates to refine_requirement_design with copy_overrides as instructions", async () => {
     const store = fakeStore({
-      copy: {
-        ...fakeStore().copy,
-        updatePageTranslations: vi.fn(async () => undefined),
-        getTranslations: vi.fn(async () => updatedTranslations)
-      },
       requirements: {
         ...fakeStore().requirements,
         getRequirement: vi.fn(async () => ({
@@ -887,246 +877,61 @@ describe("MCP forma tools", () => {
       }
     });
     const tools = createFormaTools(store);
-    const translations = [
-      { context: "submit", texts: { "zh-CN": "现在支付" }, outdated: true },
-      { context: "headline", texts: { "zh-CN": "结账" } }
-    ];
+    const copy_overrides = { "submit": "Pay now", "headline": "Checkout" };
 
-    const result = await tools.update_page_copy({ requirement_id: "R-12345678", page_id: "checkout", translations });
+    const result = await tools.update_page_copy({ requirement_id: "R-12345678", copy_overrides });
 
-    expect(store.copy.updatePageTranslations).toHaveBeenCalledWith("P-123abc", "R-12345678", "checkout", translations);
-    expect(store.copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-12345678");
-    expect(textPayload(result)).toEqual(updatedTranslations);
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ artifact_id: expect.any(String), status: "complete" });
   });
 
-  it("update_page_copy rejects pages that do not belong to the requirement", async () => {
-    const store = fakeStore({
-      copy: {
-        ...fakeStore().copy,
-        updatePageTranslations: vi.fn(async () => undefined)
-      },
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({
-          id: "R-12345678",
-          product_id: "P-123abc",
-          pages: [{ page_id: "profile", baseline_page: "profile" }]
-        }))
-      }
-    });
+  it("update_page_copy rejects empty copy_overrides", async () => {
+    const store = fakeStore();
     const tools = createFormaTools(store);
 
     const result = await tools.update_page_copy({
       requirement_id: "R-12345678",
-      page_id: "checkout",
-      translations: [{ context: "submit", texts: { "zh-CN": "现在支付" } }]
+      copy_overrides: {}
     });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toEqual({
-      error_code: "REQUIREMENT_PAGE_NOT_FOUND",
-      message: "Requirement page not found",
-      details: { product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout" }
-    });
-    expect(store.copy.updatePageTranslations).not.toHaveBeenCalled();
-  });
-
-  it.skip("get_baseline_image reads v6 requirement-level design metadata", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
-    const requirementDir = join(home, "data", "P-123abc", "R-a1111111");
-    const previewPath = join(requirementDir, "previews", "old-page@2x.png");
-    const canvasPath = join(requirementDir, "design.pen");
-    await mkdir(dirname(previewPath), { recursive: true });
-    await writeFile(previewPath, "preview");
-    await writeFile(canvasPath, "pen");
-    await writeFile(join(requirementDir, "design.yaml"), [
-      "schema_version: 1",
-      "product_id: P-123abc",
-      "requirement_id: R-a1111111",
-      "canvas_file: design.pen",
-      "canvas_version: 7",
-      "pages:",
-      "  - page_id: old-page",
-      "    status: done",
-      "    preview_file: previews/old-page@2x.png",
-      "    page_version: 3",
-      "history: []",
-      ""
-    ].join("\n"));
-    const store = fakeStore({
-      home,
-      baseline: {
-        getProductBaseline: vi.fn(async () => ({
-          product_id: "P-123abc",
-          pages: [{
-            id: "checkout",
-            name: "Checkout",
-            features: "",
-            copy: [],
-            fields: "",
-            interactions: "",
-            semantic_contract: { fields: [], actions: [], navigation: [], component_keys: [], allowed_copy: [] },
-            source_requirements: ["R-a1111111", "R-b2222222"]
-          }],
-          navigation: []
-        }))
-      },
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({
-          id: "R-latest1",
-          created_at: "2026-05-17T03:00:00.000Z",
-          pages: [{ page_id: "latest-page", baseline_page: "profile", design_status: "done" }]
-        })),
-        getRequirementHistory: vi.fn(async () => [
-          {
-            id: "R-a1111111",
-            created_at: "2026-05-17T01:00:00.000Z",
-            updated_at: "2026-05-17T01:00:00.000Z",
-            pages: [{ page_id: "old-page", baseline_page: "checkout", design_status: "done" }]
-          },
-          {
-            id: "R-b2222222",
-            created_at: "2026-05-17T02:00:00.000Z",
-            updated_at: "2026-05-17T02:00:00.000Z",
-            pages: [{ page_id: "new-page", baseline_page: "checkout", design_status: "pending" }]
-          },
-          {
-            id: "R-latest1",
-            created_at: "2026-05-17T03:00:00.000Z",
-            updated_at: "2026-05-17T03:00:00.000Z",
-            pages: [{ page_id: "latest-page", baseline_page: "profile", design_status: "done" }]
-          }
-        ])
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.get_baseline_image({ product_id: "P-123abc", page_id: "checkout" });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toEqual({
-      product_id: "P-123abc",
-      baseline_page_id: "checkout",
-      requirement_id: "R-a1111111",
-      requirement_page_id: "old-page",
-      preview_url: "/api/products/P-123abc/baseline/pages/checkout/image",
-      preview_path: previewPath,
-      canvas_path: canvasPath,
-      page_version: 3,
-      canvas_version: 7
-    });
-    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
-  });
-
-  it.skip("get_baseline_image breaks updated_at ties by newest requirement id", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
-    for (const id of ["R-aaaa1111", "R-bbbb2222"]) {
-      const requirementDir = join(home, "data", "P-123abc", id);
-      await mkdir(join(requirementDir, "previews"), { recursive: true });
-      await writeFile(join(requirementDir, "design.pen"), "pen");
-      await writeFile(join(requirementDir, "previews", "checkout@2x.png"), id);
-      await writeFile(join(requirementDir, "design.yaml"), [
-        "schema_version: 1",
-        "product_id: P-123abc",
-        `requirement_id: ${id}`,
-        "canvas_file: design.pen",
-        "canvas_version: 1",
-        "pages:",
-        "  - page_id: checkout",
-        "    status: done",
-        "    preview_file: previews/checkout@2x.png",
-        "    page_version: 1",
-        "history: []",
-        ""
-      ].join("\n"));
-    }
-    const store = fakeStore({
-      home,
-      baseline: {
-        getProductBaseline: vi.fn(async () => ({
-          product_id: "P-123abc",
-          pages: [{
-            id: "checkout",
-            name: "Checkout",
-            features: "",
-            copy: [],
-            fields: "",
-            interactions: "",
-            semantic_contract: { fields: [], actions: [], navigation: [], component_keys: [], allowed_copy: [] },
-            source_requirements: ["R-aaaa1111", "R-bbbb2222"]
-          }],
-          navigation: []
-        }))
-      },
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirementHistory: vi.fn(async () => [
-          {
-            id: "R-aaaa1111",
-            created_at: "2026-05-17T01:00:00.000Z",
-            updated_at: "2026-05-17T01:00:00.000Z",
-            pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }]
-          },
-          {
-            id: "R-bbbb2222",
-            created_at: "2026-05-17T01:00:00.000Z",
-            updated_at: "2026-05-17T01:00:00.000Z",
-            pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }]
-          }
-        ])
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.get_baseline_image({ product_id: "P-123abc", page_id: "checkout" });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({ requirement_id: "R-bbbb2222" });
-  });
-
-  it("get_baseline_image does not scan old page-level design directories", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
-    const legacyPreviewPath = join(home, "data", "P-123abc", "R-c3333333", "D-a1b2c3d4", "preview@2x.png");
-    await mkdir(dirname(legacyPreviewPath), { recursive: true });
-    await writeFile(legacyPreviewPath, "preview");
-    const store = fakeStore({
-      home,
-      baseline: {
-        getProductBaseline: vi.fn(async () => ({
-          product_id: "P-123abc",
-          pages: [{
-            id: "checkout",
-            name: "Checkout",
-            features: "",
-            copy: [],
-            fields: "",
-            interactions: "",
-            semantic_contract: { fields: [], actions: [], navigation: [], component_keys: [], allowed_copy: [] },
-            source_requirements: ["R-c3333333"]
-          }],
-          navigation: []
-        }))
-      },
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirementHistory: vi.fn(async () => [{
-          id: "R-c3333333",
-          created_at: "2026-05-17T01:00:00.000Z",
-          updated_at: "2026-05-17T01:00:00.000Z",
-          pages: [{ page_id: "checkout-page", baseline_page: "checkout", design_status: "done" }]
-        }])
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.get_baseline_image({ product_id: "P-123abc", page_id: "checkout" });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
-      error_code: "BASELINE_IMAGE_NOT_FOUND",
-      details: { product_id: "P-123abc", page_id: "checkout" }
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "copy_overrides must not be empty"
     });
+  });
+
+  it("get_baseline_image returns path pointing to artifact preview PNG (artifact store path)", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    // Path should include the artifact id and point to preview/2x.png
+    expect(payload.path).toMatch(/DS_ARTIFACT123456/);
+    expect(payload.path).toMatch(/preview[/\\]2x\.png$/);
+  });
+
+  it("get_baseline_image returns only product_id in schema (no page_id parameter)", () => {
+    // Verify that the schema for get_baseline_image only accepts product_id
+    expectSchemaSuccess("get_baseline_image", { product_id: "P-123abc" });
+    expectSchemaFailure("get_baseline_image", { product_id: "P-123abc", page_id: "checkout" });
+  });
+
+  it("get_baseline_image returns preview path for product with designSystemArtifactId", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(typeof payload.path).toBe("string");
+    expect(payload.path).toContain("DS_ARTIFACT123456");
+    expect(payload.path).toContain("preview");
+    expect(payload.path).toContain("2x.png");
   });
 
   it("artifact tools appear in formaToolNames", () => {
@@ -1138,63 +943,29 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).toContain("rollback_requirement_design");
   });
 
-  it("get_baseline_image does not use unrelated latest requirement page_id collisions", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
-    const collidingPreviewPath = join(home, "data", "P-123abc", "R-d4444444", "D-wrong11", "preview@2x.png");
-    await mkdir(dirname(collidingPreviewPath), { recursive: true });
-    await writeFile(collidingPreviewPath, "preview");
+  it("get_baseline_image returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
     const store = fakeStore({
-      home,
-      baseline: {
-        getProductBaseline: vi.fn(async () => ({
-          product_id: "P-123abc",
-          pages: [{
-            id: "checkout",
-            name: "Checkout",
-            features: "",
-            copy: [],
-            fields: "",
-            interactions: "",
-            semantic_contract: { fields: [], actions: [], navigation: [], component_keys: [], allowed_copy: [] },
-            source_requirements: ["R-old1111"]
-          }],
-          navigation: []
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          requirements: {}
+          // no designSystemArtifactId
         }))
-      },
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({
-          id: "R-d4444444",
-          created_at: "2026-05-17T03:00:00.000Z",
-          pages: [{ page_id: "checkout", baseline_page: "profile", design_status: "done" }]
-        })),
-        getRequirementHistory: vi.fn(async () => [
-          {
-            id: "R-old1111",
-            created_at: "2026-05-17T01:00:00.000Z",
-            updated_at: "2026-05-17T01:00:00.000Z",
-            pages: [{ page_id: "old-page", baseline_page: "checkout", design_status: "pending" }]
-          },
-          {
-            id: "R-latest1",
-            created_at: "2026-05-17T03:00:00.000Z",
-            updated_at: "2026-05-17T03:00:00.000Z",
-            pages: [{ page_id: "checkout", baseline_page: "profile", design_status: "done" }]
-          }
-        ])
       }
     });
     const tools = createFormaTools(store);
 
-    const result = await tools.get_baseline_image({ product_id: "P-123abc", page_id: "checkout" });
+    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
-      error_code: "BASELINE_IMAGE_NOT_FOUND",
-      message: "Baseline image not found",
-      details: { product_id: "P-123abc", page_id: "checkout" }
+      error_code: "ARTIFACT_NOT_FOUND",
+      details: { product_id: "P-123abc" }
     });
-    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
   });
 });
 
@@ -1576,5 +1347,320 @@ describe("artifact tools (C-03)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+});
+
+describe("C-04 retained tools", () => {
+  // ─── confirm_product_id ───────────────────────────────────────────────────
+
+  it("confirm_product_id returns confirmed=true when no expected_name provided", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.confirm_product_id({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({ confirmed: true, name: "App" });
+  });
+
+  it("confirm_product_id returns confirmed=true when expected_name matches", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.confirm_product_id({ product_id: "P-123abc", expected_name: "App" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({ confirmed: true, name: "App" });
+  });
+
+  it("confirm_product_id returns confirmed=false when expected_name mismatches", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.confirm_product_id({ product_id: "P-123abc", expected_name: "Other App" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({ confirmed: false, name: "App" });
+  });
+
+  it("confirm_product_id returns PRODUCT_NOT_FOUND for unknown product_id", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => {
+          throw new FormaError("PRODUCT_NOT_FOUND", "Product not found");
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.confirm_product_id({ product_id: "P-missing" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
+  });
+
+  // ─── change_style ─────────────────────────────────────────────────────────
+
+  it("change_style returns artifact_id and dangling_requirement_artifact_count on success", async () => {
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        writeArtifact: vi.fn(async () => ({ artifactId: "DS_NEW_ARTIFACT1234", etag: "sha256:new" })),
+        listArtifacts: vi.fn(async () => [])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.change_style({ product_id: "P-123abc", style_id: "linear" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({
+      artifact_id: "DS_NEW_ARTIFACT1234",
+      dangling_requirement_artifact_count: expect.any(Number)
+    });
+    expect(store.products.setDesignSystemArtifactPointerLocked).toHaveBeenCalled();
+  });
+
+  it("change_style returns STYLE_NOT_FOUND for unknown style_id", async () => {
+    const store = fakeStore({
+      styles: {
+        ...fakeStore().styles,
+        listStyles: vi.fn(async () => [{ name: "linear" }])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.change_style({ product_id: "P-123abc", style_id: "nonexistent-style" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "STYLE_NOT_FOUND" });
+  });
+
+  // ─── get_product_baseline ─────────────────────────────────────────────────
+
+  it("get_product_baseline returns baseline manifest from design-system artifact", async () => {
+    const manifest = { ...fakeManifest(), kind: "design-system" as const };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ baseline: expect.objectContaining({ kind: "design-system" }) });
+  });
+
+  it("get_product_baseline returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          requirements: {}
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  // ─── get_style ────────────────────────────────────────────────────────────
+
+  it("get_style returns tokens from design-system artifact metadata", async () => {
+    const manifest = {
+      ...fakeManifest(),
+      kind: "design-system" as const,
+      metadata: { tokens: { primary: "#5E6AD2", "font-body": "Inter" } }
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_style({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({
+      tokens: { primary: "#5E6AD2", "font-body": "Inter" }
+    });
+  });
+
+  it("get_style returns STYLE_NOT_FOUND when product has no designSystemArtifactId", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          requirements: {}
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_style({ product_id: "P-123abc" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "STYLE_NOT_FOUND" });
+  });
+
+  // ─── session_* fallback ───────────────────────────────────────────────────
+
+  it("session_get_guidelines without v6 override throws FORMA_DESKTOP_CONFIG_UNSUPPORTED", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.session_get_guidelines({
+      session_id: "S-1234567890abcdef",
+      category: "guide",
+      name: "Design System"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "FORMA_DESKTOP_CONFIG_UNSUPPORTED",
+      details: { tool: "session_get_guidelines" }
+    });
+  });
+
+  it("session_export_nodes without v6 override throws FORMA_DESKTOP_CONFIG_UNSUPPORTED", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.session_export_nodes({
+      session_id: "S-1234567890abcdef",
+      nodeIds: ["frame-1"],
+      format: "png"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "FORMA_DESKTOP_CONFIG_UNSUPPORTED" });
+  });
+
+  it("session_get_guidelines with v6 override delegates to the override", async () => {
+    const v6Guidelines = { guidelines: [{ name: "Design System", content: "Use our tokens." }] };
+    const sessionGetGuidelines = vi.fn(async () => v6Guidelines);
+    const store = Object.assign(fakeStore(), { v6: { sessionGetGuidelines } });
+    const tools = createFormaTools(store);
+
+    const result = await tools.session_get_guidelines({
+      session_id: "S-1234567890abcdef",
+      category: "guide",
+      name: "Design System"
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual(v6Guidelines);
+    expect(sessionGetGuidelines).toHaveBeenCalled();
+  });
+
+  // ─── update_page_copy ─────────────────────────────────────────────────────
+
+  it("update_page_copy rejects array copy_overrides (JSON Patch format)", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    // The Zod schema for copy_overrides is Record<string,string> which rejects arrays at parse time
+    const result = await tools.update_page_copy({
+      requirement_id: "R-12345678",
+      copy_overrides: [{ op: "replace", path: "/submit", value: "Pay now" }] as any
+    });
+
+    expect(result.isError).toBe(true);
+    // Array input fails schema validation as a non-record type
+    expect(textPayload(result).error_code).toBeTruthy();
+  });
+
+  // ─── get_baseline_page ────────────────────────────────────────────────────
+
+  describe("get_baseline_page", () => {
+    it("returns page from design-system artifact metadata", async () => {
+      const store = fakeStore({
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            designSystemArtifactId: "DS_ARTIFACT123456"
+          }))
+        },
+        artifacts: {
+          ...fakeStore().artifacts,
+          readArtifact: vi.fn(async () => ({
+            manifest: {
+              ...fakeManifest(),
+              kind: "design-system" as const,
+              metadata: { pages: [{ id: "home", name: "Home", layout: {} }] }
+            },
+            etag: "sha256:abc"
+          }))
+        }
+      });
+      const tools = createFormaTools(store);
+      const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "home" });
+      const payload = textPayload(result);
+      expect(result.isError).toBeFalsy();
+      expect(payload).toMatchObject({ id: "home" });
+    });
+
+    it("returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
+      const store = fakeStore({
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" }))
+        }
+      });
+      const tools = createFormaTools(store);
+      const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "home" });
+      const payload = textPayload(result);
+      expect(result.isError).toBe(true);
+      expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
+    });
+
+    it("returns ARTIFACT_NOT_FOUND when page not found in metadata", async () => {
+      const store = fakeStore({
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            designSystemArtifactId: "DS_ARTIFACT123456"
+          }))
+        },
+        artifacts: {
+          ...fakeStore().artifacts,
+          readArtifact: vi.fn(async () => ({
+            manifest: {
+              ...fakeManifest(),
+              kind: "design-system" as const,
+              metadata: { pages: [] }
+            },
+            etag: "sha256:abc"
+          }))
+        }
+      });
+      const tools = createFormaTools(store);
+      const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "missing" });
+      const payload = textPayload(result);
+      expect(result.isError).toBe(true);
+      expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
+    });
   });
 });

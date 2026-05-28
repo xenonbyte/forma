@@ -1,21 +1,16 @@
 import {
-  access,
   copyFile,
   mkdir,
-  readdir,
   rm
 } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 import {
   FormaError,
-  PencilAppSessionAdapter,
   createOdRuntime,
-  defaultPencilRunner,
-  findBaselinePreviewMetadata,
   getArtifactDir,
+  getFormaPaths,
   languages,
   platforms,
-  readYaml,
   validateArtifactManifest,
   type ArtifactManifest,
   type FormaStore,
@@ -28,6 +23,7 @@ export const formaToolNames = [
   "help",
   "list_products",
   "get_product",
+  "confirm_product_id",
   "delete_product",
   "get_product_baseline",
   "get_baseline_page",
@@ -37,12 +33,11 @@ export const formaToolNames = [
   "get_product_rules",
   "get_page_copy",
   "update_page_copy",
-  "get_current_session",
-  "set_current_session",
   "init_product_config",
   "update_product_config",
   "list_styles",
   "get_style",
+  "change_style",
   "save_requirement",
   "list_product_artifacts",
   "get_product_artifact",
@@ -220,8 +215,7 @@ const getPageCopySchema = z.object({
 }).strict();
 const updatePageCopySchema = z.object({
   requirement_id: z.string().min(1),
-  page_id: z.string().min(1),
-  translations: z.array(translationEntrySchema)
+  copy_overrides: z.record(z.string(), z.string())
 }).strict();
 const productConfigSchema = z.object({
   product_id: z.string().min(1),
@@ -233,7 +227,15 @@ const productConfigSchema = z.object({
   message: "default_language must be included in languages",
   path: ["default_language"]
 });
-const styleNameSchema = z.object({ name: z.string().min(1) }).strict();
+const confirmProductIdSchema = z.object({
+  product_id: z.string().min(1),
+  expected_name: z.string().optional()
+}).strict();
+const getStyleSchema = z.object({ product_id: z.string().min(1) }).strict();
+const changeStyleSchema = z.object({
+  product_id: z.string().min(1),
+  style_id: z.string().min(1)
+}).strict();
 const nonEmptyStringSchema = z.string().min(1);
 const sessionIdSchema = z.string().regex(/^S-[a-f0-9]{16}$/);
 const forbiddenPathFieldNames = new Set([
@@ -306,21 +308,21 @@ export const formaToolInputSchemas = {
   help: emptySchema,
   list_products: emptySchema,
   get_product: productIdSchema,
+  confirm_product_id: confirmProductIdSchema,
   delete_product: deleteProductSchema,
   get_product_baseline: productIdSchema,
   get_baseline_page: baselinePageSchema,
-  get_baseline_image: baselinePageSchema,
+  get_baseline_image: productIdSchema,
   get_requirement_history: productIdSchema,
   get_requirement: getRequirementSchema,
   get_product_rules: productIdSchema,
   get_page_copy: getPageCopySchema,
   update_page_copy: updatePageCopySchema,
-  get_current_session: emptySchema,
-  set_current_session: productIdSchema,
   init_product_config: productConfigSchema,
   update_product_config: productConfigSchema,
   list_styles: emptySchema,
-  get_style: styleNameSchema,
+  get_style: getStyleSchema,
+  change_style: changeStyleSchema,
   save_requirement: saveRequirementSchema,
   list_product_artifacts: listProductArtifactsSchema,
   get_product_artifact: getProductArtifactSchema,
@@ -340,21 +342,21 @@ const descriptions = {
   help: "List available Forma MCP tools.",
   list_products: "List Forma products.",
   get_product: "Read a product.",
+  confirm_product_id: "Confirm that a product id exists and optionally verify its name.",
   delete_product: "Delete a product after explicit id confirmation.",
-  get_product_baseline: "Read a product functional baseline.",
-  get_baseline_page: "Read one baseline page.",
-  get_baseline_image: "Read deterministic metadata for the latest preview backing a baseline page.",
+  get_product_baseline: "Read the design-system artifact manifest for a product.",
+  get_baseline_page: "Read one baseline page from the design-system artifact.",
+  get_baseline_image: "Get the preview image path for the design-system artifact.",
   get_requirement_history: "List product requirement history.",
   get_requirement: "Read a requirement by id or latest product requirement.",
   get_product_rules: "Read product-level behavioral rules.",
   get_page_copy: "Read source copy and translations for a requirement page.",
-  update_page_copy: "Update translations for a requirement page.",
-  get_current_session: "Read the current product session.",
-  set_current_session: "Set the current product session.",
+  update_page_copy: "Update page copy using merge-patch copy_overrides.",
   init_product_config: "Write platform, style, and language configuration for an existing product.",
   update_product_config: "Update platform, style, and language configuration for a product.",
   list_styles: "List installed styles.",
-  get_style: "Read style metadata and design guidance.",
+  get_style: "Read design token metadata from the product design-system artifact.",
+  change_style: "Generate a new design-system artifact for a product with the given style.",
   save_requirement: "Create or update a requirement through the unified state machine.",
   list_product_artifacts: "List open-design artifacts for a product.",
   get_product_artifact: "Read an open-design artifact manifest and supporting file list.",
@@ -391,17 +393,16 @@ export function createFormaTools(store: FormaStore): FormaTools {
     })),
     list_products: tool("list_products", async () => store.products.listProducts()),
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),
+    confirm_product_id: tool("confirm_product_id", async (input) => confirmProductId(store, input)),
     delete_product: tool("delete_product", async (input) => store.deleteProduct(input)),
-    get_product_baseline: tool("get_product_baseline", async (input) => store.baseline.getProductBaseline(input.product_id)),
+    get_product_baseline: tool("get_product_baseline", async (input) => getProductBaseline(store, input.product_id)),
     get_baseline_page: tool("get_baseline_page", async (input) => getBaselinePage(store, input.product_id, input.page_id)),
-    get_baseline_image: tool("get_baseline_image", async (input) => getBaselineImage(store, input.product_id, input.page_id)),
+    get_baseline_image: tool("get_baseline_image", async (input) => getBaselineImage(store, input.product_id)),
     get_requirement_history: tool("get_requirement_history", async (input) => store.requirements.getRequirementHistory(input.product_id)),
     get_requirement: tool("get_requirement", async (input) => getRequirementWithCopy(store, input)),
     get_product_rules: tool("get_product_rules", async (input) => store.requirements.getProductRules(input.product_id)),
     get_page_copy: tool("get_page_copy", async (input) => getPageCopy(store, input)),
     update_page_copy: tool("update_page_copy", async (input) => updatePageCopy(store, input)),
-    get_current_session: tool("get_current_session", async () => store.sessions.getCurrentSession()),
-    set_current_session: tool("set_current_session", async (input) => store.sessions.setCurrentProduct(input.product_id)),
     init_product_config: tool("init_product_config", async (input) => {
       const { product_id: productId, ...config } = input;
       return store.products.initProductConfig(productId, config);
@@ -411,7 +412,8 @@ export function createFormaTools(store: FormaStore): FormaTools {
       return store.products.initProductConfig(productId, config);
     }),
     list_styles: tool("list_styles", async () => store.styles.listStyles()),
-    get_style: tool("get_style", async (input) => store.styles.getStyle(input.name)),
+    get_style: tool("get_style", async (input) => getStyle(store, input.product_id)),
+    change_style: tool("change_style", async (input) => changeStyle(store, input)),
     save_requirement: tool("save_requirement", async (input) => store.requirements.saveRequirement(input)),
     list_product_artifacts: tool("list_product_artifacts", async (input) =>
       listProductArtifacts(store, input)),
@@ -426,17 +428,17 @@ export function createFormaTools(store: FormaStore): FormaTools {
     rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
       rollbackRequirementDesign(store, input)),
     session_get_guidelines: tool("session_get_guidelines", async (input) =>
-      v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionGetGuidelines(store, input)),
+      v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionToolFallback("session_get_guidelines")),
     session_get_variables: tool("session_get_variables", async (input) =>
-      v6.sessionGetVariables ? v6.sessionGetVariables({ home: store.home, ...input }) : sessionGetVariables(store, input)),
+      v6.sessionGetVariables ? v6.sessionGetVariables({ home: store.home, ...input }) : sessionToolFallback("session_get_variables")),
     session_batch_get: tool("session_batch_get", async (input) =>
-      v6.sessionBatchGet ? v6.sessionBatchGet({ home: store.home, ...input }) : sessionBatchGet(store, input)),
+      v6.sessionBatchGet ? v6.sessionBatchGet({ home: store.home, ...input }) : sessionToolFallback("session_batch_get")),
     session_snapshot_layout: tool("session_snapshot_layout", async (input) =>
-      v6.sessionSnapshotLayout ? v6.sessionSnapshotLayout({ home: store.home, ...input }) : sessionSnapshotLayout(store, input)),
+      v6.sessionSnapshotLayout ? v6.sessionSnapshotLayout({ home: store.home, ...input }) : sessionToolFallback("session_snapshot_layout")),
     session_get_screenshot: tool("session_get_screenshot", async (input) =>
-      v6.sessionGetScreenshot ? v6.sessionGetScreenshot({ home: store.home, ...input }) : sessionGetScreenshot(store, input)),
+      v6.sessionGetScreenshot ? v6.sessionGetScreenshot({ home: store.home, ...input }) : sessionToolFallback("session_get_screenshot")),
     session_export_nodes: tool("session_export_nodes", async (input) =>
-      v6.sessionExportNodes ? v6.sessionExportNodes({ home: store.home, ...input }) : sessionExportNodes(store, input))
+      v6.sessionExportNodes ? v6.sessionExportNodes({ home: store.home, ...input }) : sessionToolFallback("session_export_nodes"))
   };
 }
 
@@ -771,138 +773,93 @@ async function rollbackRequirementDesign(
   return { rolled_back_to: target_artifact_id, previous_pointer: currentPointer };
 }
 
+// ─── New C-04 tool implementations ───────────────────────────────────────────
+
+async function confirmProductId(store: FormaStore, input: z.infer<typeof confirmProductIdSchema>) {
+  const { product_id, expected_name } = input;
+  const product = await store.products.getProduct(product_id);
+  const confirmed = expected_name === undefined || expected_name === product.name;
+  return { confirmed, name: product.name };
+}
+
+async function getStyle(store: FormaStore, productId: string) {
+  const product = await store.products.getProduct(productId);
+  if (!product.designSystemArtifactId) {
+    throw new FormaError("STYLE_NOT_FOUND", "No design-system artifact for this product", { product_id: productId });
+  }
+  const { manifest } = await store.artifacts.readArtifact(productId, product.designSystemArtifactId);
+  return { tokens: (manifest.metadata as Record<string, unknown> | undefined)?.tokens ?? {} };
+}
+
+async function changeStyle(store: FormaStore, input: z.infer<typeof changeStyleSchema>) {
+  const { product_id, style_id } = input;
+
+  const product = await store.products.getProduct(product_id);
+
+  const styles = await store.styles.listStyles();
+  const styleExists = styles.some((s) => s.name === style_id);
+  if (!styleExists) {
+    throw new FormaError("STYLE_NOT_FOUND", "Style not found", { style_id });
+  }
+
+  // OdRuntime call is intentionally outside the mutation lock (may take up to 60s)
+  const output = await createOdRuntime().generate({
+    kind: "design-system",
+    sourceSkillId: "fm-change-style",
+    style: style_id,
+    platform: product.platform,
+    language: product.default_language
+  });
+
+  const validation = validateArtifactManifest(output.manifest);
+  if (!validation.ok) {
+    throw new FormaError("ARTIFACT_MANIFEST_INVALID", `Invalid artifact manifest: ${validation.error}`, {
+      style_id,
+      error: validation.error
+    });
+  }
+
+  const files = new Map(
+    [...output.supportingFiles.entries()].map(([k, v]) => [k, Buffer.from(v)])
+  );
+
+  const { artifactId } = await store.artifacts.writeArtifact({
+    productId: product_id,
+    manifest: output.manifest,
+    files
+  });
+
+  await store.runProductMutation({ operation: "update_design_system_pointer", product_id }, async () => {
+    await store.products.setDesignSystemArtifactPointerLocked(product_id, artifactId);
+  });
+
+  // Count dangling requirement artifacts (those with requirementId that are no longer current pointers)
+  const allArtifacts = await store.artifacts.listArtifacts(product_id);
+  const refreshedProduct = await store.products.getProduct(product_id);
+  const currentPointerIds = new Set(
+    Object.values(refreshedProduct.requirements ?? {}).map((r) => r.latestArtifactId).filter(Boolean)
+  );
+  let danglingRequirementArtifactCount = 0;
+  for (const { artifactId: aid } of allArtifacts) {
+    try {
+      const { manifest } = await store.artifacts.readArtifact(product_id, aid);
+      if (manifest.requirementId !== undefined && !currentPointerIds.has(aid)) {
+        danglingRequirementArtifactCount++;
+      }
+    } catch {
+      // Skip unreadable artifacts
+    }
+  }
+
+  return { artifact_id: artifactId, dangling_requirement_artifact_count: danglingRequirementArtifactCount };
+}
+
 function getV6Services(store: FormaStore): V6ServiceOverrides {
   return ((store as FormaStore & { v6?: V6ServiceOverrides }).v6 ?? {});
 }
 
-function sessionAdapter(store: FormaStore): PencilAppSessionAdapter {
-  return new PencilAppSessionAdapter({ home: store.home, runner: defaultPencilRunner });
-}
-
-async function sessionBindingContext(home: string, adapter: PencilAppSessionAdapter, input: { session_id: string; pencil_binding_id?: string }): Promise<{ bindingId: string; expectedStagingPath: string }> {
-  const record = await findMcpSessionRecord(home, input.session_id);
-  const bindingId = input.pencil_binding_id ?? record.pencil_binding_id;
-  const binding = adapter.getBinding(bindingId);
-  if (binding && binding.session_id !== input.session_id) {
-    throw new ToolError("INVALID_INPUT", "Pencil binding does not belong to this session", {
-      session_id: input.session_id,
-      pencil_binding_id: bindingId
-    });
-  }
-  return { bindingId, expectedStagingPath: record.staging_path };
-}
-
-function sessionToolArgs(input: Record<string, unknown>): Record<string, unknown> {
-  const { session_id: _sessionId, pencil_binding_id: _bindingId, ...args } = input;
-  return args;
-}
-
-async function sessionGetGuidelines(store: FormaStore, input: z.infer<typeof sessionGetGuidelinesSchema>) {
-  if (!input.category || !input.name) {
-    throw new ToolError("INVALID_INPUT", "category and name are required", { session_id: input.session_id });
-  }
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionGetGuidelines(context.bindingId, {
-    category: input.category,
-    name: input.name
-  }, context.expectedStagingPath);
-}
-
-async function sessionGetVariables(store: FormaStore, input: z.infer<typeof sessionGetVariablesSchema>) {
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionGetVariables(context.bindingId, context.expectedStagingPath);
-}
-
-async function sessionBatchGet(store: FormaStore, input: z.infer<typeof sessionBatchGetSchema>) {
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionBatchGet(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
-}
-
-async function sessionSnapshotLayout(store: FormaStore, input: z.infer<typeof sessionSnapshotLayoutSchema>) {
-  if (!input.parentId) {
-    throw new ToolError("INVALID_INPUT", "parentId is required", { session_id: input.session_id });
-  }
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionSnapshotLayout(context.bindingId, {
-    problemsOnly: false,
-    parentId: input.parentId,
-    maxDepth: 8
-  }, context.expectedStagingPath);
-}
-
-async function sessionGetScreenshot(store: FormaStore, input: z.infer<typeof sessionGetScreenshotSchema>) {
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionGetScreenshot(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
-}
-
-async function sessionExportNodes(store: FormaStore, input: z.infer<typeof sessionExportNodesSchema>) {
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionExportNodes(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
-}
-
-async function findMcpSessionRecord(home: string, sessionId: string): Promise<{
-  session_id: string;
-  pencil_binding_id: string;
-  staging_path: string;
-}> {
-  const files = await candidateSessionFiles(home, sessionId);
-  for (const file of files) {
-    if (!await fileExists(file)) {
-      continue;
-    }
-    const record = await readYaml<Record<string, unknown>>(file);
-    if (record.session_id !== sessionId) {
-      continue;
-    }
-    if (typeof record.pencil_binding_id !== "string" || typeof record.staging_path !== "string") {
-      throw new FormaError("INVALID_INPUT", "Session record is missing Pencil binding metadata", { session_id: sessionId });
-    }
-    return {
-      session_id: sessionId,
-      pencil_binding_id: record.pencil_binding_id,
-      staging_path: resolveSessionRecordPath(home, record.staging_path)
-    };
-  }
-  throw new FormaError("INVALID_INPUT", "Session record was not found", { session_id: sessionId });
-}
-
-function resolveSessionRecordPath(home: string, path: string): string {
-  return isAbsolute(path) ? path : join(home, path);
-}
-
-async function candidateSessionFiles(home: string, sessionId: string): Promise<string[]> {
-  const files: string[] = [];
-  const dataDir = join(home, "data");
-  for (const productId of await safeReaddir(dataDir)) {
-    const productDir = join(dataDir, productId);
-    for (const requirementId of await safeReaddir(productDir)) {
-      if (requirementId === "sessions" || requirementId.startsWith("D-")) {
-        continue;
-      }
-      files.push(join(productDir, requirementId, "sessions", sessionId, "design_session.yaml"));
-    }
-  }
-  const libraryDir = join(home, "library");
-  for (const entry of await safeReaddir(libraryDir)) {
-    if (entry.endsWith(".sessions")) {
-      files.push(join(libraryDir, entry, sessionId, "design_session.yaml"));
-    }
-  }
-  return files;
-}
-
-async function safeReaddir(path: string): Promise<string[]> {
-  return readdir(path).catch(() => []);
-}
-
-async function fileExists(path: string): Promise<boolean> {
-  return access(path).then(() => true, () => false);
+function sessionToolFallback(tool: string): never {
+  throw new FormaError("FORMA_DESKTOP_CONFIG_UNSUPPORTED", "Pencil session tools require a v6 service override", { tool });
 }
 
 function successResult(data: unknown): FormaToolResult {
@@ -934,9 +891,6 @@ function toFormaErrorPayload(error: unknown): { error_code: string; message: str
   if (error instanceof FormaError) {
     return error.toJSON();
   }
-  if (error instanceof ToolError) {
-    return { error_code: error.code, message: error.message, details: error.details };
-  }
   if (error instanceof z.ZodError) {
     const forbiddenPathIssue = error.issues.find((issue) => issue.message === "FORBIDDEN_PATH_PARAMETER");
     if (forbiddenPathIssue) {
@@ -965,7 +919,7 @@ async function getPageCopy(store: FormaStore, input: z.infer<typeof getPageCopyS
     : await getLatestNonArchivedRequirement(store, input.product_id);
   const page = requirement.pages.find((item) => item.page_id === input.page_id);
   if (!page) {
-    throw new ToolError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
+    throw new FormaError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
       product_id: input.product_id,
       requirement_id: requirement.id,
       page_id: input.page_id
@@ -983,23 +937,25 @@ async function getPageCopy(store: FormaStore, input: z.infer<typeof getPageCopyS
 }
 
 async function updatePageCopy(store: FormaStore, input: z.infer<typeof updatePageCopySchema>) {
-  const requirement = await store.requirements.getRequirement({ requirement_id: input.requirement_id });
-  if (!requirement.pages.some((page) => page.page_id === input.page_id)) {
-    throw new ToolError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
-      product_id: requirement.product_id,
-      requirement_id: requirement.id,
-      page_id: input.page_id
-    });
+  const { requirement_id, copy_overrides } = input;
+
+  if (Object.keys(copy_overrides).length === 0) {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", "copy_overrides must not be empty", { requirement_id });
   }
 
-  await store.copy.updatePageTranslations(requirement.product_id, requirement.id, input.page_id, input.translations);
-  return store.copy.getTranslations(requirement.product_id, requirement.id);
+  const req = await store.requirements.getRequirement({ requirement_id });
+  const instructions = "update page copy: " + JSON.stringify(copy_overrides);
+  return refineRequirementDesign(store, {
+    product_id: req.product_id,
+    requirement_id,
+    instructions
+  });
 }
 
 async function getProductRequirement(store: FormaStore, productId: string, requirementId: string) {
   const requirement = await store.requirements.getRequirement({ requirement_id: requirementId });
   if (requirement.product_id !== productId) {
-    throw new ToolError("REQUIREMENT_PRODUCT_MISMATCH", "Requirement does not belong to product", {
+    throw new FormaError("REQUIREMENT_PRODUCT_MISMATCH", "Requirement does not belong to product", {
       product_id: productId,
       requirement_id: requirementId,
       requirement_product_id: requirement.product_id
@@ -1010,73 +966,49 @@ async function getProductRequirement(store: FormaStore, productId: string, requi
 }
 
 async function getLatestNonArchivedRequirement(store: FormaStore, productId: string) {
-  const requirements = store.requirements;
-  if (typeof requirements.getLatestRequirement === "function") {
-    return requirements.getLatestRequirement(productId);
-  }
+  return store.requirements.getLatestRequirement(productId);
+}
 
-  const latest = (await store.requirements.getRequirementHistory(productId))
-    .filter((requirement) => requirement.status !== "archived")
-    .sort(compareRequirementsNewestFirst)[0];
-  if (!latest) {
-    throw new ToolError("REQUIREMENT_NOT_FOUND", "Requirement not found", { product_id: productId });
+async function getProductBaseline(store: FormaStore, productId: string) {
+  const product = await store.products.getProduct(productId);
+  if (!product.designSystemArtifactId) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "No design-system artifact for this product", { product_id: productId });
   }
-
-  return latest;
+  const { manifest } = await store.artifacts.readArtifact(productId, product.designSystemArtifactId);
+  return { baseline: manifest };
 }
 
 async function getBaselinePage(store: FormaStore, productId: string, pageId: string) {
-  const baseline = await store.baseline.getProductBaseline(productId);
-  const page = baseline.pages.find((item) => item.id === pageId || ("page_id" in item && item.page_id === pageId));
+  const product = await store.products.getProduct(productId);
+  if (!product.designSystemArtifactId) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "No design-system artifact for this product", { product_id: productId });
+  }
+  const { manifest } = await store.artifacts.readArtifact(productId, product.designSystemArtifactId);
+  const rawPages = (manifest.metadata as Record<string, unknown> | undefined)?.pages;
+  const pages: unknown[] = Array.isArray(rawPages) ? rawPages : [];
+  const page = pages.find((item) => {
+    if (typeof item !== "object" || item === null) return false;
+    const p = item as Record<string, unknown>;
+    return p.id === pageId || p.page_id === pageId;
+  });
   if (!page) {
-    throw new ToolError("BASELINE_PAGE_NOT_FOUND", "Baseline page not found", { product_id: productId, page_id: pageId });
+    throw new FormaError("ARTIFACT_NOT_FOUND", "Baseline page not found", { product_id: productId, page_id: pageId });
   }
   return page;
 }
 
-async function getBaselineImage(store: FormaStore, productId: string, pageId: string) {
-  const baselinePage = await getBaselinePage(store, productId, pageId);
-  const preview = await findBaselinePreviewMetadata(store, productId, pageId);
-  if (preview) {
-    return preview;
+async function getBaselineImage(store: FormaStore, productId: string) {
+  const product = await store.products.getProduct(productId);
+  if (!product.designSystemArtifactId) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "No design-system artifact for this product", { product_id: productId });
   }
-
-  throw new ToolError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
-    product_id: productId,
-    page_id: pageId,
-    source_requirements: baselinePage.source_requirements
-  });
-}
-
-function compareRequirementsNewestFirst(
-  left: { id: string; created_at?: string; updated_at?: string },
-  right: { id: string; created_at?: string; updated_at?: string }
-): number {
-  return timestampForRequirement(right) - timestampForRequirement(left) || right.id.localeCompare(left.id);
-}
-
-function timestampForRequirement(requirement: { created_at?: string; updated_at?: string }): number {
-  const updatedAt = requirement.updated_at ? Date.parse(requirement.updated_at) : Number.NaN;
-  if (Number.isFinite(updatedAt)) {
-    return updatedAt;
-  }
-  const createdAt = requirement.created_at ? Date.parse(requirement.created_at) : Number.NaN;
-  return Number.isFinite(createdAt) ? createdAt : 0;
+  const productsDir = getFormaPaths(store.home).productsDir;
+  const artifactDir = getArtifactDir(productsDir, productId, product.designSystemArtifactId);
+  return { path: join(artifactDir, "preview", "2x.png") };
 }
 
 function titleFromToolName(name: string): string {
   return name.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
-}
-
-class ToolError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly details: Record<string, unknown>
-  ) {
-    super(message);
-    this.name = "ToolError";
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
