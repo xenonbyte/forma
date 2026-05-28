@@ -1,14 +1,17 @@
-description = "Report Forma product, requirement, and design status."
+description = "Report Forma product, requirement, and artifact status. Read-only."
 prompt = """
 # Forma route: fm-status
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
+Cold path scenario:
+The user wants to know the current state of a product — its config, latest requirement, and available design artifacts. The agent reads product info, requirement history, and artifact list, then presents a concise status summary without making any mutations.
+
 Execution:
-1. Read current session through MCP.
-2. Fetch latest requirement for the current product.
-3. Display product configuration including platform, style, languages and default_language.
-4. Show whether configuration is complete, including the language config and component initialization state.
-5. Confirm operation with product, requirement, and pending or expired pages.
-6. Call Forma MCP tools and report stable error codes when returned.
+1. Require product_id from context or ask the user to run `fm-list-product` first.
+2. Call `get_product` with product_id to fetch platform, style, languages, and default_language.
+3. Call `get_requirement_history` with product_id and show the latest requirement title, state, and ui_affected flag.
+4. Call `list_product_artifacts` with product_id and summarize available artifacts (id, type, created_at).
+5. Display a concise status: product config completeness, requirement state, and artifact count.
+6. Report stable error codes when returned. Make no mutations.
 """

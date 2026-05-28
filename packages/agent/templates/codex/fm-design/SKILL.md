@@ -1,6 +1,6 @@
 ---
 name: fm-design
-description: Generate or update Forma page designs from UI-affecting requirements.
+description: Generate a Forma design artifact from the latest requirement.
 ---
 
 # Forma route: fm-design
@@ -9,19 +9,14 @@ Codex route: `$fm-design`.
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
+Cold path scenario:
+The user asks to generate or update the design for a product. The agent reads the latest requirement and checks ui_affected. If ui_affected is true, it calls `generate_requirement_design` with the product_id and requirement_id, then reports the returned artifact_id and preview URL.
+
 Execution:
-1. Read `get_current_session`, `get_product`, `get_requirement`, `get_product_rules`, and `get_page_copy` as needed. If `ui_affected === false`, print `当前需求无 UI 调整，无需设计` and stop. Do not call design/refine MCP tools for no-UI requirements.
-2. Call `get_requirement_design_canvas`. Handle `index_status`: `missing` may generate only when no canonical design file exists; `incomplete` and `stale` must call `index_requirement_design_canvas`; `recovery_required` is a hard stop; `complete` may proceed.
-3. Call `get_product_component_library`. If a library is missing or invalid and design work must start, run the route-level `generate_components` macro from shared guidance. This macro is not an MCP one-shot write tool.
-4. Decide the action: `generate`, `refine`, `rebuild`, or `component_refresh`. Component refresh means linked component snapshot updates only; it must not become redesign or add business capability.
-5. Design changes visual design only. If the user asks for new product capability, page, entry, field, action, navigation, component, or business copy, return `REQUIREMENT_UPDATE_REQUIRED` and instruct the user to run `$fm-requirement`.
-6. If semantic contract coverage is insufficient for the requested visual work, return `SEMANTIC_CONTRACT_REQUIRED` and instruct the user to run `$fm-requirement`. Do not infer fields/actions/components from free text.
-7. Before opening Pencil, show target page/action/component scope/semantic coverage/quality strategy. Inject exact structured page copy into any design planning text. Design work must use exact structured page copy and must not improvise UI text.
-8. Call `begin_requirement_design_session`. On `PENCIL_APP_REQUIRED`, stop hard; no headless fallback, no raw Pencil write request.
-9. Use only session-scoped Pencil wrappers for context: `session_get_editor_state`, `session_get_guidelines`, `session_get_variables`, `session_batch_get`, `session_snapshot_layout`, `session_get_screenshot`, and `session_export_nodes`. Never pass file paths, or raw Pencil write payloads.
-10. For unmanaged import pages, call `plan_import_metadata_normalization`, apply returned metadata-only operations through `apply_requirement_design_operations` with `intent: "import_metadata_normalization"`, rerun quality, and stop on stable blockers.
-11. Submit all writes through `apply_requirement_design_operations` with allowed v6 intents. Do not call removed page-level design MCP tools. The requirement-level v6 design session flow replaces those tools.
-12. Run `validate_requirement_design_quality`. If it returns a repair plan, apply one bounded `quality_repair` retry, then validate once more. Hard quality blockers stop and leave formal files unchanged.
-13. For component updates, first call `index_component_usages`; stop on unlinked usage, missing metadata, unmapped library, contract change, override conflict, or explicit non-done page. Then begin with `operation: "component_refresh"`, call `refresh_requirement_components`, apply returned operations, and commit with `ai_visual_reviews[]` when available.
-14. Call `commit_requirement_design_session`. AI screenshot review is warning-only metadata; absence is `skipped/not_requested`.
-15. Report returned kind, formal canvas file, preview file or affected pages, quality status, and component usage changes. Report stable error codes exactly when returned.
+1. Require product_id from context or ask the user to run `$fm-list-product` first.
+2. Call `get_requirement` with product_id to fetch the latest requirement_id and ui_affected flag.
+3. If `ui_affected === false`, print that the current requirement has no UI changes and stop. Do not call design tools.
+4. Optionally call `get_page_copy` and `get_product_rules` to confirm design scope with the user.
+5. If the user asks for new capability, page, field, action, or business copy, return `REQUIREMENT_UPDATE_REQUIRED` and instruct the user to run `$fm-requirement` instead.
+6. Call `generate_requirement_design(product_id, requirement_id)`.
+7. Report the returned artifact_id, preview URL (PNG), and any stable error codes exactly as returned.

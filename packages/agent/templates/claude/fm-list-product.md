@@ -1,23 +1,24 @@
 ---
-description: List Forma products through the Forma MCP route.
+description: List and select Forma products, or delete a product on explicit request.
 ---
 
 # Forma route: fm-list-product
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
+Cold path scenario:
+The user wants to switch to a different product or see what products exist. The agent calls `list_products`, shows a numbered list, asks the user to pick, calls `confirm_product_id` with the chosen product ID, then fetches and summarizes the latest requirement for the selected product.
+
 Execution:
 1. Call `list_products`.
 2. Display a numbered list using only product name and product ID.
 3. Ask the user to choose by number.
-4. Call `set_current_session` with the chosen product ID.
-5. If basic config is incomplete, follow shared config completion guidance: collect missing platform, style, languages, and default_language, call `init_product_config` or `update_product_config`, then retry `set_current_session` once. Basic config does not include legacy component-initialization flags.
-6. On success, fetch and summarize the latest requirement for the selected product.
+4. Call `confirm_product_id` with the chosen product ID to confirm selection.
+5. On success, call `get_requirement_history` with the confirmed product_id and summarize the latest requirement.
+6. Report stable error codes when returned.
 
 Deletion branch:
-- Only when the user explicitly asks to delete a product, repeat the product name and product ID, describe deletion scope, and state that the user must type the exact product ID.
-- For confirmed deletion, call `delete_product` with the selected ID as `product_id` and use the typed ID as `confirm_product_id`; the values must match. Do not auto-fill `confirm_product_id` from context or treat a generic yes as confirmation.
-- After deletion, if `session_cleared` is true, tell the user to run `fm-list-product` again. If `recovery_warnings` is non-empty, summarize them.
+- Only when the user explicitly asks to delete a product, call `confirm_product_id` first, repeat the product name and product ID, describe deletion scope, and state that the user must type the exact product ID.
+- For confirmed deletion, call `delete_product` with the selected product_id. Do not auto-fill confirmation from context or treat a generic yes as confirmation.
+- After deletion, if `recovery_warnings` is non-empty, summarize them. Tell the user to run `fm-list-product` again to select a different product.
 - Do not expose or suggest requirement deletion tools.
-
-7. Call Forma MCP tools and report stable error codes when returned.

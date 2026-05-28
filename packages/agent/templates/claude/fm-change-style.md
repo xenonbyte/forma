@@ -1,16 +1,18 @@
 ---
-description: Change the current Forma product style through MCP.
+description: Change the style of a Forma product design system.
 ---
 
 # Forma route: fm-change-style
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
+Cold path scenario:
+The user wants to switch the design system style for a product (e.g., from a default theme to a compact or branded one). The agent lists available styles, shows the current style, asks the user to confirm the target, then calls `change_style` once.
+
 Execution:
-1. Read current session, product config, and style request through MCP.
-2. Update product style configuration with the config tools when needed.
-3. Start a product component library session with `begin_product_component_session` and `operation: "change_style"`.
-4. Use session-scoped read wrappers, then submit component library writes through `apply_product_component_operations`.
-5. Call `commit_product_component_session` and report the component library version and library file.
-6. This route must do not mutate existing requirement canvases. If the user asks to sync a current requirement, direct them to `fm-design component_refresh`.
-7. Report stable error codes when returned.
+1. Require product_id from context or ask the user to run `fm-list-product` first.
+2. Call `list_styles` with product_id and display available style options with their names and descriptions.
+3. Call `get_style` with product_id to show the currently active style.
+4. Ask the user to confirm the target style by name.
+5. Call `change_style(product_id, style_name)` with the confirmed style name.
+6. Report the updated style and stable error codes exactly as returned.

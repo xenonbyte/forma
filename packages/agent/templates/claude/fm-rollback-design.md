@@ -1,17 +1,17 @@
 ---
-description: Roll back a Forma design through MCP.
+description: Roll back a Forma design artifact to a previous version.
 ---
 
 # Forma route: fm-rollback-design
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
+Cold path scenario:
+The user wants to undo a recent design generation and restore an earlier artifact. The agent lists available artifacts for the product, asks the user to choose a target, then calls `rollback_requirement_design` once to restore it.
+
 Execution:
-1. Read current session through MCP and require `product_id`, `requirement_id`, `page_id`, and target page version. If the user only provides old `design_id` context, return `REQUIREMENT_DESIGN_CONTEXT_REQUIRED`.
-2. Call `get_requirement_design_history` and show the target rollback version before starting.
-3. Call `begin_requirement_design_session` with `operation: "rollback"`.
-4. Call `rollback_requirement_design` to produce the v6 rollback operation plan.
-5. Submit the plan through `apply_requirement_design_operations`.
-6. Run quality checks when needed and call `commit_requirement_design_session`.
-7. Report page version, canvas version, restored source version, formal canvas file, preview file, and stable error codes exactly as returned.
-8. If the user asks to sync current requirement components instead, direct them to `fm-design component_refresh`.
+1. Require product_id and requirement_id from context or ask the user to run `fm-list-product` first.
+2. Call `list_product_artifacts` with product_id to display available artifact versions (id, type, created_at, preview URL).
+3. Ask the user to confirm the target artifact_id to roll back to.
+4. Call `rollback_requirement_design(product_id, requirement_id)` to restore the previous design version.
+5. Report the restored artifact_id, preview URL, and stable error codes exactly as returned.
