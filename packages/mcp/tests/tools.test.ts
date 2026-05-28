@@ -25,7 +25,6 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
 
 const removedLegacyToolNames = [
   "complete_product_init",
-  "generate_components",
   "generate_page_design",
   "save_designs",
   "generate_and_save_page_design",
@@ -154,6 +153,18 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       cleanup_pending: false,
       recovery_warnings: []
     })),
+    generateRequirementDesign: vi.fn(async () => ({
+      artifact_id: "ABCDEFGHIJ123456",
+      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
+    })),
+    generateComponents: vi.fn(async () => ({
+      artifact_id: "ABCDEFGHIJ123456",
+      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
+    })),
+    changeArtifactStyle: vi.fn(async () => ({
+      artifact_id: "ABCDEFGHIJ123456",
+      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
+    })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
       getProduct: vi.fn(async () => ({
@@ -230,6 +241,9 @@ describe("MCP forma tools", () => {
       "get_page_copy",
       "delete_product",
       "confirm_product_id",
+      "generate_requirement_design",
+      "generate_components",
+      "change_artifact_style",
       "session_get_guidelines",
       "session_get_variables",
       "session_batch_get",
@@ -238,7 +252,6 @@ describe("MCP forma tools", () => {
       "session_export_nodes"
     ]));
     expect(formaToolNames).not.toContain("change_style");
-    expect(formaToolNames).not.toContain("generate_requirement_design");
     expect(formaToolNames).not.toContain("refine_requirement_design");
     expect(formaToolNames).not.toContain("update_page_copy");
   });
@@ -905,7 +918,9 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).toContain("get_product_artifact");
     expect(formaToolNames).toContain("export_artifact");
     expect(formaToolNames).toContain("rollback_requirement_design");
-    expect(formaToolNames).not.toContain("generate_requirement_design");
+    expect(formaToolNames).toContain("generate_requirement_design");
+    expect(formaToolNames).toContain("generate_components");
+    expect(formaToolNames).toContain("change_artifact_style");
     expect(formaToolNames).not.toContain("refine_requirement_design");
     expect(formaToolNames).not.toContain("change_style");
   });
@@ -1492,5 +1507,197 @@ describe("C-04 retained tools", () => {
       expect(result.isError).toBe(true);
       expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
     });
+  });
+});
+
+describe("OD runtime generation tools (C-03 remainder)", () => {
+  // ─── generate_requirement_design ─────────────────────────────────────────
+
+  it("generate_requirement_design schema accepts valid input", () => {
+    expectSchemaSuccess("generate_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "generate"
+    });
+    expectSchemaSuccess("generate_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "rebuild",
+      source_skill_id: "fm-design"
+    });
+  });
+
+  it("generate_requirement_design schema rejects missing required fields", () => {
+    expectSchemaFailure("generate_requirement_design", { product_id: "P-123abc", requirement_id: "R-12345678" });
+    expectSchemaFailure("generate_requirement_design", { product_id: "P-123abc", mode: "generate" });
+    expectSchemaFailure("generate_requirement_design", { requirement_id: "R-12345678", mode: "generate" });
+  });
+
+  it("generate_requirement_design delegates to store and returns artifact_id and preview_url", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "generate"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload).toMatchObject({
+      artifact_id: "ABCDEFGHIJ123456",
+      preview_url: expect.stringContaining("ABCDEFGHIJ123456")
+    });
+    expect((store as unknown as { generateRequirementDesign: ReturnType<typeof vi.fn> }).generateRequirementDesign)
+      .toHaveBeenCalledWith("P-123abc", "R-12345678", "generate", undefined);
+  });
+
+  it("generate_requirement_design returns OD_RUNTIME_FAILED when od-runtime is not wired", async () => {
+    const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
+    const store = fakeStore({
+      generateRequirementDesign: vi.fn(async () => {
+        throw new ActualFormaError("OD_RUNTIME_FAILED", "od-plugin-runtime main path not yet wired", {
+          cause: "main_path_stub",
+          reason: "pending_integration"
+        });
+      })
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "generate"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "OD_RUNTIME_FAILED",
+      details: { reason: "pending_integration" }
+    });
+  });
+
+  // ─── generate_components ─────────────────────────────────────────────────
+
+  it("generate_components schema accepts valid input", () => {
+    expectSchemaSuccess("generate_components", {
+      product_id: "P-123abc",
+      seed_components: [{ name: "Button" }, { name: "Input", description: "Text input field" }]
+    });
+    expectSchemaSuccess("generate_components", {
+      product_id: "P-123abc",
+      seed_components: [{ name: "Card" }],
+      source_skill_id: "fm-refine-components"
+    });
+  });
+
+  it("generate_components schema rejects empty seed_components array", () => {
+    expectSchemaFailure("generate_components", { product_id: "P-123abc", seed_components: [] });
+    expectSchemaFailure("generate_components", { product_id: "P-123abc" });
+  });
+
+  it("generate_components delegates to store and returns artifact_id and preview_url", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_components({
+      product_id: "P-123abc",
+      seed_components: [{ name: "Button" }, { name: "Input", description: "Text field" }]
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload).toMatchObject({
+      artifact_id: "ABCDEFGHIJ123456",
+      preview_url: expect.stringContaining("ABCDEFGHIJ123456")
+    });
+    expect((store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents)
+      .toHaveBeenCalledWith("P-123abc", [{ name: "Button" }, { name: "Input", description: "Text field" }], undefined);
+  });
+
+  it("generate_components returns OD_RUNTIME_FAILED when od-runtime is not wired", async () => {
+    const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
+    const store = fakeStore({
+      generateComponents: vi.fn(async () => {
+        throw new ActualFormaError("OD_RUNTIME_FAILED", "od-plugin-runtime main path not yet wired", {
+          cause: "main_path_stub",
+          reason: "pending_integration"
+        });
+      })
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_components({
+      product_id: "P-123abc",
+      seed_components: [{ name: "Button" }]
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "OD_RUNTIME_FAILED" });
+  });
+
+  // ─── change_artifact_style ───────────────────────────────────────────────
+
+  it("change_artifact_style schema accepts valid input", () => {
+    expectSchemaSuccess("change_artifact_style", {
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      style: "dark"
+    });
+    expectSchemaSuccess("change_artifact_style", {
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      style: "linear",
+      source_skill_id: "fm-change-style"
+    });
+  });
+
+  it("change_artifact_style schema rejects missing required fields", () => {
+    expectSchemaFailure("change_artifact_style", { product_id: "P-123abc", artifact_id: "ABCDEFGHIJ123456" });
+    expectSchemaFailure("change_artifact_style", { product_id: "P-123abc", style: "dark" });
+    expectSchemaFailure("change_artifact_style", { artifact_id: "ABCDEFGHIJ123456", style: "dark" });
+  });
+
+  it("change_artifact_style delegates to store and returns artifact_id and preview_url", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.change_artifact_style({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      style: "dark"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload).toMatchObject({
+      artifact_id: "ABCDEFGHIJ123456",
+      preview_url: expect.stringContaining("ABCDEFGHIJ123456")
+    });
+    expect((store as unknown as { changeArtifactStyle: ReturnType<typeof vi.fn> }).changeArtifactStyle)
+      .toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", "dark", undefined);
+  });
+
+  it("change_artifact_style returns OD_RUNTIME_FAILED when od-runtime is not wired", async () => {
+    const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
+    const store = fakeStore({
+      changeArtifactStyle: vi.fn(async () => {
+        throw new ActualFormaError("OD_RUNTIME_FAILED", "od-plugin-runtime main path not yet wired", {
+          cause: "main_path_stub",
+          reason: "pending_integration"
+        });
+      })
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.change_artifact_style({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      style: "dark"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "OD_RUNTIME_FAILED" });
   });
 });

@@ -1,6 +1,8 @@
 import { cleanupArtifactTmpDirs, hasArtifactTmpDirs } from "./artifact-tmp-cleanup.js";
 import { createArtifactStore, type ArtifactStore } from "./artifact-store.js";
+import { type ArtifactKind } from "./artifact-manifest.js";
 import { CopyService } from "./copy.js";
+import { createOdRuntime } from "./od-runtime.js";
 import {
   deleteProductLocked,
   recoverPendingProductDeletesLocked,
@@ -33,11 +35,33 @@ export interface FormaStoreOptions {
   productDeletionHooks?: ProductDeletionHooks;
 }
 
+export interface SeedComponent {
+  name: string;
+  description?: string;
+}
+
 export interface FormaStore {
   home: string;
   artifacts: ArtifactStore;
   copy: CopyService;
   deleteProduct(input: DeleteProductInput): Promise<DeleteProductResult>;
+  generateRequirementDesign(
+    productId: string,
+    requirementId: string,
+    mode: "generate" | "rebuild",
+    sourceSkillId?: string
+  ): Promise<{ artifact_id: string; preview_url: string }>;
+  generateComponents(
+    productId: string,
+    seedComponents: SeedComponent[],
+    sourceSkillId?: string
+  ): Promise<{ artifact_id: string; preview_url: string }>;
+  changeArtifactStyle(
+    productId: string,
+    artifactId: string,
+    style: string,
+    sourceSkillId?: string
+  ): Promise<{ artifact_id: string; preview_url: string }>;
   products: ProductService;
   recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
   requirements: RequirementService;
@@ -111,11 +135,89 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
       };
     });
 
+  function artifactPreviewUrl(productId: string, artifactId: string): string {
+    return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/2x`;
+  }
+
+  async function generateRequirementDesign(
+    productId: string,
+    requirementId: string,
+    mode: "generate" | "rebuild",
+    sourceSkillId?: string
+  ): Promise<{ artifact_id: string; preview_url: string }> {
+    const odRuntime = createOdRuntime();
+    const output = await odRuntime.generate({
+      kind: "html" as ArtifactKind,
+      requirementId,
+      sourceSkillId: sourceSkillId ?? "fm-design",
+      ignoreInternalCache: mode === "rebuild"
+    });
+    const { artifactId } = await artifacts.writeArtifact({
+      productId,
+      manifest: { ...output.manifest, requirementId, sourceSkillId },
+      files: new Map(
+        [...output.supportingFiles].map(([k, v]) => [k, Buffer.from(v)])
+      )
+    });
+    return { artifact_id: artifactId, preview_url: artifactPreviewUrl(productId, artifactId) };
+  }
+
+  async function generateComponents(
+    productId: string,
+    seedComponents: SeedComponent[],
+    sourceSkillId?: string
+  ): Promise<{ artifact_id: string; preview_url: string }> {
+    const odRuntime = createOdRuntime();
+    const instructions = seedComponents
+      .map((c) => `- ${c.name}${c.description ? `: ${c.description}` : ""}`)
+      .join("\n");
+    const output = await odRuntime.generate({
+      kind: "design-system" as ArtifactKind,
+      instructions,
+      sourceSkillId: sourceSkillId ?? "fm-refine-components"
+    });
+    const { artifactId } = await artifacts.writeArtifact({
+      productId,
+      manifest: { ...output.manifest, sourceSkillId },
+      files: new Map(
+        [...output.supportingFiles].map(([k, v]) => [k, Buffer.from(v)])
+      )
+    });
+    return { artifact_id: artifactId, preview_url: artifactPreviewUrl(productId, artifactId) };
+  }
+
+  async function changeArtifactStyle(
+    productId: string,
+    artifactId: string,
+    style: string,
+    sourceSkillId?: string
+  ): Promise<{ artifact_id: string; preview_url: string }> {
+    const { manifest: sourceManifest } = await artifacts.readArtifact(productId, artifactId);
+    const odRuntime = createOdRuntime();
+    const output = await odRuntime.generate({
+      kind: sourceManifest.kind,
+      requirementId: sourceManifest.requirementId,
+      style,
+      sourceSkillId: sourceSkillId ?? "fm-change-style"
+    });
+    const { artifactId: newArtifactId } = await artifacts.writeArtifact({
+      productId,
+      manifest: { ...output.manifest, requirementId: sourceManifest.requirementId, sourceSkillId },
+      files: new Map(
+        [...output.supportingFiles].map(([k, v]) => [k, Buffer.from(v)])
+      )
+    });
+    return { artifact_id: newArtifactId, preview_url: artifactPreviewUrl(productId, newArtifactId) };
+  }
+
   return {
     home: options.home,
     artifacts,
     copy,
     deleteProduct,
+    generateRequirementDesign,
+    generateComponents,
+    changeArtifactStyle,
     products,
     recoverPendingProductDeletes,
     requirements,

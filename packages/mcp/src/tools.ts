@@ -39,6 +39,9 @@ export const formaToolNames = [
   "get_product_artifact",
   "export_artifact",
   "rollback_requirement_design",
+  "generate_requirement_design",
+  "generate_components",
+  "change_artifact_style",
   "session_get_guidelines",
   "session_get_variables",
   "session_batch_get",
@@ -182,6 +185,31 @@ const rollbackRequirementDesignSchema = z.object({
   target_artifact_id: z.string().min(1)
 }).strict();
 
+const generateRequirementDesignSchema = z.object({
+  product_id: z.string().min(1),
+  requirement_id: z.string().min(1),
+  mode: z.enum(["generate", "rebuild"]),
+  source_skill_id: z.string().min(1).optional()
+}).strict();
+
+const seedComponentSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional()
+}).strict();
+
+const generateComponentsSchema = z.object({
+  product_id: z.string().min(1),
+  seed_components: z.array(seedComponentSchema).min(1),
+  source_skill_id: z.string().min(1).optional()
+}).strict();
+
+const changeArtifactStyleSchema = z.object({
+  product_id: z.string().min(1),
+  artifact_id: z.string().min(1),
+  style: z.string().min(1),
+  source_skill_id: z.string().min(1).optional()
+}).strict();
+
 const getRequirementSchema = z.object({
   requirement_id: z.string().min(1).optional(),
   product_id: z.string().min(1).optional()
@@ -299,6 +327,9 @@ export const formaToolInputSchemas = {
   get_product_artifact: getProductArtifactSchema,
   export_artifact: exportArtifactSchema,
   rollback_requirement_design: rollbackRequirementDesignSchema,
+  generate_requirement_design: generateRequirementDesignSchema,
+  generate_components: generateComponentsSchema,
+  change_artifact_style: changeArtifactStyleSchema,
   session_get_guidelines: sessionGetGuidelinesSchema,
   session_get_variables: sessionGetVariablesSchema,
   session_batch_get: sessionBatchGetSchema,
@@ -329,6 +360,9 @@ const descriptions = {
   get_product_artifact: "Read an open-design artifact manifest and supporting file list.",
   export_artifact: "Export an open-design artifact to html, svg, png, or zip.",
   rollback_requirement_design: "Rewind the requirement artifact pointer to a previous artifact.",
+  generate_requirement_design: "Generate an open-design artifact for a requirement. Returns OD_RUNTIME_FAILED until the OD runtime is wired.",
+  generate_components: "Generate a design-system artifact from seed component definitions. Returns OD_RUNTIME_FAILED until the OD runtime is wired.",
+  change_artifact_style: "Re-generate an artifact with a new style applied. Returns OD_RUNTIME_FAILED until the OD runtime is wired.",
   session_get_guidelines: "Read guidelines for a Forma-owned Pencil session.",
   session_get_variables: "Read variables for a Forma-owned Pencil session.",
   session_batch_get: "Read multiple nodes for a Forma-owned Pencil session.",
@@ -386,6 +420,12 @@ export function createFormaTools(store: FormaStore): FormaTools {
       exportArtifact(store, input)),
     rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
       rollbackRequirementDesign(store, input)),
+    generate_requirement_design: tool("generate_requirement_design", async (input) =>
+      store.generateRequirementDesign(input.product_id, input.requirement_id, input.mode, input.source_skill_id)),
+    generate_components: tool("generate_components", async (input) =>
+      store.generateComponents(input.product_id, input.seed_components, input.source_skill_id)),
+    change_artifact_style: tool("change_artifact_style", async (input) =>
+      store.changeArtifactStyle(input.product_id, input.artifact_id, input.style, input.source_skill_id)),
     session_get_guidelines: tool("session_get_guidelines", async (input) =>
       v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionToolFallback("session_get_guidelines")),
     session_get_variables: tool("session_get_variables", async (input) =>
