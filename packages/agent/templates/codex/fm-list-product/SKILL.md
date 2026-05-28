@@ -17,7 +17,7 @@ Execution:
 2. Display a numbered list using only product name and product ID.
 3. Ask the user to choose by number.
 4. Call `confirm_product_id` with the chosen product ID to confirm selection.
-5. On success, call `get_requirement_history` with the confirmed product_id and summarize the latest requirement.
+5. On success, call `get_requirement` with product_id and summarize the latest requirement.
 6. Report stable error codes when returned.
 
 Deletion branch:
