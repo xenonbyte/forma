@@ -94,7 +94,7 @@ export class StyleService {
   async getStyle(name: string): Promise<{ metadata: StyleMetadata; designMd: string }> {
     const metadata = (await this.listStyles()).find((style) => style.name === name);
     if (!metadata) {
-      throw new FormaError("STYLE_NOT_FOUND", "Style not found", { style: name });
+      throw new FormaError("INVALID_INPUT", "Style not found", { style: name });
     }
 
     const designMd = await readFile(this.safeHomeStylePath(metadata.design_md_path), "utf8");
@@ -110,7 +110,7 @@ export class StyleService {
     const stylesRoot = resolve(this.home, "styles");
     const file = resolve(this.home, safeRelativePath);
     if (file !== stylesRoot && !file.startsWith(`${stylesRoot}${sep}`)) {
-      throw new FormaError("STYLE_NOT_FOUND", "Style path is outside styles directory", {
+      throw new FormaError("INVALID_INPUT", "Style path is outside styles directory", {
         design_md_path: relativePath
       });
     }

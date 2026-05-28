@@ -7,7 +7,6 @@ import * as corePublic from "../src/index.js";
 import {
   FormaError,
   createId,
-  designStatuses,
   getFormaPaths,
   idKinds,
   platforms,
@@ -21,14 +20,12 @@ describe("core foundation", () => {
   it("creates typed ids", () => {
     expect(createId("product")).toMatch(/^P-[a-f0-9]{6}$/);
     expect(createId("requirement")).toMatch(/^R-[a-f0-9]{8}$/);
-    expect(createId("design")).toMatch(/^D-[a-f0-9]{8}$/);
   });
 
   it("exports spec-aligned schema literals", () => {
-    expect(idKinds).toEqual(["product", "requirement", "design"]);
+    expect(idKinds).toEqual(["product", "requirement"]);
     expect(platforms).toEqual(["mobile", "desktop", "tablet", "web"]);
     expect(requirementStatuses).toEqual(["empty", "submitted", "active", "archived"]);
-    expect(designStatuses).toEqual(["pending", "done", "expired"]);
   });
 
   it("does not publicly export legacy page-level design write surface", () => {
@@ -42,13 +39,8 @@ describe("core foundation", () => {
     const root = await mkdtemp(join(tmpdir(), "forma-test-"));
     const paths = getFormaPaths(root);
     expect(paths.configFile).toBe(join(root, "config.yaml"));
-    expect(paths.lockFile).toBe(join(root, "pencil.lock"));
     expect(paths.dataDir).toBe(join(root, "data"));
     expect(paths.sessionFile).toBe(join(root, "session.yaml"));
-    expect(paths.manifestsDir).toBe(join(root, "manifests"));
-    expect(paths.skillsDir).toBe(join(root, "skills"));
-    expect(paths.commandsDir).toBe(join(root, "commands"));
-    expect(paths.libraryDir).toBe(join(root, "library"));
     expect(paths.stylesDir).toBe(join(root, "styles"));
   });
 

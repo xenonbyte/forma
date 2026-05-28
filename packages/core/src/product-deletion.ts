@@ -2,10 +2,8 @@ import { randomBytes } from "node:crypto";
 import { access, copyFile, mkdir, realpath, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, normalize, resolve } from "node:path";
 import { z } from "zod";
-import { getProductComponentLibrary } from "./components.js";
 import { FormaError } from "./errors.js";
 import { productIdSchema, type ProductService } from "./product.js";
-import { getRequirementDesign } from "./requirement-design.js";
 import { readYaml, writeYamlAtomic } from "./yaml.js";
 
 export interface DeleteProductInput {
@@ -446,7 +444,7 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
     status
   };
   const corruptionCode = status === "failed_commit" || status === "commit_recovery_required"
-    ? "DESIGN_COMMIT_RECOVERY_REQUIRED"
+    ? "PRODUCT_DELETION_RECOVERY_FAILED"
     : "LOCK_CORRUPT";
   const sessionId = requireActiveString(active.session_id, "session_id", corruptionCode, details);
   const localActivePath = await validateLeasePath(home, active.local_active_path, "local_active_path", corruptionCode, details);
@@ -473,13 +471,13 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
 
   const checkedDetails = { ...details, local_active_path: localActivePath };
   if (nonTerminalDesignSessionStatuses.has(status)) {
-    throw new FormaError("DESIGN_SESSION_ACTIVE", "Design session is active", checkedDetails);
+    throw new FormaError("PRODUCT_MUTATION_LOCKED", "Design session is active", checkedDetails);
   }
   if (status === "committed" || status === "discarded") {
     if (typeof active.audit_link !== "string" || active.audit_link.length === 0) {
-      throw new FormaError("DESIGN_SESSION_AUDIT_LINK_MISSING", "Design session audit link is missing", checkedDetails);
+      throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Design session audit link is missing", checkedDetails);
     }
-    await validateLeasePath(home, active.audit_link, "audit_link", "DESIGN_SESSION_AUDIT_LINK_MISSING", checkedDetails);
+    await validateLeasePath(home, active.audit_link, "audit_link", "PRODUCT_DELETION_RECOVERY_FAILED", checkedDetails);
     const sessionRecordPath = await validateLeasePath(
       home,
       typeof localActive.session_record_path === "string"
@@ -498,7 +496,7 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
       });
     }
     if (nonTerminalDesignSessionStatuses.has(sessionRecord.status)) {
-      throw new FormaError("DESIGN_SESSION_ACTIVE", "Design session is active", {
+      throw new FormaError("PRODUCT_MUTATION_LOCKED", "Design session is active", {
         ...checkedDetails,
         status: sessionRecord.status,
         session_record_path: sessionRecordPath
@@ -512,7 +510,7 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
       });
     }
     if (!(await hasFormalAuditLink(home, productId, sessionId, active.audit_link))) {
-      throw new FormaError("DESIGN_SESSION_AUDIT_LINK_MISSING", "Design session audit link is missing", {
+      throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Design session audit link is missing", {
         ...checkedDetails,
         audit_link: active.audit_link,
         session_record_path: sessionRecordPath
@@ -525,7 +523,7 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
 
 async function readDesignSessionRecord(
   sessionRecordPath: string,
-  code: "LOCK_CORRUPT" | "DESIGN_COMMIT_RECOVERY_REQUIRED",
+  code: "LOCK_CORRUPT" | "PRODUCT_DELETION_RECOVERY_FAILED",
   details: Record<string, unknown>
 ): Promise<{ session_id: string; status: string }> {
   let record: Record<string, unknown>;
@@ -549,39 +547,14 @@ async function hasFormalAuditLink(home: string, productId: string, sessionId: st
     || (await componentVersionHasAuditLink(home, productId, sessionId, auditLink));
 }
 
-async function requirementHistoryHasAuditLink(home: string, productId: string, sessionId: string, auditLink: string): Promise<boolean> {
-  const productDir = join(home, "data", productId);
-  const entries = await readdir(productDir, { withFileTypes: true }).catch((error: unknown) => {
-    if (isNodeError(error) && error.code === "ENOENT") {
-      return [];
-    }
-    throw error;
-  });
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !/^R-[a-f0-9]{8}$/.test(entry.name)) {
-      continue;
-    }
-    const design = await getRequirementDesign(home, productId, entry.name);
-    if (design.status === "missing") {
-      continue;
-    }
-    if (design.status === "invalid") {
-      continue;
-    }
-    if (design.history.some((item) => recordHasAuditLink(item, sessionId, auditLink))) {
-      return true;
-    }
-  }
+async function requirementHistoryHasAuditLink(_home: string, _productId: string, _sessionId: string, _auditLink: string): Promise<boolean> {
+  // Pencil-era audit link checks removed in v8 migration
   return false;
 }
 
-async function componentVersionHasAuditLink(home: string, productId: string, sessionId: string, auditLink: string): Promise<boolean> {
-  const componentLibrary = await getProductComponentLibrary(home, productId);
-  if (componentLibrary.status !== "complete") {
-    return false;
-  }
-  const current = componentLibrary.current_version_record;
-  return current?.session_id === sessionId && current.audit_link === auditLink;
+async function componentVersionHasAuditLink(_home: string, _productId: string, _sessionId: string, _auditLink: string): Promise<boolean> {
+  // Pencil component library removed in v8 migration
+  return false;
 }
 
 function recordHasAuditLink(value: unknown, sessionId: string, auditLink: string): boolean {
@@ -599,7 +572,7 @@ function stringOrNull(value: unknown): string | null {
 function requireActiveString(
   value: unknown,
   field: string,
-  code: "LOCK_CORRUPT" | "DESIGN_COMMIT_RECOVERY_REQUIRED",
+  code: "LOCK_CORRUPT" | "PRODUCT_DELETION_RECOVERY_FAILED",
   details: Record<string, unknown>
 ): string {
   if (typeof value === "string" && value.length > 0) {
@@ -612,10 +585,10 @@ async function validateLeasePath(
   home: string,
   value: unknown,
   field: string,
-  code: "LOCK_CORRUPT" | "DESIGN_COMMIT_RECOVERY_REQUIRED" | "DESIGN_SESSION_AUDIT_LINK_MISSING",
+  code: "LOCK_CORRUPT" | "PRODUCT_DELETION_RECOVERY_FAILED" | "PRODUCT_DELETION_RECOVERY_FAILED",
   details: Record<string, unknown>
 ): Promise<string> {
-  const raw = requireActiveString(value, field, code === "DESIGN_SESSION_AUDIT_LINK_MISSING" ? "LOCK_CORRUPT" : code, details);
+  const raw = requireActiveString(value, field, code === "PRODUCT_DELETION_RECOVERY_FAILED" ? "LOCK_CORRUPT" : code, details);
   if (isAbsolute(raw)) {
     throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
   }

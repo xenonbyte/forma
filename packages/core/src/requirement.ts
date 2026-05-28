@@ -2,7 +2,6 @@ import { randomBytes } from "node:crypto";
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { z } from "zod";
-import { BaselineService, baselineNavigationSchema } from "./baseline.js";
 import { copyItemSchema, type CopyByPage, type CopyService, type PageTranslation } from "./copy.js";
 import { FormaError } from "./errors.js";
 import { createId } from "./ids.js";
@@ -14,10 +13,27 @@ import {
   type ProductMutationContext,
   type ProductMutationLock
 } from "./product-mutation-lock.js";
-import { requirementStatuses, designStatuses } from "./schemas.js";
-import { buildSemanticContractForPage } from "./semantic-contract.js";
-import { semanticContractCoverageSchema, semanticContractSchema } from "./semantic-contract-schema.js";
+import { requirementStatuses } from "./schemas.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
+
+// Minimal stubs for deleted Pencil-era schemas — replaced in v8 artifact model
+const designStatuses = ["pending", "done", "expired"] as const;
+const semanticContractSchema = z.unknown().optional();
+const semanticContractCoverageSchema = z.unknown().optional();
+export const baselineNavigationSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  label: z.string().optional()
+}).passthrough();
+function buildSemanticContractForPage(input: {
+  page: {
+    semantic_contract?: unknown;
+    semantic_contract_coverage?: unknown;
+  }
+}): { semantic_contract: undefined; semantic_contract_coverage: undefined } {
+  void input;
+  return { semantic_contract: undefined, semantic_contract_coverage: undefined };
+}
 
 export const requirementIdSchema = z.string().regex(/^R-[a-f0-9]{8}$/);
 
@@ -169,14 +185,12 @@ export interface UpdateRequirementInput extends SubmitRequirementInput {
 export interface RequirementServiceOptions {
   home: string;
   products: ProductService;
-  baseline: BaselineService;
   copy: CopyService;
   productMutationLock?: ProductMutationLock;
   onProductMutationWarning?: (warning: string) => void;
 }
 
 interface RequirementServiceTestHooks {
-  afterBaselineUpdate?(): Promise<void> | void;
   afterTranslationsWrite?(): Promise<void> | void;
   afterDocumentWrite?(): Promise<void> | void;
   afterRulesWrite?(): Promise<void> | void;
@@ -185,7 +199,6 @@ interface RequirementServiceTestHooks {
 export class RequirementService {
   private readonly dataDir: string;
   private readonly products: ProductService;
-  private readonly baseline: BaselineService;
   private readonly copy: CopyService;
   private readonly productMutationLock: ProductMutationLock;
   private readonly onProductMutationWarning: (warning: string) => void;
@@ -194,7 +207,6 @@ export class RequirementService {
   constructor(options: RequirementServiceOptions) {
     this.dataDir = join(options.home, "data");
     this.products = options.products;
-    this.baseline = options.baseline;
     this.copy = options.copy;
     this.productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
     this.onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
@@ -357,18 +369,11 @@ export class RequirementService {
 
     const next = requirementSchema.parse({ ...current, status: "archived", updated_at: new Date().toISOString() });
     const files = [
-      this.requirementFile(next.product_id, next.id),
-      this.baselineFile(next.product_id)
+      this.requirementFile(next.product_id, next.id)
     ];
     const snapshots = await snapshotFiles(files);
     try {
       await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
-      await this.baseline.updateFromRequirementLocked({
-        productId: next.product_id,
-        requirementId: next.id,
-        pages: [],
-        navigation: []
-      });
     } catch (error) {
       await restoreSnapshots(snapshots);
       throw error;
@@ -587,20 +592,12 @@ export class RequirementService {
 
   private async commitRequirementAndBaseline(requirement: Requirement, documentMd: string): Promise<void> {
     const files = [
-      this.baselineFile(requirement.product_id),
       this.documentFile(requirement.product_id, requirement.id),
       this.requirementFile(requirement.product_id, requirement.id)
     ];
     const snapshots = await snapshotFiles(files);
 
     try {
-      await this.baseline.updateFromRequirementLocked({
-        productId: requirement.product_id,
-        requirementId: requirement.id,
-        pages: requirement.pages,
-        navigation: mapNavigationToBaseline(requirement.pages, requirement.navigation)
-      });
-      await this.testHooks.afterBaselineUpdate?.();
       await writeDocumentAtomic(this.documentFile(requirement.product_id, requirement.id), documentMd);
       await this.testHooks.afterDocumentWrite?.();
       await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
@@ -619,7 +616,6 @@ export class RequirementService {
       this.requirementFile(requirement.product_id, requirement.id),
       this.documentFile(requirement.product_id, requirement.id),
       this.translationsFile(requirement.product_id, requirement.id),
-      this.baselineFile(requirement.product_id),
       this.rulesFile(requirement.product_id)
     ];
     const product = await this.products.getProduct(requirement.product_id);
@@ -627,13 +623,6 @@ export class RequirementService {
     const snapshots = await snapshotFiles(files);
 
     try {
-      await this.baseline.updateFromRequirementLocked({
-        productId: requirement.product_id,
-        requirementId: requirement.id,
-        pages: requirement.pages,
-        navigation: mapNavigationToBaseline(requirement.pages, requirement.navigation)
-      });
-      await this.testHooks.afterBaselineUpdate?.();
       await this.copy.saveTranslationsLocked(requirement.product_id, requirement.id, mergedTranslations);
       await this.testHooks.afterTranslationsWrite?.();
       await writeDocumentAtomic(this.documentFile(requirement.product_id, requirement.id), input.document_md);
@@ -722,13 +711,13 @@ export class RequirementService {
 
 function assertDocument(documentMd: string): void {
   if (documentMd.trim().length === 0) {
-    throw new FormaError("DOCUMENT_EMPTY", "Document is empty");
+    throw new FormaError("INVALID_INPUT", "Document is empty");
   }
 }
 
 function assertPages(pages: unknown[]): void {
   if (pages.length === 0) {
-    throw new FormaError("PAGES_EMPTY", "Pages are empty");
+    throw new FormaError("INVALID_INPUT", "Pages are empty");
   }
 }
 
@@ -742,7 +731,7 @@ function resolveSavedPage(
   }
 
   if (currentPage?.design_status !== "done") {
-    throw new FormaError("PAGE_NOT_DONE", "Page is not done", {
+    throw new FormaError("INVALID_INPUT", "Page is not done", {
       requirement_id: requirementId,
       page_id: page.page_id,
       change_type: page.change_type,

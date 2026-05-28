@@ -2,13 +2,29 @@ import { createHash } from "node:crypto";
 import { access, copyFile, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import {
-  buildBaselineSemanticContractCandidate,
-  buildSemanticContractForPage,
-  type SemanticContract,
-  type SemanticContractCoverage
-} from "./semantic-contract.js";
 import { readYaml, readYamlUnknown, writeYamlAtomic } from "./yaml.js";
+
+// Minimal stubs for deleted Pencil-era semantic-contract module
+type SemanticContract = Record<string, unknown>;
+type SemanticContractCoverage = string;
+function buildSemanticContractForPage(_input: unknown): {
+  semantic_contract: undefined;
+  semantic_contract_coverage: undefined;
+} {
+  return { semantic_contract: undefined, semantic_contract_coverage: undefined };
+}
+function buildBaselineSemanticContractCandidate(_input: unknown): {
+  ok: false;
+  code: string;
+  conflicts: unknown[];
+  pages: Array<{
+    id: string;
+    semantic_contract: undefined;
+    semantic_contract_coverage: undefined;
+  }>;
+} {
+  return { ok: false, code: "BASELINE_SEMANTIC_CONTRACT_CONFLICT", conflicts: [], pages: [] };
+}
 
 export const V6_SCHEMA_NORMALIZER_VERSION = "v6-stage-01";
 const require = createRequire(import.meta.url);

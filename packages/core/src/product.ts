@@ -30,8 +30,11 @@ const productSchema = productIndexEntrySchema.extend({
   platform: z.enum(platforms).optional(),
   style: styleMetadataSchema.optional(),
   languages: z.array(z.enum(languages)).optional(),
-  default_language: z.enum(languages).optional()
-}).strict().superRefine((product, context) => {
+  default_language: z.enum(languages).optional(),
+  requirements: z.record(z.string(), z.object({
+    latestArtifactId: z.string().optional()
+  })).optional()
+}).superRefine((product, context) => {
   const hasLanguages = product.languages !== undefined;
   const hasDefaultLanguage = product.default_language !== undefined;
 
@@ -63,7 +66,7 @@ const productSchema = productIndexEntrySchema.extend({
       path: ["default_language"]
     });
   }
-}).strict();
+});
 
 const productConfigSchema = z.object({
   platform: z.enum(platforms),
@@ -84,6 +87,7 @@ export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductConfig = z.infer<typeof productConfigSchema>;
 export type ProductConfigField = "platform" | "style" | "languages";
+export type ProductRequirements = Record<string, { latestArtifactId?: string }>;
 
 export interface ProductServiceOptions {
   home: string;
@@ -205,14 +209,14 @@ export async function assertValidComponentLibrary(file: string): Promise<void> {
   try {
     parsed = JSON.parse(await readFile(file, "utf8"));
   } catch (error) {
-    throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", {
+    throw new FormaError("INVALID_INPUT", "Component library is invalid", {
       file,
       cause: error instanceof Error ? error.message : String(error)
     });
   }
 
   if (!isRecord(parsed) || !Array.isArray(parsed.children) || parsed.children.length === 0 || containsTruncationMarker(parsed)) {
-    throw new FormaError("PEN_FILE_INVALID", "Component library is invalid", { file });
+    throw new FormaError("INVALID_INPUT", "Component library is invalid", { file });
   }
 }
 

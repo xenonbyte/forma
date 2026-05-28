@@ -97,20 +97,12 @@ export function getProductMutationLock(home: string): ProductMutationLock {
   return new ProductMutationLockImpl(resolve(home), "product");
 }
 
-export function getPencilMutationLock(home: string): ProductMutationLock {
-  return new ProductMutationLockImpl(resolve(home), "pencil");
-}
-
 export function productMutationLockPath(home: string, productId?: string): string {
   const resolvedHome = resolve(home);
   const lockPath = productId
     ? join(resolvedHome, "data", parseProductId(productId), "locks", "product-mutation.lock")
     : join(resolvedHome, "locks", "product-mutation.lock");
   return assertInsideHome(resolvedHome, lockPath);
-}
-
-export function pencilMutationLockPath(home: string): string {
-  return join(resolve(home), "locks", "pencil.lock");
 }
 
 export function defaultProductMutationWarningSink(warning: string): void {
@@ -158,7 +150,7 @@ export async function runProductMutationWithWarnings<T>(
 class ProductMutationLockImpl implements ProductMutationLock {
   constructor(
     private readonly home: string,
-    private readonly kind: "product" | "pencil"
+    private readonly kind: "product" = "product"
   ) {}
 
   async run<T>(
@@ -166,19 +158,19 @@ class ProductMutationLockImpl implements ProductMutationLock {
     fn: (context: ProductMutationContext) => Promise<T>
   ): Promise<T> {
     const normalized = normalizeInput(input);
-    const lockPath = this.kind === "pencil" ? pencilMutationLockPath(this.home) : productMutationLockPath(this.home, normalized.product_id);
-    const globalQueueKey = this.kind === "product" ? productMutationLockPath(this.home) : undefined;
+    const lockPath = productMutationLockPath(this.home, normalized.product_id);
+    const globalQueueKey = productMutationLockPath(this.home);
     const queueKey = lockPath;
-    const isProductScoped = this.kind === "product" && Boolean(normalized.product_id);
+    const isProductScoped = Boolean(normalized.product_id);
     if (isProductScoped) {
       sameProcessProductQueueKeys.add(queueKey);
     }
-    const hierarchyQueues = this.kind === "product" && !normalized.product_id
+    const hierarchyQueues = !normalized.product_id
       ? [...sameProcessProductQueueKeys].map((key) => sameProcessQueues.get(key) ?? Promise.resolve())
       : [];
     const queueTail = normalized.product_id && globalQueueKey
       ? Promise.all([sameProcessQueues.get(globalQueueKey) ?? Promise.resolve(), sameProcessQueues.get(queueKey) ?? Promise.resolve()]).then(() => undefined)
-      : this.kind === "product" && !normalized.product_id
+      : !normalized.product_id
         ? Promise.all([sameProcessQueues.get(queueKey) ?? Promise.resolve(), ...hierarchyQueues]).then(() => undefined)
         : sameProcessQueues.get(queueKey) ?? Promise.resolve();
     let releaseQueue!: () => void;
@@ -220,7 +212,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
     await mkdir(dirname(lockPath), { recursive: true });
     return await this.withMutationSidecar(lockPath, async () => {
       await this.assertNoClaimedLock(lockPath);
-      if (this.kind === "product" && input.product_id) {
+      if (input.product_id) {
         await this.assertNoLiveGlobalProductLock(lockPath, warnings);
       }
       const existing = await this.readExisting(lockPath);
@@ -240,7 +232,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
             heartbeat_at: owner.heartbeat_at
           };
           emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
-          throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Mutation lock is held", details);
+          throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock is held", details);
         }
         await this.removeStaleLockUnderMutation(lockPath, owner, warnings);
       }
@@ -250,11 +242,11 @@ class ProductMutationLockImpl implements ProductMutationLock {
         await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
       } catch (error) {
         if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-          throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Mutation lock is held", { lock_path: lockPath });
+          throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock is held", { lock_path: lockPath });
         }
         throw error;
       }
-      if (this.kind === "product" && input.product_id) {
+      if (input.product_id) {
         try {
           await this.assertNoLiveGlobalProductLock(lockPath, warnings);
         } catch (error) {
@@ -262,7 +254,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
           throw error;
         }
       }
-      if (this.kind === "product" && !input.product_id) {
+      if (!input.product_id) {
         try {
           await this.assertNoLiveProductLocks(lockPath, warnings);
         } catch (error) {
@@ -334,7 +326,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
           heartbeat_at: latest.lock.heartbeat_at
         };
         emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
-        throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Mutation lock changed during stale reclaim", details);
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock changed during stale reclaim", details);
       }
       await claim.remove();
       recordWarning(`stale_reclaimed:${lockPath}`, warnings);
@@ -460,11 +452,11 @@ class ProductMutationLockImpl implements ProductMutationLock {
 
       const existing = await this.readMutationSidecar(mutationLockPath);
       if (existing && !isMutationSidecarReclaimable(existing)) {
-        throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
       }
       const reclaimed = await this.reclaimMutationSidecar(lockPath, existing);
       if (!reclaimed) {
-        throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
       }
     }
   }
@@ -542,7 +534,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
     const claims = (await readdir(lockDir).catch(() => []))
       .filter((file) => file.startsWith(prefix) && file.endsWith(".claim"));
     if (claims.length === 0) return;
-    throw new FormaError(this.kind === "pencil" ? "PENCIL_LOCK_HELD" : "PRODUCT_MUTATION_LOCKED", "Lock mutation claim is in progress", {
+    throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation claim is in progress", {
       lock_path: lockPath,
       claim_path: join(lockDir, claims[0]!)
     });

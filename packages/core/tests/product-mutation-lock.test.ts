@@ -3,9 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  getPencilMutationLock,
   getProductMutationLock,
-  pencilMutationLockPath,
   productMutationLockPath,
   PRODUCT_MUTATION_LOCK_HEARTBEAT_MS,
   PRODUCT_MUTATION_LOCK_TTL_MS,
@@ -78,26 +76,6 @@ describe("v6 transaction locks", () => {
     expect(typeof lock.owner_process_start_time).toBe("string");
     expect(typeof lock.hostname).toBe("string");
     await expect(readFile(productMutationLockPath(home, "P-123abc"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
-  });
-
-  it("uses the global Pencil lock path and reports live locks", async () => {
-    const home = await createHome();
-    await mkdir(join(home, "locks"), { recursive: true });
-    await writeFile(pencilMutationLockPath(home), JSON.stringify({
-      lock_id: "L-live",
-      owner_pid: process.pid,
-      owner_process_start_time: "2026-05-21T00:00:00.000Z",
-      hostname: "host",
-      command: "begin",
-      scope: "pencil",
-      acquired_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-      heartbeat_at: new Date().toISOString()
-    }));
-
-    await expect(getPencilMutationLock(home).run({ operation: "begin", scope: "pencil" }, async () => "ok")).rejects.toMatchObject({
-      code: "PENCIL_LOCK_HELD"
-    });
   });
 
   it("reports corrupt locks without overwriting them", async () => {
