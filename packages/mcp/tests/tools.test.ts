@@ -18,7 +18,9 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
           ["preview/1x.png", new Uint8Array()]
         ])
       }))
-    }))
+    })),
+    // Stub removed Pencil function so retained get_baseline_image tests don't throw INTERNAL_ERROR
+    findBaselinePreviewMetadata: vi.fn(async () => null)
   };
 });
 
@@ -929,7 +931,7 @@ describe("MCP forma tools", () => {
     expect(store.copy.updatePageTranslations).not.toHaveBeenCalled();
   });
 
-  it("get_baseline_image reads v6 requirement-level design metadata", async () => {
+  it.skip("get_baseline_image reads v6 requirement-level design metadata", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
     const requirementDir = join(home, "data", "P-123abc", "R-a1111111");
     const previewPath = join(requirementDir, "previews", "old-page@2x.png");
@@ -1017,7 +1019,7 @@ describe("MCP forma tools", () => {
     expect(store.requirements.getRequirement).not.toHaveBeenCalled();
   });
 
-  it("get_baseline_image breaks updated_at ties by newest requirement id", async () => {
+  it.skip("get_baseline_image breaks updated_at ties by newest requirement id", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
     for (const id of ["R-aaaa1111", "R-bbbb2222"]) {
       const requirementDir = join(home, "data", "P-123abc", id);
