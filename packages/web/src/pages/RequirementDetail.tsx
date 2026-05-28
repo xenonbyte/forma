@@ -14,10 +14,13 @@ import { useT } from "../LocaleContext.js";
 import { DesignSessionPanel } from "../components/DesignSessionPanel.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge } from "../components/StatusBadge.js";
+import type { ArtifactSummary } from "./DesignView.js";
 
 export interface RequirementDetailProps {
   client?: Pick<FormaApiClient, "getRequirement"> &
-    Partial<Pick<FormaApiClient, "getActiveRequirementDesignSession" | "getProductComponentLibrary" | "getRequirementDesignCanvas">>;
+    Partial<Pick<FormaApiClient, "getActiveRequirementDesignSession" | "getProductComponentLibrary" | "getRequirementDesignCanvas">> & {
+      listProductArtifacts?: (productId: string) => Promise<{ artifacts: ArtifactSummary[] }>;
+    };
   params: Record<string, string>;
 }
 
@@ -30,7 +33,7 @@ interface RequirementDesignStatus {
 type RequirementState =
   | { status: "error"; error: ApiErrorInfo }
   | { status: "loading" }
-  | { designStatus: RequirementDesignStatus; requirement: RequirementWithDocument; status: "ready" };
+  | { artifacts: ArtifactSummary[]; designStatus: RequirementDesignStatus; requirement: RequirementWithDocument; status: "ready" };
 
 export function RequirementDetail({ client = apiClient, params }: RequirementDetailProps) {
   const t = useT();
@@ -45,9 +48,12 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
     client
       .getRequirement(productId, requirementId)
       .then(async (requirement) => {
-        const designStatus = await loadRequirementDesignStatus(client, productId, requirementId, requirement);
+        const [designStatus, artifactsResult] = await Promise.all([
+          loadRequirementDesignStatus(client, productId, requirementId, requirement),
+          client.listProductArtifacts ? client.listProductArtifacts(productId).catch(() => ({ artifacts: [] })) : Promise.resolve({ artifacts: [] })
+        ]);
         if (!cancelled) {
-          setState({ designStatus, requirement, status: "ready" });
+          setState({ artifacts: artifactsResult.artifacts, designStatus, requirement, status: "ready" });
         }
       })
       .catch((error: unknown) => {
@@ -79,8 +85,10 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
 
   const requirement = state.requirement;
   const designStatus = state.designStatus;
+  const artifacts = state.artifacts;
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
+  const latestArtifact = artifacts.length > 0 ? artifacts[0] : null;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -152,6 +160,35 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
         {!noUiChanges ? (
           <WorkSurface title={t("design.mainCanvas")}>
             <DesignSessionPanel canvas={designStatus.canvas} componentLibrary={designStatus.componentLibrary} session={designStatus.session} />
+          </WorkSurface>
+        ) : null}
+        {!noUiChanges ? (
+          <WorkSurface title={t("design.artifactPreview")}>
+            {latestArtifact ? (
+              <div className="space-y-3">
+                <img
+                  alt={latestArtifact.title}
+                  className="max-h-[200px] w-full rounded-md border border-zinc-200 object-contain"
+                  src={`/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(latestArtifact.id)}/preview/1x`}
+                />
+                <a
+                  className={secondaryLinkClasses}
+                  href={`forma://products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/artifacts`}
+                >
+                  {t("action.openInApp")}
+                </a>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-zinc-500">{t("design.noArtifactYet")}</p>
+                <a
+                  className={secondaryLinkClasses}
+                  href={`forma://products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/artifacts`}
+                >
+                  {t("action.openInApp")}
+                </a>
+              </div>
+            )}
           </WorkSurface>
         ) : null}
         <WorkSurface title={t("requirement.navigation")}>

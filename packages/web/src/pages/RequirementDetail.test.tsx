@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequirementDetail } from "./RequirementDetail.js";
+import type { ArtifactSummary } from "./DesignView.js";
 import type { ActiveDesignSession, FormaApiClient, ProductComponentLibrary, RequirementDesignCanvas, RequirementWithDocument } from "../api.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -157,6 +158,47 @@ describe("RequirementDetail", () => {
     expect(container.textContent).toContain("stale");
     expect(container.textContent).toContain("passed");
     expect(container.textContent).toContain("pending");
+  });
+
+  it("shows artifact preview PNG when artifacts are available", async () => {
+    const artifact: ArtifactSummary = {
+      id: "A-test",
+      kind: "page_design",
+      title: "Checkout design",
+      updated_at: "2026-05-28T00:00:00.000Z"
+    };
+    const client = {
+      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
+      listProductArtifacts: vi.fn(async () => ({ artifacts: [artifact] }))
+    };
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      await flushPromises();
+    });
+
+    const img = container.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("src")).toContain("/artifacts/A-test/preview/1x");
+  });
+
+  it("shows deep-link button for UI-affecting requirements", async () => {
+    const client = {
+      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
+      listProductArtifacts: vi.fn(async () => ({ artifacts: [] }))
+    };
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      await flushPromises();
+    });
+
+    const deepLink = container.querySelector('a[href^="forma://"]');
+    expect(deepLink).not.toBeNull();
+    expect(deepLink?.getAttribute("href")).toBe("forma://products/P-123abc/requirements/R-12345678/artifacts");
+    expect(deepLink?.textContent).toContain("Open in app");
   });
 });
 
