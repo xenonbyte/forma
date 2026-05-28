@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequirementDetail } from "./RequirementDetail.js";
 import type { ArtifactSummary } from "./DesignView.js";
-import type { ActiveDesignSession, FormaApiClient, ProductComponentLibrary, RequirementDesignCanvas, RequirementWithDocument } from "../api.js";
+import type { FormaApiClient, RequirementWithDocument } from "../api.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -46,35 +46,6 @@ const uiRequirementWithLegacyDesignId: RequirementWithDocument = {
     }
   ],
   navigation: []
-};
-
-const completeCanvas: RequirementDesignCanvas = {
-  component_library_version: 7,
-  index_status: "stale",
-  product_id: "P-123abc",
-  requirement_id: "R-12345678",
-  canvas_version: 4,
-  pages: [{ page_id: "checkout", frame_id: "frame-1", status: "done" }]
-};
-
-const activeSession: ActiveDesignSession = {
-  elapsed_ms: 192000,
-  lock_owner: { agent: "codex", pid: 70604 },
-  operation: "generate",
-  page_id: "checkout",
-  product_id: "P-123abc",
-  requirement_id: "R-12345678",
-  session_id: "S-active",
-  status: "drawing",
-  quality_result: "passed",
-  screenshot_review_status: "pending"
-};
-
-const componentLibrary: ProductComponentLibrary = {
-  components: [{ key: "button.primary", name: "Primary button" }],
-  current_version: 8,
-  product_id: "P-123abc",
-  status: "ready"
 };
 
 const roots: Root[] = [];
@@ -128,36 +99,6 @@ describe("RequirementDetail", () => {
     expect(container.querySelector('a[href="/products/P-123abc/requirements/R-12345678/design?page_id=checkout"]')).not.toBeNull();
     expect(container.querySelector('a[href*="/designs/"]')).toBeNull();
     expect(container.innerHTML).not.toContain("/products/P-123abc/requirements/R-12345678/designs/D-12345678");
-  });
-
-  it("shows requirement-level canvas, component, and active session status from structured APIs", async () => {
-    const client = {
-      getActiveRequirementDesignSession: vi.fn(async () => activeSession),
-      getProductComponentLibrary: vi.fn(async () => componentLibrary),
-      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      getRequirementDesignCanvas: vi.fn(async () => completeCanvas)
-    } satisfies Pick<
-      FormaApiClient,
-      "getActiveRequirementDesignSession" | "getProductComponentLibrary" | "getRequirement" | "getRequirementDesignCanvas"
-    >;
-    const { container, root } = createTestRoot();
-
-    await act(async () => {
-      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    expect(client.getRequirementDesignCanvas).toHaveBeenCalledWith("P-123abc", "R-12345678");
-    expect(client.getActiveRequirementDesignSession).toHaveBeenCalledWith("P-123abc", "R-12345678");
-    expect(client.getProductComponentLibrary).toHaveBeenCalledWith("P-123abc");
-    expect(container.textContent).toContain("design.pen");
-    expect(container.textContent).toContain("Pinned components v7");
-    expect(container.textContent).toContain("Latest components v8");
-    expect(container.textContent).toContain("03:12");
-    expect(container.textContent).toContain("codex");
-    expect(container.textContent).toContain("stale");
-    expect(container.textContent).toContain("passed");
-    expect(container.textContent).toContain("pending");
   });
 
   it("shows artifact preview PNG when artifacts are available", async () => {

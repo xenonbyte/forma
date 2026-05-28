@@ -364,7 +364,15 @@ describe("apiRequest", () => {
       "getDesignAnnotations",
       "getDesignDiff",
       "getDesignHistory",
-      "getDesignImage"
+      "getDesignImage",
+      "getActiveProductDesignSession",
+      "getActiveRequirementDesignSession",
+      "getProductComponentLibrary",
+      "getRequirementDesignCanvas",
+      "getRequirementDesignScene",
+      "indexRequirementDesignCanvas",
+      "getSyncStatus",
+      "syncStyles"
     ]) {
       expect(method in client).toBe(false);
     }
@@ -379,24 +387,6 @@ describe("apiRequest", () => {
         method: init?.method
       });
       const path = input.toString();
-      if (path.endsWith("/design/canvas")) {
-        return jsonResponse({
-          index_status: "complete",
-          product_id: "P-123abc",
-          requirement_id: "R-12345678",
-          pages: [{ page_id: "checkout-page", status: "done", frame_id: "frame-1" }]
-        });
-      }
-      if (path.endsWith("/design/scene")) {
-        return jsonResponse({
-          schema_version: 1,
-          product_id: "P-123abc",
-          requirement_id: "R-12345678",
-          canvas: { file: "design.pen", version: 1 },
-          pages: [{ page_id: "checkout-page", frame_id: "frame-1", preview: { status: "exported", file: "previews/checkout-page@2x.png" }, nodes: [] }],
-          unsupported_properties: []
-        });
-      }
       if (path.includes("/design/history")) {
         return jsonResponse([{ version: 1, file: "history/canvas/canvas.c1.pen" }]);
       }
@@ -406,16 +396,10 @@ describe("apiRequest", () => {
       if (path.includes("/design/diff")) {
         return jsonResponse({ changed: false, from_canvas_version: 1, to_canvas_version: 2 });
       }
-      if (path.endsWith("/design/session/active")) {
-        return jsonResponse({ status: "none", product_id: "P-123abc", requirement_id: "R-12345678" });
-      }
       return jsonResponse({ session_id: "S-1234567890abcdef", status: "running" });
     });
     const sessionId = "S-1234567890abcdef";
 
-    await expect(client.getRequirementDesignCanvas("P-123abc", "R-12345678")).resolves.toMatchObject({ index_status: "complete" });
-    await expect(client.indexRequirementDesignCanvas("P-123abc", "R-12345678")).resolves.toMatchObject({ session_id: sessionId });
-    await expect(client.getRequirementDesignScene("P-123abc", "R-12345678")).resolves.toMatchObject({ schema_version: 1 });
     await expect(client.getRequirementDesignHistory("P-123abc", "R-12345678", "checkout-page")).resolves.toEqual([
       { version: 1, file: "history/canvas/canvas.c1.pen" }
     ]);
@@ -454,12 +438,8 @@ describe("apiRequest", () => {
       quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] }
     })).resolves.toMatchObject({ status: "running" });
     await expect(client.discardRequirementDesignSession("P-123abc", "R-12345678", sessionId)).resolves.toMatchObject({ status: "running" });
-    await expect(client.getActiveRequirementDesignSession("P-123abc", "R-12345678")).resolves.toMatchObject({ status: "none" });
 
     expect(requests).toEqual([
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/canvas", method: undefined, body: undefined },
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/index", method: "POST", body: undefined },
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/scene", method: undefined, body: undefined },
       { input: "/api/products/P-123abc/requirements/R-12345678/design/history?page_id=checkout-page", method: undefined, body: undefined },
       { input: "/api/products/P-123abc/requirements/R-12345678/design/export?node_id=frame-1&format=png", method: undefined, body: undefined },
       { input: "/api/products/P-123abc/requirements/R-12345678/design/diff?page_id=checkout-page&from_page_version=1&to_page_version=2", method: undefined, body: undefined },
@@ -498,8 +478,7 @@ describe("apiRequest", () => {
         input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/discard",
         method: "POST",
         body: undefined
-      },
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/session/active", method: undefined, body: undefined }
+      }
     ]);
     expect(JSON.stringify(requests)).not.toContain("design_id");
   });
@@ -515,7 +494,6 @@ describe("apiRequest", () => {
       return jsonResponse({ product_id: "P-123abc", session_id: "S-1234567890abcdef", status: "running", components: [] });
     });
 
-    await client.getProductComponentLibrary("P-123abc");
     await client.beginProductComponentSession("P-123abc", { operation: "generate", seed_components: [{ component_key: "button-primary" }] });
     await client.applyProductComponentOperations("P-123abc", "S-1234567890abcdef", {
       operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }]
@@ -523,10 +501,8 @@ describe("apiRequest", () => {
     await client.commitProductComponentSession("P-123abc", "S-1234567890abcdef");
     await client.discardProductComponentSession("P-123abc", "S-1234567890abcdef");
     await client.recoverDesignCommitJournal("P-123abc", "S-1234567890abcdef", { scope: "product_component_library" });
-    await client.getActiveProductDesignSession("P-123abc");
 
     expect(requests).toEqual([
-      { input: "/api/products/P-123abc/component-library", method: undefined, body: undefined },
       {
         input: "/api/products/P-123abc/component-library/session/begin",
         method: "POST",
@@ -543,41 +519,36 @@ describe("apiRequest", () => {
         input: "/api/products/P-123abc/design/session/S-1234567890abcdef/recover-commit-journal",
         method: "POST",
         body: { scope: "product_component_library" }
-      },
-      { input: "/api/products/P-123abc/design/session/active", method: undefined, body: undefined }
+      }
     ]);
   });
 
-  it("builds typed style sync API routes", async () => {
-    const requests: Array<[RequestInfo | URL, string | undefined]> = [];
+  it("builds artifact API routes", async () => {
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
     const client = createApiClient(async (input, init) => {
-      requests.push([input, init?.method]);
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
       const path = input.toString();
-      if (path === "/api/styles/sync") {
-        return jsonResponse({ task_id: "sync-123", status: "running", message: "Style sync started" });
-      }
-      if (path === "/api/styles/sync/status") {
+      if (path.includes("/artifacts/A-abc123")) {
         return jsonResponse({
-          status: "running",
-          task_id: "sync-123",
-          started_at: "2026-05-18T00:00:00.000Z",
-          progress: { phase: "scanning", current: 2, total: 7, current_style: "linear" }
+          manifest: { id: "A-abc123", kind: "page_design", title: "Checkout", entry: "index.html", status: "ready", exports: [] }
         });
       }
-      return jsonResponse({}, { status: 404 });
+      return jsonResponse({ artifacts: [{ id: "A-abc123", kind: "page_design", title: "Checkout", updated_at: "2026-05-28T00:00:00.000Z", superseded: false }] });
     });
 
-    await expect(client.syncStyles()).resolves.toEqual({ task_id: "sync-123", status: "running", message: "Style sync started" });
-    await expect(client.getSyncStatus()).resolves.toEqual({
-      status: "running",
-      task_id: "sync-123",
-      started_at: "2026-05-18T00:00:00.000Z",
-      progress: { phase: "scanning", current: 2, total: 7, current_style: "linear" }
-    });
+    await expect(client.listProductArtifacts("P-123abc")).resolves.toMatchObject({ artifacts: [{ id: "A-abc123" }] });
+    await expect(client.listProductArtifacts("P-123abc", "page_design")).resolves.toMatchObject({ artifacts: [{ id: "A-abc123" }] });
+    await expect(client.getProductArtifact("P-123abc", "A-abc123")).resolves.toMatchObject({ manifest: { id: "A-abc123" } });
 
-    expect(requests).toEqual([
-      ["/api/styles/sync", "POST"],
-      ["/api/styles/sync/status", undefined]
-    ]);
+    expect(client.getArtifactPreviewUrl("P-123abc", "A-abc123", "1x")).toBe("/api/products/P-123abc/artifacts/A-abc123/preview/1x");
+    expect(client.getArtifactPreviewUrl("P-123abc", "A-abc123", "2x")).toBe("/api/products/P-123abc/artifacts/A-abc123/preview/2x");
+
+    expect(requests[0]).toMatchObject({ input: "/api/products/P-123abc/artifacts", method: undefined });
+    expect(requests[1]?.input.toString()).toContain("kind=page_design");
+    expect(requests[2]).toMatchObject({ input: "/api/products/P-123abc/artifacts/A-abc123", method: undefined });
   });
 });

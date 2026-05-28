@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
+import { apiClient } from "./api.js";
 import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
 import { BaselineView } from "./pages/BaselineView.js";
 import { ProductDetail, type ProductDeleteNavigationState } from "./pages/ProductDetail.js";
@@ -71,7 +72,7 @@ export const routeTable: RouteDefinition[] = [
     title: ({ productId }) => `${productId} baseline`
   },
   {
-    component: DesignView,
+    component: DesignViewRoute,
     context: "Design",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/design",
@@ -178,6 +179,10 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
   }
 
   return { found: false, hash, navigationState: undefined, params: {}, pathname, route: notFoundRoute };
+}
+
+function DesignViewRoute(props: RoutePageProps) {
+  return <DesignView client={apiClient} params={props.params} />;
 }
 
 function ProductListRoute(props: RoutePageProps) {

@@ -3,37 +3,26 @@ import { useEffect, useState } from "react";
 import {
   apiClient,
   formatApiError,
-  type ActiveDesignSession,
   type ApiErrorInfo,
   type FormaApiClient,
-  type ProductComponentLibrary,
-  type RequirementDesignCanvas,
   type RequirementWithDocument
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { DesignSessionPanel } from "../components/DesignSessionPanel.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import type { ArtifactSummary } from "./DesignView.js";
 
 export interface RequirementDetailProps {
-  client?: Pick<FormaApiClient, "getRequirement"> &
-    Partial<Pick<FormaApiClient, "getActiveRequirementDesignSession" | "getProductComponentLibrary" | "getRequirementDesignCanvas">> & {
-      listProductArtifacts?: (productId: string) => Promise<{ artifacts: ArtifactSummary[] }>;
-    };
+  client?: Pick<FormaApiClient, "getRequirement"> & {
+    listProductArtifacts?: (productId: string) => Promise<{ artifacts: ArtifactSummary[] }>;
+  };
   params: Record<string, string>;
-}
-
-interface RequirementDesignStatus {
-  canvas: RequirementDesignCanvas | null;
-  componentLibrary: ProductComponentLibrary | null;
-  session: ActiveDesignSession | null;
 }
 
 type RequirementState =
   | { status: "error"; error: ApiErrorInfo }
   | { status: "loading" }
-  | { artifacts: ArtifactSummary[]; designStatus: RequirementDesignStatus; requirement: RequirementWithDocument; status: "ready" };
+  | { artifacts: ArtifactSummary[]; requirement: RequirementWithDocument; status: "ready" };
 
 export function RequirementDetail({ client = apiClient, params }: RequirementDetailProps) {
   const t = useT();
@@ -48,12 +37,11 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
     client
       .getRequirement(productId, requirementId)
       .then(async (requirement) => {
-        const [designStatus, artifactsResult] = await Promise.all([
-          loadRequirementDesignStatus(client, productId, requirementId, requirement),
-          client.listProductArtifacts ? client.listProductArtifacts(productId).catch(() => ({ artifacts: [] })) : Promise.resolve({ artifacts: [] })
-        ]);
+        const artifactsResult = client.listProductArtifacts
+          ? await client.listProductArtifacts(productId).catch(() => ({ artifacts: [] }))
+          : { artifacts: [] };
         if (!cancelled) {
-          setState({ artifacts: artifactsResult.artifacts, designStatus, requirement, status: "ready" });
+          setState({ artifacts: artifactsResult.artifacts, requirement, status: "ready" });
         }
       })
       .catch((error: unknown) => {
@@ -84,7 +72,6 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
   }
 
   const requirement = state.requirement;
-  const designStatus = state.designStatus;
   const artifacts = state.artifacts;
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
@@ -158,11 +145,6 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
 
       <div className="space-y-3">
         {!noUiChanges ? (
-          <WorkSurface title={t("design.mainCanvas")}>
-            <DesignSessionPanel canvas={designStatus.canvas} componentLibrary={designStatus.componentLibrary} session={designStatus.session} />
-          </WorkSurface>
-        ) : null}
-        {!noUiChanges ? (
           <WorkSurface title={t("design.artifactPreview")}>
             {latestArtifact ? (
               <div className="space-y-3">
@@ -210,25 +192,6 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
       </div>
     </div>
   );
-}
-
-async function loadRequirementDesignStatus(
-  client: RequirementDetailProps["client"],
-  productId: string,
-  requirementId: string,
-  requirement: RequirementWithDocument
-): Promise<RequirementDesignStatus> {
-  if (requirement.ui_affected === false) {
-    return { canvas: null, componentLibrary: null, session: null };
-  }
-
-  const [canvas, session, componentLibrary] = await Promise.all([
-    client?.getRequirementDesignCanvas ? client.getRequirementDesignCanvas(productId, requirementId).catch(() => null) : Promise.resolve(null),
-    client?.getActiveRequirementDesignSession ? client.getActiveRequirementDesignSession(productId, requirementId).catch(() => null) : Promise.resolve(null),
-    client?.getProductComponentLibrary ? client.getProductComponentLibrary(productId).catch(() => null) : Promise.resolve(null)
-  ]);
-
-  return { canvas, componentLibrary, session };
 }
 
 const secondaryLinkClasses =
