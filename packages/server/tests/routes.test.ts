@@ -629,7 +629,6 @@ describe("Fastify API routes", () => {
         pages: [],
         navigation: []
       })),
-      submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
     };
     const app = await appWith(fakeStore({ requirements }));
 
@@ -643,7 +642,6 @@ describe("Fastify API routes", () => {
     expect(response.json()).toMatchObject({ id: "R-12345678", status: "empty" });
     expect(response.json()).not.toHaveProperty("document_md");
     expect(requirements.createEmptyRequirement).toHaveBeenCalledWith("P-123abc", "Checkout");
-    expect(requirements.submitRequirement).not.toHaveBeenCalled();
   });
 
   it("rejects legacy submit payload fields on the title-only create requirement route", async () => {

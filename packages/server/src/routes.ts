@@ -1,7 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   recoverV6NormalizationJournal,
   restoreV6NormalizationBackup,
@@ -122,30 +122,31 @@ class RouteNotFoundError extends RouteHttpError {
   }
 }
 
-// ─── Origin middleware helpers ─────────────────────────────────────────────────
-
 function isMutationMethod(method: string): boolean {
   return method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
 }
 
-function checkMutationOrigin(request: { method: string; headers: Record<string, string | string[] | undefined>; url: string }, reply: FastifyReply): boolean {
+function isOriginAllowed(originStr: string | undefined): boolean {
+  if (originStr === undefined) return true;
+  if (originStr === "null") return false;
+  if (originStr.startsWith("forma-asset://")) return false;
+  return ALLOWED_MUTATION_ORIGINS.has(originStr);
+}
+
+function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): boolean {
   if (!isMutationMethod(request.method)) {
     return true;
   }
 
   const origin = request.headers["origin"];
   const originStr = Array.isArray(origin) ? origin[0] : origin;
-
-  const timestamp = new Date().toISOString();
-  const route = request.url;
   const formaClient = request.headers["x-forma-client"];
   const formaClientStr = Array.isArray(formaClient) ? formaClient[0] : (formaClient ?? null);
-
-  const allowed = originStr === undefined ? true : (originStr !== "null" && !originStr.startsWith("forma-asset://") && ALLOWED_MUTATION_ORIGINS.has(originStr));
+  const allowed = isOriginAllowed(originStr);
 
   console.log(JSON.stringify({
-    timestamp,
-    route,
+    timestamp: new Date().toISOString(),
+    route: request.url,
     origin: originStr ?? null,
     "x-forma-client": formaClientStr,
     allowed
@@ -170,7 +171,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   app.get("/api/products", async () => store.products.listProducts());
 
   app.post<{ Body: unknown }>("/api/products", async (request, reply) => {
-    if (!checkMutationOrigin(request as Parameters<typeof checkMutationOrigin>[0], reply)) return;
+    if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
     return store.products.createProduct({
       name: requiredString(body, "name"),
@@ -181,7 +182,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   app.get<{ Params: { id: string } }>("/api/products/:id", async (request) => store.products.getProduct(request.params.id));
 
   app.delete<{ Params: { id: string }; Body: unknown }>("/api/products/:id", async (request, reply) => {
-    if (!checkMutationOrigin(request as Parameters<typeof checkMutationOrigin>[0], reply)) return;
+    if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
     return store.deleteProduct({
       product_id: request.params.id,
@@ -190,7 +191,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   });
 
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/config", async (request, reply) => {
-    if (!checkMutationOrigin(request as Parameters<typeof checkMutationOrigin>[0], reply)) return;
+    if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
     const style = await store.styles.getStyle(requiredString(body, "style"));
     return store.products.initProductConfig(request.params.id, {
@@ -208,14 +209,14 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   );
 
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/requirements", async (request, reply) => {
-    if (!checkMutationOrigin(request as Parameters<typeof checkMutationOrigin>[0], reply)) return;
+    if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
     requireOnlyFields(body, ["title"]);
     return store.requirements.createEmptyRequirement(request.params.id, requiredString(body, "title"));
   });
 
   app.post<{ Params: { id: string; reqId: string }; Body: unknown }>("/api/products/:id/requirements/:reqId/save", async (request, reply) => {
-    if (!checkMutationOrigin(request as Parameters<typeof checkMutationOrigin>[0], reply)) return;
+    if (!checkMutationOrigin(request, reply)) return;
     await getOwnedRequirement(store, request.params.id, request.params.reqId);
     const body = objectBody(request.body);
     const input = { ...body, requirement_id: request.params.reqId } as Parameters<typeof store.requirements.saveRequirement>[0];
@@ -223,7 +224,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   });
 
   app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request, reply) => {
-    if (!checkMutationOrigin(request as Parameters<typeof checkMutationOrigin>[0], reply)) return;
+    if (!checkMutationOrigin(request, reply)) return;
     await getOwnedRequirement(store, request.params.id, request.params.reqId);
     const archived = await store.requirements.archiveRequirement(request.params.reqId);
     return store.requirements.getRequirement({ requirement_id: archived.id });
