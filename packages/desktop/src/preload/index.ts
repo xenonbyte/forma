@@ -1,33 +1,23 @@
 // SPEC-IF-DESKTOP-001: ONLY these readonly methods are exposed via contextBridge.
-// ipcRenderer is loaded dynamically so that this module can be imported in
-// non-Electron test environments without crashing.
+// Static imports are safe here: electron-vite builds preload as a separate CJS bundle
+// where electron modules are always available. Dynamic imports were removed because
+// contextBridge.exposeInMainWorld must be called synchronously before the renderer loads.
 
-async function invokeIpc(channel: string, ...args: unknown[]): Promise<unknown> {
-  const { ipcRenderer } = await import('electron');
-  return ipcRenderer.invoke(channel, ...args);
-}
+import { contextBridge, ipcRenderer } from 'electron';
 
 // SPEC-IF-DESKTOP-001: exactly these seven readonly methods, nothing else.
 export const readonlyApi = {
-  listProducts: () => invokeIpc('forma:listProducts'),
-  getProduct: (id: string) => invokeIpc('forma:getProduct', id),
-  listArtifacts: (productId: string) => invokeIpc('forma:listArtifacts', productId),
+  listProducts: () => ipcRenderer.invoke('forma:listProducts'),
+  getProduct: (id: string) => ipcRenderer.invoke('forma:getProduct', id),
+  listArtifacts: (productId: string) => ipcRenderer.invoke('forma:listArtifacts', productId),
   getArtifact: (productId: string, artifactId: string) =>
-    invokeIpc('forma:getArtifact', productId, artifactId),
-  listRequirements: (productId: string) => invokeIpc('forma:listRequirements', productId),
+    ipcRenderer.invoke('forma:getArtifact', productId, artifactId),
+  listRequirements: (productId: string) => ipcRenderer.invoke('forma:listRequirements', productId),
   getRequirement: (productId: string, requirementId: string) =>
-    invokeIpc('forma:getRequirement', productId, requirementId),
-  formaServerStatus: () => invokeIpc('forma:serverStatus'),
+    ipcRenderer.invoke('forma:getRequirement', productId, requirementId),
+  formaServerStatus: () => ipcRenderer.invoke('forma:serverStatus'),
 };
 
 export type FormaDesktopAPI = typeof readonlyApi;
 
-async function exposeReadonlyApi(): Promise<void> {
-  const { contextBridge } = await import('electron');
-  contextBridge.exposeInMainWorld('forma', readonlyApi);
-}
-
-// Only wire up contextBridge in the real Electron preload environment.
-if (process.env.NODE_ENV !== 'test') {
-  void exposeReadonlyApi();
-}
+contextBridge.exposeInMainWorld('forma', readonlyApi);
