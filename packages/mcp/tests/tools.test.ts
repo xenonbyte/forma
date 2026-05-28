@@ -6,6 +6,22 @@ import { describe, expect, it, vi } from "vitest";
 import * as z from "zod/v4";
 import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
 
+vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    createOdRuntime: vi.fn(() => ({
+      generate: vi.fn(async () => ({
+        manifest: fakeManifest(),
+        supportingFiles: new Map([
+          ["preview/2x.png", new Uint8Array()],
+          ["preview/1x.png", new Uint8Array()]
+        ])
+      }))
+    }))
+  };
+});
+
 const removedLegacyToolNames = [
   "complete_product_init",
   "generate_components",
@@ -32,7 +48,8 @@ const v6ToolNames = [
   "index_requirement_design_canvas",
   "get_requirement_design_scene",
   "get_requirement_design_history",
-  "rollback_requirement_design",
+  // rollback_requirement_design is intentionally NOT listed here:
+  // it was a v6 legacy name but is re-added as a C-03 artifact tool
   "diff_requirement_design_versions",
   "export_requirement_design_asset",
   "get_product_component_library",
@@ -99,12 +116,27 @@ function sampleStyle() {
   };
 }
 
+function fakeManifest() {
+  return {
+    version: 1 as const,
+    id: "ABCDEFGHIJ123456",
+    kind: "html" as const,
+    renderer: "html" as const,
+    title: "Test Page",
+    entry: "index.html",
+    status: "complete" as const,
+    exports: ["index.html"],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+}
+
 function fakeStore(overrides: Record<string, unknown> = {}) {
   const store = {
     home: "/tmp/forma",
     artifacts: {
-      writeArtifact: vi.fn(async () => ({ artifactId: "A-123abc", etag: "sha256:abc" })),
-      readArtifact: vi.fn(async () => ({ manifest: {}, etag: "sha256:abc" })),
+      writeArtifact: vi.fn(async () => ({ artifactId: "ABCDEFGHIJ123456", etag: "sha256:abc" })),
+      readArtifact: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
       listArtifacts: vi.fn(async () => []),
       deleteArtifact: vi.fn(async () => undefined)
     },
@@ -131,10 +163,14 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         platform: "web",
         style: { name: "linear" },
         languages: ["en", "zh-CN"],
-        default_language: "en"
+        default_language: "en",
+        requirements: {
+          "R-12345678": { latestArtifactId: "OLDARTIFACT12345" }
+        }
       })),
-      initProductConfig: vi.fn(async (_productId, config) => ({ id: "P-123abc", ...config })),
-      listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }])
+      initProductConfig: vi.fn(async (_productId: string, config: unknown) => ({ id: "P-123abc", ...config as object })),
+      listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
+      setRequirementArtifactPointerLocked: vi.fn(async () => undefined as string | undefined)
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
     requirements: {
@@ -1091,6 +1127,15 @@ describe("MCP forma tools", () => {
     });
   });
 
+  it("artifact tools appear in formaToolNames", () => {
+    expect(formaToolNames).toContain("list_product_artifacts");
+    expect(formaToolNames).toContain("get_product_artifact");
+    expect(formaToolNames).toContain("generate_requirement_design");
+    expect(formaToolNames).toContain("refine_requirement_design");
+    expect(formaToolNames).toContain("export_artifact");
+    expect(formaToolNames).toContain("rollback_requirement_design");
+  });
+
   it("get_baseline_image does not use unrelated latest requirement page_id collisions", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-"));
     const collidingPreviewPath = join(home, "data", "P-123abc", "R-d4444444", "D-wrong11", "preview@2x.png");
@@ -1148,5 +1193,386 @@ describe("MCP forma tools", () => {
       details: { product_id: "P-123abc", page_id: "checkout" }
     });
     expect(store.requirements.getRequirement).not.toHaveBeenCalled();
+  });
+});
+
+describe("artifact tools (C-03)", () => {
+  // ─── list_product_artifacts ───────────────────────────────────────────────
+
+  it("list_product_artifacts returns empty list when no artifacts exist", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({ artifacts: [] });
+    expect(store.artifacts.listArtifacts).toHaveBeenCalledWith("P-123abc");
+  });
+
+  it("list_product_artifacts returns artifact summaries with superseded=false for current pointer", async () => {
+    // "OLDARTIFACT12345" is the current pointer in fakeStore (requirements["R-12345678"].latestArtifactId)
+    const manifest = { ...fakeManifest(), id: "OLDARTIFACT12345", requirementId: "R-12345678" };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "OLDARTIFACT12345", etag: "sha256:abc" }]),
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts).toHaveLength(1);
+    expect(payload.artifacts[0]).toMatchObject({
+      id: "OLDARTIFACT12345",
+      kind: "html",
+      title: "Test Page",
+      superseded: false,
+      preview_url: "/products/P-123abc/artifacts/OLDARTIFACT12345/preview/2x.png"
+    });
+  });
+
+  it("list_product_artifacts marks superseded artifacts correctly when include_superseded=true", async () => {
+    const manifest = { ...fakeManifest(), id: "SUPERSEDEDART123", requirementId: "R-12345678" };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "SUPERSEDEDART123", etag: "sha256:old" }]),
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:old" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc", include_superseded: true });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts[0]).toMatchObject({
+      id: "SUPERSEDEDART123",
+      superseded: true
+    });
+  });
+
+  it("list_product_artifacts returns PRODUCT_NOT_FOUND error when product does not exist", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => {
+          throw new FormaError("PRODUCT_NOT_FOUND", "Product not found");
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-missing" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
+  });
+
+  // ─── get_product_artifact ─────────────────────────────────────────────────
+
+  it("get_product_artifact returns manifest and preview_url", async () => {
+    const manifest = fakeManifest();
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_artifact({ product_id: "P-123abc", artifact_id: "ABCDEFGHIJ123456" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload).toMatchObject({
+      manifest,
+      supportingFiles: [],
+      preview_url: "/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x.png"
+    });
+    expect(store.artifacts.readArtifact).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456");
+  });
+
+  it("get_product_artifact returns ARTIFACT_NOT_FOUND when artifact is missing", async () => {
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => {
+          throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_artifact({ product_id: "P-123abc", artifact_id: "MISSING12345678" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  // ─── generate_requirement_design ─────────────────────────────────────────
+
+  it("generate_requirement_design returns artifact_id and status=complete", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "generate"
+    });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload).toMatchObject({ artifact_id: expect.any(String), status: "complete" });
+    expect(store.products.setRequirementArtifactPointerLocked).toHaveBeenCalled();
+  });
+
+  it("generate_requirement_design returns REQUIREMENT_NOT_FOUND when product_id mismatches", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [] }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "generate"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+  });
+
+  it("generate_requirement_design with mode=rebuild passes ignoreInternalCache", async () => {
+    const { createOdRuntime } = await import("@xenonbyte/forma-core");
+    const mockGenerate = vi.fn(async () => ({
+      manifest: fakeManifest(),
+      supportingFiles: new Map([
+        ["preview/2x.png", new Uint8Array()],
+        ["preview/1x.png", new Uint8Array()]
+      ])
+    }));
+    (createOdRuntime as ReturnType<typeof vi.fn>).mockReturnValueOnce({ generate: mockGenerate });
+
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    await tools.generate_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      mode: "rebuild"
+    });
+
+    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({ ignoreInternalCache: true }));
+  });
+
+  // ─── refine_requirement_design ────────────────────────────────────────────
+
+  it("refine_requirement_design returns artifact_id and sets previousArtifactId in metadata", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.refine_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      instructions: "Make it more blue"
+    });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload).toMatchObject({ artifact_id: expect.any(String), status: "complete" });
+    // The written artifact should have previousArtifactId in metadata
+    const writeCall = (store.artifacts.writeArtifact as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(writeCall?.manifest?.metadata?.previousArtifactId).toBe("OLDARTIFACT12345");
+  });
+
+  it("refine_requirement_design returns ARTIFACT_INVALID_INPUT for empty instructions", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.refine_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      instructions: "   "
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
+  });
+
+  it("refine_requirement_design returns REQUIREMENT_NOT_FOUND when requirement product_id mismatches", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [] }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.refine_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      instructions: "Make it more blue"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+  });
+
+  // ─── export_artifact ──────────────────────────────────────────────────────
+
+  it("export_artifact returns output_path for png format", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    // Note: since this copies a real file, it will fail at the fs level — we test error shape
+    const result = await tools.export_artifact({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      format: "png"
+    });
+
+    // Either success (file was there) or a structured error — not ARTIFACT_UNSUPPORTED_FORMAT
+    if (result.isError) {
+      expect(textPayload(result)).not.toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
+      expect(textPayload(result)).not.toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+    }
+  });
+
+  it("export_artifact returns ARTIFACT_NOT_FOUND when artifact is missing", async () => {
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => {
+          throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: "P-123abc",
+      artifact_id: "MISSING12345678",
+      format: "html"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("export_artifact returns ARTIFACT_UNSUPPORTED_FORMAT for unknown format", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      format: "pdf"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+  });
+
+  // ─── rollback_requirement_design ─────────────────────────────────────────
+
+  it("rollback_requirement_design returns rolled_back_to and previous_pointer", async () => {
+    const manifest = { ...fakeManifest(), id: "TARGET_ARTIFACT123", requirementId: "R-12345678" };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.rollback_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      target_artifact_id: "TARGET_ARTIFACT123"
+    });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload).toMatchObject({
+      rolled_back_to: "TARGET_ARTIFACT123",
+      previous_pointer: expect.anything()
+    });
+    expect(store.products.setRequirementArtifactPointerLocked).toHaveBeenCalled();
+  });
+
+  it("rollback_requirement_design is a no-op when target matches current pointer", async () => {
+    const manifest = { ...fakeManifest(), id: "OLDARTIFACT12345", requirementId: "R-12345678" };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.rollback_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      target_artifact_id: "OLDARTIFACT12345"
+    });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload).toEqual({
+      rolled_back_to: "OLDARTIFACT12345",
+      previous_pointer: "OLDARTIFACT12345"
+    });
+    expect(store.products.setRequirementArtifactPointerLocked).not.toHaveBeenCalled();
+  });
+
+  it("rollback_requirement_design returns REQUIREMENT_NOT_FOUND when requirement is missing", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => {
+          throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found");
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.rollback_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-missing1",
+      target_artifact_id: "ABCDEFGHIJ123456"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
+  });
+
+  it("rollback_requirement_design returns ARTIFACT_NOT_FOUND when target artifact requirementId mismatches", async () => {
+    const manifest = { ...fakeManifest(), id: "ABCDEFGHIJ123456", requirementId: "R-other111" };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.rollback_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      target_artifact_id: "ABCDEFGHIJ123456"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
   });
 });

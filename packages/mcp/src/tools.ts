@@ -1,19 +1,27 @@
 import {
   access,
-  readdir
+  copyFile,
+  mkdir,
+  readdir,
+  rm
 } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import {
   FormaError,
   PencilAppSessionAdapter,
+  createOdRuntime,
   defaultPencilRunner,
   findBaselinePreviewMetadata,
+  getArtifactDir,
   languages,
   platforms,
   readYaml,
+  validateArtifactManifest,
+  type ArtifactManifest,
   type FormaStore,
   type SchemaNormalizationRecoveryState
 } from "@xenonbyte/forma-core";
+import AdmZip from "adm-zip";
 import * as z from "zod/v4";
 
 export const formaToolNames = [
@@ -36,6 +44,12 @@ export const formaToolNames = [
   "list_styles",
   "get_style",
   "save_requirement",
+  "list_product_artifacts",
+  "get_product_artifact",
+  "generate_requirement_design",
+  "refine_requirement_design",
+  "export_artifact",
+  "rollback_requirement_design",
   "session_get_guidelines",
   "session_get_variables",
   "session_batch_get",
@@ -156,6 +170,41 @@ const saveRequirementSchema = z.object({
   remove_rule_ids: z.array(z.string().min(1)).optional(),
   remove_page_ids: z.array(z.string().min(1)).optional()
 }).strict();
+const listProductArtifactsSchema = z.object({
+  product_id: z.string().min(1),
+  kind: z.enum(["html", "design-system", "markdown-document", "svg", "image", "preview-only"]).optional(),
+  include_superseded: z.boolean().optional()
+}).strict();
+
+const getProductArtifactSchema = z.object({
+  product_id: z.string().min(1),
+  artifact_id: z.string().min(1)
+}).strict();
+
+const generateRequirementDesignSchema = z.object({
+  product_id: z.string().min(1),
+  requirement_id: z.string().min(1),
+  mode: z.enum(["generate", "rebuild"])
+}).strict();
+
+const refineRequirementDesignSchema = z.object({
+  product_id: z.string().min(1),
+  requirement_id: z.string().min(1),
+  instructions: z.string()
+}).strict();
+
+const exportArtifactSchema = z.object({
+  product_id: z.string().min(1),
+  artifact_id: z.string().min(1),
+  format: z.enum(["html", "svg", "png", "zip"])
+}).strict();
+
+const rollbackRequirementDesignSchema = z.object({
+  product_id: z.string().min(1),
+  requirement_id: z.string().min(1),
+  target_artifact_id: z.string().min(1)
+}).strict();
+
 const getRequirementSchema = z.object({
   requirement_id: z.string().min(1).optional(),
   product_id: z.string().min(1).optional()
@@ -273,6 +322,12 @@ export const formaToolInputSchemas = {
   list_styles: emptySchema,
   get_style: styleNameSchema,
   save_requirement: saveRequirementSchema,
+  list_product_artifacts: listProductArtifactsSchema,
+  get_product_artifact: getProductArtifactSchema,
+  generate_requirement_design: generateRequirementDesignSchema,
+  refine_requirement_design: refineRequirementDesignSchema,
+  export_artifact: exportArtifactSchema,
+  rollback_requirement_design: rollbackRequirementDesignSchema,
   session_get_guidelines: sessionGetGuidelinesSchema,
   session_get_variables: sessionGetVariablesSchema,
   session_batch_get: sessionBatchGetSchema,
@@ -301,6 +356,12 @@ const descriptions = {
   list_styles: "List installed styles.",
   get_style: "Read style metadata and design guidance.",
   save_requirement: "Create or update a requirement through the unified state machine.",
+  list_product_artifacts: "List open-design artifacts for a product.",
+  get_product_artifact: "Read an open-design artifact manifest and supporting file list.",
+  generate_requirement_design: "Generate a new open-design artifact for a requirement.",
+  refine_requirement_design: "Refine an existing open-design artifact with new instructions.",
+  export_artifact: "Export an open-design artifact to html, svg, png, or zip.",
+  rollback_requirement_design: "Rewind the requirement artifact pointer to a previous artifact.",
   session_get_guidelines: "Read guidelines for a Forma-owned Pencil session.",
   session_get_variables: "Read variables for a Forma-owned Pencil session.",
   session_batch_get: "Read multiple nodes for a Forma-owned Pencil session.",
@@ -352,6 +413,18 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_styles: tool("list_styles", async () => store.styles.listStyles()),
     get_style: tool("get_style", async (input) => store.styles.getStyle(input.name)),
     save_requirement: tool("save_requirement", async (input) => store.requirements.saveRequirement(input)),
+    list_product_artifacts: tool("list_product_artifacts", async (input) =>
+      listProductArtifacts(store, input)),
+    get_product_artifact: tool("get_product_artifact", async (input) =>
+      getProductArtifact(store, input)),
+    generate_requirement_design: tool("generate_requirement_design", async (input) =>
+      generateRequirementDesign(store, input)),
+    refine_requirement_design: tool("refine_requirement_design", async (input) =>
+      refineRequirementDesign(store, input)),
+    export_artifact: tool("export_artifact", async (input) =>
+      exportArtifact(store, input)),
+    rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
+      rollbackRequirementDesign(store, input)),
     session_get_guidelines: tool("session_get_guidelines", async (input) =>
       v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionGetGuidelines(store, input)),
     session_get_variables: tool("session_get_variables", async (input) =>
@@ -422,6 +495,325 @@ function tool<Name extends FormaToolName, Input>(
       return errorResult(error);
     }
   };
+}
+
+// ─── Artifact tool implementations ───────────────────────────────────────────
+
+function artifactPreviewUrl(productId: string, artifactId: string): string {
+  return `/products/${productId}/artifacts/${artifactId}/preview/2x.png`;
+}
+
+async function listProductArtifacts(
+  store: FormaStore,
+  input: z.infer<typeof listProductArtifactsSchema>
+) {
+  const { product_id, kind, include_superseded = false } = input;
+
+  const product = await store.products.getProduct(product_id);
+  const pointers = product.requirements ?? {};
+  const currentPointerIds = new Set(
+    Object.values(pointers).map((r) => r.latestArtifactId).filter(Boolean)
+  );
+
+  const entries = await store.artifacts.listArtifacts(product_id);
+  const artifacts = [];
+
+  for (const { artifactId } of entries) {
+    let manifest: ArtifactManifest;
+    try {
+      ({ manifest } = await store.artifacts.readArtifact(product_id, artifactId));
+    } catch {
+      continue;
+    }
+
+    if (kind !== undefined && manifest.kind !== kind) {
+      continue;
+    }
+
+    const hasRequirementId = manifest.requirementId !== undefined;
+    const isCurrentPointer = currentPointerIds.has(artifactId);
+    const superseded = hasRequirementId && !isCurrentPointer;
+
+    if (!include_superseded && superseded) {
+      continue;
+    }
+
+    artifacts.push({
+      id: artifactId,
+      kind: manifest.kind,
+      title: manifest.title,
+      preview_url: artifactPreviewUrl(product_id, artifactId),
+      updated_at: manifest.updatedAt,
+      source_skill_id: manifest.sourceSkillId,
+      requirement_id: manifest.requirementId,
+      superseded
+    });
+  }
+
+  return { artifacts };
+}
+
+async function getProductArtifact(
+  store: FormaStore,
+  input: z.infer<typeof getProductArtifactSchema>
+) {
+  const { product_id, artifact_id } = input;
+  const { manifest } = await store.artifacts.readArtifact(product_id, artifact_id);
+  return {
+    manifest,
+    supportingFiles: manifest.supportingFiles ?? [],
+    preview_url: artifactPreviewUrl(product_id, artifact_id)
+  };
+}
+
+async function generateRequirementDesign(
+  store: FormaStore,
+  input: z.infer<typeof generateRequirementDesignSchema>
+): Promise<{ artifact_id: string; status: "complete" }> {
+  const { product_id, requirement_id, mode } = input;
+
+  // Verify requirement belongs to product
+  const req = await store.requirements.getRequirement({ requirement_id });
+  if (req.product_id !== product_id) {
+    throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
+      product_id,
+      requirement_id
+    });
+  }
+
+  // Get product for context
+  const product = await store.products.getProduct(product_id);
+
+  // Generate artifact (outside lock)
+  const output = await createOdRuntime().generate({
+    kind: "html",
+    requirementId: requirement_id,
+    sourceSkillId: "fm-design",
+    style: (product as Record<string, unknown>).style !== undefined
+      ? ((product as Record<string, unknown>).style as Record<string, unknown>).name as string | undefined
+      : undefined,
+    platform: product.platform,
+    language: product.default_language,
+    ignoreInternalCache: mode === "rebuild"
+  });
+
+  // Validate manifest
+  const validation = validateArtifactManifest(output.manifest);
+  if (!validation.ok) {
+    throw new FormaError("ARTIFACT_MANIFEST_INVALID", `Invalid artifact manifest: ${validation.error}`, {
+      requirement_id,
+      error: validation.error
+    });
+  }
+
+  // Convert supporting files
+  const files = new Map(
+    [...output.supportingFiles.entries()].map(([k, v]) => [k, Buffer.from(v)])
+  );
+
+  // Write artifact
+  const { artifactId } = await store.artifacts.writeArtifact({
+    productId: product_id,
+    manifest: output.manifest,
+    files
+  });
+
+  // Update pointer under lock
+  await store.runProductMutation({ operation: "update_requirement_pointer", product_id }, async () => {
+    await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, artifactId);
+  });
+
+  return { artifact_id: artifactId, status: "complete" };
+}
+
+async function refineRequirementDesign(
+  store: FormaStore,
+  input: z.infer<typeof refineRequirementDesignSchema>
+): Promise<{ artifact_id: string; status: "complete" }> {
+  const { product_id, requirement_id, instructions } = input;
+
+  // Validate instructions
+  if (instructions.trim() === "") {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", "Instructions must not be empty", { requirement_id });
+  }
+
+  // Verify requirement belongs to product
+  const req = await store.requirements.getRequirement({ requirement_id });
+  if (req.product_id !== product_id) {
+    throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
+      product_id,
+      requirement_id
+    });
+  }
+
+  // Get current pointer for previousArtifactId
+  const product = await store.products.getProduct(product_id);
+  const previousArtifactId = product.requirements?.[requirement_id]?.latestArtifactId;
+
+  // Generate artifact (outside lock)
+  const output = await createOdRuntime().generate({
+    kind: "html",
+    requirementId: requirement_id,
+    sourceSkillId: "fm-design",
+    instructions,
+    style: (product as Record<string, unknown>).style !== undefined
+      ? ((product as Record<string, unknown>).style as Record<string, unknown>).name as string | undefined
+      : undefined,
+    platform: product.platform,
+    language: product.default_language
+  });
+
+  // Build manifest with previousArtifactId
+  const manifestWithPrev = {
+    ...output.manifest,
+    metadata: { ...output.manifest.metadata, previousArtifactId }
+  };
+
+  // Validate manifest
+  const validation = validateArtifactManifest(manifestWithPrev);
+  if (!validation.ok) {
+    throw new FormaError("ARTIFACT_MANIFEST_INVALID", `Invalid artifact manifest: ${validation.error}`, {
+      requirement_id,
+      error: validation.error
+    });
+  }
+
+  // Convert supporting files
+  const files = new Map(
+    [...output.supportingFiles.entries()].map(([k, v]) => [k, Buffer.from(v)])
+  );
+
+  // Write artifact
+  const { artifactId } = await store.artifacts.writeArtifact({
+    productId: product_id,
+    manifest: manifestWithPrev,
+    files
+  });
+
+  // Update pointer under lock
+  await store.runProductMutation({ operation: "update_requirement_pointer", product_id }, async () => {
+    await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, artifactId);
+  });
+
+  return { artifact_id: artifactId, status: "complete" };
+}
+
+async function exportArtifact(
+  store: FormaStore,
+  input: z.infer<typeof exportArtifactSchema>
+): Promise<{ output_path: string }> {
+  const { product_id, artifact_id, format } = input;
+
+  const { manifest } = await store.artifacts.readArtifact(product_id, artifact_id);
+
+  const productsDir = join(store.home, "data", "products");
+  const artifactDir = getArtifactDir(productsDir, product_id, artifact_id);
+
+  const exportsDir = join(store.home, "exports", product_id);
+  await mkdir(exportsDir, { recursive: true });
+
+  const outputPath = join(exportsDir, `${artifact_id}.${format}`);
+
+  if (format === "png") {
+    const previewSrc = join(artifactDir, "preview", "2x.png");
+    await copyFile(previewSrc, outputPath);
+  } else if (format === "html" || format === "svg") {
+    const entrySrc = join(artifactDir, manifest.entry);
+    await copyFile(entrySrc, outputPath);
+  } else if (format === "zip") {
+    const zip = new AdmZip();
+    let zipPath: string | undefined = outputPath;
+    try {
+      // Add manifest.json
+      const manifestJson = JSON.stringify(manifest, null, 2);
+      zip.addFile("manifest.json", Buffer.from(manifestJson, "utf8"));
+
+      // Add supporting files
+      const supportingFiles = manifest.supportingFiles ?? [];
+      for (const relPath of supportingFiles) {
+        const srcPath = join(artifactDir, relPath);
+        try {
+          const AdmZipImport = AdmZip;
+          void AdmZipImport;
+          zip.addLocalFile(srcPath, relPath.includes("/") ? relPath.substring(0, relPath.lastIndexOf("/")) : "");
+        } catch {
+          // Skip files that can't be read
+        }
+      }
+
+      // Add preview
+      const previewPath = join(artifactDir, "preview", "2x.png");
+      try {
+        zip.addLocalFile(previewPath, "preview");
+      } catch {
+        // Preview may not exist
+      }
+
+      zip.writeZip(outputPath);
+    } catch (err) {
+      // Clean up partial zip on failure
+      try {
+        await rm(outputPath, { force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      zipPath = undefined;
+      throw err;
+    }
+  }
+
+  return { output_path: outputPath };
+}
+
+async function rollbackRequirementDesign(
+  store: FormaStore,
+  input: z.infer<typeof rollbackRequirementDesignSchema>
+): Promise<{ rolled_back_to: string; previous_pointer: string | null }> {
+  const { product_id, requirement_id, target_artifact_id } = input;
+
+  // Verify requirement exists and belongs to product
+  const req = await store.requirements.getRequirement({ requirement_id });
+  if (req.product_id !== product_id) {
+    throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
+      product_id,
+      requirement_id
+    });
+  }
+
+  // Verify target artifact exists and belongs to this requirement
+  let targetManifest: ArtifactManifest;
+  try {
+    ({ manifest: targetManifest } = await store.artifacts.readArtifact(product_id, target_artifact_id));
+  } catch (err) {
+    if (err instanceof FormaError && err.code === "ARTIFACT_NOT_FOUND") {
+      throw err;
+    }
+    throw err;
+  }
+
+  if (targetManifest.requirementId !== requirement_id) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact does not belong to this requirement", {
+      product_id,
+      requirement_id,
+      artifact_id: target_artifact_id
+    });
+  }
+
+  // Get current pointer
+  const product = await store.products.getProduct(product_id);
+  const currentPointer = product.requirements?.[requirement_id]?.latestArtifactId ?? null;
+
+  // No-op if target is already current
+  if (currentPointer === target_artifact_id) {
+    return { rolled_back_to: target_artifact_id, previous_pointer: target_artifact_id };
+  }
+
+  // Update pointer under lock
+  await store.runProductMutation({ operation: "rollback_requirement_pointer", product_id }, async () => {
+    await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, target_artifact_id);
+  });
+
+  return { rolled_back_to: target_artifact_id, previous_pointer: currentPointer };
 }
 
 function getV6Services(store: FormaStore): V6ServiceOverrides {

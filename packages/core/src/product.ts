@@ -170,6 +170,23 @@ export class ProductService {
     return (await this.readProductIndex()).products;
   }
 
+  async setRequirementArtifactPointerLocked(
+    productId: string,
+    requirementId: string,
+    artifactId: string
+  ): Promise<string | undefined> {
+    const product = await this.getProduct(productId);
+    const requirements = product.requirements ?? {};
+    const previous = requirements[requirementId]?.latestArtifactId;
+    const updatedRequirements = {
+      ...requirements,
+      [requirementId]: { latestArtifactId: artifactId }
+    };
+    const updated = productSchema.parse({ ...product, requirements: updatedRequirements });
+    await writeYamlAtomic(this.productFile(productId), updated);
+    return previous;
+  }
+
   private async readProductIndex(): Promise<z.infer<typeof productIndexSchema>> {
     if (!(await fileExists(this.indexFile))) {
       return { products: [] };
