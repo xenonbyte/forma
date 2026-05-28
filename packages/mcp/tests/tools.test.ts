@@ -1,5 +1,4 @@
-import { FormaError, PencilAppSessionAdapter, createFormaStore, writeYamlAtomic } from "@xenonbyte/forma-core";
-import { createHash } from "node:crypto";
+import { FormaError, createFormaStore, type FormaStore } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -41,13 +40,7 @@ const v6ToolNames = [
   "refresh_requirement_components",
   "plan_import_metadata_normalization",
   "validate_requirement_design_quality",
-  "session_get_editor_state",
-  "session_get_guidelines",
-  "session_get_variables",
-  "session_batch_get",
-  "session_snapshot_layout",
-  "session_get_screenshot",
-  "session_export_nodes"
+  "session_get_editor_state"
 ] as const;
 
 const forbiddenPathFields = [
@@ -64,7 +57,6 @@ const forbiddenPathFields = [
 ] as const;
 
 const wrapperToolInputs = {
-  session_get_editor_state: { session_id: "S-1234567890abcdef", include_schema: true },
   session_get_guidelines: { session_id: "S-1234567890abcdef", category: "guide", name: "Design System" },
   session_get_variables: { session_id: "S-1234567890abcdef" },
   session_batch_get: { session_id: "S-1234567890abcdef", nodeIds: ["frame-1"], resolveInstances: false },
@@ -110,18 +102,12 @@ function sampleStyle() {
 function fakeStore(overrides: Record<string, unknown> = {}) {
   const store = {
     home: "/tmp/forma",
-    deleteProduct: vi.fn(async () => ({
-      product_id: "P-123abc",
-      deleted: true,
-      session_cleared: false,
-      cleanup_pending: false,
-      recovery_warnings: []
-    })),
-    generateComponents: vi.fn(async () => ({
-      tempDir: "/tmp/components",
-      penPath: "/tmp/components/components.lib.pen",
-      libraryPath: "/tmp/forma/library/P-123abc.lib.pen"
-    })),
+    artifacts: {
+      writeArtifact: vi.fn(async () => ({ artifactId: "A-123abc", etag: "sha256:abc" })),
+      readArtifact: vi.fn(async () => ({ manifest: {}, etag: "sha256:abc" })),
+      listArtifacts: vi.fn(async () => []),
+      deleteArtifact: vi.fn(async () => undefined)
+    },
     baseline: {
       getProductBaseline: vi.fn(async () => ({ product_id: "P-123abc", pages: [], navigation: [] }))
     },
@@ -129,6 +115,13 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       getTranslations: vi.fn(async () => []),
       updatePageTranslations: vi.fn(async () => undefined)
     },
+    deleteProduct: vi.fn(async () => ({
+      product_id: "P-123abc",
+      deleted: true,
+      session_cleared: false,
+      cleanup_pending: false,
+      recovery_warnings: []
+    })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
       getProduct: vi.fn(async () => ({
@@ -143,6 +136,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       initProductConfig: vi.fn(async (_productId, config) => ({ id: "P-123abc", ...config })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }])
     },
+    recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
     requirements: {
       createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" })),
       getLatestRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", status: "active", pages: [] })),
@@ -153,6 +147,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" })),
       updateRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
     },
+    runProductMutation: vi.fn(async (_input: unknown, fn: (ctx: { warnings: string[] }) => Promise<unknown>) => fn({ warnings: [] })),
     sessions: {
       getCurrentSession: vi.fn(async () => ({ current_product: "P-123abc" })),
       setCurrentProduct: vi.fn(async () => ({ current_product: "P-123abc" }))
@@ -163,141 +158,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     },
     ...overrides
   };
-  return store;
-}
-
-async function writeMinimalMcpSessionRecord(home: string, sessionId: string): Promise<string> {
-  const stagingRelativePath = `data/P-123abc/R-1234abcd/sessions/${sessionId}/staging.design.pen`;
-  const sessionDir = join(home, "data", "P-123abc", "R-1234abcd", "sessions", sessionId);
-  await mkdir(sessionDir, { recursive: true });
-  await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
-    session_id: sessionId,
-    pencil_binding_id: "B-binding",
-    staging_path: stagingRelativePath
-  });
-  return join(home, stagingRelativePath);
-}
-
-async function writeCommitSessionRecord(home: string, sessionId: string): Promise<string> {
-  const productId = "P-123abc";
-  const requirementId = "R-1234abcd";
-  const requirementDir = join(home, "data", productId, requirementId);
-  const sessionDir = join(requirementDir, "sessions", sessionId);
-  const stagingRelativePath = `data/${productId}/${requirementId}/sessions/${sessionId}/staging.design.pen`;
-  const semanticScopeRelativePath = `data/${productId}/${requirementId}/sessions/${sessionId}/semantic_scope.yaml`;
-  const operationLogRelativePath = `data/${productId}/${requirementId}/sessions/${sessionId}/operations.jsonl`;
-  const stagingPath = join(home, stagingRelativePath);
-  const stagingRaw = JSON.stringify({
-    children: [{
-      id: "frame-home",
-      type: "frame",
-      name: "Home",
-      metadata: { type: "forma", kind: "page_frame", page_id: "home" },
-      children: [{
-        id: "button-instance",
-        type: "instance",
-        metadata: {
-          type: "forma",
-          kind: "component_instance",
-          component_key: "button.primary",
-          ref_target: "Components - Snapshot v1/button.primary"
-        }
-      }]
-    }]
-  });
-  const stagingRevision = sha256(stagingRaw);
-
-  await mkdir(sessionDir, { recursive: true });
-  await writeYamlAtomic(join(requirementDir, "requirement.yaml"), {
-    id: requirementId,
-    product_id: productId,
-    title: "Checkout style",
-    status: "submitted",
-    ui_affected: true,
-    created_at: "2026-05-21T00:00:00.000Z",
-    updated_at: "2026-05-21T00:00:00.000Z",
-    pages: [{
-      page_id: "home",
-      name: "Home",
-      baseline_page: "B-home",
-      design_status: "pending",
-      copy: [{ context: "title", text: "Home" }],
-      declared_fields: [],
-      declared_actions: [{ key: "save", label: "Save" }],
-      declared_component_keys: ["button.primary"],
-      semantic_contract: {
-        fields: [],
-        actions: [{ key: "save", label: "Save" }],
-        navigation: [],
-        allowed_copy: ["Home"],
-        component_keys: ["button.primary"]
-      },
-      semantic_contract_coverage: "explicit"
-    }],
-    navigation: []
-  });
-  await writeFile(stagingPath, stagingRaw);
-  await writeYamlAtomic(join(sessionDir, "semantic_scope.yaml"), {
-    schema_version: 1,
-    product_id: productId,
-    requirement_id: requirementId,
-    language: "default",
-    page_ids: ["home"],
-    allowed_copy: ["Home"],
-    action_keys: ["save"],
-    navigation_targets: [],
-    field_keys: [],
-    component_keys: ["button.primary"],
-    visual_states: ["default"],
-    existing_node_ids: [],
-    baseline_node_ids: [],
-    source_inputs: {
-      requirement_hash: "sha256:req",
-      translations_hash: "sha256:trans",
-      rules_hash: "sha256:rules",
-      baseline_hash: "sha256:base",
-      product_hash: "sha256:product",
-      component_library_hash: "sha256:component",
-      current_design_hash: "sha256:design"
-    },
-    source_contract_hash: "sha256:test",
-    staging_revision: stagingRevision
-  });
-  await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
-    schema_version: 1,
-    session_id: sessionId,
-    scope: "requirement_canvas",
-    product_id: productId,
-    requirement_id: requirementId,
-    session_dir_relative: `data/${productId}/${requirementId}/sessions/${sessionId}`,
-    session_dir: `data/${productId}/${requirementId}/sessions/${sessionId}`,
-    operation: "generate",
-    mode: "app",
-    canvas_file: `data/${productId}/${requirementId}/design.pen`,
-    canvas_path: `data/${productId}/${requirementId}/design.pen`,
-    staging_file: stagingRelativePath,
-    staging_path: stagingRelativePath,
-    pencil_binding_id: "B-binding",
-    pencil_command: "pencil interactive",
-    pencil_version: "pencil 1.2.3",
-    started_revision: stagingRevision,
-    last_saved_revision: stagingRevision,
-    last_controlled_revision: stagingRevision,
-    operation_log_file_relative: operationLogRelativePath,
-    operation_log_file: operationLogRelativePath,
-    semantic_scope_file_relative: semanticScopeRelativePath,
-    semantic_scope_file: semanticScopeRelativePath,
-    started_at: "2026-05-21T00:00:00.000Z",
-    updated_at: "2026-05-21T00:00:00.000Z",
-    pid: process.pid,
-    status: "running"
-  });
-  await writeFile(join(home, operationLogRelativePath), "");
-  return stagingPath;
-}
-
-function sha256(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+  return store as unknown as FormaStore;
 }
 
 describe("MCP forma tools", () => {
@@ -321,13 +182,22 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).not.toContain("submit_requirement");
     expect(formaToolNames).not.toContain("update_requirement");
     expect(formaToolNames).not.toContain("delete_requirement");
+    for (const v6ToolName of v6ToolNames) {
+      expect(formaToolNames).not.toContain(v6ToolName);
+      expect(Object.keys(tools)).not.toContain(v6ToolName);
+    }
     expect(formaToolNames).toEqual(expect.arrayContaining([
       "save_requirement",
       "get_product_rules",
       "get_page_copy",
       "update_page_copy",
       "delete_product",
-      ...v6ToolNames
+      "session_get_guidelines",
+      "session_get_variables",
+      "session_batch_get",
+      "session_snapshot_layout",
+      "session_get_screenshot",
+      "session_export_nodes"
     ]));
   });
 
@@ -382,195 +252,9 @@ describe("MCP forma tools", () => {
     }
   });
 
-  it("passes session record staging path to adapter-backed session read tools", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-session-staging-"));
-    const sessionId = "S-1234567890abcdef";
-    const expectedStagingPath = await writeMinimalMcpSessionRecord(home, sessionId);
-    const store = fakeStore({ home });
-    const editorSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetEditorState").mockResolvedValue({ ok: "editor" });
-    const guidelinesSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetGuidelines").mockResolvedValue({ ok: "guidelines" });
-    const variablesSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetVariables").mockResolvedValue({ ok: "variables" });
-    const batchGetSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionBatchGet").mockResolvedValue({ ok: "batch" });
-    const snapshotSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionSnapshotLayout").mockResolvedValue({ ok: "snapshot" });
-    const screenshotSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionGetScreenshot").mockResolvedValue({ ok: "screenshot" });
-    const exportSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionExportNodes").mockResolvedValue({ ok: "export" });
-    const tools = createFormaTools(store);
-
-    try {
-      await tools.session_get_editor_state({ session_id: sessionId, include_schema: true });
-      await tools.session_get_guidelines({ session_id: sessionId, category: "guide", name: "Design System" });
-      await tools.session_get_variables({ session_id: sessionId });
-      await tools.session_batch_get({ session_id: sessionId, nodeIds: ["frame-1"], resolveInstances: false });
-      await tools.session_snapshot_layout({ session_id: sessionId, parentId: "frame-1", problemsOnly: false, maxDepth: 8 });
-      await tools.session_get_screenshot({ session_id: sessionId, nodeId: "frame-1" });
-      await tools.session_export_nodes({ session_id: sessionId, nodeIds: ["frame-1"], format: "png", scale: 2 });
-
-      expect(editorSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { include_schema: true },
-        expectedStagingPath
-      );
-      expect(guidelinesSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { category: "guide", name: "Design System" },
-        expectedStagingPath
-      );
-      expect(variablesSpy).toHaveBeenCalledWith("B-binding", expectedStagingPath);
-      expect(batchGetSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { nodeIds: ["frame-1"], resolveInstances: false },
-        expectedStagingPath
-      );
-      expect(snapshotSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { problemsOnly: false, parentId: "frame-1", maxDepth: 8 },
-        expectedStagingPath
-      );
-      expect(screenshotSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { nodeId: "frame-1" },
-        expectedStagingPath
-      );
-      expect(exportSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { nodeIds: ["frame-1"], format: "png", scale: 2 },
-        expectedStagingPath
-      );
-    } finally {
-      editorSpy.mockRestore();
-      guidelinesSpy.mockRestore();
-      variablesSpy.mockRestore();
-      batchGetSpy.mockRestore();
-      snapshotSpy.mockRestore();
-      screenshotSpy.mockRestore();
-      exportSpy.mockRestore();
-    }
-  });
-
-  it("passes session record staging path to preview export fallback during commit", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-preview-staging-"));
-    const sessionId = "S-1234567890abcdef";
-    const expectedStagingPath = await writeCommitSessionRecord(home, sessionId);
-    const exportedPreview = join(home, "preview-export.png");
-    await writeFile(exportedPreview, "preview");
-    const assertBindingSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "assertActiveStagingBinding").mockResolvedValue({
-      session_id: sessionId,
-      pencil_binding_id: "B-binding",
-      mode: "app",
-      pid: process.pid,
-      command: "pencil interactive",
-      capabilities: [],
-      version: "pencil 1.2.3",
-      staging_path: expectedStagingPath,
-      binding_guard_id: "formaSessionBindingGuardTest",
-      stdin: "interactive-shell",
-      stdout: "interactive-shell"
-    });
-    const exportSpy = vi.spyOn(PencilAppSessionAdapter.prototype, "sessionExportNodes").mockResolvedValue({
-      files: [{ path: exportedPreview }]
-    });
-    const tools = createFormaTools(fakeStore({ home }));
-
-    try {
-      const result = await tools.commit_requirement_design_session({
-        session_id: sessionId,
-        page_id: "home",
-        frame_id: "frame-home"
-      });
-
-      expect(exportSpy).toHaveBeenCalledWith(
-        "B-binding",
-        { nodeIds: ["frame-home"], format: "png", scale: 2 },
-        expectedStagingPath
-      );
-      expect(result.isError).toBe(true);
-      expect(textPayload(result)).toMatchObject({ error_code: "PENCIL_APP_REQUIRED" });
-    } finally {
-      assertBindingSpy.mockRestore();
-      exportSpy.mockRestore();
-    }
-  });
-
-  it("requirement design session schemas enforce operations, intents, and forbidden operation paths", () => {
-    for (const operation of ["generate", "refine", "rebuild", "rollback", "component_refresh"] as const) {
-      expectSchemaSuccess("begin_requirement_design_session", {
-        product_id: "P-123abc",
-        requirement_id: "R-12345678",
-        page_id: "checkout",
-        operation,
-        design_language: "zh-CN",
-        component_refresh: { version: "latest", scope: "all_pages" }
-      });
-    }
-
-    for (const intent of ["generate", "refine", "rebuild", "rollback", "component_refresh", "quality_repair", "import_metadata_normalization"] as const) {
-      expectSchemaSuccess("apply_requirement_design_operations", {
-        session_id: "S-1234567890abcdef",
-        operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, target_node_ids: ["frame-1"], intent }]
-      });
-    }
-
-    expectSchemaFailure("apply_requirement_design_operations", {
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "set_variables", args: {}, intent: "generate" }]
-    });
-    expectSchemaFailure("apply_requirement_design_operations", {
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "batch_design", args: {}, intent: "unknown" }]
-    });
-    for (const field of forbiddenPathFields) {
-      expectSchemaFailure("apply_requirement_design_operations", {
-        session_id: "S-1234567890abcdef",
-        operations: [{ tool: "batch_design", args: { [field]: "/tmp/agent-owned" }, intent: "generate" }]
-      }, "FORBIDDEN_PATH_PARAMETER");
-    }
-  });
-
-  it("commit_requirement_design_session schema separates page and component refresh AI review inputs", () => {
-    expectSchemaSuccess("commit_requirement_design_session", {
-      session_id: "S-1234567890abcdef",
-      page_id: "checkout",
-      frame_id: "frame-1",
-      ai_visual_review: { status: "passed", screenshot_path: "session-export.png" }
-    });
-    expectSchemaSuccess("commit_requirement_design_session", {
-      session_id: "S-1234567890abcdef",
-      ai_visual_reviews: [
-        { page_id: "checkout", result: { status: "skipped", reason: "not_requested" } }
-      ]
-    });
-    expectSchemaSuccess("commit_requirement_design_session", {
-      session_id: "S-1234567890abcdef"
-    });
-    expectSchemaFailure("commit_requirement_design_session", {
-      session_id: "S-1234567890abcdef",
-      page_id: "checkout",
-      frame_id: "frame-1",
-      ai_visual_review: { status: "passed" },
-      ai_visual_reviews: [{ page_id: "checkout", result: { status: "passed" } }]
-    });
-    expectSchemaFailure("commit_requirement_design_session", {
-      session_id: "S-1234567890abcdef",
-      page_id: "checkout",
-      frame_id: "frame-1",
-      ai_visual_reviews: [{ page_id: "checkout", result: { status: "passed" } }]
-    });
-  });
-
   it("rejects malformed session ids for session-owned tools", () => {
     const malformedSessionId = "S-1234567890abcdef/../S-fedcba0987654321";
     const sessionInputs: Array<[FormaToolName, Record<string, unknown>]> = [
-      ["apply_requirement_design_operations", { session_id: malformedSessionId, operations: [{ tool: "batch_design", args: {}, intent: "generate" }] }],
-      ["commit_requirement_design_session", { session_id: malformedSessionId }],
-      ["discard_requirement_design_session", { session_id: malformedSessionId }],
-      ["recover_design_commit_journal", { session_id: malformedSessionId, scope: "requirement_canvas" }],
-      ["apply_product_component_operations", { session_id: malformedSessionId, operations: [{ tool: "set_variables", args: {}, intent: "change_style" }] }],
-      ["commit_product_component_session", { session_id: malformedSessionId }],
-      ["discard_product_component_session", { session_id: malformedSessionId }],
-      ["refresh_requirement_components", { session_id: malformedSessionId, product_id: "P-123abc", requirement_id: "R-12345678" }],
-      ["plan_import_metadata_normalization", { session_id: malformedSessionId, product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout", frame_id: "frame-1" }],
-      ["validate_requirement_design_quality", { session_id: malformedSessionId, product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout", frame_id: "frame-1" }],
-      ["session_get_editor_state", { session_id: malformedSessionId, include_schema: true }],
       ["session_get_guidelines", { session_id: malformedSessionId, category: "guide", name: "Design System" }],
       ["session_get_variables", { session_id: malformedSessionId }],
       ["session_batch_get", { session_id: malformedSessionId, nodeIds: ["frame-1"] }],
@@ -584,244 +268,15 @@ describe("MCP forma tools", () => {
     }
   });
 
-  it("product component session schemas enforce seed requirements and operation tools", () => {
-    expectSchemaFailure("begin_product_component_session", {
-      product_id: "P-123abc",
-      operation: "generate"
-    });
-    expectSchemaSuccess("begin_product_component_session", {
-      product_id: "P-123abc",
-      operation: "generate",
-      seed_components: [{ component_key: "button-primary", name: "Button" }]
-    });
-    expectSchemaSuccess("begin_product_component_session", {
-      product_id: "P-123abc",
-      operation: "refine"
-    });
-    expectSchemaSuccess("begin_product_component_session", {
-      product_id: "P-123abc",
-      operation: "change_style",
-      seed_components: [{ component_key: "button-primary" }]
-    });
-    expectSchemaSuccess("apply_product_component_operations", {
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }]
-    });
-    expectSchemaFailure("apply_product_component_operations", {
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "delete_page", args: {}, intent: "change_style" }]
-    });
-  });
-
-  it("component refresh and metadata normalization schemas enforce scoped inputs", () => {
-    for (const scope of [
-      "all_pages",
-      { page_ids: ["checkout"] },
-      { component_keys: ["button-primary"] },
-      { page_ids: ["checkout"], component_keys: ["button-primary"] }
-    ]) {
-      expectSchemaSuccess("refresh_requirement_components", {
-        session_id: "S-1234567890abcdef",
-        product_id: "P-123abc",
-        requirement_id: "R-12345678",
-        version: "latest",
-        scope
-      });
-    }
-    for (const invalidScope of [
-      { page_ids: [] },
-      { component_keys: [] },
-      { page_ids: [""] },
-      { component_keys: [""] }
-    ]) {
-      expectSchemaFailure("refresh_requirement_components", {
-        session_id: "S-1234567890abcdef",
-        product_id: "P-123abc",
-        requirement_id: "R-12345678",
-        version: 3,
-        scope: invalidScope
-      });
-    }
-
-    expectSchemaSuccess("plan_import_metadata_normalization", {
-      session_id: "S-1234567890abcdef",
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "checkout",
-      frame_id: "frame-1"
-    });
-    expectSchemaSuccess("validate_requirement_design_quality", {
-      session_id: "S-1234567890abcdef",
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "checkout",
-      frame_id: "frame-1"
-    });
-    for (const field of forbiddenPathFields) {
-      expectSchemaFailure("plan_import_metadata_normalization", {
-        session_id: "S-1234567890abcdef",
-        product_id: "P-123abc",
-        requirement_id: "R-12345678",
-        page_id: "checkout",
-        frame_id: "frame-1",
-        [field]: "/tmp/agent-owned"
-      }, "FORBIDDEN_PATH_PARAMETER");
-    }
-  });
-
-  it("delegates v6 requirement session tools to core services with store home injected", async () => {
-    const v6 = {
-      beginRequirementDesignSession: vi.fn(async (input) => ({ service: "beginRequirementDesignSession", input })),
-      applyRequirementDesignOperations: vi.fn(async (input) => ({ service: "applyRequirementDesignOperations", input })),
-      commitRequirementDesignSession: vi.fn(async (input) => ({ service: "commitRequirementDesignSession", input })),
-      discardRequirementDesignSession: vi.fn(async (input) => ({ service: "discardRequirementDesignSession", input })),
-      recoverDesignCommitJournal: vi.fn(async (input) => ({ service: "recoverDesignCommitJournal", input }))
-    };
-    const tools = createFormaTools(fakeStore({ v6 }));
-    const beginInput = { product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout", operation: "generate" as const };
-    const applyInput = {
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "batch_design" as const, args: { node_id: "frame-1" }, intent: "generate" as const }]
-    };
-    const commitInput = {
-      session_id: "S-1234567890abcdef",
-      page_id: "checkout",
-      frame_id: "frame-1",
-      ai_visual_review: { status: "skipped" as const, reason: "not_requested" as const }
-    };
-
-    await tools.begin_requirement_design_session(beginInput);
-    await tools.apply_requirement_design_operations(applyInput);
-    await tools.commit_requirement_design_session(commitInput);
-    await tools.discard_requirement_design_session({ session_id: "S-1234567890abcdef" });
-    await tools.recover_design_commit_journal({ session_id: "S-1234567890abcdef", scope: "requirement_canvas" });
-
-    expect(v6.beginRequirementDesignSession).toHaveBeenCalledWith({ home: "/tmp/forma", ...beginInput });
-    expect(v6.applyRequirementDesignOperations).toHaveBeenCalledWith({ home: "/tmp/forma", ...applyInput });
-    expect(v6.commitRequirementDesignSession).toHaveBeenCalledWith({ home: "/tmp/forma", ...commitInput });
-    expect(v6.discardRequirementDesignSession).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef" });
-    expect(v6.recoverDesignCommitJournal).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", scope: "requirement_canvas" });
-  });
-
-  it("delegates v6 component session tools to core services", async () => {
-    const v6 = {
-      beginProductComponentSession: vi.fn(async (input) => ({ service: "beginProductComponentSession", input })),
-      applyProductComponentOperations: vi.fn(async (input) => ({ service: "applyProductComponentOperations", input })),
-      commitProductComponentSession: vi.fn(async (input) => ({ service: "commitProductComponentSession", input })),
-      discardProductComponentSession: vi.fn(async (input) => ({ service: "discardProductComponentSession", input })),
-      getProductComponentLibrary: vi.fn(async (home, productId) => ({ service: "getProductComponentLibrary", home, productId }))
-    };
-    const tools = createFormaTools(fakeStore({ v6 }));
-    const beginInput = {
-      product_id: "P-123abc",
-      operation: "generate" as const,
-      seed_components: [{ component_key: "button-primary" }]
-    };
-    const applyInput = {
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "set_variables" as const, args: { primary: "#111111" }, intent: "change_style" }]
-    };
-
-    await tools.begin_product_component_session(beginInput);
-    await tools.apply_product_component_operations(applyInput);
-    await tools.commit_product_component_session({ session_id: "S-1234567890abcdef" });
-    await tools.discard_product_component_session({ session_id: "S-1234567890abcdef" });
-    await tools.get_product_component_library({ product_id: "P-123abc" });
-
-    expect(v6.beginProductComponentSession).toHaveBeenCalledWith({ home: "/tmp/forma", ...beginInput });
-    expect(v6.applyProductComponentOperations).toHaveBeenCalledWith({ home: "/tmp/forma", ...applyInput });
-    expect(v6.commitProductComponentSession).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef" });
-    expect(v6.discardProductComponentSession).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef" });
-    expect(v6.getProductComponentLibrary).toHaveBeenCalledWith("/tmp/forma", "P-123abc");
-  });
-
-  it("delegates v6 read, model, quality, and wrapper tools to services", async () => {
-    const v6 = {
-      getRequirementDesign: vi.fn(async (home, productId, requirementId) => ({ service: "getRequirementDesign", home, productId, requirementId })),
-      indexRequirementDesignCanvas: vi.fn(async (input) => ({ service: "indexRequirementDesignCanvas", input })),
-      getRequirementDesignScene: vi.fn(async (input) => ({ service: "getRequirementDesignScene", input })),
-      getRequirementDesignHistory: vi.fn(async (input) => ({ service: "getRequirementDesignHistory", input })),
-      rollbackRequirementDesign: vi.fn(async (input) => ({ service: "rollbackRequirementDesign", input })),
-      diffRequirementDesignVersions: vi.fn(async (input) => ({ service: "diffRequirementDesignVersions", input })),
-      exportRequirementDesignAsset: vi.fn(async (input) => ({ service: "exportRequirementDesignAsset", input })),
-      indexRequirementComponentUsage: vi.fn(async (input) => ({ service: "indexRequirementComponentUsage", input })),
-      refreshRequirementComponents: vi.fn(async (input) => ({ service: "refreshRequirementComponents", input })),
-      planImportMetadataNormalization: vi.fn(async (input) => ({ service: "planImportMetadataNormalization", input })),
-      runDesignQualityPipeline: vi.fn(async (input) => ({ service: "runDesignQualityPipeline", input })),
-      sessionGetEditorState: vi.fn(async (input) => ({ service: "sessionGetEditorState", input })),
-      sessionGetGuidelines: vi.fn(async (input) => ({ service: "sessionGetGuidelines", input })),
-      sessionGetVariables: vi.fn(async (input) => ({ service: "sessionGetVariables", input })),
-      sessionBatchGet: vi.fn(async (input) => ({ service: "sessionBatchGet", input })),
-      sessionSnapshotLayout: vi.fn(async (input) => ({ service: "sessionSnapshotLayout", input })),
-      sessionGetScreenshot: vi.fn(async (input) => ({ service: "sessionGetScreenshot", input })),
-      sessionExportNodes: vi.fn(async (input) => ({ service: "sessionExportNodes", input }))
-    };
-    const tools = createFormaTools(fakeStore({ v6 }));
-    const scopedInput = {
-      session_id: "S-1234567890abcdef",
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "checkout",
-      frame_id: "frame-1"
-    };
-
-    await tools.get_requirement_design_canvas({ product_id: "P-123abc", requirement_id: "R-12345678" });
-    await tools.index_requirement_design_canvas({ product_id: "P-123abc", requirement_id: "R-12345678" });
-    await tools.get_requirement_design_scene({ product_id: "P-123abc", requirement_id: "R-12345678" });
-    await tools.get_requirement_design_history({ product_id: "P-123abc", requirement_id: "R-12345678" });
-    await tools.rollback_requirement_design({ product_id: "P-123abc", requirement_id: "R-12345678", canvas_version: 2 });
-    await tools.diff_requirement_design_versions({ product_id: "P-123abc", requirement_id: "R-12345678", from_canvas_version: 1, to_canvas_version: 2 });
-    await tools.export_requirement_design_asset({ product_id: "P-123abc", requirement_id: "R-12345678", kind: "canvas" });
-    await tools.index_component_usages({ product_id: "P-123abc", requirement_id: "R-12345678", write: false });
-    await tools.refresh_requirement_components({ session_id: "S-1234567890abcdef", product_id: "P-123abc", requirement_id: "R-12345678", version: "latest", scope: "all_pages" });
-    await tools.plan_import_metadata_normalization(scopedInput);
-    await tools.validate_requirement_design_quality(scopedInput);
-    await tools.session_get_editor_state({ session_id: "S-1234567890abcdef", include_schema: true });
-    await tools.session_get_guidelines({ session_id: "S-1234567890abcdef", category: "guide", name: "Design System" });
-    await tools.session_get_variables({ session_id: "S-1234567890abcdef" });
-    await tools.session_batch_get({ session_id: "S-1234567890abcdef", nodeIds: ["frame-1"] });
-    await tools.session_snapshot_layout({ session_id: "S-1234567890abcdef", parentId: "frame-1", problemsOnly: false, maxDepth: 8 });
-    await tools.session_get_screenshot({ session_id: "S-1234567890abcdef", nodeId: "frame-1" });
-    await tools.session_export_nodes({ session_id: "S-1234567890abcdef", nodeIds: ["frame-1"], format: "png" });
-
-    expect(v6.getRequirementDesign).toHaveBeenCalledWith("/tmp/forma", "P-123abc", "R-12345678");
-    expect(v6.indexRequirementDesignCanvas).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678" });
-    expect(v6.getRequirementDesignScene).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678" });
-    expect(v6.getRequirementDesignHistory).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678" });
-    expect(v6.rollbackRequirementDesign).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678", canvas_version: 2 });
-    expect(v6.diffRequirementDesignVersions).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678", from_canvas_version: 1, to_canvas_version: 2 });
-    expect(v6.exportRequirementDesignAsset).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678", kind: "canvas" });
-    expect(v6.indexRequirementComponentUsage).toHaveBeenCalledWith({ home: "/tmp/forma", product_id: "P-123abc", requirement_id: "R-12345678", write: false });
-    expect(v6.refreshRequirementComponents).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", product_id: "P-123abc", requirement_id: "R-12345678", version: "latest", scope: "all_pages" });
-    expect(v6.planImportMetadataNormalization).toHaveBeenCalledWith({ home: "/tmp/forma", ...scopedInput });
-    expect(v6.runDesignQualityPipeline).toHaveBeenCalledWith({ home: "/tmp/forma", ...scopedInput });
-    expect(v6.sessionGetEditorState).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", include_schema: true });
-    expect(v6.sessionGetGuidelines).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", category: "guide", name: "Design System" });
-    expect(v6.sessionGetVariables).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef" });
-    expect(v6.sessionBatchGet).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", nodeIds: ["frame-1"] });
-    expect(v6.sessionSnapshotLayout).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", parentId: "frame-1", problemsOnly: false, maxDepth: 8 });
-    expect(v6.sessionGetScreenshot).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", nodeId: "frame-1" });
-    expect(v6.sessionExportNodes).toHaveBeenCalledWith({ home: "/tmp/forma", session_id: "S-1234567890abcdef", nodeIds: ["frame-1"], format: "png" });
-  });
-
   it("returns stable FORBIDDEN_PATH_PARAMETER errors for v6 path payloads", async () => {
     const tools = createFormaTools(fakeStore());
 
-    const mutationResult = await tools.apply_requirement_design_operations({
-      session_id: "S-1234567890abcdef",
-      operations: [{ tool: "batch_design", args: { outputDir: "/tmp/out" }, intent: "generate" }]
-    });
     const wrapperResult = await tools.session_export_nodes({
       session_id: "S-1234567890abcdef",
       nodeIds: ["frame-1"],
       output_dir: "/tmp/out"
     });
 
-    expect(mutationResult.isError).toBe(true);
-    expect(textPayload(mutationResult)).toMatchObject({
-      error_code: "FORBIDDEN_PATH_PARAMETER",
-      details: { parameter: "operations.0.args.outputDir" }
-    });
     expect(wrapperResult.isError).toBe(true);
     expect(textPayload(wrapperResult)).toMatchObject({
       error_code: "FORBIDDEN_PATH_PARAMETER",

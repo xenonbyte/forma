@@ -1,48 +1,18 @@
 import {
   access,
-  copyFile,
   readdir
 } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import {
   FormaError,
   PencilAppSessionAdapter,
-  applyProductComponentOperations,
-  applyRequirementDesignOperations,
-  beginProductComponentSession,
-  beginRequirementDesignSession,
-  commitProductComponentSession,
-  commitRequirementDesignSession,
   defaultPencilRunner,
-  diffRequirementDesignVersions,
-  discardProductComponentSession,
-  discardRequirementDesignSession,
-  exportRequirementDesignAsset,
   findBaselinePreviewMetadata,
-  getProductComponentLibrary,
-  getRequirementDesign,
-  getRequirementDesignHistory,
-  getRequirementDesignScene,
-  indexRequirementComponentUsage,
-  indexRequirementDesignCanvas,
   languages,
-  planImportMetadataNormalization,
   platforms,
-  recoverDesignCommitJournal,
   readYaml,
-  refreshRequirementComponents,
-  rollbackRequirementDesign,
-  runDesignQualityPipeline,
-  type BaselineService,
-  type CopyService,
-  type DeleteProductInput,
-  type DeleteProductResult,
   type FormaStore,
-  type ProductService,
-  type RequirementService,
-  type SchemaNormalizationRecoveryState,
-  type SessionService,
-  type StyleService
+  type SchemaNormalizationRecoveryState
 } from "@xenonbyte/forma-core";
 import * as z from "zod/v4";
 
@@ -66,28 +36,6 @@ export const formaToolNames = [
   "list_styles",
   "get_style",
   "save_requirement",
-  "begin_requirement_design_session",
-  "apply_requirement_design_operations",
-  "commit_requirement_design_session",
-  "discard_requirement_design_session",
-  "recover_design_commit_journal",
-  "begin_product_component_session",
-  "apply_product_component_operations",
-  "commit_product_component_session",
-  "discard_product_component_session",
-  "get_requirement_design_canvas",
-  "index_requirement_design_canvas",
-  "get_requirement_design_scene",
-  "get_requirement_design_history",
-  "rollback_requirement_design",
-  "diff_requirement_design_versions",
-  "export_requirement_design_asset",
-  "get_product_component_library",
-  "index_component_usages",
-  "refresh_requirement_components",
-  "plan_import_metadata_normalization",
-  "validate_requirement_design_quality",
-  "session_get_editor_state",
   "session_get_guidelines",
   "session_get_variables",
   "session_batch_get",
@@ -111,33 +59,7 @@ export interface FormaToolResult {
 
 export type FormaToolHandler = (args: unknown) => Promise<FormaToolResult>;
 export type FormaTools = Record<FormaToolName, FormaToolHandler>;
-type ToolRequirements = Pick<
-  RequirementService,
-  "getProductRules" | "getRequirement" | "getRequirementHistory" | "saveRequirement"
-> & Partial<Pick<RequirementService, "getLatestRequirement">>;
 type V6ServiceOverrides = Partial<{
-  beginRequirementDesignSession(input: Record<string, unknown>): Promise<unknown>;
-  applyRequirementDesignOperations(input: Record<string, unknown>): Promise<unknown>;
-  commitRequirementDesignSession(input: Record<string, unknown>): Promise<unknown>;
-  discardRequirementDesignSession(input: Record<string, unknown>): Promise<unknown>;
-  recoverDesignCommitJournal(input: Record<string, unknown>): Promise<unknown>;
-  beginProductComponentSession(input: Record<string, unknown>): Promise<unknown>;
-  applyProductComponentOperations(input: Record<string, unknown>): Promise<unknown>;
-  commitProductComponentSession(input: Record<string, unknown>): Promise<unknown>;
-  discardProductComponentSession(input: Record<string, unknown>): Promise<unknown>;
-  getRequirementDesign(home: string, productId: string, requirementId: string): Promise<unknown>;
-  indexRequirementDesignCanvas(input: Record<string, unknown>): Promise<unknown>;
-  getRequirementDesignScene(input: Record<string, unknown>): Promise<unknown>;
-  getRequirementDesignHistory(input: Record<string, unknown>): Promise<unknown>;
-  rollbackRequirementDesign(input: Record<string, unknown>): Promise<unknown>;
-  diffRequirementDesignVersions(input: Record<string, unknown>): Promise<unknown>;
-  exportRequirementDesignAsset(input: Record<string, unknown>): Promise<unknown>;
-  getProductComponentLibrary(home: string, productId: string): Promise<unknown>;
-  indexRequirementComponentUsage(input: Record<string, unknown>): Promise<unknown>;
-  refreshRequirementComponents(input: Record<string, unknown>): Promise<unknown>;
-  planImportMetadataNormalization(input: Record<string, unknown>): Promise<unknown>;
-  runDesignQualityPipeline(input: Record<string, unknown>): Promise<unknown>;
-  sessionGetEditorState(input: Record<string, unknown>): Promise<unknown>;
   sessionGetGuidelines(input: Record<string, unknown>): Promise<unknown>;
   sessionGetVariables(input: Record<string, unknown>): Promise<unknown>;
   sessionBatchGet(input: Record<string, unknown>): Promise<unknown>;
@@ -159,7 +81,6 @@ const deleteProductSchema = z.object({
   message: "confirm_product_id must match product_id",
   path: ["confirm_product_id"]
 });
-const requirementIdSchema = z.object({ requirement_id: z.string().min(1) }).strict();
 const baselinePageSchema = z.object({ product_id: z.string().min(1), page_id: z.string().min(1) }).strict();
 const copyItemSchema = z.object({
   context: z.string().min(1),
@@ -284,169 +205,10 @@ const forbiddenPathFieldSchemas = Object.fromEntries(
     z.never({ error: "FORBIDDEN_PATH_PARAMETER" }).optional()
   ])
 ) as Record<string, z.ZodType>;
-const sessionIdInputSchema = z.object({ session_id: sessionIdSchema }).strict();
-const productRequirementSchema = z.object({
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema
-}).strict();
-const componentRefreshScopeSchema = z.union([
-  z.literal("all_pages"),
-  z.object({
-    page_ids: z.array(nonEmptyStringSchema).min(1).optional(),
-    component_keys: z.array(nonEmptyStringSchema).min(1).optional()
-  }).strict()
-]);
-const beginRequirementDesignSessionSchema = rejectForbiddenPathFields(z.object({
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  page_id: nonEmptyStringSchema.optional(),
-  operation: z.enum(["generate", "refine", "rebuild", "rollback", "component_refresh"]),
-  design_language: nonEmptyStringSchema.optional(),
-  component_refresh: z.object({
-    version: z.union([z.literal("latest"), z.number().int().positive()]),
-    scope: componentRefreshScopeSchema.optional()
-  }).strict().optional(),
-  ...forbiddenPathFieldSchemas
-}).strict());
-const requirementDesignOperationIntentSchema = z.enum([
-  "generate",
-  "refine",
-  "rebuild",
-  "rollback",
-  "component_refresh",
-  "quality_repair",
-  "import_metadata_normalization"
-]);
-const operationArgsSchema = rejectForbiddenPathFields(z.record(z.string(), z.unknown()));
-const applyRequirementDesignOperationsSchema = z.object({
-  session_id: sessionIdSchema,
-  operations: z.array(z.object({
-    tool: z.literal("batch_design"),
-    args: operationArgsSchema,
-    target_node_ids: z.array(nonEmptyStringSchema).optional(),
-    intent: requirementDesignOperationIntentSchema
-  }).strict()).min(1),
-  ...forbiddenPathFieldSchemas
-}).strict();
-const aiVisualReviewSchema = z.discriminatedUnion("status", [
-  z.object({
-    status: z.literal("passed"),
-    screenshot_path: nonEmptyStringSchema.optional()
-  }).strict(),
-  z.object({
-    status: z.literal("warning"),
-    screenshot_path: nonEmptyStringSchema.optional(),
-    warnings: z.array(nonEmptyStringSchema)
-  }).strict(),
-  z.object({
-    status: z.literal("skipped"),
-    reason: z.enum(["not_requested", "model_has_no_vision", "screenshot_failed", "timeout"])
-  }).strict()
-]);
-const commitRequirementDesignSessionSchema = rejectForbiddenPathFields(z.object({
-  session_id: sessionIdSchema,
-  page_id: nonEmptyStringSchema.optional(),
-  frame_id: nonEmptyStringSchema.optional(),
-  ai_visual_review: aiVisualReviewSchema.optional(),
-  ai_visual_reviews: z.array(z.object({
-    page_id: nonEmptyStringSchema,
-    result: aiVisualReviewSchema
-  }).strict()).optional(),
-  ...forbiddenPathFieldSchemas
-}).strict().superRefine((input, context) => {
-  if (input.ai_visual_review && input.ai_visual_reviews) {
-    context.addIssue({ code: "custom", message: "ai_visual_review and ai_visual_reviews are mutually exclusive" });
-  }
-  if ((input.page_id || input.frame_id) && input.ai_visual_reviews) {
-    context.addIssue({ code: "custom", message: "page commit accepts ai_visual_review only", path: ["ai_visual_reviews"] });
-  }
-  if ((input.page_id && !input.frame_id) || (!input.page_id && input.frame_id)) {
-    context.addIssue({ code: "custom", message: "page_id and frame_id must be provided together" });
-  }
-}));
-const productComponentSeedSchema = z.object({
-  component_key: nonEmptyStringSchema,
-  name: nonEmptyStringSchema.optional(),
-  semantic_contract_hash: nonEmptyStringSchema.optional(),
-  source: nonEmptyStringSchema.optional(),
-  required_by: z.array(z.object({
-    requirement_id: nonEmptyStringSchema,
-    page_id: nonEmptyStringSchema.optional()
-  }).strict()).optional()
-}).strict();
-const beginProductComponentSessionSchema = rejectForbiddenPathFields(z.object({
-  product_id: nonEmptyStringSchema,
-  operation: z.enum(["generate", "refine", "change_style"]),
-  seed_components: z.array(productComponentSeedSchema).optional(),
-  newly_required_component_keys: z.array(nonEmptyStringSchema).optional(),
-  ...forbiddenPathFieldSchemas
-}).strict().superRefine((input, context) => {
-  if (input.operation === "generate" && (!input.seed_components || input.seed_components.length === 0)) {
-    context.addIssue({ code: "custom", message: "seed_components are required for generate", path: ["seed_components"] });
-  }
-}));
-const applyProductComponentOperationsSchema = z.object({
-  session_id: sessionIdSchema,
-  operations: z.array(z.object({
-    tool: z.enum(["batch_design", "set_variables"]),
-    args: operationArgsSchema,
-    target_node_ids: z.array(nonEmptyStringSchema).optional(),
-    intent: nonEmptyStringSchema
-  }).strict()).min(1),
-  ...forbiddenPathFieldSchemas
-}).strict();
-const recoverDesignCommitJournalSchema = z.object({
-  session_id: sessionIdSchema,
-  scope: z.enum(["requirement_canvas", "product_component_library"])
-}).strict();
-const rollbackRequirementDesignSchema = z.object({
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  canvas_version: z.number().int().positive()
-}).strict();
-const diffRequirementDesignVersionsSchema = z.object({
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  from_canvas_version: z.number().int().positive(),
-  to_canvas_version: z.number().int().positive()
-}).strict();
-const exportRequirementDesignAssetSchema = rejectForbiddenPathFields(z.object({
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  kind: z.enum(["canvas", "preview"]),
-  page_id: nonEmptyStringSchema.optional(),
-  ...forbiddenPathFieldSchemas
-}).strict());
-const indexComponentUsagesSchema = z.object({
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  write: z.boolean().optional()
-}).strict();
-const refreshRequirementComponentsSchema = rejectForbiddenPathFields(z.object({
-  session_id: sessionIdSchema,
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  version: z.union([z.literal("latest"), z.number().int().positive()]).optional(),
-  scope: componentRefreshScopeSchema.optional(),
-  ...forbiddenPathFieldSchemas
-}).strict());
-const sessionProductRequirementPageFrameSchema = rejectForbiddenPathFields(z.object({
-  session_id: sessionIdSchema,
-  product_id: nonEmptyStringSchema,
-  requirement_id: nonEmptyStringSchema,
-  page_id: nonEmptyStringSchema,
-  frame_id: nonEmptyStringSchema,
-  ...forbiddenPathFieldSchemas
-}).strict());
 const sessionBaseSchema = {
   session_id: sessionIdSchema,
   pencil_binding_id: nonEmptyStringSchema.optional()
 };
-const sessionGetEditorStateSchema = rejectForbiddenPathFields(z.object({
-  ...sessionBaseSchema,
-  include_schema: z.boolean(),
-  ...forbiddenPathFieldSchemas
-}).strict());
 const sessionGetGuidelinesSchema = rejectForbiddenPathFields(z.object({
   ...sessionBaseSchema,
   category: z.enum(["guide", "style"]).optional(),
@@ -511,28 +273,6 @@ export const formaToolInputSchemas = {
   list_styles: emptySchema,
   get_style: styleNameSchema,
   save_requirement: saveRequirementSchema,
-  begin_requirement_design_session: beginRequirementDesignSessionSchema,
-  apply_requirement_design_operations: applyRequirementDesignOperationsSchema,
-  commit_requirement_design_session: commitRequirementDesignSessionSchema,
-  discard_requirement_design_session: sessionIdInputSchema,
-  recover_design_commit_journal: recoverDesignCommitJournalSchema,
-  begin_product_component_session: beginProductComponentSessionSchema,
-  apply_product_component_operations: applyProductComponentOperationsSchema,
-  commit_product_component_session: sessionIdInputSchema,
-  discard_product_component_session: sessionIdInputSchema,
-  get_requirement_design_canvas: productRequirementSchema,
-  index_requirement_design_canvas: productRequirementSchema,
-  get_requirement_design_scene: productRequirementSchema,
-  get_requirement_design_history: productRequirementSchema,
-  rollback_requirement_design: rollbackRequirementDesignSchema,
-  diff_requirement_design_versions: diffRequirementDesignVersionsSchema,
-  export_requirement_design_asset: exportRequirementDesignAssetSchema,
-  get_product_component_library: productIdSchema,
-  index_component_usages: indexComponentUsagesSchema,
-  refresh_requirement_components: refreshRequirementComponentsSchema,
-  plan_import_metadata_normalization: sessionProductRequirementPageFrameSchema,
-  validate_requirement_design_quality: sessionProductRequirementPageFrameSchema,
-  session_get_editor_state: sessionGetEditorStateSchema,
   session_get_guidelines: sessionGetGuidelinesSchema,
   session_get_variables: sessionGetVariablesSchema,
   session_batch_get: sessionBatchGetSchema,
@@ -561,28 +301,6 @@ const descriptions = {
   list_styles: "List installed styles.",
   get_style: "Read style metadata and design guidance.",
   save_requirement: "Create or update a requirement through the unified state machine.",
-  begin_requirement_design_session: "Begin a requirement-level design session.",
-  apply_requirement_design_operations: "Apply controlled operations to a requirement design session.",
-  commit_requirement_design_session: "Commit a requirement design session.",
-  discard_requirement_design_session: "Discard a requirement design session.",
-  recover_design_commit_journal: "Recover a failed design commit journal.",
-  begin_product_component_session: "Begin a product component library session.",
-  apply_product_component_operations: "Apply controlled operations to a product component session.",
-  commit_product_component_session: "Commit a product component session.",
-  discard_product_component_session: "Discard a product component session.",
-  get_requirement_design_canvas: "Read requirement-level design canvas metadata.",
-  index_requirement_design_canvas: "Index a requirement design canvas.",
-  get_requirement_design_scene: "Read a requirement design scene model.",
-  get_requirement_design_history: "Read requirement design history.",
-  rollback_requirement_design: "Roll back requirement design metadata to a previous canvas version.",
-  diff_requirement_design_versions: "Diff two requirement design versions.",
-  export_requirement_design_asset: "Export a requirement design asset.",
-  get_product_component_library: "Read a product component library.",
-  index_component_usages: "Index component usage in a requirement design canvas.",
-  refresh_requirement_components: "Plan component refresh operations for a requirement design session.",
-  plan_import_metadata_normalization: "Plan metadata normalization operations for imported content.",
-  validate_requirement_design_quality: "Run deterministic requirement design quality checks.",
-  session_get_editor_state: "Read editor state for a Forma-owned Pencil session.",
   session_get_guidelines: "Read guidelines for a Forma-owned Pencil session.",
   session_get_variables: "Read variables for a Forma-owned Pencil session.",
   session_batch_get: "Read multiple nodes for a Forma-owned Pencil session.",
@@ -634,56 +352,6 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_styles: tool("list_styles", async () => store.styles.listStyles()),
     get_style: tool("get_style", async (input) => store.styles.getStyle(input.name)),
     save_requirement: tool("save_requirement", async (input) => store.requirements.saveRequirement(input)),
-    begin_requirement_design_session: tool("begin_requirement_design_session", async (input) =>
-      (v6.beginRequirementDesignSession ?? beginRequirementDesignSession)({ home: store.home, ...input })),
-    apply_requirement_design_operations: tool("apply_requirement_design_operations", async (input) =>
-      (v6.applyRequirementDesignOperations ?? applyRequirementDesignOperations)({ home: store.home, ...input })),
-    commit_requirement_design_session: tool("commit_requirement_design_session", async (input) =>
-      v6.commitRequirementDesignSession
-        ? v6.commitRequirementDesignSession({ home: store.home, ...input })
-        : commitRequirementDesignSessionFromMcp(store, input)),
-    discard_requirement_design_session: tool("discard_requirement_design_session", async (input) =>
-      (v6.discardRequirementDesignSession ?? discardRequirementDesignSession)({ home: store.home, ...input })),
-    recover_design_commit_journal: tool("recover_design_commit_journal", async (input) =>
-      (v6.recoverDesignCommitJournal ?? recoverDesignCommitJournal)({ home: store.home, ...input })),
-    begin_product_component_session: tool("begin_product_component_session", async (input) =>
-      (v6.beginProductComponentSession ?? beginProductComponentSession)({ home: store.home, ...input })),
-    apply_product_component_operations: tool("apply_product_component_operations", async (input) =>
-      (v6.applyProductComponentOperations ?? applyProductComponentOperations)({ home: store.home, ...input })),
-    commit_product_component_session: tool("commit_product_component_session", async (input) =>
-      (v6.commitProductComponentSession ?? commitProductComponentSession)({ home: store.home, ...input })),
-    discard_product_component_session: tool("discard_product_component_session", async (input) =>
-      (v6.discardProductComponentSession ?? discardProductComponentSession)({ home: store.home, ...input })),
-    get_requirement_design_canvas: tool("get_requirement_design_canvas", async (input) =>
-      (v6.getRequirementDesign ?? getRequirementDesign)(store.home, input.product_id, input.requirement_id)),
-    index_requirement_design_canvas: tool("index_requirement_design_canvas", async (input) =>
-      (v6.indexRequirementDesignCanvas ?? indexRequirementDesignCanvas)({ home: store.home, ...input })),
-    get_requirement_design_scene: tool("get_requirement_design_scene", async (input) =>
-      (v6.getRequirementDesignScene ?? getRequirementDesignScene)({ home: store.home, ...input })),
-    get_requirement_design_history: tool("get_requirement_design_history", async (input) =>
-      (v6.getRequirementDesignHistory ?? getRequirementDesignHistory)({ home: store.home, ...input })),
-    rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
-      (v6.rollbackRequirementDesign ?? rollbackRequirementDesign)({ home: store.home, ...input })),
-    diff_requirement_design_versions: tool("diff_requirement_design_versions", async (input) =>
-      (v6.diffRequirementDesignVersions ?? diffRequirementDesignVersions)({ home: store.home, ...input })),
-    export_requirement_design_asset: tool("export_requirement_design_asset", async (input) =>
-      (v6.exportRequirementDesignAsset ?? exportRequirementDesignAsset)({ home: store.home, ...input })),
-    get_product_component_library: tool("get_product_component_library", async (input) =>
-      (v6.getProductComponentLibrary ?? getProductComponentLibrary)(store.home, input.product_id)),
-    index_component_usages: tool("index_component_usages", async (input) =>
-      (v6.indexRequirementComponentUsage ?? indexRequirementComponentUsage)({ home: store.home, ...input })),
-    refresh_requirement_components: tool("refresh_requirement_components", async (input) =>
-      v6.refreshRequirementComponents
-        ? v6.refreshRequirementComponents({ home: store.home, ...input })
-        : refreshRequirementComponentsFromMcp(store, input)),
-    plan_import_metadata_normalization: tool("plan_import_metadata_normalization", async (input) =>
-      (v6.planImportMetadataNormalization ?? planImportMetadataNormalization)({ home: store.home, ...input })),
-    validate_requirement_design_quality: tool("validate_requirement_design_quality", async (input) =>
-      v6.runDesignQualityPipeline
-        ? v6.runDesignQualityPipeline({ home: store.home, ...input })
-        : validateRequirementDesignQualityFromMcp(store, input)),
-    session_get_editor_state: tool("session_get_editor_state", async (input) =>
-      v6.sessionGetEditorState ? v6.sessionGetEditorState({ home: store.home, ...input }) : sessionGetEditorState(store, input)),
     session_get_guidelines: tool("session_get_guidelines", async (input) =>
       v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionGetGuidelines(store, input)),
     session_get_variables: tool("session_get_variables", async (input) =>
@@ -760,69 +428,6 @@ function getV6Services(store: FormaStore): V6ServiceOverrides {
   return ((store as FormaStore & { v6?: V6ServiceOverrides }).v6 ?? {});
 }
 
-async function commitRequirementDesignSessionFromMcp(store: FormaStore, input: z.infer<typeof commitRequirementDesignSessionSchema>) {
-  if (!input.page_id || !input.frame_id) {
-    throw new ToolError("PENCIL_CAPABILITY_UNAVAILABLE", "Component refresh commit requires a v6 commit service", {
-      session_id: input.session_id
-    });
-  }
-
-  return commitRequirementDesignSession({
-    home: store.home,
-    session_id: input.session_id,
-    page_id: input.page_id,
-    frame_id: input.frame_id,
-    quality_report: {
-      status: "passed",
-      hard_checks: { issues: [] },
-      warnings: [],
-      ai_visual_review: qualityReportAiReview(input.ai_visual_review)
-    },
-    previewExporter: async (candidate) => {
-      await exportPreviewCandidate(store, input.session_id, candidate.frame_id, candidate.output_file);
-    }
-  });
-}
-
-function qualityReportAiReview(input: z.infer<typeof aiVisualReviewSchema> | undefined) {
-  if (!input || input.status === "passed") {
-    return undefined;
-  }
-  if (input.status === "warning") {
-    return {
-      status: "warning" as const,
-      metadata: {
-        warnings: input.warnings,
-        ...(input.screenshot_path ? { screenshot_path: input.screenshot_path } : {})
-      }
-    };
-  }
-  return input;
-}
-
-async function refreshRequirementComponentsFromMcp(store: FormaStore, input: z.infer<typeof refreshRequirementComponentsSchema>) {
-  const scope = input.scope === "all_pages" ? undefined : input.scope;
-  return refreshRequirementComponents({
-    home: store.home,
-    session_id: input.session_id,
-    target_component_library_version: typeof input.version === "number" ? input.version : undefined,
-    page_ids: scope?.page_ids
-  });
-}
-
-async function validateRequirementDesignQualityFromMcp(store: FormaStore, input: z.infer<typeof sessionProductRequirementPageFrameSchema>) {
-  const session = await findMcpSessionRecord(store.home, input.session_id);
-  const quality_report = await runDesignQualityPipeline({ pen_file: session.staging_path });
-  return {
-    session_id: input.session_id,
-    product_id: input.product_id,
-    requirement_id: input.requirement_id,
-    page_id: input.page_id,
-    frame_id: input.frame_id,
-    quality_report
-  };
-}
-
 function sessionAdapter(store: FormaStore): PencilAppSessionAdapter {
   return new PencilAppSessionAdapter({ home: store.home, runner: defaultPencilRunner });
 }
@@ -832,7 +437,7 @@ async function sessionBindingContext(home: string, adapter: PencilAppSessionAdap
   const bindingId = input.pencil_binding_id ?? record.pencil_binding_id;
   const binding = adapter.getBinding(bindingId);
   if (binding && binding.session_id !== input.session_id) {
-    throw new ToolError("PENCIL_APP_REQUIRED", "Pencil binding does not belong to this session", {
+    throw new ToolError("INVALID_INPUT", "Pencil binding does not belong to this session", {
       session_id: input.session_id,
       pencil_binding_id: bindingId
     });
@@ -843,12 +448,6 @@ async function sessionBindingContext(home: string, adapter: PencilAppSessionAdap
 function sessionToolArgs(input: Record<string, unknown>): Record<string, unknown> {
   const { session_id: _sessionId, pencil_binding_id: _bindingId, ...args } = input;
   return args;
-}
-
-async function sessionGetEditorState(store: FormaStore, input: z.infer<typeof sessionGetEditorStateSchema>) {
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, input);
-  return adapter.sessionGetEditorState(context.bindingId, { include_schema: true }, context.expectedStagingPath);
 }
 
 async function sessionGetGuidelines(store: FormaStore, input: z.infer<typeof sessionGetGuidelinesSchema>) {
@@ -898,32 +497,6 @@ async function sessionExportNodes(store: FormaStore, input: z.infer<typeof sessi
   const adapter = sessionAdapter(store);
   const context = await sessionBindingContext(store.home, adapter, input);
   return adapter.sessionExportNodes(context.bindingId, sessionToolArgs(input), context.expectedStagingPath);
-}
-
-async function exportPreviewCandidate(store: FormaStore, sessionId: string, frameId: string, outputFile: string): Promise<void> {
-  const adapter = sessionAdapter(store);
-  const context = await sessionBindingContext(store.home, adapter, { session_id: sessionId });
-  const result = await adapter.sessionExportNodes(context.bindingId, {
-    nodeIds: [frameId],
-    format: "png",
-    scale: 2
-  }, context.expectedStagingPath);
-  const source = exportedFilePath(result);
-  if (!source) {
-    throw new FormaError("PREVIEW_EXPORT_FAILED", "Preview export did not return a file path", {
-      session_id: sessionId,
-      frame_id: frameId
-    });
-  }
-  await copyFile(source, outputFile);
-}
-
-function exportedFilePath(result: unknown): string | undefined {
-  if (!isRecord(result) || !Array.isArray(result.files)) {
-    return undefined;
-  }
-  const first = result.files[0];
-  return isRecord(first) && typeof first.path === "string" ? first.path : undefined;
 }
 
 async function findMcpSessionRecord(home: string, sessionId: string): Promise<{
@@ -1022,7 +595,7 @@ function toFormaErrorPayload(error: unknown): { error_code: string; message: str
     if (forbiddenPathIssue) {
       return {
         error_code: "FORBIDDEN_PATH_PARAMETER",
-        message: "Pencil file paths are session-owned",
+        message: "Path parameters are not allowed",
         details: { parameter: forbiddenPathIssue.path.join(".") }
       };
     }
