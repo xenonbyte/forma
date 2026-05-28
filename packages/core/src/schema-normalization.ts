@@ -4,26 +4,114 @@ import { createRequire } from "node:module";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { readYaml, readYamlUnknown, writeYamlAtomic } from "./yaml.js";
 
-// Minimal stubs for deleted Pencil-era semantic-contract module
-type SemanticContract = Record<string, unknown>;
-type SemanticContractCoverage = string;
-function buildSemanticContractForPage(_input: unknown): {
-  semantic_contract: undefined;
-  semantic_contract_coverage: undefined;
-} {
-  return { semantic_contract: undefined, semantic_contract_coverage: undefined };
+type SemanticContractCoverage = "minimal" | "explicit";
+interface SemanticContractItem {
+  key: string;
+  label: string;
 }
-function buildBaselineSemanticContractCandidate(_input: unknown): {
-  ok: false;
-  code: string;
-  conflicts: unknown[];
+interface SemanticContract {
+  actions: SemanticContractItem[];
+  allowed_copy: string[];
+  component_keys: string[];
+  fields: SemanticContractItem[];
+  navigation: Array<{ target_page_id: string; label?: string }>;
+}
+interface SemanticContractConflict {
+  page_id: string;
+  type: "action" | "field";
+  key: string;
+  labels: string[];
+}
+
+function buildSemanticContractForPage(input: unknown): {
+  semantic_contract: SemanticContract;
+  semantic_contract_coverage: SemanticContractCoverage;
+} {
+  const record = asRecord(input);
+  const page = asRecord(record.page);
+  const pageId = stringValue(page.page_id) ?? "";
+  const contract = emptySemanticContract();
+
+  mergeSemanticItems(contract.fields, semanticItems(page.declared_fields));
+  mergeSemanticItems(contract.actions, semanticItems(page.declared_actions));
+  mergeStrings(contract.component_keys, arrayOfStrings(page.declared_component_keys));
+  mergeStrings(contract.allowed_copy, arrayOfRecords(page.copy).map((item) => stringValue(item.text)).filter(isDefinedString));
+
+  for (const rule of arrayOfRecords(record.product_rules)) {
+    const rulePageId = stringValue(rule.page_id);
+    if (rulePageId !== undefined && rulePageId !== pageId) {
+      continue;
+    }
+    const semantic = asRecord(rule.semantic);
+    mergeSemanticItems(contract.fields, semanticItems(semantic.fields));
+    mergeSemanticItems(contract.actions, semanticItems(semantic.actions));
+    mergeStrings(contract.component_keys, arrayOfStrings(semantic.component_keys));
+    mergeStrings(contract.allowed_copy, arrayOfStrings(semantic.allowed_copy));
+  }
+
+  for (const edge of arrayOfRecords(record.navigation)) {
+    if (stringValue(edge.from) === pageId) {
+      addNavigationTarget(contract.navigation, {
+        target_page_id: stringValue(edge.to) ?? "",
+        label: stringValue(edge.label)
+      });
+    }
+  }
+
+  return { semantic_contract: contract, semantic_contract_coverage: "minimal" };
+}
+
+function buildBaselineSemanticContractCandidate(input: unknown): {
+  ok: boolean;
+  code?: "BASELINE_SEMANTIC_CONTRACT_CONFLICT";
+  conflicts: SemanticContractConflict[];
   pages: Array<{
     id: string;
-    semantic_contract: undefined;
-    semantic_contract_coverage: undefined;
+    semantic_contract: SemanticContract;
+    semantic_contract_coverage: SemanticContractCoverage;
   }>;
 } {
-  return { ok: false, code: "BASELINE_SEMANTIC_CONTRACT_CONFLICT", conflicts: [], pages: [] };
+  const record = asRecord(input);
+  const conflicts: SemanticContractConflict[] = [];
+  const pages = arrayOfRecords(record.pages).map((page) => {
+    const pageId = stringValue(page.id) ?? "";
+    const contract = emptySemanticContract();
+
+    if (isRecord(page.semantic_contract)) {
+      mergeSemanticContract(contract, page.semantic_contract as unknown as SemanticContract, pageId, conflicts);
+    }
+    for (const source of arrayOfRecords(page.source_semantic_contracts)) {
+      if (isRecord(source.semantic_contract)) {
+        mergeSemanticContract(contract, source.semantic_contract as unknown as SemanticContract, pageId, conflicts);
+      }
+    }
+    mergeSemanticItems(contract.fields, semanticItems(page.declared_fields), pageId, conflicts, "field");
+    mergeSemanticItems(contract.actions, semanticItems(page.declared_actions), pageId, conflicts, "action");
+    mergeStrings(contract.component_keys, arrayOfStrings(page.declared_component_keys));
+    mergeStrings(contract.allowed_copy, arrayOfRecords(page.copy).map((item) => stringValue(item.text)).filter(isDefinedString));
+
+    for (const edge of arrayOfRecords(record.navigation)) {
+      if (stringValue(edge.from) === pageId) {
+        addNavigationTarget(contract.navigation, {
+          target_page_id: stringValue(edge.to) ?? "",
+          label: stringValue(edge.label)
+        });
+      }
+    }
+
+    return {
+      id: pageId,
+      semantic_contract: contract,
+      semantic_contract_coverage: "minimal" as const
+    };
+  });
+
+  return {
+    ok: conflicts.length === 0,
+    code: conflicts.length === 0 ? undefined : "BASELINE_SEMANTIC_CONTRACT_CONFLICT",
+    conflicts,
+    pages
+  };
 }
 
 export const V6_SCHEMA_NORMALIZER_VERSION = "v6-stage-01";
@@ -1147,6 +1235,13 @@ function buildBaselineCandidate(
       }));
     return { ...page, source_semantic_contracts };
   });
+  if (candidatePages.every((page) => isRecord(page.semantic_contract))) {
+    const candidate = { ...baseline, pages: candidatePages };
+    validateAllowedFields(path, candidate, allowedBaselineFields, "BASELINE_UNKNOWN_FIELD", diagnostics);
+    validateBaselineCandidate(path, candidate, diagnostics);
+    return { candidate, deletedFieldCounts: {}, generatedCoverage: [], diagnostics };
+  }
+
   const built = buildBaselineSemanticContractCandidate({
     product_id: productId,
     pages: candidatePages.map((page) => ({
@@ -1176,7 +1271,7 @@ function buildBaselineCandidate(
 
   if (!built.ok) {
     diagnostics.push({
-      code: built.code,
+      code: built.code ?? "BASELINE_SEMANTIC_CONTRACT_CONFLICT",
       path,
       message: "baseline semantic contract aggregate contains conflicting labels",
       details: { conflicts: built.conflicts }
@@ -1436,6 +1531,82 @@ function validateAllowedFields(
 
 function semanticCoverageValue(value: unknown): SemanticContractCoverage | undefined {
   return value === "minimal" || value === "explicit" ? value : undefined;
+}
+
+function emptySemanticContract(): SemanticContract {
+  return {
+    actions: [],
+    allowed_copy: [],
+    component_keys: [],
+    fields: [],
+    navigation: []
+  };
+}
+
+function mergeSemanticContract(
+  target: SemanticContract,
+  source: SemanticContract,
+  pageId: string,
+  conflicts: SemanticContractConflict[]
+): void {
+  mergeSemanticItems(target.fields, semanticItems(source.fields), pageId, conflicts, "field");
+  mergeSemanticItems(target.actions, semanticItems(source.actions), pageId, conflicts, "action");
+  mergeStrings(target.component_keys, arrayOfStrings(source.component_keys));
+  mergeStrings(target.allowed_copy, arrayOfStrings(source.allowed_copy));
+  for (const item of arrayOfRecords(source.navigation)) {
+    addNavigationTarget(target.navigation, {
+      target_page_id: stringValue(item.target_page_id) ?? "",
+      label: stringValue(item.label)
+    });
+  }
+}
+
+function mergeSemanticItems(
+  target: SemanticContractItem[],
+  items: SemanticContractItem[],
+  pageId?: string,
+  conflicts?: SemanticContractConflict[],
+  type?: "action" | "field"
+): void {
+  for (const item of items) {
+    const existing = target.find((candidate) => candidate.key === item.key);
+    if (existing === undefined) {
+      target.push(item);
+      continue;
+    }
+    if (existing.label !== item.label && pageId !== undefined && conflicts !== undefined && type !== undefined) {
+      const labels = [existing.label, item.label].sort();
+      if (!conflicts.some((conflict) =>
+        conflict.page_id === pageId &&
+        conflict.type === type &&
+        conflict.key === item.key &&
+        conflict.labels.join("\u0000") === labels.join("\u0000")
+      )) {
+        conflicts.push({ page_id: pageId, type, key: item.key, labels });
+      }
+    }
+  }
+}
+
+function mergeStrings(target: string[], values: string[]): void {
+  for (const value of values) {
+    if (value.length > 0 && !target.includes(value)) {
+      target.push(value);
+    }
+  }
+}
+
+function addNavigationTarget(target: SemanticContract["navigation"], item: { target_page_id: string; label?: string }): void {
+  if (item.target_page_id.length === 0) {
+    return;
+  }
+  if (!target.some((existing) => existing.target_page_id === item.target_page_id && existing.label === item.label)) {
+    target.push(item);
+  }
+}
+
+function isDefinedString(value: string | undefined): value is string {
+  return value !== undefined;
 }
 
 function isSemanticItemsShape(value: unknown): boolean {

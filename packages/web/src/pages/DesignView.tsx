@@ -8,8 +8,11 @@ import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
 export interface ArtifactSummary {
   id: string;
   kind: string;
+  requirement_id?: string;
   title: string;
   preview_url?: string;
+  source_skill_id?: string;
+  superseded?: boolean;
   updated_at: string;
 }
 
@@ -42,7 +45,7 @@ export function DesignView({ client, params }: DesignViewProps) {
       .listProductArtifacts(productId)
       .then(({ artifacts }) => {
         if (!cancelled) {
-          setState({ status: "ready", artifacts });
+          setState({ status: "ready", artifacts: filterDesignArtifacts(artifacts, requirementId) });
         }
       })
       .catch((error: unknown) => {
@@ -54,7 +57,7 @@ export function DesignView({ client, params }: DesignViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [client, productId]);
+  }, [client, productId, requirementId]);
 
   const backHref = requirementId
     ? `/products/${productId}/requirements/${requirementId}`
@@ -112,7 +115,7 @@ export function DesignView({ client, params }: DesignViewProps) {
         /* PNG grid */
         <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" role="list">
           {artifacts.map((artifact) => {
-            const previewSrc = `/products/${productId}/artifacts/${artifact.id}/preview/1x`;
+            const previewSrc = artifactPreviewUrl(productId, artifact.id, "1x");
             return (
               <li key={artifact.id}>
                 <button
@@ -162,7 +165,7 @@ export function DesignView({ client, params }: DesignViewProps) {
             <img
               alt={lightboxArtifact.title}
               className="block max-h-[80vh] w-auto rounded-lg"
-              src={`/products/${productId}/artifacts/${lightboxArtifact.id}/preview/2x`}
+              src={artifactPreviewUrl(productId, lightboxArtifact.id, "2x")}
             />
           </div>
         </div>
@@ -173,3 +176,16 @@ export function DesignView({ client, params }: DesignViewProps) {
 
 const secondaryLinkClasses =
   "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+
+function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
+}
+
+function filterDesignArtifacts(artifacts: ArtifactSummary[], requirementId: string): ArtifactSummary[] {
+  return artifacts.filter((artifact) => {
+    if (artifact.kind === "design-system") {
+      return false;
+    }
+    return requirementId ? artifact.requirement_id === requirementId : true;
+  });
+}

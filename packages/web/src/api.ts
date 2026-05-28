@@ -218,13 +218,6 @@ export interface StyleDetailPayload {
   metadata: StyleMetadata;
 }
 
-export interface StylePreviewPayload {
-  image_url?: string;
-  metadata?: StyleMetadata;
-  name: string;
-  preview_path?: string;
-}
-
 export interface ArtifactSummary {
   id: string;
   kind: string;
@@ -344,7 +337,6 @@ export interface FormaApiClient {
   getRequirementDesignDiff(productId: string, requirementId: string, input: { from_page_version: number; page_id?: string; to_page_version: number }): Promise<RequirementDesignDiff>;
   getRequirementDesignHistory(productId: string, requirementId: string, pageId?: string): Promise<RequirementDesignHistoryEntry[]>;
   getStyle(name: string): Promise<StyleDetailPayload>;
-  getStylePreview(name: string): Promise<StylePreviewPayload>;
   listProductArtifacts(productId: string, kind?: string, include_superseded?: boolean): Promise<{ artifacts: ArtifactSummary[] }>;
   listProducts(): Promise<ProductIndexEntry[]>;
   listRequirements(productId: string): Promise<RequirementWithDocument[]>;
@@ -551,7 +543,6 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       return apiArray<RequirementDesignHistoryEntry>(`${requirementDesignPath(productId, requirementId)}/history${query}`, requestOptions(fetcher));
     },
     getStyle: (name) => apiRecord<StyleDetailPayload>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
-    getStylePreview: (name) => apiRecord<StylePreviewPayload>(`/api/styles/${encodeURIComponent(name)}/preview`, requestOptions(fetcher)),
     listProductArtifacts: (productId, kind, include_superseded) => {
       const basePath = `/api/products/${encodeURIComponent(productId)}/artifacts`;
       const params = new URLSearchParams();

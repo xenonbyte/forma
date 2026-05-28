@@ -83,6 +83,35 @@ forma serve
 
 Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, and review multilingual copy.
 
+## Desktop App
+
+The `@xenonbyte/forma-desktop` package ships a read-only Electron renderer for browsing products, requirements, and design artifacts. Mutation flows stay in the Web admin and agent skills; the desktop app exposes only seven readonly methods via `window.forma`.
+
+Run the desktop app in development mode against a running Forma server:
+
+```bash
+# Terminal 1 — start the local Forma server (defaults to 127.0.0.1:3000)
+node bin/forma.js serve
+
+# Terminal 2 — start the Electron renderer with hot reload
+pnpm desktop:dev
+```
+
+The renderer reads `FORMA_SERVER_URL` (or `FORMA_SERVER_HOST` + `FORMA_SERVER_PORT`) to locate the server. Defaults to `http://127.0.0.1:3000`. Until the server is reachable, the renderer shows a placeholder page and retries every 5 seconds for up to 5 attempts.
+
+Requirements:
+- Electron 41+ (installed automatically via the package's devDependencies)
+- Node.js 22+ and pnpm 10.33+ for the workspace
+
+Security model:
+- `window.forma` exposes only `listProducts`, `getProduct`, `listArtifacts`, `getArtifact`, `listRequirements`, `getRequirement`, and `formaServerStatus`.
+- All HTTP mutations against the local server are rejected from the desktop renderer's origin; only the Web admin origin is whitelisted.
+- The `forma-asset://` protocol handler validates paths and rejects traversal attempts.
+
+Known limitations:
+- This is dev-mode only. There is no `electron-builder` configuration yet, so the app cannot be packaged into a `.dmg`, `.exe`, or `.AppImage` from this checkout.
+- The `serverStatus()` health check probes `/api/products` rather than a dedicated health endpoint.
+
 ## Agent Integration
 
 Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, confirmed product deletion, unified requirement capture, design planning, component refinement, style changes, rollback, and status checks.
@@ -104,16 +133,6 @@ FORMA_HOME=/path/to/forma-home forma status
 ```
 
 Runtime data lives under `$FORMA_HOME/data`, including products, requirements, baselines, copy translations, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
-
-## Pencil Smoke Test
-
-```bash
-pnpm smoke:pencil
-```
-
-This runs a real Pencil App-bound smoke: installs built-in styles into a temporary Forma home, creates a product, opens and discards a product component library session through the v6 Pencil App session adapter, then creates and persists a requirement. It verifies live Pencil CLI authentication, required interactive capabilities, desktop app session startup, controlled save, and session cleanup without calling removed headless generation flows.
-
-Run it only when the Pencil CLI is installed, on `PATH`, authenticated, and able to open a desktop app session. The default `pnpm test` suite does not require live Pencil access.
 
 ## Verification
 

@@ -37,7 +37,7 @@ export interface ProductDeletionState {
   phase: ProductDeletionPhase;
   backups: { products_yaml: "backups/products.yaml"; session_yaml?: "backups/session.yaml" };
   moved_paths: Array<{
-    kind: "product_data" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
+    kind: "product_data" | "product_artifact_storage" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
     original_path: string;
     staged_path: string;
     required: boolean;
@@ -66,7 +66,7 @@ const relativePathSchema = z.string().min(1).refine((value) => !isAbsolute(value
 });
 
 const movedPathSchema = z.object({
-  kind: z.enum(["product_data", "component_library", "component_library_latest", "component_library_metadata", "component_library_versions", "component_library_sessions"]),
+  kind: z.enum(["product_data", "product_artifact_storage", "component_library", "component_library_latest", "component_library_metadata", "component_library_versions", "component_library_sessions"]),
   original_path: relativePathSchema,
   staged_path: relativePathSchema,
   required: z.boolean()
@@ -184,6 +184,7 @@ export async function deleteProductLocked(
 
     const session = sessionExists ? await readYaml<{ current_product: string | null }>(sessionFile) : { current_product: null };
     const productData = join("data", productId);
+    const productArtifactStorage = join("data", "products", productId);
     const libraryFile = join("library", `${productId}.lib.pen`);
     const libraryMetadata = join("library", `${productId}.components.yaml`);
     const libraryVersions = join("library", `${productId}.versions`);
@@ -199,6 +200,14 @@ export async function deleteProductLocked(
       });
     } else {
       missingPaths.push(productData);
+    }
+    if (await pathExists(join(runtime.home, productArtifactStorage))) {
+      movedPaths.push({
+        kind: "product_artifact_storage",
+        original_path: productArtifactStorage,
+        staged_path: join("staged", "data", "products", productId),
+        required: false
+      });
     }
     const componentLibraryFile = runtime.products.componentLibraryFile(productId);
     if (await pathExists(componentLibraryFile)) {

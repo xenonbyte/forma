@@ -16,6 +16,42 @@ import {
 
 type UnknownRecord = Record<string, unknown>;
 
+interface RequirementPageRecord {
+  page_id: string;
+  baseline_page?: string;
+  copy?: unknown[];
+  features?: string;
+  fields?: string;
+  interactions?: string;
+  name?: string;
+  semantic_contract?: unknown;
+  semantic_contract_coverage?: unknown;
+  [key: string]: unknown;
+}
+
+interface RequirementRecord {
+  id: string;
+  product_id: string;
+  created_at?: string;
+  updated_at?: string;
+  status?: string;
+  navigation?: unknown[];
+  pages: RequirementPageRecord[];
+  [key: string]: unknown;
+}
+
+interface BaselinePageRecord {
+  id: string;
+  copy: unknown[];
+  features: string;
+  fields: string;
+  interactions: string;
+  name: string;
+  semantic_contract?: unknown;
+  semantic_contract_coverage?: unknown;
+  source_requirements: string[];
+}
+
 const ALLOWED_MUTATION_ORIGINS = new Set([
   "http://localhost:5173",
   "http://localhost:4173"
@@ -40,8 +76,8 @@ export interface FormaRoutesStore {
   requirements: {
     archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
     createEmptyRequirement(productId: string, title: string): Promise<unknown>;
-    getRequirement(input: { requirement_id: string } | { product_id: string }): Promise<{ id: string; product_id: string; pages: unknown[]; [key: string]: unknown }>;
-    getRequirementHistory(productId: string): Promise<Array<{ id: string; product_id: string; [key: string]: unknown }>>;
+    getRequirement(input: { requirement_id: string } | { product_id: string }): Promise<RequirementRecord>;
+    getRequirementHistory(productId: string): Promise<RequirementRecord[]>;
     saveRequirement(input: unknown): Promise<unknown>;
   };
   styles: {
@@ -126,11 +162,28 @@ function isMutationMethod(method: string): boolean {
   return method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH";
 }
 
-function isOriginAllowed(originStr: string | undefined): boolean {
+function isOriginAllowed(originStr: string | undefined, request: FastifyRequest): boolean {
   if (originStr === undefined) return true;
   if (originStr === "null") return false;
   if (originStr.startsWith("forma-asset://")) return false;
-  return ALLOWED_MUTATION_ORIGINS.has(originStr);
+  return ALLOWED_MUTATION_ORIGINS.has(originStr) || isSameRequestOrigin(originStr, request);
+}
+
+function isSameRequestOrigin(originStr: string, request: FastifyRequest): boolean {
+  let origin: URL;
+  try {
+    origin = new URL(originStr);
+  } catch {
+    return false;
+  }
+
+  if (origin.protocol !== "http:" && origin.protocol !== "https:") {
+    return false;
+  }
+
+  const host = request.headers.host;
+  const hostStr = Array.isArray(host) ? host[0] : host;
+  return typeof hostStr === "string" && origin.host.toLowerCase() === hostStr.toLowerCase();
 }
 
 function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): boolean {
@@ -142,7 +195,7 @@ function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): bool
   const originStr = Array.isArray(origin) ? origin[0] : origin;
   const formaClient = request.headers["x-forma-client"];
   const formaClientStr = Array.isArray(formaClient) ? formaClient[0] : (formaClient ?? null);
-  const allowed = isOriginAllowed(originStr);
+  const allowed = isOriginAllowed(originStr, request);
 
   console.log(JSON.stringify({
     timestamp: new Date().toISOString(),
@@ -234,6 +287,41 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
     getOwnedRequirement(store, request.params.id, request.params.reqId)
   );
 
+  // ─── Baseline compatibility routes ────────────────────────────────────────
+
+  app.get<{ Params: { id: string } }>("/api/products/:id/baseline", async (request) =>
+    getProductBaseline(store, request.params.id)
+  );
+
+  app.get<{ Params: { id: string; pageId: string } }>("/api/products/:id/baseline/pages/:pageId/image", async (request) =>
+    getBaselineImageMetadata(store, request.params.id, request.params.pageId)
+  );
+
+  app.get<{ Params: { id: string; pageId: string }; Querystring: { requirement_id?: string } }>(
+    "/api/products/:id/baseline/pages/:pageId/copy",
+    async (request) => getBaselinePageCopy(store, request.params.id, request.params.pageId, request.query.requirement_id)
+  );
+
+  app.get<{ Params: { id: string; pageId: string } }>("/api/products/:id/baseline/pages/:pageId/annotations", async (request) => {
+    const page = await getBaselinePage(store, request.params.id, request.params.pageId);
+    return {
+      product_id: request.params.id,
+      baseline_page_id: request.params.pageId,
+      annotations: [{
+        id: page.id,
+        name: page.name,
+        type: "baseline_page",
+        content: {
+          features: page.features,
+          copy: page.copy,
+          fields: page.fields,
+          interactions: page.interactions
+        },
+        source_requirements: page.source_requirements
+      }]
+    };
+  });
+
   // ─── Artifact routes (SPEC-IF-HTTP-001 ~ 003) ─────────────────────────────
 
   // SPEC-IF-HTTP-001: list artifacts
@@ -257,7 +345,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
           id: artifactId,
           kind: manifest.kind,
           title: manifest.title,
-          preview_url: `/products/${request.params.pid}/artifacts/${artifactId}/preview/2x.png`,
+          preview_url: artifactPreviewUrl(request.params.pid, artifactId, "2x"),
           updated_at: manifest.updatedAt,
           source_skill_id: manifest.sourceSkillId,
           requirement_id: manifest.requirementId,
@@ -278,7 +366,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       return {
         manifest,
         supportingFiles: manifest.supportingFiles ?? [],
-        preview_url: `/products/${request.params.pid}/artifacts/${request.params.aid}/preview/2x.png`
+        preview_url: artifactPreviewUrl(request.params.pid, request.params.aid, "2x")
       };
     }
   );
@@ -369,6 +457,154 @@ async function getOwnedRequirement(store: FormaStore, productId: string, require
     });
   }
   return requirement;
+}
+
+async function getProductBaseline(store: FormaStore, productId: string) {
+  await store.products.getProduct(productId);
+  const requirements = (await store.requirements.getRequirementHistory(productId))
+    .filter((requirement) => requirement.status !== "archived")
+    .sort(compareRequirementsOldestFirst);
+  const pagesById = new Map<string, BaselinePageRecord>();
+  const navigation: unknown[] = [];
+
+  for (const requirement of requirements) {
+    if (Array.isArray(requirement.navigation)) {
+      navigation.push(...requirement.navigation);
+    }
+
+    for (const page of requirement.pages) {
+      const pageId = stringValue(page.baseline_page) ?? stringValue(page.page_id);
+      if (!pageId) {
+        continue;
+      }
+
+      const existing = pagesById.get(pageId);
+      pagesById.set(pageId, {
+        id: pageId,
+        name: stringValue(page.name) ?? existing?.name ?? pageId,
+        features: stringValue(page.features) ?? existing?.features ?? "",
+        copy: Array.isArray(page.copy) ? page.copy : existing?.copy ?? [],
+        fields: stringValue(page.fields) ?? existing?.fields ?? "",
+        interactions: stringValue(page.interactions) ?? existing?.interactions ?? "",
+        ...(page.semantic_contract !== undefined ? { semantic_contract: page.semantic_contract } : {}),
+        ...(page.semantic_contract_coverage !== undefined ? { semantic_contract_coverage: page.semantic_contract_coverage } : {}),
+        source_requirements: uniqueStrings([...(existing?.source_requirements ?? []), requirement.id])
+      });
+    }
+  }
+
+  return {
+    product_id: productId,
+    pages: [...pagesById.values()],
+    navigation
+  };
+}
+
+async function getBaselinePage(store: FormaStore, productId: string, pageId: string): Promise<BaselinePageRecord> {
+  const baseline = await getProductBaseline(store, productId);
+  const page = baseline.pages.find((item) => item.id === pageId);
+  if (!page) {
+    throw new RouteNotFoundError("BASELINE_PAGE_NOT_FOUND", "Baseline page not found", {
+      product_id: productId,
+      page_id: pageId
+    });
+  }
+  return page;
+}
+
+async function getBaselinePageCopy(
+  store: FormaStore,
+  productId: string,
+  pageId: string,
+  requirementId: string | undefined
+) {
+  const baselinePage = await getBaselinePage(store, productId, pageId);
+  const requirement = requirementId
+    ? await getOwnedRequirement(store, productId, requirementId)
+    : (await store.requirements.getRequirementHistory(productId))
+      .filter((item) => baselinePage.source_requirements.includes(item.id))
+      .sort(compareRequirementsNewestFirst)[0];
+
+  if (!requirement) {
+    return emptyBaselinePageCopy(pageId);
+  }
+
+  const requirementPage = requirement.pages.find((item) => item.baseline_page === pageId);
+  if (!requirementPage) {
+    return emptyBaselinePageCopy(pageId);
+  }
+
+  const translations = await store.copy.getTranslations(productId, requirement.id);
+  const pageTranslation = translations.find((item) => item.page_id === requirementPage.page_id);
+  return {
+    page_id: pageId,
+    default_language_copy: Array.isArray(requirementPage.copy) ? requirementPage.copy : [],
+    translations: pageTranslation?.entries ?? []
+  };
+}
+
+async function getBaselineImageMetadata(store: FormaStore, productId: string, pageId: string) {
+  const page = await getBaselinePage(store, productId, pageId);
+  const product = await store.products.getProduct(productId);
+  const pointers = product.requirements ?? {};
+  const requirements = (await store.requirements.getRequirementHistory(productId))
+    .filter((requirement) => page.source_requirements.includes(requirement.id))
+    .sort(compareRequirementsNewestFirst);
+
+  for (const requirement of requirements) {
+    const artifactId = pointers[requirement.id]?.latestArtifactId;
+    if (artifactId) {
+      return {
+        product_id: productId,
+        baseline_page_id: pageId,
+        requirement_id: requirement.id,
+        preview_url: artifactPreviewUrl(productId, artifactId, "2x")
+      };
+    }
+  }
+
+  throw new RouteNotFoundError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
+    product_id: productId,
+    page_id: pageId,
+    source_requirements: page.source_requirements
+  });
+}
+
+function emptyBaselinePageCopy(pageId: string) {
+  return {
+    page_id: pageId,
+    default_language_copy: [],
+    translations: []
+  };
+}
+
+function compareRequirementsOldestFirst(left: RequirementRecord, right: RequirementRecord): number {
+  return timestampForRequirement(left) - timestampForRequirement(right) || left.id.localeCompare(right.id);
+}
+
+function compareRequirementsNewestFirst(left: RequirementRecord, right: RequirementRecord): number {
+  return timestampForRequirement(right) - timestampForRequirement(left) || right.id.localeCompare(left.id);
+}
+
+function timestampForRequirement(requirement: RequirementRecord): number {
+  const updatedAt = requirement.updated_at ? Date.parse(requirement.updated_at) : Number.NaN;
+  if (Number.isFinite(updatedAt)) {
+    return updatedAt;
+  }
+  const createdAt = requirement.created_at ? Date.parse(requirement.created_at) : Number.NaN;
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function isRecord(value: unknown): value is UnknownRecord {

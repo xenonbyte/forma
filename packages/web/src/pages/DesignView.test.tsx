@@ -43,8 +43,10 @@ describe("DesignView", () => {
 
   it("renders PNG grid when artifacts are available", async () => {
     const artifacts: ArtifactSummary[] = [
-      { id: "A-111", kind: "page", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" },
-      { id: "A-222", kind: "page", title: "Checkout Page", updated_at: "2026-05-28T00:00:00Z" }
+      { id: "A-111", kind: "html", requirement_id: "R-12345678", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" },
+      { id: "A-222", kind: "html", requirement_id: "R-12345678", title: "Checkout Page", updated_at: "2026-05-28T00:00:00Z" },
+      { id: "A-333", kind: "html", requirement_id: "R-87654321", title: "Profile Page", updated_at: "2026-05-28T00:00:00Z" },
+      { id: "A-444", kind: "design-system", title: "Design System", updated_at: "2026-05-28T00:00:00Z" }
     ];
     const client: DesignViewClientDep = {
       listProductArtifacts: vi.fn(async () => ({ artifacts }))
@@ -59,14 +61,15 @@ describe("DesignView", () => {
     const images = container.querySelectorAll("img");
     expect(images.length).toBe(2);
     const srcs = Array.from(images).map((img) => img.getAttribute("src") ?? "");
-    expect(srcs.every((src) => src.includes("/preview/1x"))).toBe(true);
-    expect(srcs.some((src) => src.includes("A-111"))).toBe(true);
-    expect(srcs.some((src) => src.includes("A-222"))).toBe(true);
+    expect(srcs).toEqual([
+      "/api/products/P-123abc/artifacts/A-111/preview/1x",
+      "/api/products/P-123abc/artifacts/A-222/preview/1x"
+    ]);
   });
 
   it("opens lightbox on artifact click", async () => {
     const artifacts: ArtifactSummary[] = [
-      { id: "A-111", kind: "page", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" }
+      { id: "A-111", kind: "html", requirement_id: "R-12345678", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" }
     ];
     const client: DesignViewClientDep = {
       listProductArtifacts: vi.fn(async () => ({ artifacts }))
@@ -90,8 +93,7 @@ describe("DesignView", () => {
       (img.getAttribute("src") ?? "").includes("/preview/2x")
     );
     expect(lightboxImg).not.toBeUndefined();
-    expect(lightboxImg?.getAttribute("src")).toContain("A-111");
-    expect(lightboxImg?.getAttribute("src")).toContain("/preview/2x");
+    expect(lightboxImg?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-111/preview/2x");
   });
 });
 

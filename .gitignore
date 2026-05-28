@@ -8,3 +8,5 @@ coverage/
 .vite/
 *.tsbuildinfo
 .codegraph
+.req-to-plan/
+packages/desktop/out/

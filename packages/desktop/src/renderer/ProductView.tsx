@@ -22,11 +22,12 @@ interface ProductViewProps {
   };
   productId: string;
   onBack: () => void;
+  onSelectArtifact?: (artifactId: string) => void;
 }
 
 type Tab = 'artifacts' | 'requirements';
 
-export function ProductView({ forma, productId, onBack }: ProductViewProps) {
+export function ProductView({ forma, productId, onBack, onSelectArtifact }: ProductViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('artifacts');
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [requirements, setRequirements] = useState<Requirement[]>([]);
@@ -90,7 +91,8 @@ export function ProductView({ forma, productId, onBack }: ProductViewProps) {
                 <div
                   key={a.id}
                   data-artifact-id={a.id}
-                  style={{ border: '1px solid #ccc', borderRadius: '8px', overflow: 'hidden' }}
+                  onClick={() => onSelectArtifact?.(a.id)}
+                  style={{ border: '1px solid #ccc', borderRadius: '8px', overflow: 'hidden', cursor: onSelectArtifact ? 'pointer' : 'default' }}
                 >
                   {a.preview_url && (
                     <img

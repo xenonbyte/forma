@@ -28,7 +28,7 @@ interface ProductDeletionStateForTest {
   phase: ProductDeletionPhase;
   backups: { products_yaml: "backups/products.yaml"; session_yaml?: "backups/session.yaml" };
   moved_paths: Array<{
-    kind: "product_data" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
+    kind: "product_data" | "product_artifact_storage" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
     original_path: string;
     staged_path: string;
     required: boolean;
@@ -745,6 +745,9 @@ describe("product session and style services", () => {
     const store = await createTestStore();
     const product = await seedReadyProduct(store);
     await writeComponentLibrary(store.home, product.id);
+    const artifactRoot = join(store.home, "data", "products", product.id, "od-project", "artifacts", "AbCdEfGhIjKlMnOp");
+    await mkdir(artifactRoot, { recursive: true });
+    await writeFile(join(artifactRoot, "manifest.json"), "{}\n", "utf8");
 
     await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).resolves.toEqual({
       product_id: product.id,
@@ -756,6 +759,7 @@ describe("product session and style services", () => {
 
     expect(await store.products.listProducts()).toEqual([]);
     await expect(access(join(store.home, "data", product.id))).rejects.toThrow();
+    await expect(access(join(store.home, "data", "products", product.id))).rejects.toThrow();
     await expect(access(join(store.home, "library", `${product.id}.lib.pen`))).rejects.toThrow();
   });
 

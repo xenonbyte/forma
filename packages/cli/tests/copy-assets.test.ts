@@ -16,12 +16,10 @@ const formaCommands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-design",
-  "fm-refine-components",
-  "fm-change-style",
   "fm-rollback-design"
 ] as const;
 
+const disabledRuntimeCommands = ["fm-design", "fm-refine-components", "fm-change-style"] as const;
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
 const removedLegacyDesignTools = [
   "complete_product_init",
@@ -38,9 +36,6 @@ const codexSkillDescriptions = {
   "fm-list-product": "List and select Forma products, or delete a product on explicit request.",
   "fm-status": "Report Forma product, requirement, and artifact status. Read-only.",
   "fm-requirement": "Add or update a Forma requirement from any granularity of product input.",
-  "fm-design": "Generate a Forma design artifact from the latest requirement.",
-  "fm-refine-components": "Refine a generated Forma design artifact with targeted instructions.",
-  "fm-change-style": "Change the style of a Forma product design system.",
   "fm-rollback-design": "Roll back a Forma design artifact to a previous version."
 } as const;
 
@@ -132,6 +127,9 @@ describe("agent template inventory", () => {
       for (const command of removedRequirementCommands) {
         await expect(pathExists(templateUrl(platform, command))).resolves.toBe(false);
       }
+      for (const command of disabledRuntimeCommands) {
+        await expect(pathExists(templateUrl(platform, command))).resolves.toBe(false);
+      }
     }
   });
 
@@ -187,14 +185,9 @@ describe("agent template inventory", () => {
       expect(listProduct).toContain("latest requirement");
       expect(listProduct).not.toContain("set_current_session");
 
-      const design = await readFile(templateUrl(platform, "fm-design"), "utf8");
-      expect(design).toContain("ui_affected === false");
-      expect(design).toContain("REQUIREMENT_UPDATE_REQUIRED");
-      expect(design).toContain("generate_requirement_design");
-      expect(design).not.toContain("generate_and_save_page_design");
-      expect(design).not.toContain("generate_page_design");
-      expect(design).not.toContain("save_designs");
-      expect(design).not.toContain("complete_product_init");
+      for (const command of disabledRuntimeCommands) {
+        await expect(pathExists(templateUrl(platform, command))).resolves.toBe(false);
+      }
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");
@@ -208,33 +201,21 @@ describe("agent template inventory", () => {
 
   it("documents v8 design artifact workflows and rejects legacy design routes", async () => {
     for (const platform of ["claude", "codex", "gemini"] as const) {
-      const design = await readFile(templateUrl(platform, "fm-design"), "utf8");
       const rollback = await readFile(templateUrl(platform, "fm-rollback-design"), "utf8");
       const requirement = await readFile(templateUrl(platform, "fm-requirement"), "utf8");
-      const changeStyle = await readFile(templateUrl(platform, "fm-change-style"), "utf8");
-      const refineComponents = await readFile(templateUrl(platform, "fm-refine-components"), "utf8");
-      const allTemplateText = [design, rollback, requirement, changeStyle, refineComponents].join("\n");
+      const allTemplateText = [rollback, requirement].join("\n");
 
       for (const removedToolName of removedLegacyDesignTools) {
         expect(allTemplateText).not.toContain(removedToolName);
       }
 
-      expect(design).toContain("generate_requirement_design");
-      expect(design).toContain("ui_affected");
-      expect(design).toContain("artifact_id");
-      expect(design).toContain("preview URL");
+      expect(allTemplateText).not.toContain("generate_requirement_design");
+      expect(allTemplateText).not.toContain("refine_requirement_design");
+      expect(allTemplateText).not.toContain("change_style");
 
       expect(rollback).toContain("rollback_requirement_design");
       expect(rollback).toContain("list_product_artifacts");
       expect(rollback).toContain("target_artifact_id");
-
-      expect(changeStyle).toContain("change_style");
-      expect(changeStyle).toContain("list_styles");
-      expect(changeStyle).toContain("style_id");
-      expect(changeStyle).toContain("get_style");
-
-      expect(refineComponents).toContain("refine_requirement_design");
-      expect(refineComponents).toContain("list_product_artifacts");
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");

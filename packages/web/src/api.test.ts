@@ -371,6 +371,7 @@ describe("apiRequest", () => {
       "getRequirementDesignCanvas",
       "getRequirementDesignScene",
       "indexRequirementDesignCanvas",
+      "getStylePreview",
       "getSyncStatus",
       "syncStyles"
     ]) {

@@ -47,6 +47,44 @@ describe('ProductView', () => {
     expect(card).not.toBeNull();
   });
 
+  it('calls onSelectArtifact when an artifact card is clicked', async () => {
+    const listArtifacts = vi.fn().mockResolvedValue({
+      artifacts: [
+        { id: 'A-1', kind: 'page', title: 'Home Page', updated_at: '2026-01-01' },
+      ],
+    });
+    const listRequirements = vi.fn().mockResolvedValue({ requirements: [] });
+    const onSelectArtifact = vi.fn();
+    const SelectableProductView = ProductView as unknown as (props: {
+      forma: { listArtifacts: typeof listArtifacts; listRequirements: typeof listRequirements };
+      productId: string;
+      onBack: () => void;
+      onSelectArtifact: (artifactId: string) => void;
+    }) => React.ReactElement;
+
+    const { container } = render(
+      <SelectableProductView
+        forma={{ listArtifacts, listRequirements }}
+        productId="p-1"
+        onBack={vi.fn()}
+        onSelectArtifact={onSelectArtifact}
+      />
+    );
+
+    await act(async () => {
+      await new Promise<void>((r) => setTimeout(r, 0));
+    });
+
+    const card = container.querySelector('[data-artifact-id="A-1"]') as HTMLElement;
+    expect(card).not.toBeNull();
+
+    await act(async () => {
+      card.click();
+    });
+
+    expect(onSelectArtifact).toHaveBeenCalledWith('A-1');
+  });
+
   it('renders requirements list', async () => {
     const listArtifacts = vi.fn().mockResolvedValue({ artifacts: [] });
     const listRequirements = vi.fn().mockResolvedValue({

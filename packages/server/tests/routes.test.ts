@@ -1006,10 +1006,9 @@ describe("artifact routes", () => {
       id: "A-abcdef1234567890",
       kind: "html",
       title: "Checkout Design",
-      updated_at: "2026-05-17T00:00:00.000Z"
+      updated_at: "2026-05-17T00:00:00.000Z",
+      preview_url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x"
     });
-    expect(body.artifacts[0].preview_url).toContain("P-123abc");
-    expect(body.artifacts[0].preview_url).toContain("A-abcdef1234567890");
   });
 
   it("GET /api/products/:pid/artifacts returns 404 for unknown product", async () => {
@@ -1041,7 +1040,7 @@ describe("artifact routes", () => {
     const body = response.json();
     expect(body).toHaveProperty("manifest");
     expect(body).toHaveProperty("supportingFiles");
-    expect(body).toHaveProperty("preview_url");
+    expect(body.preview_url).toBe("/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x");
     expect(body.manifest.kind).toBe("html");
   });
 
@@ -1081,6 +1080,117 @@ describe("artifact routes", () => {
   });
 });
 
+describe("baseline compatibility routes", () => {
+  it("GET /api/products/:id/baseline returns a derived baseline for existing Web UI callers", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-12345678",
+            product_id: "P-123abc",
+            created_at: "2026-05-17T00:00:00.000Z",
+            updated_at: "2026-05-18T00:00:00.000Z",
+            pages: [
+              {
+                page_id: "checkout-page",
+                name: "Checkout",
+                baseline_page: "checkout",
+                design_status: "done",
+                features: "Pay for an order",
+                fields: "Card number",
+                interactions: "Submit payment",
+                copy: [{ context: "title", text: "Checkout" }]
+              }
+            ],
+            navigation: [{ from: "home", to: "checkout", label: "Buy" }]
+          }
+        ])
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      product_id: "P-123abc",
+      pages: [
+        {
+          id: "checkout",
+          name: "Checkout",
+          features: "Pay for an order",
+          fields: "Card number",
+          interactions: "Submit payment",
+          source_requirements: ["R-12345678"]
+        }
+      ],
+      navigation: [{ from: "home", to: "checkout", label: "Buy" }]
+    });
+  });
+
+  it("GET /api/products/:id/baseline/pages/:pageId/copy returns requirement page copy and translations", async () => {
+    const store = fakeStore({
+      copy: {
+        getTranslations: vi.fn(async () => [
+          {
+            page_id: "checkout-page",
+            entries: [{ context: "title", texts: { "zh-CN": "结账" } }]
+          }
+        ])
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          pages: [
+            {
+              page_id: "checkout-page",
+              name: "Checkout",
+              baseline_page: "checkout",
+              design_status: "done",
+              copy: [{ context: "title", text: "Checkout" }]
+            }
+          ]
+        })),
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-12345678",
+            product_id: "P-123abc",
+            created_at: "2026-05-17T00:00:00.000Z",
+            updated_at: "2026-05-18T00:00:00.000Z",
+            pages: [
+              {
+                page_id: "checkout-page",
+                name: "Checkout",
+                baseline_page: "checkout",
+                design_status: "done",
+                copy: [{ context: "title", text: "Checkout" }]
+              }
+            ],
+            navigation: []
+          }
+        ])
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R-12345678"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      page_id: "checkout",
+      default_language_copy: [{ context: "title", text: "Checkout" }],
+      translations: [{ context: "title", texts: { "zh-CN": "结账" } }]
+    });
+    expect(store.copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-12345678");
+  });
+});
+
 describe("origin middleware (SPEC-IF-HTTP-004)", () => {
   it("allows mutation requests from whitelisted origin", async () => {
     const store = fakeStore();
@@ -1106,6 +1216,24 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
       headers: { Origin: "http://localhost:4173" }
+    });
+
+    expect(response.statusCode).not.toBe(403);
+    expect(store.products.createProduct).toHaveBeenCalled();
+  });
+
+  it("allows mutation requests from the served Web origin", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products",
+      payload: { name: "App", description: "Demo" },
+      headers: {
+        Host: "127.0.0.1:3000",
+        Origin: "http://127.0.0.1:3000"
+      }
     });
 
     expect(response.statusCode).not.toBe(403);
@@ -1239,7 +1367,6 @@ describe("SPEC-IF-HTTP-005: removed routes return 404", () => {
       app.inject({ method: "GET", url: "/api/products/P-123abc/design/session/active" }),
       app.inject({ method: "POST", url: "/api/products/P-123abc/component-library/session/begin", payload: {} }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/component-library" }),
-      app.inject({ method: "GET", url: "/api/products/P-123abc/baseline" }),
       app.inject({ method: "POST", url: "/api/styles/sync" }),
       app.inject({ method: "GET", url: "/api/styles/linear/preview" })
     ]);

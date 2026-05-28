@@ -10,7 +10,7 @@ import { FormaError } from '../src/errors.js';
 // Minimal PNG signature bytes.
 const FAKE_PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
-const PRODUCT_ID = 'test-product';
+const PRODUCT_ID = 'P-abc123';
 const ARTIFACT_ID = 'AbCdEfGhIjKlMnOp';
 
 let tmpRoot: string;

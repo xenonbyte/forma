@@ -106,6 +106,7 @@ describe("RequirementDetail", () => {
       id: "A-test",
       kind: "page_design",
       title: "Checkout design",
+      requirement_id: "R-12345678",
       updated_at: "2026-05-28T00:00:00.000Z"
     };
     const client = {
@@ -121,7 +122,47 @@ describe("RequirementDetail", () => {
 
     const img = container.querySelector("img");
     expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toContain("/artifacts/A-test/preview/1x");
+    expect(img?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-test/preview/1x");
+    expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc", "html");
+  });
+
+  it("filters artifact previews to the current requirement", async () => {
+    const artifacts: ArtifactSummary[] = [
+      {
+        id: "A-other",
+        kind: "html",
+        requirement_id: "R-other",
+        title: "Other requirement design",
+        updated_at: "2026-05-28T00:00:00.000Z"
+      },
+      {
+        id: "A-current",
+        kind: "html",
+        requirement_id: "R-12345678",
+        title: "Current requirement design",
+        updated_at: "2026-05-28T00:00:00.000Z"
+      },
+      {
+        id: "A-design-system",
+        kind: "design-system",
+        title: "Product baseline",
+        updated_at: "2026-05-28T00:00:00.000Z"
+      }
+    ];
+    const client = {
+      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
+      listProductArtifacts: vi.fn(async () => ({ artifacts }))
+    };
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      await flushPromises();
+    });
+
+    const img = container.querySelector("img");
+    expect(img).not.toBeNull();
+    expect(img?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-current/preview/1x");
   });
 
   it("shows deep-link button for UI-affecting requirements", async () => {

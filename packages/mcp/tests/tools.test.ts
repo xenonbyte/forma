@@ -1,7 +1,8 @@
 import { FormaError, createFormaStore, type FormaStore } from "@xenonbyte/forma-core";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import AdmZip from "adm-zip";
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod/v4";
 import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
@@ -227,10 +228,8 @@ describe("MCP forma tools", () => {
       "save_requirement",
       "get_product_rules",
       "get_page_copy",
-      "update_page_copy",
       "delete_product",
       "confirm_product_id",
-      "change_style",
       "session_get_guidelines",
       "session_get_variables",
       "session_batch_get",
@@ -238,6 +237,10 @@ describe("MCP forma tools", () => {
       "session_get_screenshot",
       "session_export_nodes"
     ]));
+    expect(formaToolNames).not.toContain("change_style");
+    expect(formaToolNames).not.toContain("generate_requirement_design");
+    expect(formaToolNames).not.toContain("refine_requirement_design");
+    expect(formaToolNames).not.toContain("update_page_copy");
   });
 
   it("help output excludes removed legacy page-level design tools", async () => {
@@ -864,42 +867,6 @@ describe("MCP forma tools", () => {
     });
   });
 
-  it("update_page_copy delegates to refine_requirement_design with copy_overrides as instructions", async () => {
-    const store = fakeStore({
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({
-          id: "R-12345678",
-          product_id: "P-123abc",
-          pages: [{ page_id: "checkout", baseline_page: "checkout" }]
-        }))
-      }
-    });
-    const tools = createFormaTools(store);
-    const copy_overrides = { "submit": "Pay now", "headline": "Checkout" };
-
-    const result = await tools.update_page_copy({ requirement_id: "R-12345678", copy_overrides });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({ artifact_id: expect.any(String), status: "complete" });
-  });
-
-  it("update_page_copy rejects empty copy_overrides", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const result = await tools.update_page_copy({
-      requirement_id: "R-12345678",
-      copy_overrides: {}
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({
-      error_code: "ARTIFACT_INVALID_INPUT",
-      message: "copy_overrides must not be empty"
-    });
-  });
-
   it("get_baseline_image returns path pointing to artifact preview PNG (artifact store path)", async () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
@@ -936,10 +903,11 @@ describe("MCP forma tools", () => {
   it("artifact tools appear in formaToolNames", () => {
     expect(formaToolNames).toContain("list_product_artifacts");
     expect(formaToolNames).toContain("get_product_artifact");
-    expect(formaToolNames).toContain("generate_requirement_design");
-    expect(formaToolNames).toContain("refine_requirement_design");
     expect(formaToolNames).toContain("export_artifact");
     expect(formaToolNames).toContain("rollback_requirement_design");
+    expect(formaToolNames).not.toContain("generate_requirement_design");
+    expect(formaToolNames).not.toContain("refine_requirement_design");
+    expect(formaToolNames).not.toContain("change_style");
   });
 
   it("get_baseline_image returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
@@ -1004,7 +972,7 @@ describe("artifact tools (C-03)", () => {
       kind: "html",
       title: "Test Page",
       superseded: false,
-      preview_url: "/products/P-123abc/artifacts/OLDARTIFACT12345/preview/2x.png"
+      preview_url: "/api/products/P-123abc/artifacts/OLDARTIFACT12345/preview/2x"
     });
   });
 
@@ -1065,7 +1033,7 @@ describe("artifact tools (C-03)", () => {
     expect(payload).toMatchObject({
       manifest,
       supportingFiles: [],
-      preview_url: "/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x.png"
+      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
     });
     expect(store.artifacts.readArtifact).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456");
   });
@@ -1087,119 +1055,6 @@ describe("artifact tools (C-03)", () => {
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
   });
 
-  // ─── generate_requirement_design ─────────────────────────────────────────
-
-  it("generate_requirement_design returns artifact_id and status=complete", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const result = await tools.generate_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      mode: "generate"
-    });
-    const payload = textPayload(result);
-
-    expect(result.isError).toBeUndefined();
-    expect(payload).toMatchObject({ artifact_id: expect.any(String), status: "complete" });
-    expect(store.products.setRequirementArtifactPointerLocked).toHaveBeenCalled();
-  });
-
-  it("generate_requirement_design returns REQUIREMENT_NOT_FOUND when product_id mismatches", async () => {
-    const store = fakeStore({
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [] }))
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.generate_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      mode: "generate"
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
-  });
-
-  it("generate_requirement_design with mode=rebuild passes ignoreInternalCache", async () => {
-    const { createOdRuntime } = await import("@xenonbyte/forma-core");
-    const mockGenerate = vi.fn(async () => ({
-      manifest: fakeManifest(),
-      supportingFiles: new Map([
-        ["preview/2x.png", new Uint8Array()],
-        ["preview/1x.png", new Uint8Array()]
-      ])
-    }));
-    (createOdRuntime as ReturnType<typeof vi.fn>).mockReturnValueOnce({ generate: mockGenerate });
-
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    await tools.generate_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      mode: "rebuild"
-    });
-
-    expect(mockGenerate).toHaveBeenCalledWith(expect.objectContaining({ ignoreInternalCache: true }));
-  });
-
-  // ─── refine_requirement_design ────────────────────────────────────────────
-
-  it("refine_requirement_design returns artifact_id and sets previousArtifactId in metadata", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const result = await tools.refine_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      instructions: "Make it more blue"
-    });
-    const payload = textPayload(result);
-
-    expect(result.isError).toBeUndefined();
-    expect(payload).toMatchObject({ artifact_id: expect.any(String), status: "complete" });
-    // The written artifact should have previousArtifactId in metadata
-    const writeCall = (store.artifacts.writeArtifact as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-    expect(writeCall?.manifest?.metadata?.previousArtifactId).toBe("OLDARTIFACT12345");
-  });
-
-  it("refine_requirement_design returns ARTIFACT_INVALID_INPUT for empty instructions", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const result = await tools.refine_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      instructions: "   "
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
-  });
-
-  it("refine_requirement_design returns REQUIREMENT_NOT_FOUND when requirement product_id mismatches", async () => {
-    const store = fakeStore({
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [] }))
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.refine_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      instructions: "Make it more blue"
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
-  });
-
   // ─── export_artifact ──────────────────────────────────────────────────────
 
   it("export_artifact returns output_path for png format", async () => {
@@ -1218,6 +1073,36 @@ describe("artifact tools (C-03)", () => {
       expect(textPayload(result)).not.toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
       expect(textPayload(result)).not.toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
     }
+  });
+
+  it("export_artifact zip includes the manifest entry file even when supportingFiles omits it", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-"));
+    const artifactDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456");
+    await mkdir(join(artifactDir, "assets"), { recursive: true });
+    await writeFile(join(artifactDir, "index.html"), "<main>Hello</main>", "utf8");
+    await writeFile(join(artifactDir, "assets", "app.css"), "main { color: black; }", "utf8");
+    const manifest = { ...fakeManifest(), supportingFiles: ["assets/app.css"] };
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      format: "zip"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    const zip = new AdmZip(payload.output_path as string);
+    expect(zip.getEntry("manifest.json")).toBeTruthy();
+    expect(zip.getEntry("index.html")?.getData().toString("utf8")).toBe("<main>Hello</main>");
+    expect(zip.getEntry("assets/app.css")?.getData().toString("utf8")).toBe("main { color: black; }");
   });
 
   it("export_artifact returns ARTIFACT_NOT_FOUND when artifact is missing", async () => {
@@ -1399,43 +1284,6 @@ describe("C-04 retained tools", () => {
     expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
   });
 
-  // ─── change_style ─────────────────────────────────────────────────────────
-
-  it("change_style returns artifact_id and dangling_requirement_artifact_count on success", async () => {
-    const store = fakeStore({
-      artifacts: {
-        ...fakeStore().artifacts,
-        writeArtifact: vi.fn(async () => ({ artifactId: "DS_NEW_ARTIFACT1234", etag: "sha256:new" })),
-        listArtifacts: vi.fn(async () => [])
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.change_style({ product_id: "P-123abc", style_id: "linear" });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({
-      artifact_id: "DS_NEW_ARTIFACT1234",
-      dangling_requirement_artifact_count: expect.any(Number)
-    });
-    expect(store.products.setDesignSystemArtifactPointerLocked).toHaveBeenCalled();
-  });
-
-  it("change_style returns STYLE_NOT_FOUND for unknown style_id", async () => {
-    const store = fakeStore({
-      styles: {
-        ...fakeStore().styles,
-        listStyles: vi.fn(async () => [{ name: "linear" }])
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.change_style({ product_id: "P-123abc", style_id: "nonexistent-style" });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "STYLE_NOT_FOUND" });
-  });
-
   // ─── get_product_baseline ─────────────────────────────────────────────────
 
   it("get_product_baseline returns baseline manifest from design-system artifact", async () => {
@@ -1566,23 +1414,6 @@ describe("C-04 retained tools", () => {
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toEqual(v6Guidelines);
     expect(sessionGetGuidelines).toHaveBeenCalled();
-  });
-
-  // ─── update_page_copy ─────────────────────────────────────────────────────
-
-  it("update_page_copy rejects array copy_overrides (JSON Patch format)", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    // The Zod schema for copy_overrides is Record<string,string> which rejects arrays at parse time
-    const result = await tools.update_page_copy({
-      requirement_id: "R-12345678",
-      copy_overrides: [{ op: "replace", path: "/submit", value: "Pay now" }] as any
-    });
-
-    expect(result.isError).toBe(true);
-    // Array input fails schema validation as a non-record type
-    expect(textPayload(result).error_code).toBeTruthy();
   });
 
   // ─── get_baseline_page ────────────────────────────────────────────────────

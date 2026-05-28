@@ -118,10 +118,77 @@ describe('ArtifactStore', () => {
       });
       expect(typeof artifactId).toBe('string');
     });
+
+    it('persists manifest.id as the chosen artifact id', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+      const forcedId = 'ForcedArtifact01';
+
+      const { artifactId } = await store.writeArtifact({
+        productId,
+        manifest: makeManifest({ id: 'OldManifestId000' }),
+        files: makeFiles(),
+        __forceNanoid: forcedId,
+      });
+
+      const { manifest: readManifest } = await store.readArtifact(productId, artifactId);
+      expect(readManifest.id).toBe(artifactId);
+    });
   });
 
   // ─── Step 2: Failure atomicity ──────────────────────────────────────────────
   describe('writeArtifact — failure atomicity', () => {
+    it('rejects manifest entry paths that escape the artifact directory', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+
+      await expect(
+        store.writeArtifact({
+          productId,
+          manifest: makeManifest({ entry: '../escape.html' }),
+          files: makeFiles(),
+        })
+      ).rejects.toMatchObject({ code: 'ARTIFACT_INVALID_INPUT' });
+
+      const artifactsDir = join(productsRoot, productId, 'od-project', 'artifacts');
+      const entries = existsSync(artifactsDir) ? readdirSync(artifactsDir) : [];
+      expect(entries.filter(e => e.startsWith('.tmp-'))).toHaveLength(0);
+    });
+
+    it('rejects manifest supportingFiles paths that escape the artifact directory', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+
+      await expect(
+        store.writeArtifact({
+          productId,
+          manifest: makeManifest({ supportingFiles: ['../escape.css'] }),
+          files: makeFiles(),
+        })
+      ).rejects.toMatchObject({ code: 'ARTIFACT_INVALID_INPUT' });
+
+      const artifactsDir = join(productsRoot, productId, 'od-project', 'artifacts');
+      const entries = existsSync(artifactsDir) ? readdirSync(artifactsDir) : [];
+      expect(entries.filter(e => e.startsWith('.tmp-'))).toHaveLength(0);
+    });
+
+    it('rejects supporting file paths that escape the artifact tmp directory', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+      const files = new Map([
+        ['../escape.txt', Buffer.from('outside tmp')],
+      ]);
+
+      await expect(
+        store.writeArtifact({ productId, manifest: makeManifest(), files })
+      ).rejects.toMatchObject({ code: 'ARTIFACT_INVALID_INPUT' });
+
+      const artifactsDir = join(productsRoot, productId, 'od-project', 'artifacts');
+      expect(existsSync(join(artifactsDir, 'escape.txt'))).toBe(false);
+      const entries = existsSync(artifactsDir) ? readdirSync(artifactsDir) : [];
+      expect(entries.filter(e => e.startsWith('.tmp-'))).toHaveLength(0);
+    });
+
     it('throws ARTIFACT_ALREADY_EXISTS when artifact dir pre-exists (collision guard before rename)', async () => {
       const lock = getProductMutationLock(testRoot);
       const store = createArtifactStore(productsRoot, lock);
@@ -164,7 +231,7 @@ describe('ArtifactStore', () => {
       const store = createArtifactStore(productsRoot, lock);
 
       // Write one artifact, then use same ID to trigger ARTIFACT_ALREADY_EXISTS
-      const forcedId = 'ColliTest5678XY';
+      const forcedId = 'ColliTest5678XYZ';
       await store.writeArtifact({
         productId,
         manifest: makeManifest(),
@@ -271,7 +338,7 @@ describe('ArtifactStore', () => {
     it('throws ARTIFACT_ALREADY_EXISTS when __forceNanoid matches existing artifact, content unchanged', async () => {
       const lock = getProductMutationLock(testRoot);
       const store = createArtifactStore(productsRoot, lock);
-      const forcedId = 'CollisionAABBCC';
+      const forcedId = 'CollisionAABBCCD';
 
       // Write artifact A
       await store.writeArtifact({

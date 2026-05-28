@@ -8,14 +8,11 @@ const commands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-design",
-  "fm-refine-components",
-  "fm-change-style",
   "fm-rollback-design"
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
-const removedLegacyCommands = ["fm-refine-design"] as const;
+const removedLegacyCommands = ["fm-refine-design", "fm-design", "fm-refine-components", "fm-change-style"] as const;
 
 type Platform = "claude" | "codex" | "gemini";
 
@@ -382,20 +379,20 @@ describe("InstallService", () => {
 
   it("migrates Codex skills from the old prompts directory to the active skills directory", async () => {
     const { formaHome, userHome, service } = await createService();
-    const oldCommand = oldCodexCommandTarget(userHome, "fm-design");
+    const oldCommand = oldCodexCommandTarget(userHome, "fm-requirement");
     await mkdir(dirname(oldCommand), { recursive: true });
-    await writeFile(oldCommand, "# Forma route: fm-design\n", "utf8");
+    await writeFile(oldCommand, "# Forma route: fm-requirement\n", "utf8");
     await writeOldManifest(formaHome, "codex", [oldCommand], []);
 
     await service.installPlatforms(["codex"]);
 
     await expect(exists(oldCommand)).resolves.toBe(false);
-    await expect(readFile(commandTarget(userHome, "codex", "fm-design"), "utf8")).resolves.toContain(
-      "# Forma route: fm-design"
+    await expect(readFile(commandTarget(userHome, "codex", "fm-requirement"), "utf8")).resolves.toContain(
+      "# Forma route: fm-requirement"
     );
 
     const upgradedManifest = await readManifest(formaHome, "codex");
-    expect(upgradedManifest.installed_paths).toContain(commandTarget(userHome, "codex", "fm-design"));
+    expect(upgradedManifest.installed_paths).toContain(commandTarget(userHome, "codex", "fm-requirement"));
     expect(JSON.stringify(upgradedManifest)).not.toContain(oldCommand);
   });
 
@@ -461,7 +458,7 @@ describe("InstallService", () => {
 
   it("backs up pre-existing target files before replacement and restores them on uninstall", async () => {
     const { formaHome, userHome, service } = await createService();
-    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-requirement.md");
     const codexConfig = join(userHome, ".codex", "config.toml");
     const sharedSkill = join(formaHome, "skills", "forma", "SKILL.md");
     await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
@@ -480,7 +477,7 @@ describe("InstallService", () => {
     expect(claudeManifest.backups).toEqual(expect.arrayContaining([expect.objectContaining({ target: sharedSkill })]));
     const codexManifest = await readManifest(formaHome, "codex");
     expect(codexManifest.backups).toEqual(expect.arrayContaining([expect.objectContaining({ target: codexConfig })]));
-    await expect(readFile(claudeCommand, "utf8")).resolves.toContain("# Forma route: fm-design");
+    await expect(readFile(claudeCommand, "utf8")).resolves.toContain("# Forma route: fm-requirement");
 
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
@@ -507,7 +504,7 @@ describe("InstallService", () => {
 
   it("preserves existing backups across reinstall before uninstall", async () => {
     const { formaHome, userHome, service } = await createService();
-    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-requirement.md");
     const claudeConfig = join(userHome, ".claude.json");
     const sharedSkill = join(formaHome, "skills", "forma", "SKILL.md");
     const originalClaudeConfig = JSON.stringify({ keep: true }, null, 2);
@@ -539,7 +536,7 @@ describe("InstallService", () => {
 
   it("does not reuse stale backup files across completed install cycles", async () => {
     const { userHome, service } = await createService();
-    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-requirement.md");
     await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
     await writeFile(claudeCommand, "# Original A\n", "utf8");
 
@@ -577,8 +574,8 @@ describe("InstallService", () => {
 
   it("preserves pre-existing files that already match managed templates", async () => {
     const { userHome, service } = await createService();
-    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
-    const template = await readFile(resolve("packages/agent/templates/claude/fm-design.md"), "utf8");
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-requirement.md");
+    const template = await readFile(resolve("packages/agent/templates/claude/fm-requirement.md"), "utf8");
     await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
     await writeFile(claudeCommand, template, "utf8");
 
@@ -590,8 +587,8 @@ describe("InstallService", () => {
 
   it("overwrites orphan backup files before recording a new install lifecycle", async () => {
     const { formaHome, userHome, service } = await createService();
-    const claudeCommand = join(userHome, ".claude", "commands", "fm-design.md");
-    const staleBackup = join(formaHome, "backups", "claude", ".claude", "commands", "fm-design.md");
+    const claudeCommand = join(userHome, ".claude", "commands", "fm-requirement.md");
+    const staleBackup = join(formaHome, "backups", "claude", ".claude", "commands", "fm-requirement.md");
     await mkdir(join(userHome, ".claude", "commands"), { recursive: true });
     await mkdir(join(formaHome, "backups", "claude", ".claude", "commands"), { recursive: true });
     await writeFile(claudeCommand, "# current B\n", "utf8");

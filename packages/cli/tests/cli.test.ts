@@ -77,6 +77,36 @@ describe("runCli", () => {
     expect(await readFile(join(env.state.formaHome, "data", "P-123abc", "product.yaml"), "utf8")).toBe(before);
   });
 
+  it("generates missing baseline semantic contracts during schema-normalization-dry-run", async () => {
+    const env = await testEnv();
+    await seedLegacyRuntime(env.state.formaHome);
+    const baselinePath = join(env.state.formaHome, "data", "P-123abc", "baseline", "baseline.yaml");
+    const baseline = await readYamlUnknown(baselinePath) as { pages: Array<Record<string, unknown>> };
+    delete baseline.pages[0]!.semantic_contract;
+    delete baseline.pages[0]!.semantic_contract_coverage;
+    await writeYamlAtomic(baselinePath, baseline);
+
+    const result = await runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env);
+
+    expect(result.exitCode).toBe(0);
+    const reportPath = result.stdout.match(/report: (.+)$/m)?.[1];
+    expect(reportPath).toBeTruthy();
+    const report = await readYamlUnknown(join(env.state.formaHome, reportPath!)) as {
+      generated_baseline_contract_count: number;
+      candidates: Array<{ candidate: { pages?: Array<Record<string, unknown>> }; path: string; validation_status: string }>;
+    };
+    const baselineCandidate = report.candidates.find((candidate) => candidate.path.endsWith("/baseline/baseline.yaml"));
+    expect(report.generated_baseline_contract_count).toBe(1);
+    expect(baselineCandidate?.validation_status).toBe("passed");
+    expect(baselineCandidate?.candidate.pages?.[0]?.semantic_contract).toMatchObject({
+      allowed_copy: ["Sign in"],
+      fields: [],
+      actions: [],
+      component_keys: [],
+      navigation: []
+    });
+  });
+
   it("runs v6-schema-cutover after dry-run and writes committed marker", async () => {
     const env = await testEnv();
     await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
@@ -776,6 +806,8 @@ async function seedLegacyRuntime(
         baseline_page: "login",
         design_status: "pending",
         copy: [{ context: "cta", text: "Sign in" }],
+        semantic_contract: minimalSemanticContract(),
+        semantic_contract_coverage: "explicit",
         ...options.pagePatch
       }
     ],
@@ -791,11 +823,23 @@ async function seedLegacyRuntime(
         copy: [{ context: "cta", text: "Sign in" }],
         fields: "free-text field notes",
         interactions: "free-text interaction notes",
+        semantic_contract: minimalSemanticContract(),
+        semantic_contract_coverage: "explicit",
         source_requirements: ["R-11111111"]
       }
     ],
     navigation: []
   });
+}
+
+function minimalSemanticContract() {
+  return {
+    actions: [],
+    allowed_copy: ["Sign in"],
+    component_keys: [],
+    fields: [],
+    navigation: []
+  };
 }
 
 function serveMetadata(overrides: Partial<{ home: string; pid: number; token: string; started_at: string; log: string }> = {}) {

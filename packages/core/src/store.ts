@@ -1,4 +1,4 @@
-import { cleanupArtifactTmpDirs } from "./artifact-tmp-cleanup.js";
+import { cleanupArtifactTmpDirs, hasArtifactTmpDirs } from "./artifact-tmp-cleanup.js";
 import { createArtifactStore, type ArtifactStore } from "./artifact-store.js";
 import { CopyService } from "./copy.js";
 import {
@@ -50,14 +50,20 @@ export interface FormaStore {
 }
 
 export async function createFormaStore(options: FormaStoreOptions): Promise<FormaStore> {
-  // Clean up stale .tmp-* artifact dirs (non-fatal on fs errors)
-  cleanupArtifactTmpDirs(getFormaPaths(options.home).productsDir);
+  const productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
+  const productsDir = getFormaPaths(options.home).productsDir;
+
+  if (hasArtifactTmpDirs(productsDir)) {
+    await productMutationLock.run({ operation: "cleanup_artifact_tmp_dirs" }, async () => {
+      cleanupArtifactTmpDirs(productsDir);
+    });
+  }
 
   const normalization = await readSchemaNormalizationRecoveryState(options.home);
   if (normalization.mode !== "normal") {
     throw new SchemaNormalizationStartupError(normalization);
   }
-  const store = createStrictFormaStore(options);
+  const store = createStrictFormaStore({ ...options, productMutationLock });
   await validateStrictStoreReadModels(store);
   return store;
 }

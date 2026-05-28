@@ -1,45 +1,35 @@
 import { useEffect, useState } from "react";
 
-import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type StyleDetailPayload, type StylePreviewPayload } from "../api.js";
+import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type StyleDetailPayload } from "../api.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StylePreviewPanel } from "../components/StylePreviewPanel.js";
 import { TokenCard } from "../components/TokenCard.js";
 import { useT } from "../LocaleContext.js";
 
 export interface StyleDetailProps {
-  client?: Pick<FormaApiClient, "getStyle" | "getStylePreview">;
+  client?: Pick<FormaApiClient, "getStyle">;
   params: Record<string, string>;
 }
 
 type StyleDetailState =
   | { status: "error"; error: ApiErrorInfo }
   | { status: "loading" }
-  | { preview?: StylePreviewPayload; previewError?: ApiErrorInfo; status: "ready"; style: StyleDetailPayload };
+  | { status: "ready"; style: StyleDetailPayload };
 
 export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
   const tx = useT();
   const styleName = params.name ?? "";
-  const [imageFailed, setImageFailed] = useState(false);
   const [state, setState] = useState<StyleDetailState>({ status: "loading" });
 
   useEffect(() => {
     let cancelled = false;
-    setImageFailed(false);
     setState({ status: "loading" });
 
     client
       .getStyle(styleName)
-      .then(async (style) => {
-        let preview: StylePreviewPayload | undefined;
-        let previewError: ApiErrorInfo | undefined;
-        try {
-          preview = await client.getStylePreview(styleName);
-        } catch (error: unknown) {
-          previewError = formatApiError(error);
-        }
-
+      .then((style) => {
         if (!cancelled) {
-          setState({ preview, previewError, status: "ready", style });
+          setState({ status: "ready", style });
         }
       })
       .catch((error: unknown) => {
@@ -70,7 +60,6 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
   }
 
   const variables = Object.entries(state.style.metadata.variables ?? {});
-  const imageUrl = isStylePreviewImageUrl(state.preview?.image_url) ? state.preview?.image_url : undefined;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -82,32 +71,6 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
         </div>
 
         <StylePreviewPanel designMd={state.style.designMd} metadata={state.style.metadata} previewType="web" />
-
-        {imageUrl ? (
-          <WorkSurface title={tx("style.detail.staticPreview")}>
-            {!imageFailed ? (
-              <img
-                alt={`${state.style.metadata.name} ${tx("style.detail.staticPreviewAlt")}`}
-                className="aspect-[4/3] w-full rounded-md border border-zinc-200 bg-zinc-50 object-contain"
-                onError={() => setImageFailed(true)}
-                src={imageUrl}
-              />
-            ) : (
-              <div className="flex aspect-[4/3] items-center justify-center rounded-md border border-dashed border-zinc-300 bg-zinc-50 text-sm font-medium text-zinc-500">
-                {tx("style.detail.staticPreviewUnavailable")}
-              </div>
-            )}
-            {state.previewError ? (
-              <p className="mt-3 text-sm text-red-700">
-                {state.previewError.error_code} - {tx("style.detail.previewMetadataUnavailable")}
-              </p>
-            ) : null}
-          </WorkSurface>
-        ) : state.previewError ? (
-          <p className="text-sm text-red-700">
-            {state.previewError.error_code} - {tx("style.detail.previewMetadataUnavailable")}
-          </p>
-        ) : null}
 
         <WorkSurface title={tx("style.detail.designMd")}>
           <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
@@ -129,10 +92,6 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
       </WorkSurface>
     </div>
   );
-}
-
-export function isStylePreviewImageUrl(imageUrl: string | undefined): imageUrl is string {
-  return typeof imageUrl === "string" && /^\/api\/styles\/[^/]+\/preview\/image(?:[?#].*)?$/.test(imageUrl);
 }
 
 const secondaryLinkClasses =

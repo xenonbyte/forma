@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import type { ArtifactManifest } from './artifact-manifest.js';
+import { dirname, join, resolve } from 'node:path';
+import { validateArtifactManifest, validateSupportingPath, type ArtifactManifest } from './artifact-manifest.js';
 import {
   getArtifactDir,
   getArtifactManifestPath,
@@ -9,6 +9,7 @@ import {
   getArtifactsDir,
 } from './artifact-paths.js';
 import { FormaError } from './errors.js';
+import { isSameOrChildPath } from './path-boundary.js';
 import type { ProductMutationLock } from './product-mutation-lock.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,8 +35,8 @@ export interface ArtifactStore {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateArtifactId(): string {
-  // 16 alphanumeric chars — same character space as nanoid default alphabet
-  return randomBytes(12).toString('base64url').slice(0, 16);
+  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+  return Array.from(randomBytes(16), (byte) => alphabet[byte % alphabet.length]).join('');
 }
 
 function computeEtag(manifestJson: string): string {
@@ -49,6 +50,42 @@ async function dirExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function resolveArtifactTmpFilePath(tmpDir: string, relativePath: string): string {
+  const safeRelativePath = validateSupportingPath(relativePath);
+  if (safeRelativePath === null) {
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      'Artifact file path must be a relative path inside the artifact directory',
+      { path: relativePath },
+    );
+  }
+
+  const tmpRoot = resolve(tmpDir);
+  const destPath = resolve(tmpRoot, safeRelativePath);
+  if (!isSameOrChildPath(tmpRoot, destPath)) {
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      'Artifact file path must stay inside the artifact directory',
+      { path: relativePath },
+    );
+  }
+
+  return destPath;
+}
+
+function normalizeAndValidateManifest(manifest: ArtifactManifest, artifactId: string): ArtifactManifest {
+  const normalized = { ...manifest, id: artifactId };
+  const validation = validateArtifactManifest(normalized);
+  if (!validation.ok) {
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      `Invalid artifact manifest: ${validation.error}`,
+      { artifactId },
+    );
+  }
+  return validation.value;
 }
 
 // ─── Implementation ───────────────────────────────────────────────────────────
@@ -70,6 +107,7 @@ class ArtifactStoreImpl implements ArtifactStore {
     return this.lock.run({ operation: 'write_artifact', product_id: productId }, async () => {
       const artifactId = __forceNanoid ?? generateArtifactId();
       const artifactDir = getArtifactDir(this.productsRoot, productId, artifactId);
+      const normalizedManifest = normalizeAndValidateManifest(manifest, artifactId);
 
       // Check collision
       if (await dirExists(artifactDir)) {
@@ -91,13 +129,13 @@ class ArtifactStoreImpl implements ArtifactStore {
       try {
         // Write all files into tmp dir
         for (const [relativePath, content] of files) {
-          const destPath = join(tmpDir, relativePath);
+          const destPath = resolveArtifactTmpFilePath(tmpDir, relativePath);
           await mkdir(dirname(destPath), { recursive: true });
           await writeFile(destPath, content);
         }
 
         // Write manifest.json into tmp dir
-        const manifestJson = JSON.stringify(manifest, null, 2);
+        const manifestJson = JSON.stringify(normalizedManifest, null, 2);
         const manifestPath = join(tmpDir, 'manifest.json');
         await writeFile(manifestPath, manifestJson, 'utf8');
 

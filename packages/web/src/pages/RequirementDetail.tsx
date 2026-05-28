@@ -14,7 +14,7 @@ import type { ArtifactSummary } from "./DesignView.js";
 
 export interface RequirementDetailProps {
   client?: Pick<FormaApiClient, "getRequirement"> & {
-    listProductArtifacts?: (productId: string) => Promise<{ artifacts: ArtifactSummary[] }>;
+    listProductArtifacts?: (productId: string, kind?: string) => Promise<{ artifacts: ArtifactSummary[] }>;
   };
   params: Record<string, string>;
 }
@@ -38,7 +38,7 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
       .getRequirement(productId, requirementId)
       .then(async (requirement) => {
         const artifactsResult = client.listProductArtifacts
-          ? await client.listProductArtifacts(productId).catch(() => ({ artifacts: [] }))
+          ? await client.listProductArtifacts(productId, "html").catch(() => ({ artifacts: [] }))
           : { artifacts: [] };
         if (!cancelled) {
           setState({ artifacts: artifactsResult.artifacts, requirement, status: "ready" });
@@ -75,7 +75,9 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
   const artifacts = state.artifacts;
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
-  const latestArtifact = artifacts.length > 0 ? artifacts[0] : null;
+  const latestArtifact = artifacts.find((artifact) =>
+    artifact.requirement_id === requirementId && artifact.kind !== "design-system"
+  ) ?? null;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -151,7 +153,7 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
                 <img
                   alt={latestArtifact.title}
                   className="max-h-[200px] w-full rounded-md border border-zinc-200 object-contain"
-                  src={`/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(latestArtifact.id)}/preview/1x`}
+                  src={artifactPreviewUrl(productId, latestArtifact.id, "1x")}
                 />
                 <a
                   className={secondaryLinkClasses}
@@ -196,3 +198,7 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
 
 const secondaryLinkClasses =
   "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+
+function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
+}

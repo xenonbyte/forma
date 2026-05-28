@@ -161,6 +161,9 @@ export function validateArtifactManifest(manifest: unknown): ValidationResult {
   if (typeof m['entry'] !== 'string' || m['entry'].length === 0) {
     return { ok: false, error: 'entry is required and must be a non-empty string' };
   }
+  if (validateSupportingPath(m['entry']) === null) {
+    return { ok: false, error: `entry contains an invalid path: ${String(m['entry'])}` };
+  }
 
   // status
   if (typeof m['status'] !== 'string' || !(ALLOWED_STATUSES as readonly string[]).includes(m['status'])) {

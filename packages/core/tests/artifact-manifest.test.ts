@@ -76,6 +76,14 @@ describe('validateArtifactManifest', () => {
     }
   });
 
+  it('rejects entry paths that escape the artifact directory', () => {
+    const result = validateArtifactManifest({ ...validManifest, entry: '../outside.html' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/entry/i);
+    }
+  });
+
   // 12. requirementId 合法（string ≤128 字节）→ 通过
   it('accepts valid requirementId', () => {
     const result = validateArtifactManifest({ ...validManifest, requirementId: 'R-abc12345' });

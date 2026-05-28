@@ -1,15 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { formatGenericErrorForLog, sanitizeGenericErrorForLog } from "../../../scripts/smoke-pencil-error.js";
-
-async function readSmokeScript() {
-  return await readFile(resolve("scripts/smoke-pencil.ts"), "utf8");
-}
-
-async function readLiveSyncScript() {
-  return await readFile(resolve("scripts/live-style-sync.ts"), "utf8");
-}
 
 async function readRootPackageJson() {
   return readPackageJson("package.json") as Promise<PackageJson & {
@@ -47,21 +39,15 @@ async function readPackageJson(file: string): Promise<PackageJson> {
 }
 
 describe("smoke-pencil script", () => {
-  it("does not print raw generic error messages", async () => {
-    const script = await readSmokeScript();
+  it("does not expose removed live Pencil scripts from root package scripts", async () => {
+    const packageJson = await readRootPackageJson();
 
-    expect(script).not.toContain("console.error(error.message)");
-    expect(script).not.toContain("console.error(String(error))");
-    expect(script).toContain("formatGenericErrorForLog");
-  });
-
-  it("keeps smoke environment and prompt contracts explicit", async () => {
-    const script = await readSmokeScript();
-
-    expect(script).toContain("/opt/homebrew/bin");
-    expect(script).toContain("/usr/local/bin");
-    expect(script).toContain("getRequirement({ requirement_id: requirement.id })");
-    expect(script).toContain("document_md.includes(smokePrompt)");
+    expect(packageJson.scripts).not.toHaveProperty("test:live");
+    expect(packageJson.scripts).not.toHaveProperty("smoke:pencil");
+    expect(packageJson.scripts).not.toHaveProperty("smoke:pencil:foreground");
+    await expect(access(resolve("scripts/live-style-sync.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(resolve("scripts/smoke-pencil.ts"))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(access(resolve("scripts/smoke-pencil-foreground.ts"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("redacts common secret, account, user, and session fields", () => {
@@ -98,43 +84,6 @@ describe("smoke-pencil script", () => {
     const formatted = formatGenericErrorForLog(Object.assign(new Error("token=plain session_id=sess-123"), { exitCode: 17 }));
 
     expect(formatted).toBe("Unexpected error: command failed (exitCode=17)");
-  });
-});
-
-describe("live style sync script", () => {
-  it("keeps live sync opt-in and out of offline tests", async () => {
-    const packageJson = await readRootPackageJson();
-    const testLiveScript = packageJson.scripts?.["test:live"] ?? "";
-
-    expect(packageJson.scripts?.test).toBe("vitest run");
-    expect(packageJson.scripts?.test).not.toContain("test:live");
-    expect(packageJson.scripts?.test).not.toContain("live-style-sync");
-    expect(testLiveScript).toContain("pnpm --filter @xenonbyte/forma-core build");
-    expect(testLiveScript).toContain("tsx scripts/live-style-sync.ts");
-  });
-
-  it("uses real dependencies without mock or skip markers", async () => {
-    const script = await readLiveSyncScript();
-
-    expect(script).toContain("createFormaStore");
-    expect(script).toContain("startSync");
-    expect(script.toLowerCase()).not.toContain("mock");
-    expect(script.toLowerCase()).not.toContain("skip");
-  });
-
-  it("keeps the live GitHub and Pencil check bounded", async () => {
-    const script = await readLiveSyncScript();
-
-    expect(script).toContain("syncStyleLimit: liveStyleLimit");
-    expect(script).toContain("const liveStyleLimit = 2");
-    expect(script).toContain("const maxWaitMs = 5 * 60 * 1_000");
-  });
-
-  it("terminates explicitly on failure instead of only setting an exit code", async () => {
-    const script = await readLiveSyncScript();
-
-    expect(script).toContain("process.exit(1)");
-    expect(script).not.toContain("process.exitCode = 1");
   });
 });
 

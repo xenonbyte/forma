@@ -22,8 +22,12 @@ export const readonlyApi = {
 
 export type FormaDesktopAPI = typeof readonlyApi;
 
-// Only wire up contextBridge in the real Electron preload environment.
-if (process.env.NODE_ENV !== 'test') {
+async function exposeReadonlyApi(): Promise<void> {
   const { contextBridge } = await import('electron');
   contextBridge.exposeInMainWorld('forma', readonlyApi);
+}
+
+// Only wire up contextBridge in the real Electron preload environment.
+if (process.env.NODE_ENV !== 'test') {
+  void exposeReadonlyApi();
 }

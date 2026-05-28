@@ -5,8 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { describe, expect, it } from "vitest";
 import { afterEach, vi } from "vitest";
 
-import type { FormaApiClient, StyleDetailPayload, StyleMetadata, StylePreviewPayload } from "../api.js";
-import { isStylePreviewImageUrl } from "./StyleDetail.js";
+import type { FormaApiClient, StyleDetailPayload, StyleMetadata } from "../api.js";
 import { StyleDetail } from "./StyleDetail.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -54,17 +53,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("isStylePreviewImageUrl", () => {
-  it("only accepts explicit preview image endpoints", () => {
-    expect(isStylePreviewImageUrl("/api/styles/linear/preview/image")).toBe(true);
-    expect(isStylePreviewImageUrl("/api/styles/linear/preview")).toBe(false);
-    expect(isStylePreviewImageUrl(undefined)).toBe(false);
-  });
-});
-
 describe("StyleDetail", () => {
-  it("renders the live style preview and the static preview PNG when both are available", async () => {
-    const client = createClient({ preview: { name: "linear", image_url: "/api/styles/linear/preview/image" } });
+  it("renders the live style preview without requesting removed static preview metadata", async () => {
+    const client = createClient();
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -74,13 +65,13 @@ describe("StyleDetail", () => {
 
     expect(container.querySelector('[data-style-preview-panel="true"]')).not.toBeNull();
     expect(container.querySelector('[data-preview-type="web"]')).not.toBeNull();
-    expect(container.querySelector<HTMLImageElement>('img[src="/api/styles/linear/preview/image"]')).not.toBeNull();
-    expect(container.textContent).toContain("Static preview");
+    expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain("Live style preview");
+    expect("getStylePreview" in client).toBe(false);
   });
 
   it("always renders the live style preview when style detail is ready", async () => {
-    const client = createClient({ preview: { name: "linear" } });
+    const client = createClient();
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -93,7 +84,7 @@ describe("StyleDetail", () => {
   });
 
   it("renders translated StyleDetail copy instead of bare i18n keys", async () => {
-    const client = createClient({ preview: { name: "linear", image_url: "/api/styles/linear/preview/image" } });
+    const client = createClient();
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -108,11 +99,10 @@ describe("StyleDetail", () => {
   });
 });
 
-function createClient({ preview }: { preview: StylePreviewPayload }) {
+function createClient() {
   return {
-    getStyle: vi.fn(async () => styleDetail),
-    getStylePreview: vi.fn(async () => preview)
-  } satisfies Pick<FormaApiClient, "getStyle" | "getStylePreview">;
+    getStyle: vi.fn(async () => styleDetail)
+  } satisfies Pick<FormaApiClient, "getStyle">;
 }
 
 function createTestRoot() {

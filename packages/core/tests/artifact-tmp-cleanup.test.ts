@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { cleanupArtifactTmpDirs } from '../src/artifact-tmp-cleanup.js';
+import { createFormaStore, type ProductMutationContext, type ProductMutationLock } from '../src/index.js';
 
 describe('cleanupArtifactTmpDirs', () => {
   let testHome: string;
@@ -116,5 +117,32 @@ describe('cleanupArtifactTmpDirs', () => {
     // At least one should be cleaned
     const oneRemoved = !existsSync(tmpDir1) || !existsSync(tmpDir2);
     expect(oneRemoved).toBe(true);
+  });
+
+  it('runs startup tmp cleanup under the product mutation lock', async () => {
+    writeFileSync(join(testHome, '.v6-schema-cutover-committed'), 'committed\n');
+    const productsDir = join(testHome, 'data', 'products');
+    const tmpDir = join(productsDir, 'P-abc123', 'od-project', 'artifacts', '.tmp-startup');
+    mkdirSync(tmpDir, { recursive: true });
+    writeFileSync(join(tmpDir, 'manifest.json'), '{}');
+
+    const calls: string[] = [];
+    const lock: ProductMutationLock = {
+      async run<T>(
+        input: { operation: string; product_id?: string },
+        fn: (context: ProductMutationContext) => Promise<T>
+      ): Promise<T> {
+        calls.push(input.operation);
+        expect(existsSync(tmpDir)).toBe(true);
+        const result = await fn({ operation: input.operation, product_id: input.product_id, warnings: [] });
+        calls.push(`tmp-exists-after:${existsSync(tmpDir)}`);
+        return result;
+      },
+    };
+
+    await createFormaStore({ home: testHome, bundledStylesDir: resolve('styles'), productMutationLock: lock });
+
+    expect(calls).toEqual(['cleanup_artifact_tmp_dirs', 'tmp-exists-after:false']);
+    expect(existsSync(tmpDir)).toBe(false);
   });
 });
