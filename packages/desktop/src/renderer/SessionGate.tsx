@@ -66,11 +66,3 @@ export function SessionGate({
   );
 }
 
-// Augment window type for preload API
-declare global {
-  interface Window {
-    forma?: {
-      formaServerStatus: () => Promise<unknown>;
-    };
-  }
-}
