@@ -722,7 +722,6 @@ async function exportArtifact(
     await copyFile(entrySrc, outputPath);
   } else if (format === "zip") {
     const zip = new AdmZip();
-    let zipPath: string | undefined = outputPath;
     try {
       // Add manifest.json
       const manifestJson = JSON.stringify(manifest, null, 2);
@@ -757,7 +756,6 @@ async function exportArtifact(
       } catch {
         // Ignore cleanup errors
       }
-      zipPath = undefined;
       throw err;
     }
   }
