@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  FormaError,
   getProductMutationLock,
   productMutationLockPath,
   PRODUCT_MUTATION_LOCK_HEARTBEAT_MS,
@@ -627,5 +628,20 @@ describe("v6 transaction locks", () => {
     await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "P-123abc", session_id: "S-1" }, async () => "ok")).rejects.toMatchObject({
       code: "INVALID_INPUT"
     });
+  });
+
+  it("lock file uses product-mutation.lock (not pencil.lock)", async () => {
+    const home = await createHome();
+    const lockPath = productMutationLockPath(home, "P-123abc");
+    expect(lockPath).toContain("product-mutation.lock");
+    expect(lockPath).not.toContain("pencil.lock");
+  });
+
+  it("FORMA_LOCK_TIMEOUT is a valid FormaError code", () => {
+    const err = new FormaError("FORMA_LOCK_TIMEOUT", "Lock acquisition timed out", {
+      timeout_ms: 30_000,
+    });
+    expect(err.code).toBe("FORMA_LOCK_TIMEOUT");
+    expect(err.details.timeout_ms).toBe(30_000);
   });
 });
