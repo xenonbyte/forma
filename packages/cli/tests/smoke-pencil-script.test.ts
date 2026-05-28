@@ -50,6 +50,12 @@ describe("smoke-pencil script", () => {
     await expect(access(resolve("scripts/smoke-pencil-foreground.ts"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("keeps the root workspace engine aligned with documented Node support", async () => {
+    const packageJson = await readRootPackageJson();
+
+    expect(packageJson.engines?.node).toBe(">=22");
+  });
+
   it("redacts common secret, account, user, and session fields", () => {
     const sanitized = sanitizeGenericErrorForLog(
       new Error(

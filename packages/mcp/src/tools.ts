@@ -73,6 +73,20 @@ type V6ServiceOverrides = Partial<{
   sessionGetScreenshot(input: Record<string, unknown>): Promise<unknown>;
   sessionExportNodes(input: Record<string, unknown>): Promise<unknown>;
 }>;
+type RequirementHistoryRecord = Awaited<ReturnType<FormaStore["requirements"]["getRequirementHistory"]>>[number];
+type RequirementHistoryPageRecord = RequirementHistoryRecord["pages"][number];
+
+interface BaselinePageRecord {
+  id: string;
+  copy: unknown[];
+  features: string;
+  fields: string;
+  interactions: string;
+  name: string;
+  semantic_contract?: unknown;
+  semantic_contract_coverage?: unknown;
+  source_requirements: string[];
+}
 
 export interface FormaMcpServerLike {
   registerTool(name: string, config: { title: string; description: string; inputSchema: z.ZodType }, handler: FormaToolHandler): unknown;
@@ -344,7 +358,7 @@ const descriptions = {
   get_product: "Read a product.",
   confirm_product_id: "Confirm that a product id exists and optionally verify its name.",
   delete_product: "Delete a product after explicit id confirmation.",
-  get_product_baseline: "Read the design-system artifact manifest for a product.",
+  get_product_baseline: "Read the current functional baseline pages and navigation for a product.",
   get_baseline_page: "Read one baseline page from the design-system artifact.",
   get_baseline_image: "Get the preview image path for the design-system artifact.",
   get_requirement_history: "List product requirement history.",
@@ -574,6 +588,7 @@ async function exportArtifact(
   const { product_id, artifact_id, format } = input;
 
   const { manifest } = await store.artifacts.readArtifact(product_id, artifact_id);
+  assertArtifactSupportsExportFormat(manifest, artifact_id, format);
 
   const productsDir = join(store.home, "data", "products");
   const artifactDir = getArtifactDir(productsDir, product_id, artifact_id);
@@ -587,7 +602,11 @@ async function exportArtifact(
     const previewSrc = join(artifactDir, "preview", "2x.png");
     await copyFile(previewSrc, outputPath);
   } else if (format === "html" || format === "svg") {
-    const entrySrc = join(artifactDir, manifest.entry);
+    const entry = artifactExportEntry(manifest, format);
+    if (entry === undefined) {
+      throw unsupportedArtifactFormatError(manifest, artifact_id, format);
+    }
+    const entrySrc = join(artifactDir, entry);
     await copyFile(entrySrc, outputPath);
   } else if (format === "zip") {
     const zip = new AdmZip();
@@ -622,6 +641,46 @@ async function exportArtifact(
   }
 
   return { output_path: outputPath };
+}
+
+function assertArtifactSupportsExportFormat(
+  manifest: ArtifactManifest,
+  artifactId: string,
+  format: z.infer<typeof exportArtifactSchema>["format"]
+): void {
+  if (format === "zip" || format === "png") {
+    return;
+  }
+
+  if (artifactExportEntry(manifest, format) !== undefined) {
+    return;
+  }
+
+  throw unsupportedArtifactFormatError(manifest, artifactId, format);
+}
+
+function unsupportedArtifactFormatError(
+  manifest: ArtifactManifest,
+  artifactId: string,
+  format: "html" | "svg"
+): FormaError {
+  return new FormaError("ARTIFACT_UNSUPPORTED_FORMAT", "Artifact does not support requested export format", {
+    artifact_id: artifactId,
+    kind: manifest.kind,
+    format,
+    exports: manifest.exports
+  });
+}
+
+function artifactExportEntry(
+  manifest: ArtifactManifest,
+  format: "html" | "svg"
+): string | undefined {
+  const extension = `.${format}`;
+  if (manifest.kind === format || manifest.entry.toLowerCase().endsWith(extension)) {
+    return manifest.entry;
+  }
+  return manifest.exports.find((path) => path.toLowerCase().endsWith(extension));
 }
 
 function addArtifactFileToZip(zip: AdmZip, artifactDir: string, relPath: string, addedFiles: Set<string>): void {
@@ -790,12 +849,99 @@ async function getLatestNonArchivedRequirement(store: FormaStore, productId: str
 }
 
 async function getProductBaseline(store: FormaStore, productId: string) {
-  const product = await store.products.getProduct(productId);
-  if (!product.designSystemArtifactId) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "No design-system artifact for this product", { product_id: productId });
+  await store.products.getProduct(productId);
+  const requirements = (await store.requirements.getRequirementHistory(productId))
+    .filter((requirement) => requirement.status !== "archived")
+    .sort(compareRequirementsOldestFirst);
+  const pagesById = new Map<string, BaselinePageRecord>();
+  const navigation: unknown[] = [];
+
+  for (const requirement of requirements) {
+    if (Array.isArray(requirement.navigation)) {
+      navigation.push(...mapRequirementNavigationToBaseline(requirement.pages, requirement.navigation));
+    }
+
+    for (const page of requirement.pages) {
+      const pageId = stringValue(page.baseline_page) ?? stringValue(page.page_id);
+      if (!pageId) {
+        continue;
+      }
+
+      const existing = pagesById.get(pageId);
+      pagesById.set(pageId, {
+        id: pageId,
+        name: stringValue(page.name) ?? existing?.name ?? pageId,
+        features: stringValue(page.features) ?? existing?.features ?? "",
+        copy: Array.isArray(page.copy) ? page.copy : existing?.copy ?? [],
+        fields: stringValue(page.fields) ?? existing?.fields ?? "",
+        interactions: stringValue(page.interactions) ?? existing?.interactions ?? "",
+        ...(page.semantic_contract !== undefined ? { semantic_contract: page.semantic_contract } : {}),
+        ...(page.semantic_contract_coverage !== undefined ? { semantic_contract_coverage: page.semantic_contract_coverage } : {}),
+        source_requirements: uniqueStrings([...(existing?.source_requirements ?? []), requirement.id])
+      });
+    }
   }
-  const { manifest } = await store.artifacts.readArtifact(productId, product.designSystemArtifactId);
-  return { baseline: manifest };
+
+  return {
+    baseline: {
+      product_id: productId,
+      pages: [...pagesById.values()],
+      navigation
+    }
+  };
+}
+
+function mapRequirementNavigationToBaseline(
+  pages: RequirementHistoryPageRecord[],
+  navigation: unknown[]
+): unknown[] {
+  const pageToBaseline = new Map<string, string>();
+  for (const page of pages) {
+    const pageId = stringValue(page.page_id);
+    const baselineId = stringValue(page.baseline_page) ?? pageId;
+    if (!pageId || !baselineId) {
+      continue;
+    }
+    pageToBaseline.set(pageId, baselineId);
+    pageToBaseline.set(baselineId, baselineId);
+  }
+
+  return navigation.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const fromRaw = stringValue(item.from);
+    const toRaw = stringValue(item.to);
+    if (!fromRaw || !toRaw) {
+      return [];
+    }
+    return [{
+      ...item,
+      from: pageToBaseline.get(fromRaw) ?? fromRaw,
+      to: pageToBaseline.get(toRaw) ?? toRaw
+    }];
+  });
+}
+
+function compareRequirementsOldestFirst(left: RequirementHistoryRecord, right: RequirementHistoryRecord): number {
+  return timestampForRequirement(left) - timestampForRequirement(right) || left.id.localeCompare(right.id);
+}
+
+function timestampForRequirement(requirement: RequirementHistoryRecord): number {
+  const updatedAt = requirement.updated_at ? Date.parse(requirement.updated_at) : Number.NaN;
+  if (Number.isFinite(updatedAt)) {
+    return updatedAt;
+  }
+  const createdAt = requirement.created_at ? Date.parse(requirement.created_at) : Number.NaN;
+  return Number.isFinite(createdAt) ? createdAt : 0;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 async function getBaselinePage(store: FormaStore, productId: string, pageId: string) {

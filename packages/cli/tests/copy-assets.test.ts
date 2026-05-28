@@ -215,6 +215,7 @@ describe("agent template inventory", () => {
 
       expect(rollback).toContain("rollback_requirement_design");
       expect(rollback).toContain("list_product_artifacts");
+      expect(rollback).toContain("include_superseded");
       expect(rollback).toContain("target_artifact_id");
     }
 

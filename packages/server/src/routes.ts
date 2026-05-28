@@ -469,7 +469,7 @@ async function getProductBaseline(store: FormaStore, productId: string) {
 
   for (const requirement of requirements) {
     if (Array.isArray(requirement.navigation)) {
-      navigation.push(...requirement.navigation);
+      navigation.push(...mapRequirementNavigationToBaseline(requirement.pages, requirement.navigation));
     }
 
     for (const page of requirement.pages) {
@@ -498,6 +498,38 @@ async function getProductBaseline(store: FormaStore, productId: string) {
     pages: [...pagesById.values()],
     navigation
   };
+}
+
+function mapRequirementNavigationToBaseline(
+  pages: RequirementPageRecord[],
+  navigation: unknown[]
+): unknown[] {
+  const pageToBaseline = new Map<string, string>();
+  for (const page of pages) {
+    const pageId = stringValue(page.page_id);
+    const baselineId = stringValue(page.baseline_page) ?? pageId;
+    if (!pageId || !baselineId) {
+      continue;
+    }
+    pageToBaseline.set(pageId, baselineId);
+    pageToBaseline.set(baselineId, baselineId);
+  }
+
+  return navigation.flatMap((item) => {
+    if (!isRecord(item)) {
+      return [];
+    }
+    const fromRaw = stringValue(item.from);
+    const toRaw = stringValue(item.to);
+    if (!fromRaw || !toRaw) {
+      return [];
+    }
+    return [{
+      ...item,
+      from: pageToBaseline.get(fromRaw) ?? fromRaw,
+      to: pageToBaseline.get(toRaw) ?? toRaw
+    }];
+  });
 }
 
 async function getBaselinePage(store: FormaStore, productId: string, pageId: string): Promise<BaselinePageRecord> {

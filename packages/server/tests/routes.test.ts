@@ -1129,6 +1129,33 @@ describe("baseline compatibility routes", () => {
     });
   });
 
+  it("GET /api/products/:id/baseline maps requirement navigation page_id values to baseline page ids", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-12345678",
+            product_id: "P-123abc",
+            created_at: "2026-05-17T00:00:00.000Z",
+            updated_at: "2026-05-18T00:00:00.000Z",
+            pages: [
+              { page_id: "checkout-page", name: "Checkout", baseline_page: "checkout", design_status: "done" },
+              { page_id: "confirmation-page", name: "Confirmation", baseline_page: "confirmation", design_status: "done" }
+            ],
+            navigation: [{ from: "checkout-page", to: "confirmation-page", label: "Continue" }]
+          }
+        ])
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/baseline" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().navigation).toEqual([{ from: "checkout", to: "confirmation", label: "Continue" }]);
+  });
+
   it("GET /api/products/:id/baseline/pages/:pageId/copy returns requirement page copy and translations", async () => {
     const store = fakeStore({
       copy: {

@@ -212,8 +212,8 @@ class ArtifactStoreImpl implements ArtifactStore {
       // Skip tmp dirs
       if (entry.startsWith('.tmp-')) continue;
 
-      const manifestPath = getArtifactManifestPath(this.productsRoot, productId, entry);
       try {
+        const manifestPath = getArtifactManifestPath(this.productsRoot, productId, entry);
         const manifestJson = await readFile(manifestPath, 'utf8');
         const etag = computeEtag(manifestJson);
         results.push({ artifactId: entry, etag });

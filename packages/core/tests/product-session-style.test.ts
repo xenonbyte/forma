@@ -763,6 +763,27 @@ describe("product session and style services", () => {
     await expect(access(join(store.home, "library", `${product.id}.lib.pen`))).rejects.toThrow();
   });
 
+  it.each(["committed", "discarded"] as const)("deleteProduct ignores terminal legacy %s design sessions", async (status) => {
+    const store = await createTestStore();
+    const product = await seedReadyProduct(store);
+    const sessionId = `S-terminal-${status}`;
+    const auditPath = `data/${product.id}/sessions/${sessionId}/audit.yaml`;
+    await mkdir(join(store.home, "data", product.id, "sessions", sessionId), { recursive: true });
+    await writeFile(join(store.home, auditPath), `session_id: ${sessionId}\nstatus: ${status}\n`, "utf8");
+    await writeTerminalDesignSession(store.home, product.id, {
+      sessionId,
+      status,
+      recordStatus: status,
+      auditPath
+    });
+
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).resolves.toMatchObject({
+      product_id: product.id,
+      deleted: true
+    });
+    await expect(access(join(store.home, "data", product.id))).rejects.toThrow();
+  });
+
   it("rejects mismatched delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
     await markNormalizationCommitted(home);

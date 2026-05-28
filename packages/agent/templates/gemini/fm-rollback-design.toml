@@ -9,7 +9,7 @@ The user wants to undo a recent design generation and restore an earlier artifac
 
 Execution:
 1. Require product_id from context or ask the user to run `fm-list-product` first. If requirement_id is unknown, call `get_requirement` with product_id to retrieve it.
-2. Call `list_product_artifacts` with product_id to display available artifact versions (id, type, created_at, preview URL).
+2. Call `list_product_artifacts` with product_id, `include_superseded: true`, and `kind` when known to display available artifact versions (id, type, created_at, preview URL). If requirement_id is known, only present artifacts for that requirement.
 3. Ask the user to confirm the target artifact_id to roll back to.
 4. Call `rollback_requirement_design(product_id, requirement_id, target_artifact_id)` with the confirmed artifact_id.
 5. Report the restored artifact_id, preview URL, and stable error codes exactly as returned.

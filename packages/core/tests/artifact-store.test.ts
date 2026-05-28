@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -424,6 +424,23 @@ describe('ArtifactStore', () => {
       const item2 = list.find((a) => a.artifactId === r2.artifactId);
       expect(item1?.etag).toBe(r1.etag);
       expect(item2?.etag).toBe(r2.etag);
+    });
+
+    it('skips invalid artifact directory names instead of aborting the listing', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+      const written = await store.writeArtifact({
+        productId,
+        manifest: makeManifest({ title: 'A1' }),
+        files: makeFiles('a1'),
+      });
+      const artifactsDir = join(productsRoot, productId, 'od-project', 'artifacts');
+      await writeFile(join(artifactsDir, '.DS_Store'), 'Finder metadata');
+      await mkdir(join(artifactsDir, 'not an artifact id'), { recursive: true });
+
+      const list = await store.listArtifacts(productId);
+
+      expect(list).toEqual([{ artifactId: written.artifactId, etag: written.etag }]);
     });
   });
 

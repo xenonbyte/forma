@@ -518,13 +518,6 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
         session_record_path: sessionRecordPath
       });
     }
-    if (!(await hasFormalAuditLink(home, productId, sessionId, active.audit_link))) {
-      throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Design session audit link is missing", {
-        ...checkedDetails,
-        audit_link: active.audit_link,
-        session_record_path: sessionRecordPath
-      });
-    }
     return;
   }
   throw new FormaError("LOCK_CORRUPT", "Active design session lock has an invalid status", checkedDetails);
@@ -549,29 +542,6 @@ async function readDesignSessionRecord(
     session_id: requireActiveString(record.session_id, "session_id", code, details),
     status: typeof record.status === "string" ? record.status : "running"
   };
-}
-
-async function hasFormalAuditLink(home: string, productId: string, sessionId: string, auditLink: string): Promise<boolean> {
-  return (await requirementHistoryHasAuditLink(home, productId, sessionId, auditLink))
-    || (await componentVersionHasAuditLink(home, productId, sessionId, auditLink));
-}
-
-async function requirementHistoryHasAuditLink(_home: string, _productId: string, _sessionId: string, _auditLink: string): Promise<boolean> {
-  // Pencil-era audit link checks removed in v8 migration
-  return false;
-}
-
-async function componentVersionHasAuditLink(_home: string, _productId: string, _sessionId: string, _auditLink: string): Promise<boolean> {
-  // Pencil component library removed in v8 migration
-  return false;
-}
-
-function recordHasAuditLink(value: unknown, sessionId: string, auditLink: string): boolean {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return record.session_id === sessionId && record.audit_link === auditLink;
 }
 
 function stringOrNull(value: unknown): string | null {

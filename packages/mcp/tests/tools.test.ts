@@ -1120,6 +1120,40 @@ describe("artifact tools (C-03)", () => {
     expect(zip.getEntry("assets/app.css")?.getData().toString("utf8")).toBe("main { color: black; }");
   });
 
+  it.each([
+    { artifactKind: "html" as const, entry: "index.html", requestedFormat: "svg" as const },
+    { artifactKind: "svg" as const, entry: "icon.svg", requestedFormat: "html" as const }
+  ])("export_artifact rejects $requestedFormat export for $artifactKind artifacts", async ({ artifactKind, entry, requestedFormat }) => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-format-"));
+    const artifactDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456");
+    await mkdir(artifactDir, { recursive: true });
+    await writeFile(join(artifactDir, entry), "<main>entry</main>", "utf8");
+    const manifest = {
+      ...fakeManifest(),
+      kind: artifactKind,
+      renderer: artifactKind,
+      entry,
+      exports: [entry]
+    };
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      format: requestedFormat
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
+  });
+
   it("export_artifact returns ARTIFACT_NOT_FOUND when artifact is missing", async () => {
     const store = fakeStore({
       artifacts: {
@@ -1301,12 +1335,36 @@ describe("C-04 retained tools", () => {
 
   // ─── get_product_baseline ─────────────────────────────────────────────────
 
-  it("get_product_baseline returns baseline manifest from design-system artifact", async () => {
-    const manifest = { ...fakeManifest(), kind: "design-system" as const };
+  it("get_product_baseline returns functional baseline even when a design-system artifact exists", async () => {
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        readArtifact: vi.fn(async () => ({ manifest: { ...fakeManifest(), kind: "design-system" as const }, etag: "sha256:abc" }))
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-12345678",
+            product_id: "P-123abc",
+            status: "active",
+            created_at: "2026-05-17T00:00:00.000Z",
+            updated_at: "2026-05-18T00:00:00.000Z",
+            pages: [
+              {
+                page_id: "checkout-page",
+                name: "Checkout",
+                baseline_page: "checkout",
+                design_status: "done",
+                features: "Pay for an order",
+                fields: "Card number",
+                interactions: "Submit payment",
+                copy: [{ context: "title", text: "Checkout" }]
+              }
+            ],
+            navigation: [{ from: "checkout-page", to: "checkout-page", label: "Stay" }]
+          }
+        ])
       }
     });
     const tools = createFormaTools(store);
@@ -1314,10 +1372,27 @@ describe("C-04 retained tools", () => {
     const result = await tools.get_product_baseline({ product_id: "P-123abc" });
 
     expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({ baseline: expect.objectContaining({ kind: "design-system" }) });
+    expect(textPayload(result)).toMatchObject({
+      baseline: {
+        product_id: "P-123abc",
+        pages: [
+          {
+            id: "checkout",
+            name: "Checkout",
+            features: "Pay for an order",
+            fields: "Card number",
+            interactions: "Submit payment",
+            copy: [{ context: "title", text: "Checkout" }],
+            source_requirements: ["R-12345678"]
+          }
+        ],
+        navigation: [{ from: "checkout", to: "checkout", label: "Stay" }]
+      }
+    });
+    expect(store.artifacts.readArtifact).not.toHaveBeenCalled();
   });
 
-  it("get_product_baseline returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
+  it("get_product_baseline derives functional baseline when product has no designSystemArtifactId", async () => {
     const store = fakeStore({
       products: {
         ...fakeStore().products,
@@ -1327,14 +1402,50 @@ describe("C-04 retained tools", () => {
           description: "Demo",
           requirements: {}
         }))
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-12345678",
+            product_id: "P-123abc",
+            status: "submitted",
+            created_at: "2026-05-17T00:00:00.000Z",
+            updated_at: "2026-05-18T00:00:00.000Z",
+            pages: [
+              {
+                page_id: "checkout-page",
+                name: "Checkout",
+                baseline_page: "checkout",
+                design_status: "pending"
+              },
+              {
+                page_id: "confirmation-page",
+                name: "Confirmation",
+                baseline_page: "confirmation",
+                design_status: "pending"
+              }
+            ],
+            navigation: [{ from: "checkout-page", to: "confirmation-page", label: "Continue" }]
+          }
+        ])
       }
     });
     const tools = createFormaTools(store);
 
     const result = await tools.get_product_baseline({ product_id: "P-123abc" });
 
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({
+      baseline: {
+        product_id: "P-123abc",
+        pages: [
+          { id: "checkout", name: "Checkout", source_requirements: ["R-12345678"] },
+          { id: "confirmation", name: "Confirmation", source_requirements: ["R-12345678"] }
+        ],
+        navigation: [{ from: "checkout", to: "confirmation", label: "Continue" }]
+      }
+    });
   });
 
   // ─── get_style ────────────────────────────────────────────────────────────
