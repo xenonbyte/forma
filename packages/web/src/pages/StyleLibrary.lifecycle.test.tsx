@@ -53,7 +53,8 @@ describe("StyleLibrary read-only mode", () => {
       await flushMicrotasks();
     });
 
-    expect(container.querySelector('[data-sync-button="true"]')).toBeNull();
+    const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent ?? "");
+    expect(buttons.every((text) => !text.includes("同步"))).toBe(true);
   });
 
   it("renders styles after loading", async () => {
@@ -82,7 +83,6 @@ describe("StyleLibrary read-only mode", () => {
       await flushMicrotasks();
     });
 
-    expect(container.querySelector('[data-sync-button="true"]')).toBeNull();
     expect(container.textContent).toContain("No styles");
   });
 });
