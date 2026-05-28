@@ -572,7 +572,6 @@ async function generateRequirementDesign(
 ): Promise<{ artifact_id: string; status: "complete" }> {
   const { product_id, requirement_id, mode } = input;
 
-  // Verify requirement belongs to product
   const req = await store.requirements.getRequirement({ requirement_id });
   if (req.product_id !== product_id) {
     throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
@@ -581,23 +580,19 @@ async function generateRequirementDesign(
     });
   }
 
-  // Get product for context
   const product = await store.products.getProduct(product_id);
 
-  // Generate artifact (outside lock)
+  // OdRuntime call is intentionally outside the mutation lock (may take up to 60s)
   const output = await createOdRuntime().generate({
     kind: "html",
     requirementId: requirement_id,
     sourceSkillId: "fm-design",
-    style: (product as Record<string, unknown>).style !== undefined
-      ? ((product as Record<string, unknown>).style as Record<string, unknown>).name as string | undefined
-      : undefined,
+    style: product.style?.name,
     platform: product.platform,
     language: product.default_language,
     ignoreInternalCache: mode === "rebuild"
   });
 
-  // Validate manifest
   const validation = validateArtifactManifest(output.manifest);
   if (!validation.ok) {
     throw new FormaError("ARTIFACT_MANIFEST_INVALID", `Invalid artifact manifest: ${validation.error}`, {
@@ -606,19 +601,16 @@ async function generateRequirementDesign(
     });
   }
 
-  // Convert supporting files
   const files = new Map(
     [...output.supportingFiles.entries()].map(([k, v]) => [k, Buffer.from(v)])
   );
 
-  // Write artifact
   const { artifactId } = await store.artifacts.writeArtifact({
     productId: product_id,
     manifest: output.manifest,
     files
   });
 
-  // Update pointer under lock
   await store.runProductMutation({ operation: "update_requirement_pointer", product_id }, async () => {
     await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, artifactId);
   });
@@ -632,12 +624,10 @@ async function refineRequirementDesign(
 ): Promise<{ artifact_id: string; status: "complete" }> {
   const { product_id, requirement_id, instructions } = input;
 
-  // Validate instructions
   if (instructions.trim() === "") {
     throw new FormaError("ARTIFACT_INVALID_INPUT", "Instructions must not be empty", { requirement_id });
   }
 
-  // Verify requirement belongs to product
   const req = await store.requirements.getRequirement({ requirement_id });
   if (req.product_id !== product_id) {
     throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
@@ -646,30 +636,25 @@ async function refineRequirementDesign(
     });
   }
 
-  // Get current pointer for previousArtifactId
   const product = await store.products.getProduct(product_id);
   const previousArtifactId = product.requirements?.[requirement_id]?.latestArtifactId;
 
-  // Generate artifact (outside lock)
+  // OdRuntime call is intentionally outside the mutation lock (may take up to 60s)
   const output = await createOdRuntime().generate({
     kind: "html",
     requirementId: requirement_id,
     sourceSkillId: "fm-design",
     instructions,
-    style: (product as Record<string, unknown>).style !== undefined
-      ? ((product as Record<string, unknown>).style as Record<string, unknown>).name as string | undefined
-      : undefined,
+    style: product.style?.name,
     platform: product.platform,
     language: product.default_language
   });
 
-  // Build manifest with previousArtifactId
   const manifestWithPrev = {
     ...output.manifest,
     metadata: { ...output.manifest.metadata, previousArtifactId }
   };
 
-  // Validate manifest
   const validation = validateArtifactManifest(manifestWithPrev);
   if (!validation.ok) {
     throw new FormaError("ARTIFACT_MANIFEST_INVALID", `Invalid artifact manifest: ${validation.error}`, {
@@ -678,19 +663,16 @@ async function refineRequirementDesign(
     });
   }
 
-  // Convert supporting files
   const files = new Map(
     [...output.supportingFiles.entries()].map(([k, v]) => [k, Buffer.from(v)])
   );
 
-  // Write artifact
   const { artifactId } = await store.artifacts.writeArtifact({
     productId: product_id,
     manifest: manifestWithPrev,
     files
   });
 
-  // Update pointer under lock
   await store.runProductMutation({ operation: "update_requirement_pointer", product_id }, async () => {
     await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, artifactId);
   });
@@ -723,39 +705,27 @@ async function exportArtifact(
   } else if (format === "zip") {
     const zip = new AdmZip();
     try {
-      // Add manifest.json
       const manifestJson = JSON.stringify(manifest, null, 2);
       zip.addFile("manifest.json", Buffer.from(manifestJson, "utf8"));
 
-      // Add supporting files
-      const supportingFiles = manifest.supportingFiles ?? [];
-      for (const relPath of supportingFiles) {
+      for (const relPath of manifest.supportingFiles ?? []) {
         const srcPath = join(artifactDir, relPath);
         try {
-          const AdmZipImport = AdmZip;
-          void AdmZipImport;
           zip.addLocalFile(srcPath, relPath.includes("/") ? relPath.substring(0, relPath.lastIndexOf("/")) : "");
         } catch {
-          // Skip files that can't be read
+          // Skip unreadable supporting files
         }
       }
 
-      // Add preview
-      const previewPath = join(artifactDir, "preview", "2x.png");
       try {
-        zip.addLocalFile(previewPath, "preview");
+        zip.addLocalFile(join(artifactDir, "preview", "2x.png"), "preview");
       } catch {
-        // Preview may not exist
+        // Preview may not exist for all artifact kinds
       }
 
       zip.writeZip(outputPath);
     } catch (err) {
-      // Clean up partial zip on failure
-      try {
-        await rm(outputPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
+      await rm(outputPath, { force: true }).catch(() => undefined);
       throw err;
     }
   }
@@ -769,7 +739,6 @@ async function rollbackRequirementDesign(
 ): Promise<{ rolled_back_to: string; previous_pointer: string | null }> {
   const { product_id, requirement_id, target_artifact_id } = input;
 
-  // Verify requirement exists and belongs to product
   const req = await store.requirements.getRequirement({ requirement_id });
   if (req.product_id !== product_id) {
     throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
@@ -778,16 +747,7 @@ async function rollbackRequirementDesign(
     });
   }
 
-  // Verify target artifact exists and belongs to this requirement
-  let targetManifest: ArtifactManifest;
-  try {
-    ({ manifest: targetManifest } = await store.artifacts.readArtifact(product_id, target_artifact_id));
-  } catch (err) {
-    if (err instanceof FormaError && err.code === "ARTIFACT_NOT_FOUND") {
-      throw err;
-    }
-    throw err;
-  }
+  const { manifest: targetManifest } = await store.artifacts.readArtifact(product_id, target_artifact_id);
 
   if (targetManifest.requirementId !== requirement_id) {
     throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact does not belong to this requirement", {
@@ -797,16 +757,13 @@ async function rollbackRequirementDesign(
     });
   }
 
-  // Get current pointer
   const product = await store.products.getProduct(product_id);
   const currentPointer = product.requirements?.[requirement_id]?.latestArtifactId ?? null;
 
-  // No-op if target is already current
   if (currentPointer === target_artifact_id) {
     return { rolled_back_to: target_artifact_id, previous_pointer: target_artifact_id };
   }
 
-  // Update pointer under lock
   await store.runProductMutation({ operation: "rollback_requirement_pointer", product_id }, async () => {
     await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, target_artifact_id);
   });
