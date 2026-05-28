@@ -5,7 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StyleLibrary } from "./StyleLibrary.js";
-import type { FormaApiClient, StyleMetadata, SyncStatusPayload } from "../api.js";
+import type { FormaApiClient, StyleMetadata } from "../api.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -26,19 +26,6 @@ const styles: StyleMetadata[] = [
   }
 ];
 
-const idleStatus: SyncStatusPayload = { status: "idle" };
-const completedStatus: SyncStatusPayload = {
-  status: "idle",
-  last_sync: {
-    completed_at: "2026-05-18T00:00:02.000Z",
-    styles_total: 1,
-    styles_added: 1,
-    styles_updated: 0,
-    styles_failed: 0,
-    duration_ms: 2000
-  }
-};
-
 const roots: Root[] = [];
 const containers: HTMLElement[] = [];
 
@@ -51,19 +38,28 @@ afterEach(() => {
   for (const container of containers.splice(0)) {
     container.remove();
   }
-  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
-describe("StyleLibrary sync lifecycle", () => {
-  it("starts sync, polls until completion, refreshes styles, and shows summary", async () => {
-    vi.useFakeTimers();
+describe("StyleLibrary read-only mode", () => {
+  it("does not render a sync button", async () => {
     const client = {
-      listStyles: vi.fn(async () => styles),
-      syncStyles: vi.fn(async () => ({ task_id: "sync-123", status: "running" as const, message: "Style sync started" })),
-      getSyncStatus: vi.fn<() => Promise<SyncStatusPayload>>(async () => idleStatus)
-    } satisfies Pick<FormaApiClient, "listStyles" | "syncStyles" | "getSyncStatus">;
-    client.getSyncStatus.mockResolvedValueOnce(idleStatus).mockResolvedValueOnce(completedStatus);
+      listStyles: vi.fn(async () => styles)
+    } satisfies Pick<FormaApiClient, "listStyles">;
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<StyleLibrary client={client} />);
+      await flushMicrotasks();
+    });
+
+    expect(container.querySelector('[data-sync-button="true"]')).toBeNull();
+  });
+
+  it("renders styles after loading", async () => {
+    const client = {
+      listStyles: vi.fn(async () => styles)
+    } satisfies Pick<FormaApiClient, "listStyles">;
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -72,37 +68,13 @@ describe("StyleLibrary sync lifecycle", () => {
     });
 
     expect(client.listStyles).toHaveBeenCalledTimes(1);
-    expect(client.getSyncStatus).toHaveBeenCalledTimes(1);
-
-    const syncButton = container.querySelector<HTMLButtonElement>('button[data-sync-button="true"]');
-    expect(syncButton).not.toBeNull();
-
-    await act(async () => {
-      syncButton?.click();
-      await flushMicrotasks();
-    });
-
-    expect(client.syncStyles).toHaveBeenCalledTimes(1);
-    expect(client.getSyncStatus).toHaveBeenCalledTimes(1);
-    expect(syncButton?.textContent).toContain("同步中... (0/0)");
-
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-      await flushMicrotasks();
-    });
-
-    expect(client.getSyncStatus).toHaveBeenCalledTimes(2);
-    expect(client.listStyles).toHaveBeenCalledTimes(2);
-    expect(container.textContent).toContain("同步完成，共 1 个风格，新增 1 个，更新 0 个");
+    expect(container.textContent).toContain("linear");
   });
 
-  it("keeps sync controls available when no styles are installed", async () => {
-    vi.useFakeTimers();
+  it("shows empty state when no styles are installed", async () => {
     const client = {
-      listStyles: vi.fn(async () => []),
-      syncStyles: vi.fn(async () => ({ task_id: "sync-empty", status: "running" as const, message: "Style sync started" })),
-      getSyncStatus: vi.fn<() => Promise<SyncStatusPayload>>(async () => idleStatus)
-    } satisfies Pick<FormaApiClient, "listStyles" | "syncStyles" | "getSyncStatus">;
+      listStyles: vi.fn(async () => [])
+    } satisfies Pick<FormaApiClient, "listStyles">;
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -110,17 +82,8 @@ describe("StyleLibrary sync lifecycle", () => {
       await flushMicrotasks();
     });
 
-    const syncButton = container.querySelector<HTMLButtonElement>('button[data-sync-button="true"]');
-    expect(syncButton).not.toBeNull();
-    expect(syncButton?.textContent).toContain("一键同步");
+    expect(container.querySelector('[data-sync-button="true"]')).toBeNull();
     expect(container.textContent).toContain("No styles");
-
-    await act(async () => {
-      syncButton?.click();
-      await flushMicrotasks();
-    });
-
-    expect(client.syncStyles).toHaveBeenCalledTimes(1);
   });
 });
 

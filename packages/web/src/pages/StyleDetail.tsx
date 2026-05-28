@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type StyleDetailPayload, type StylePreviewPayload } from "../api.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
 import { StylePreviewPanel } from "../components/StylePreviewPanel.js";
+import { TokenCard } from "../components/TokenCard.js";
 import { useT } from "../LocaleContext.js";
 
 export interface StyleDetailProps {
@@ -121,10 +122,7 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
         ) : (
           <div className="divide-y divide-zinc-200">
             {variables.map(([key, value]) => (
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3 py-2 text-sm" key={key}>
-                <span className="truncate font-mono text-xs text-zinc-500">{key}</span>
-                <span className="truncate font-medium text-zinc-800">{value}</span>
-              </div>
+              <TokenCard key={key} name={key} value={value} />
             ))}
           </div>
         )}
