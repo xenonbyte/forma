@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { createFormaStore, FormaError, normalizeFormaHomeForV6, readYamlUnknown, writeYamlAtomic, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
-import { access, mkdir, mkdtemp, readdir, writeFile } from "node:fs/promises";
+import { createFormaStore, FormaError, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
+import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer, type FormaServer, type FormaServerStore } from "../src/app.js";
 import type { ArtifactManifest } from "@xenonbyte/forma-core";
@@ -34,13 +34,20 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
     artifacts: {
       readArtifact: vi.fn(async (_productId: string, artifactId: string) => ({
         manifest: {
-          kind: "page_design",
+          version: 1,
+          id: artifactId,
+          kind: "html",
+          renderer: "html",
           title: "Checkout Design",
-          updatedAt: "2026-05-17T00:00:00.000Z",
+          entry: "index.html",
+          status: "complete",
+          exports: [],
           sourceSkillId: "design-skill-1",
           requirementId: "R-12345678",
-          supportingFiles: []
-        } as ArtifactManifest,
+          supportingFiles: [],
+          createdAt: "2026-05-17T00:00:00.000Z",
+          updatedAt: "2026-05-17T00:00:00.000Z"
+        } satisfies ArtifactManifest,
         etag: `"${createHash("sha256").update(artifactId).digest("hex")}"`
       })),
       listArtifacts: vi.fn(async () => [{ artifactId: "A-abcdef1234567890" }])
@@ -85,11 +92,7 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
           ]
         }
       ]),
-      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input })),
-      submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
-    },
-    sessions: {
-      getCurrentSession: vi.fn(async () => ({ current_product: "P-123abc" }))
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
     styles: {
@@ -187,94 +190,6 @@ async function markNormalizationCommitted(home: string): Promise<void> {
 async function writeLegacyRuntimeYaml(home: string): Promise<void> {
   await mkdir(join(home, "data"), { recursive: true });
   await writeFile(join(home, "data", "products.yaml"), "products: []\n", "utf8");
-}
-
-async function seedLegacyRuntime(
-  home: string,
-  options: { productPatch?: Record<string, unknown>; pagePatch?: Record<string, unknown> } = {}
-): Promise<void> {
-  const createdAt = "2026-05-21T00:00:00.000Z";
-  await writeYamlAtomic(join(home, "data", "products.yaml"), {
-    products: [{ id: "P-123abc", name: "Shop", description: "Shop app" }]
-  });
-  await writeYamlAtomic(join(home, "data", "P-123abc", "product.yaml"), {
-    id: "P-123abc",
-    name: "Shop",
-    description: "Shop app",
-    ...options.productPatch
-  });
-  await writeYamlAtomic(join(home, "data", "P-123abc", "R-11111111", "requirement.yaml"), {
-    id: "R-11111111",
-    product_id: "P-123abc",
-    title: "Login",
-    status: "submitted",
-    ui_affected: true,
-    created_at: createdAt,
-    updated_at: createdAt,
-    pages: [
-      {
-        page_id: "login",
-        name: "Login",
-        baseline_page: "login",
-        design_status: "pending",
-        copy: [{ context: "cta", text: "Sign in" }],
-        ...options.pagePatch
-      }
-    ],
-    navigation: []
-  });
-  await writeYamlAtomic(join(home, "data", "P-123abc", "baseline", "baseline.yaml"), {
-    product_id: "P-123abc",
-    pages: [
-      {
-        id: "login",
-        name: "Login",
-        features: "",
-        copy: [{ context: "cta", text: "Sign in" }],
-        fields: "free-text field notes",
-        interactions: "free-text interaction notes",
-        source_requirements: ["R-11111111"]
-      }
-    ],
-    navigation: []
-  });
-}
-
-async function rewriteManifestEntryHash(home: string, backupDir: string, runtimePath: string, content: string): Promise<void> {
-  const manifestFile = join(backupDir, "manifest.yaml");
-  const manifest = await readYamlUnknown(manifestFile) as Record<string, unknown>;
-  const files = manifest.files as Array<Record<string, unknown>>;
-  for (const file of files) {
-    if (file.runtime_path === runtimePath) {
-      file.sha256 = sha256Text(content);
-      file.file_size = Buffer.byteLength(content);
-    }
-  }
-  manifest.manifest_hash = hashUnknownForTest({ files, normalizer_version: manifest.normalizer_version });
-  await writeYamlAtomic(manifestFile, manifest);
-  const journalFile = join(backupDir, "normalization-journal.yaml");
-  const journal = await readYamlUnknown(journalFile) as Record<string, unknown>;
-  journal.manifest_hash = manifest.manifest_hash;
-  await writeYamlAtomic(journalFile, journal);
-}
-
-function sha256Text(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
-}
-
-function hashUnknownForTest(value: unknown): string {
-  return `sha256:${createHash("sha256").update(stableStringifyForTest(value)).digest("hex")}`;
-}
-
-function stableStringifyForTest(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableStringifyForTest(item)).join(",")}]`;
-  }
-  if (typeof value === "object" && value !== null) {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableStringifyForTest(record[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
 
 describe("schema normalization limited startup", () => {
@@ -376,84 +291,6 @@ describe("schema normalization limited startup", () => {
     await expect(buildServer({ home, bundledStylesDir: resolve("styles") })).rejects.toThrow();
   });
 });
-
-async function homeWithPreview(files: string[] = ["preview@2x.png", "preview.v1@2x.png"]) {
-  const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
-  await mkdir(join(home, "data", "P-123abc", "R-12345678", "previews"), { recursive: true });
-  await writeFile(join(home, "data", "P-123abc", "R-12345678", "design.pen"), "canvas");
-  await writeFile(
-    join(home, "data", "P-123abc", "R-12345678", "design.yaml"),
-    [
-      "schema_version: 1",
-      "product_id: P-123abc",
-      "requirement_id: R-12345678",
-      "canvas_file: design.pen",
-      "canvas_version: 1",
-      "pages:",
-      "  - page_id: checkout-page",
-      "    status: done",
-      "    preview_file: previews/checkout-page@2x.png",
-      "    page_version: 1",
-      "history: []",
-      ""
-    ].join("\n")
-  );
-  for (const file of files) {
-    const previewPath = join(home, "data", "P-123abc", "R-12345678", "previews", file === "preview@2x.png" ? "checkout-page@2x.png" : file);
-    await mkdir(dirname(previewPath), { recursive: true });
-    await writeFile(previewPath, "preview");
-  }
-  return home;
-}
-
-async function homeWithStylePreview() {
-  const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
-  const previewPath = join(home, "styles", "linear", "preview@2x.png");
-  await mkdir(dirname(previewPath), { recursive: true });
-  await writeFile(previewPath, "style preview");
-  return home;
-}
-
-async function homeWithTwoVersionDesign() {
-  const home = await mkdtemp(join(tmpdir(), "forma-server-routes-"));
-  await writeDesignYaml(home, {
-    version: 2,
-    history: [
-      {
-        version: 1,
-        file: "design.v1.pen",
-        preview_file: "preview.v1@2x.png",
-        created_at: "2026-05-17T01:00:00.000Z"
-      }
-    ]
-  });
-  await writeDesignFile(home, "preview.v1@2x.png", "old preview");
-  await writeDesignFile(home, "preview@2x.png", "current preview");
-  return home;
-}
-
-async function writeDesignYaml(home: string, input: { version: number; history: unknown[] }) {
-  await writeDesignFile(
-    home,
-    "design.yaml",
-    JSON.stringify({
-      id: "D-12345678",
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "checkout-page",
-      version: input.version,
-      created_at: "2026-05-17T00:00:00.000Z",
-      updated_at: "2026-05-17T02:00:00.000Z",
-      history: input.history
-    })
-  );
-}
-
-async function writeDesignFile(home: string, file: string, content: string) {
-  const filePath = join(home, "data", "P-123abc", "R-12345678", "D-12345678", file);
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, content);
-}
 
 describe("Fastify API routes", () => {
   it("serves packaged Web assets and falls back to the SPA for app routes", async () => {
@@ -1169,7 +1006,7 @@ describe("artifact routes", () => {
     expect(body.artifacts).toHaveLength(1);
     expect(body.artifacts[0]).toMatchObject({
       id: "A-abcdef1234567890",
-      kind: "page_design",
+      kind: "html",
       title: "Checkout Design",
       updated_at: "2026-05-17T00:00:00.000Z"
     });
@@ -1207,7 +1044,7 @@ describe("artifact routes", () => {
     expect(body).toHaveProperty("manifest");
     expect(body).toHaveProperty("supportingFiles");
     expect(body).toHaveProperty("preview_url");
-    expect(body.manifest.kind).toBe("page_design");
+    expect(body.manifest.kind).toBe("html");
   });
 
   it("GET /api/products/:pid/artifacts/:aid returns 404 for unknown artifact", async () => {

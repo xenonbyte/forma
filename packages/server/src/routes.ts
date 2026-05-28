@@ -1,6 +1,6 @@
 import { access, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join, resolve, sep } from "node:path";
+import { join } from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import {
   recoverV6NormalizationJournal,
@@ -8,7 +8,6 @@ import {
   SchemaNormalizationRecoveryError,
   getArtifactDir,
   getFormaPaths,
-  FormaError,
   type ArtifactManifest,
   type Language,
   type Platform,
@@ -16,19 +15,6 @@ import {
 } from "@xenonbyte/forma-core";
 
 type UnknownRecord = Record<string, unknown>;
-
-const forbiddenPathFieldNames = new Set([
-  "filePath",
-  "file_path",
-  "canvas_path",
-  "staging_path",
-  "outputDir",
-  "output_dir",
-  "path",
-  "pen_path",
-  "preview_path",
-  "history_path"
-]);
 
 const ALLOWED_MUTATION_ORIGINS = new Set([
   "http://localhost:5173",
@@ -330,42 +316,11 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
 
 // ─── Private helpers ───────────────────────────────────────────────────────────
 
-function optionalObjectBody(body: unknown): UnknownRecord {
-  if (body === undefined) {
-    return {};
-  }
-  return objectBody(body);
-}
-
 function objectBody(body: unknown): UnknownRecord {
   if (!isRecord(body)) {
     throw new RouteInputError("Request body must be a JSON object");
   }
   return body;
-}
-
-function assertNoForbiddenPathFields(value: unknown, path: Array<string | number> = []): void {
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => assertNoForbiddenPathFields(item, [...path, index]));
-    return;
-  }
-  if (!isRecord(value)) {
-    return;
-  }
-
-  for (const [key, nested] of Object.entries(value)) {
-    const nextPath = [...path, key];
-    if (forbiddenPathFieldNames.has(key)) {
-      throw new RouteHttpError("FORBIDDEN_PATH_PARAMETER", "Pencil file paths are session-owned", {
-        parameter: formatParameterPath(nextPath)
-      }, 400);
-    }
-    assertNoForbiddenPathFields(nested, nextPath);
-  }
-}
-
-function formatParameterPath(path: Array<string | number>): string {
-  return path.map((part) => String(part)).join(".");
 }
 
 function requiredString(input: UnknownRecord, field: string): string {
@@ -417,15 +372,6 @@ async function getOwnedRequirement(store: FormaStore, productId: string, require
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function safeStorePath(store: FormaRoutesStore, ...segments: string[]): string {
-  const home = resolve(store.home);
-  const file = resolve(home, ...segments);
-  if (file !== home && !file.startsWith(`${home}${sep}`)) {
-    throw new RouteNotFoundError("FILE_NOT_FOUND", "File not found", { path: segments.join("/") });
-  }
-  return file;
 }
 
 async function fileExists(file: string): Promise<boolean> {
