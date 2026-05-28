@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { copyFile, mkdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { cleanupArtifactTmpDirs } from "./artifact-tmp-cleanup.js";
 import { BaselineService } from "./baseline.js";
 import { CopyService } from "./copy.js";
 import {
@@ -36,6 +37,7 @@ import { SyncService } from "./sync.js";
 import { FormaError } from "./errors.js";
 import { readSchemaNormalizationRecoveryState, SchemaNormalizationStartupError } from "./schema-normalization.js";
 import { writeYamlAtomic } from "./yaml.js";
+import { getFormaPaths } from "./paths.js";
 
 export interface ComponentGenerator {
   generateComponents(input: GenerateComponentsInput): Promise<GeneratedComponentCandidate>;
@@ -74,6 +76,9 @@ export interface FormaStore {
 }
 
 export async function createFormaStore(options: FormaStoreOptions): Promise<FormaStore> {
+  // Clean up stale .tmp-* artifact dirs (non-fatal on fs errors)
+  cleanupArtifactTmpDirs(getFormaPaths(options.home).productsDir);
+
   const normalization = await readSchemaNormalizationRecoveryState(options.home);
   if (normalization.mode !== "normal") {
     throw new SchemaNormalizationStartupError(normalization);
