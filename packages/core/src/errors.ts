@@ -59,7 +59,9 @@ export type FormaErrorCode =
   | "COMPONENT_REFRESH_UNSAFE"
   | "ARTIFACT_WRITE_FAIL"
   | "ARTIFACT_ALREADY_EXISTS"
-  | "ARTIFACT_NOT_FOUND";
+  | "ARTIFACT_NOT_FOUND"
+  | "OD_RUNTIME_FAILED"
+  | "OD_RUNTIME_TIMEOUT";
 
 export class FormaError extends Error {
   constructor(
