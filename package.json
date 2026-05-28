@@ -2,9 +2,10 @@
   "name": "forma-workspace",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.33.2",
   "engines": {
-    "node": ">=22"
+    "node": "~24",
+    "pnpm": "10.33.2"
   },
   "scripts": {
     "build": "pnpm --filter './packages/*' --filter '!@xenonbyte/forma-cli' -r --if-present build && pnpm --filter @xenonbyte/forma-cli build",
