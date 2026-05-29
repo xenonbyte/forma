@@ -498,6 +498,7 @@ describe('A3 versioned artifact read/write', () => {
     const store = createArtifactStore(productsRoot, lock);
     await expect(store.readArtifactVersion(productId, 'ZZCdEfGhIjKlMnOp', 9)).rejects.toThrow();
   });
+
 });
 ```
 
@@ -625,11 +626,13 @@ git commit -m "feat(core): add version-aware artifact write/read/list"
 
 ---
 
-## Task A4: assets ⊆ supportingFiles 一致性校验
+## Task A4: assets ⊆ supportingFiles 一致性校验 + 写入链路接入
 
 **Files:**
 - Create: `packages/core/src/artifact-assets.ts`
 - Test: `packages/core/tests/artifact-assets.test.ts`
+- Modify: `packages/core/src/artifact-store.ts`
+- Test: `packages/core/tests/artifact-store.test.ts`（接 A3 追加写入链路断言）
 
 - [ ] **Step 1: 写失败测试**
 
@@ -698,11 +701,90 @@ export function validateAssetsAgainstSupportingFiles(
 Run: `npx vitest run packages/core/tests/artifact-assets.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 5: 接入 artifact-store 写入校验**
+
+在 `packages/core/tests/artifact-store.test.ts` 追加写入链路断言：
+
+```ts
+describe('A4 assets write-path consistency', () => {
+  it('rejects flat writes when forma.assets is not a subset of supportingFiles', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    await expect(store.writeArtifact({
+      productId,
+      manifest: makeManifest({
+        kind: 'design-page',
+        supportingFiles: ['index.html'],
+        forma: {
+          requirementId: 'R-1234abcd',
+          pageId: 'login',
+          variant: 'default',
+          assets: [{ path: 'assets/missing@1x.png', density: [1], role: 'image' }],
+        },
+      }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    })).rejects.toThrow(/forma\.assets path missing/);
+  });
+
+  it('rejects version writes when forma.assets is not a subset of supportingFiles', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'DdCdEfGhIjKlMnOp';
+    await expect(store.writeArtifactVersion({
+      productId,
+      artifactId: aid,
+      version: 1,
+      manifest: makeManifest({
+        id: aid,
+        kind: 'design-page',
+        supportingFiles: ['index.html'],
+        forma: {
+          requirementId: 'R-1234abcd',
+          pageId: 'login',
+          variant: 'default',
+          assets: [{ path: 'assets/missing@1x.png', density: [1], role: 'image' }],
+        },
+      }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    })).rejects.toThrow(/forma\.assets path missing/);
+  });
+});
+```
+
+在 `packages/core/src/artifact-store.ts`：
+
+```ts
+import { validateAssetsAgainstSupportingFiles } from './artifact-assets.js';
+```
+
+在 `normalizeAndValidateManifest()` 的 `validateArtifactManifest(normalized)` 通过后、返回前插入：
+
+```ts
+  const assetsValidation = validateAssetsAgainstSupportingFiles(
+    validation.value.forma ?? {},
+    validation.value.supportingFiles,
+  );
+  if (!assetsValidation.ok) {
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      `Invalid artifact manifest: ${assetsValidation.error}`,
+      { artifactId },
+    );
+  }
+```
+
+这让旧 `writeArtifact()` 与新 `writeArtifactVersion()` 共同继承 `assets ⊆ supportingFiles` 约束；不要只把 helper 留成孤立 API。
+
+- [ ] **Step 6: 跑写入链路测试确认通过**
+
+Run: `npx vitest run packages/core/tests/artifact-assets.test.ts packages/core/tests/artifact-store.test.ts`
+Expected: PASS（helper 用例通过；version 写入会拒绝不一致 manifest）
+
+- [ ] **Step 7: 提交**
 
 ```bash
-git add packages/core/src/artifact-assets.ts packages/core/tests/artifact-assets.test.ts
-git commit -m "feat(core): validate manifest.forma.assets are subset of supportingFiles"
+git add packages/core/src/artifact-assets.ts packages/core/src/artifact-store.ts packages/core/tests/artifact-assets.test.ts packages/core/tests/artifact-store.test.ts
+git commit -m "feat(core): enforce manifest.forma.assets subset on artifact writes"
 ```
 
 ---
@@ -952,6 +1034,7 @@ describe('A6 backfill', () => {
     const second = await backfillDesignArtifacts({ home: store.home });
     expect(first.migrated).toBe(1);
     expect(second.migrated).toBe(0);
+    expect(second.recovered).toBe(0);
   });
 
   it('builds a design pointer for migrated design-page artifacts', async () => {
@@ -984,6 +1067,24 @@ describe('A6 backfill', () => {
     expect(await store.products.listDesignPointers(p.id)).toHaveLength(1);
   });
 
+  it('recovers an interrupted migration where v1 exists, flat manifest is gone, and pointer is missing', async () => {
+    const store = await makeStore();
+    const p = await store.products.createProduct({ name: 'X', description: 'y' });
+    const artifactDir = join(store.home, 'data', 'products', p.id, 'od-project', 'artifacts', 'AbCdEfGhIjKlMnOp');
+    await mkdir(join(artifactDir, 'v1'), { recursive: true });
+    await writeFile(join(artifactDir, 'v1', 'manifest.json'), JSON.stringify({
+      version: 1, id: 'AbCdEfGhIjKlMnOp', kind: 'design-page', renderer: 'html',
+      title: 'Legacy', entry: 'index.html', status: 'complete', exports: ['index.html'],
+      forma: { requirementId: 'R-1234abcd', pageId: 'R-1234abcd', variant: 'default' },
+      createdAt: '2026-05-28T00:00:00.000Z', updatedAt: '2026-05-28T00:00:00.000Z',
+    }), 'utf8');
+    await writeFile(join(artifactDir, 'v1', 'index.html'), '<h1>already copied</h1>', 'utf8');
+
+    const report = await backfillDesignArtifacts({ home: store.home });
+    expect(report.recovered).toBe(1);
+    expect(await store.products.listDesignPointers(p.id)).toHaveLength(1);
+  });
+
   it('runs product pointer writes under the product mutation lock', async () => {
     const store = await makeStore();
     const p = await store.products.createProduct({ name: 'X', description: 'y' });
@@ -991,7 +1092,7 @@ describe('A6 backfill', () => {
     const operations: string[] = [];
     await backfillDesignArtifacts({
       home: store.home,
-      productMutationLock: { run: async (input, fn) => { operations.push(input.operation); return fn({ warnings: [] }); } },
+      productMutationLock: { run: async (input, fn) => { operations.push(input.operation); return fn({ operation: input.operation, product_id: input.product_id, warnings: [] }); } },
     });
     expect(operations).toContain('backfill_design_artifacts');
   });
@@ -1047,7 +1148,7 @@ async function backfillDesignArtifactsLocked(home: string, products: ProductServ
   try {
     productIds = (await readdir(productsRoot, { withFileTypes: true }))
       .filter((e) => e.isDirectory() && /^P-[a-f0-9]{6}$/.test(e.name)).map((e) => e.name);
-  } catch { return report; }
+  } catch { return; }
 
   for (const productId of productIds) {
     const artifactsDir = getArtifactsDir(productsRoot, productId);
@@ -1059,16 +1160,18 @@ async function backfillDesignArtifactsLocked(home: string, products: ProductServ
 
     for (const artifactId of artifactIds) {
       const flatManifest = join(artifactsDir, artifactId, 'manifest.json');
-      const isFlat = await fileExists(flatManifest);
-      if (!isFlat) { report.skipped += 1; continue; } // 已是版本化布局
       const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, 1);
+      const isFlat = await fileExists(flatManifest);
+      if (!isFlat) {
+        // 崩溃恢复窗口：v1 已写入、flat manifest 已删除，但指针可能还没写。
+        const recovered = await recoverExistingV1(products, productId, artifactId, versionDir, report);
+        if (recovered === 'missing') report.skipped += 1;
+        continue;
+      }
       if (await dirExists(versionDir)) {
-        const existing = JSON.parse(await readFile(join(versionDir, 'manifest.json'), 'utf8')) as ArtifactManifest;
-        const validation = validateArtifactManifest(existing);
-        if (!validation.ok) { report.notes.push(`blocked ${artifactId}: existing v1 invalid: ${validation.error}`); report.skipped += 1; continue; }
-        await cleanupFlatLegacyAfterVersionExists(join(artifactsDir, artifactId));
-        await maybeSetPointer(products, productId, artifactId, existing);
-        report.recovered += 1;
+        // flat manifest 仍在但 v1 已存在：先确认 v1 有效并补指针，再清理 flat 遗留。
+        const recovered = await recoverExistingV1(products, productId, artifactId, versionDir, report);
+        if (recovered === 'handled') await cleanupFlatLegacyAfterVersionExists(join(artifactsDir, artifactId));
         continue;
       }
 
@@ -1077,6 +1180,9 @@ async function backfillDesignArtifactsLocked(home: string, products: ProductServ
       const requirementId = legacy.requirementId;
       const isDesignPage = newKind === 'design-page';
       const pageId = requirementId ?? artifactId; // best-effort（见 plan 现实增量 #6）
+      if (isDesignPage && legacy.forma?.pageId === undefined) {
+        report.notes.push(`inferred pageId for ${artifactId}: ${pageId}`);
+      }
 
       const migrated: ArtifactManifest = {
         ...legacy,
@@ -1095,6 +1201,25 @@ async function backfillDesignArtifactsLocked(home: string, products: ProductServ
       await maybeSetPointer(products, productId, artifactId, migrated);
     }
   }
+}
+
+type RecoverExistingV1Result = 'missing' | 'invalid' | 'handled';
+
+async function recoverExistingV1(
+  products: ProductService,
+  productId: string,
+  artifactId: string,
+  versionDir: string,
+  report: BackfillReport,
+): Promise<RecoverExistingV1Result> {
+  if (!(await dirExists(versionDir))) return 'missing';
+  const existing = JSON.parse(await readFile(join(versionDir, 'manifest.json'), 'utf8')) as ArtifactManifest;
+  const validation = validateArtifactManifest(existing);
+  if (!validation.ok) { report.notes.push(`blocked ${artifactId}: existing v1 invalid: ${validation.error}`); report.skipped += 1; return 'invalid'; }
+  const pointerWritten = await maybeSetPointer(products, productId, artifactId, existing);
+  if (pointerWritten) report.recovered += 1;
+  else report.skipped += 1;
+  return 'handled';
 }
 
 async function moveLegacyDirIntoV1(artifactDir: string, versionDir: string, migratedManifest: ArtifactManifest): Promise<void> {
@@ -1119,8 +1244,10 @@ async function cleanupFlatLegacyAfterVersionExists(artifactDir: string): Promise
   }
 }
 
-async function maybeSetPointer(products: ProductService, productId: string, artifactId: string, manifest: ArtifactManifest): Promise<void> {
-  if (manifest.kind !== 'design-page' || !manifest.forma?.requirementId || !manifest.forma.pageId || !manifest.forma.variant) return;
+async function maybeSetPointer(products: ProductService, productId: string, artifactId: string, manifest: ArtifactManifest): Promise<boolean> {
+  if (manifest.kind !== 'design-page' || !manifest.forma?.requirementId || !manifest.forma.pageId || !manifest.forma.variant) return false;
+  const current = await products.getDesignPointer(productId, manifest.forma.requirementId, manifest.forma.pageId, manifest.forma.variant);
+  if (current?.artifactId === artifactId && current.version === 1 && current.designStatus === 'active') return false;
   await products.setDesignPointerLocked(productId, {
     requirementId: manifest.forma.requirementId,
     pageId: manifest.forma.pageId,
@@ -1129,6 +1256,7 @@ async function maybeSetPointer(products: ProductService, productId: string, arti
     version: 1,
     designStatus: 'active',
   });
+  return true;
 }
 
 async function fileExists(file: string): Promise<boolean> {
@@ -1164,7 +1292,39 @@ Expected: 全绿（A1–A6 全通过、无类型错误、现有 core 用例不�
 
 # Part B — P2：内容迁移（craft + styles）
 
-> ⚠️ B 组的 B5（styles.ts）与 B6（product config）改 `styleMetadataSchema` 与 `productSchema`，会**破坏现有依赖旧 style 格式的测试**（`product-config.test.ts`/`product-session-style.test.ts`/`copy-assets.test.ts`）。按 B1→B2→B3→B4→B5→B6 顺序执行；B5/B6 内含对受影响测试的同步修改步骤。
+> ⚠️ B 组的 B5（styles.ts）与 B6（product config）改 `styleMetadataSchema` 与 `productSchema`，会**破坏现有依赖旧 style 格式的测试**（`product-config.test.ts`/`product-session-style.test.ts`/`copy-assets.test.ts`）。按 B0→B1→B2→B3→B4→B5→B6 顺序执行；B5/B6 内含对受影响测试的同步修改步骤。
+
+## Task B0: root 脚本 YAML 依赖准备
+
+**Files:**
+- Modify: `package.json`
+- Modify: `pnpm-lock.yaml`
+
+**Why:** B2/B3 的 root 迁移脚本、B2/B3 catalog 测试、B5 `scripts/copy-assets.ts` 都会从仓库根直接 import `js-yaml`。当前只有 `packages/core` 依赖 `js-yaml`；root scripts 不能依赖 transitive workspace package 解析，否则 `npx tsx scripts/*.ts` / `pnpm typecheck:scripts` 会出现 `ERR_MODULE_NOT_FOUND` 或 TS 类型错误。
+
+- [ ] **Step 1: 添加 root dev dependency**
+
+```bash
+pnpm add -Dw js-yaml @types/js-yaml
+```
+
+Expected: root `package.json` 增加 `devDependencies.js-yaml` 与 `devDependencies.@types/js-yaml`，`pnpm-lock.yaml` 更新。
+
+- [ ] **Step 2: 验证 root scripts 可解析依赖**
+
+```bash
+node -e "import('js-yaml').then(() => console.log('js-yaml ok'))"
+pnpm typecheck:scripts
+```
+
+Expected: `js-yaml ok`；scripts typecheck 通过（或只暴露后续任务尚未创建脚本的预期缺口）。
+
+- [ ] **Step 3: 提交**
+
+```bash
+git add package.json pnpm-lock.yaml
+git commit -m "build: add root yaml dependency for migration scripts"
+```
 
 ## Task B1: 迁移 craft 规则 + core 读取 API
 
@@ -1177,10 +1337,14 @@ Expected: 全绿（A1–A6 全通过、无类型错误、现有 core 用例不�
 
 ```bash
 # 从上游冻结 fork 拷入仓库根 craft/（verbatim）
+OPEN_DESIGN=/Users/xubo/x-studio/forma2-cankao/open-design
+OPEN_DESIGN_SHA=$(git -C "$OPEN_DESIGN" rev-parse HEAD)
+test "$OPEN_DESIGN_SHA" = 914c5b3a153903222953631fc499041d0df8ffa3
 mkdir -p craft
-cp /Users/xubo/x-studio/forma2-cankao/open-design/craft/*.md craft/
+cp "$OPEN_DESIGN"/craft/*.md craft/
 # 归属：保留上游 LICENSE（Apache 2.0）
-cp /Users/xubo/x-studio/forma2-cankao/open-design/LICENSE craft/LICENSE.upstream 2>/dev/null || true
+cp "$OPEN_DESIGN"/LICENSE craft/LICENSE.upstream
+test -s craft/LICENSE.upstream
 ls -1 craft/
 ```
 Expected: 列出 `README.md accessibility-baseline.md animation-discipline.md anti-ai-slop.md color.md form-validation.md laws-of-ux.md rtl-and-bidi.md state-coverage.md typography-hierarchy-editorial.md typography-hierarchy.md typography.md`（11 内容 + README）。
@@ -1189,8 +1353,18 @@ Expected: 列出 `README.md accessibility-baseline.md animation-discipline.md an
 ```markdown
 # Attribution
 Craft design rules vendored from open-design (`craft/`), Apache License 2.0.
-Upstream: https://github.com/<open-design upstream> — frozen at the DESIGN-v8 vendored SHA.
+Upstream: https://github.com/nexu-io/open-design
+Frozen commit: 914c5b3a153903222953631fc499041d0df8ffa3
+License file: `LICENSE.upstream`
 Do not edit content verbatim; treat as read-only knowledge source delivered via MCP.
+```
+
+再执行归属校验：
+
+```bash
+test -s craft/ATTRIBUTION.md
+rg -q "914c5b3a153903222953631fc499041d0df8ffa3" craft/ATTRIBUTION.md
+rg -q "Apache License" craft/LICENSE.upstream
 ```
 
 - [ ] **Step 2: 写失败测试**
@@ -1287,6 +1461,8 @@ git commit -m "feat(core): vendor craft design rules + add craft reading API"
 
 ## Task B2: 迁移 150 brand 风格（3 文件）+ 重写 styles.yaml
 
+**Prerequisite:** B0 已添加 root `js-yaml` / `@types/js-yaml`，否则本任务脚本和测试不可执行。
+
 **Files:**
 - Replace: 仓库根 `styles/`（删旧 72 个、置入上游 150 brand 三文件）
 - Create: 临时迁移脚本 `scripts/migrate-brand-styles.ts`（一次性、产出 `styles/styles.yaml` 新格式）
@@ -1337,6 +1513,7 @@ const REPO_STYLES = resolve('styles');
 interface BrandEntry { name: string; description: string; category?: string; upstream?: string; design_md_path: string; tokens_css_path: string; components_html_path: string; }
 
 async function main() {
+  await assertRequiredUpstreamFiles();
   const names = (await readdir(UPSTREAM, { withFileTypes: true }))
     .filter((e) => e.isDirectory() && e.name !== '_schema')
     .map((e) => e.name);
@@ -1354,7 +1531,8 @@ async function main() {
     const dst = join(REPO_STYLES, name);
     await mkdir(dst, { recursive: true });
     for (const f of ['DESIGN.md', 'tokens.css', 'components.html']) {
-      if (files.includes(f)) await cp(join(src, f), join(dst, f));
+      if (!files.includes(f)) throw new Error(`Brand style ${name} missing required ${f}`);
+      await cp(join(src, f), join(dst, f));
     }
     const description = await firstParagraph(join(dst, 'DESIGN.md'));
     entries.push({
@@ -1376,6 +1554,12 @@ async function firstParagraph(designMd: string): Promise<string> {
   return (quote ? quote.replace(/^>\s*/, '') : 'Brand design system').slice(0, 200);
 }
 
+async function assertRequiredUpstreamFiles() {
+  const root = '/Users/xubo/x-studio/forma2-cankao/open-design';
+  await readFile(join(root, 'design-systems', 'README.md'), 'utf8');
+  await readFile(join(root, 'LICENSE'), 'utf8');
+}
+
 main().catch((e) => { console.error(e); process.exitCode = 1; });
 ```
 
@@ -1383,8 +1567,30 @@ main().catch((e) => { console.error(e); process.exitCode = 1; });
 
 ```bash
 npx tsx scripts/migrate-brand-styles.ts
-# 保留上游 MIT 归属
-cp /Users/xubo/x-studio/forma2-cankao/open-design/design-systems/README.md styles/ATTRIBUTION.md 2>/dev/null || true
+OPEN_DESIGN=/Users/xubo/x-studio/forma2-cankao/open-design
+OPEN_DESIGN_SHA=$(git -C "$OPEN_DESIGN" rev-parse HEAD)
+test "$OPEN_DESIGN_SHA" = 914c5b3a153903222953631fc499041d0df8ffa3
+cp "$OPEN_DESIGN"/design-systems/README.md styles/ATTRIBUTION.upstream.md
+cp "$OPEN_DESIGN"/LICENSE styles/LICENSE.open-design-upstream
+cat > styles/ATTRIBUTION.md <<'EOF'
+# Attribution
+
+Brand and system style catalog content vendored from open-design `design-systems/` and `skills/`.
+Upstream: https://github.com/nexu-io/open-design
+Frozen commit: 914c5b3a153903222953631fc499041d0df8ffa3
+
+Third-party design-system sources documented by the upstream catalog include:
+- https://github.com/bergside/awesome-design-skills (MIT)
+- https://github.com/VoltAgent/awesome-design-md / getdesign package (MIT)
+
+Keep `ATTRIBUTION.upstream.md` and `LICENSE.open-design-upstream` with the bundled styles.
+EOF
+test -s styles/ATTRIBUTION.md
+test -s styles/ATTRIBUTION.upstream.md
+test -s styles/LICENSE.open-design-upstream
+rg -q "914c5b3a153903222953631fc499041d0df8ffa3" styles/ATTRIBUTION.md
+rg -q "bergside/awesome-design-skills" styles/ATTRIBUTION.md
+rg -q "VoltAgent/awesome-design-md" styles/ATTRIBUTION.md
 find styles -maxdepth 2 -name DESIGN.md | wc -l   # 期望 >=150
 ```
 Expected: 打印 `migrated 150 brand styles`（或实际发现数）；`styles/<name>/{DESIGN.md,tokens.css,components.html}` 就位；`styles/styles.yaml` 为新格式。
@@ -1406,6 +1612,8 @@ git commit -m "feat(styles): migrate 150 brand styles to 3-file format + new sty
 ---
 
 ## Task B3: 迁移 36 系统风格目录 stub（元数据）
+
+**Prerequisite:** B0 已添加 root `js-yaml` / `@types/js-yaml`。
 
 **Files:**
 - Create: `styles/_system/system-styles.yaml`（脚本产出）
@@ -1650,6 +1858,8 @@ git commit -m "refactor(core): styles.ts to 3-file brand format + system-style c
 
 ## Task B5: 改造 `scripts/copy-assets.ts`（新格式校验 + craft 拷贝）
 
+**Prerequisite:** B0 已添加 root `js-yaml` / `@types/js-yaml`，因为 `scripts/copy-assets.ts` 由 root `pnpm typecheck:scripts` 编译。
+
 **Files:**
 - Modify: `scripts/copy-assets.ts`
 - Test: `packages/cli/tests/copy-assets.test.ts`（已存在，改）
@@ -1702,7 +1912,7 @@ export const assetCopies: AssetCopy[] = [
     await access(resolve(styleDir, "components.html"), constants.F_OK);
 ```
 
-(c) `parseStyleIndex` 重写为读 `design_md_path`/`tokens_css_path`/`components_html_path`，删 `variables` 解析；`BuiltInStyleAsset` 增 `tokensCssPath`/`componentsHtmlPath`。鉴于 `js-yaml` 已是依赖，**直接用 `load()` 解析 styles.yaml** 替换手写行解析器（更稳）：
+(c) `parseStyleIndex` 重写为读 `design_md_path`/`tokens_css_path`/`components_html_path`，删 `variables` 解析；`BuiltInStyleAsset` 增 `tokensCssPath`/`componentsHtmlPath`。鉴于 B0 已把 `js-yaml` 加入 root devDependencies，**直接用 `load()` 解析 styles.yaml** 替换手写行解析器（更稳）：
 
 ```ts
 import { load } from 'js-yaml';
@@ -1834,9 +2044,9 @@ Expected: core 全绿、copy-assets 校验通过。全量 `pnpm typecheck` 若�
 ## 整批 Definition of Done（P1+P2）
 
 - **Part A**：A1–A6 全通过；`manifest.forma.*` 加性校验生效（旧 manifest 仍过）、新 kind + `normalizeKind` 就位；`v{n}` 版本读写 + 版本列举可用；`assets ⊆ supportingFiles` 校验可用；当前版本指针索引（唯一性 + rollback 改指针不删旧版本）可用；幂等补齐脚本对合成旧 fixture 迁移 + 幂等 + 建指针通过。`pnpm --filter @xenonbyte/forma-core test`/`typecheck` 全绿。
-- **Part B**：craft 11 文件 + 归属落地、core 可 `listCraftDocs`/`readCraftDoc`；150 brand 三文件 + 新 `styles.yaml` 就位；36 系统风格目录 stub 就位；`styles.ts` 新格式（按类型返回 brand 三文件 / system 元数据、无 `variables`）；`copy-assets.ts` 新格式校验 + craft 拷贝 + `--check` 通过；产品配置拆 `brand_style`+`system_style`。core 包测试/typecheck 绿。
+- **Part B**：root `js-yaml` / `@types/js-yaml` 依赖就位且 `pnpm typecheck:scripts` 不因 YAML import 失败；craft 11 文件 + 归属落地、core 可 `listCraftDocs`/`readCraftDoc`；150 brand 三文件 + 新 `styles.yaml` 就位；36 系统风格目录 stub 就位；`styles.ts` 新格式（按类型返回 brand 三文件 / system 元数据、无 `variables`）；`copy-assets.ts` 新格式校验 + craft 拷贝 + `--check` 通过；产品配置拆 `brand_style`+`system_style`。core 包测试/typecheck 绿。
 - **已知跨批缺口（不在本批修复，归后续 phase）**：(1) generate→save 管线、预览渲染、读取面 A–G 属 P3/P4；(2) `mcp`/`server`/`web` 对旧 `product.style` 形态的适配属 P4/P8；本批若令全量 `pnpm typecheck` 变红，在 PR 描述里显式标注归属，勿在本批扩散修改它们的业务逻辑。
-- **许可归属**：`craft/`（Apache 2.0）与 `styles/`（MIT，源 `bergside/awesome-design-skills`）随包保留 LICENSE/ATTRIBUTION，记录上游冻结 SHA。
+- **许可归属**：`craft/` 保留 `LICENSE.upstream` + `ATTRIBUTION.md`（Apache 2.0，open-design commit `914c5b3a153903222953631fc499041d0df8ffa3`）；`styles/` 保留 `ATTRIBUTION.md` + `ATTRIBUTION.upstream.md` + `LICENSE.open-design-upstream`，明确记录 open-design commit `914c5b3a153903222953631fc499041d0df8ffa3`、`bergside/awesome-design-skills`（MIT）与 `VoltAgent/awesome-design-md` / getdesign（MIT）。归属文件缺失、SHA 缺失、源项目缺失任一项都必须让对应任务失败。
 
 ---
 
