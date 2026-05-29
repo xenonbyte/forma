@@ -557,3 +557,61 @@ describe('A3 versioned artifact read/write', () => {
   });
 
 });
+
+describe('A4 assets write-path consistency', () => {
+  let testRoot: string;
+  let productsRoot: string;
+  const productId = 'P-ab1234'; // must match /^P-[a-f0-9]{6}$/
+
+  beforeEach(async () => {
+    testRoot = join(tmpdir(), `artifact-store-a4-${randomBytes(6).toString('hex')}`);
+    productsRoot = join(testRoot, 'data', 'products');
+    await mkdir(productsRoot, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testRoot, { recursive: true, force: true });
+  });
+
+  it('rejects flat writes when forma.assets is not a subset of supportingFiles', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    await expect(store.writeArtifact({
+      productId,
+      manifest: makeManifest({
+        kind: 'design-page',
+        supportingFiles: ['index.html'],
+        forma: {
+          requirementId: 'R-1234abcd',
+          pageId: 'login',
+          variant: 'default',
+          assets: [{ path: 'assets/missing@1x.png', density: [1], role: 'image' }],
+        },
+      }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    })).rejects.toThrow(/forma\.assets path missing/);
+  });
+
+  it('rejects version writes when forma.assets is not a subset of supportingFiles', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'DdCdEfGhIjKlMnOp';
+    await expect(store.writeArtifactVersion({
+      productId,
+      artifactId: aid,
+      version: 1,
+      manifest: makeManifest({
+        id: aid,
+        kind: 'design-page',
+        supportingFiles: ['index.html'],
+        forma: {
+          requirementId: 'R-1234abcd',
+          pageId: 'login',
+          variant: 'default',
+          assets: [{ path: 'assets/missing@1x.png', density: [1], role: 'image' }],
+        },
+      }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    })).rejects.toThrow(/forma\.assets path missing/);
+  });
+});

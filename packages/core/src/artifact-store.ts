@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
+import { validateAssetsAgainstSupportingFiles } from './artifact-assets.js';
 import { validateArtifactManifest, validateSupportingPath, type ArtifactManifest } from './artifact-manifest.js';
 import {
   getArtifactDir,
@@ -95,6 +96,17 @@ function normalizeAndValidateManifest(manifest: ArtifactManifest, artifactId: st
     throw new FormaError(
       'ARTIFACT_INVALID_INPUT',
       `Invalid artifact manifest: ${validation.error}`,
+      { artifactId },
+    );
+  }
+  const assetsValidation = validateAssetsAgainstSupportingFiles(
+    validation.value.forma ?? {},
+    validation.value.supportingFiles,
+  );
+  if (!assetsValidation.ok) {
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      `Invalid artifact manifest: ${assetsValidation.error}`,
       { artifactId },
     );
   }
