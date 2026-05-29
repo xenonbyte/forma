@@ -6,16 +6,6 @@ import { z } from "zod";
 import { FormaError } from "./errors.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
-export const styleVariablesSchema = z.object({
-  primary: z.string(),
-  background: z.string(),
-  "text-primary": z.string(),
-  "font-heading": z.string(),
-  "font-body": z.string(),
-  "border-radius": z.string(),
-  "spacing-unit": z.string()
-});
-
 export const styleDesignPathSchema = z.string().min(1).refine(isSafeStyleDesignPath, {
   message: "design_md_path must be a relative path under styles/"
 });
@@ -23,17 +13,40 @@ export const styleDesignPathSchema = z.string().min(1).refine(isSafeStyleDesignP
 export const styleMetadataSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
+  category: z.string().optional(),
+  upstream: z.string().optional(),
   design_md_path: styleDesignPathSchema,
-  variables: styleVariablesSchema
-});
+  tokens_css_path: z.string().min(1),
+  components_html_path: z.string().min(1),
+}).strict();
+
+export const systemStyleSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  mode: z.literal('design-system'),
+  category: z.string().optional(),
+  upstream: z.string().optional(),
+}).strict();
 
 export const stylesIndexSchema = z.object({
   last_synced: z.string().optional(),
-  styles: z.array(styleMetadataSchema)
+  styles: z.array(styleMetadataSchema),
 });
 
-export type StyleVariables = z.infer<typeof styleVariablesSchema>;
+export const systemStylesIndexSchema = z.object({
+  systems: z.array(systemStyleSchema),
+});
+
 export type StyleMetadata = z.infer<typeof styleMetadataSchema>;
+export type SystemStyleMetadata = z.infer<typeof systemStyleSchema>;
+
+export interface BrandStyleContent {
+  kind: 'brand';
+  metadata: StyleMetadata;
+  designMd: string;
+  tokensCss: string;
+  componentsHtml: string;
+}
 
 export interface StyleServiceOptions {
   home: string;
@@ -42,16 +55,6 @@ export interface StyleServiceOptions {
 }
 
 export interface CraftDoc { slug: string; content: string; }
-
-const defaultVariables: StyleVariables = {
-  primary: "#111827",
-  background: "#FFFFFF",
-  "text-primary": "#111827",
-  "font-heading": "Inter",
-  "font-body": "Inter",
-  "border-radius": "8px",
-  "spacing-unit": "8px"
-};
 
 export class StyleService {
   private readonly home: string;
@@ -96,18 +99,24 @@ export class StyleService {
     return (await readYamlAs(this.stylesIndexFile, stylesIndexSchema)).styles;
   }
 
-  async getStyle(name: string): Promise<{ metadata: StyleMetadata; designMd: string }> {
-    const metadata = (await this.listStyles()).find((style) => style.name === name);
-    if (!metadata) {
-      throw new FormaError("INVALID_INPUT", "Style not found", { style: name });
-    }
-
-    const designMd = await readFile(this.safeHomeStylePath(metadata.design_md_path), "utf8");
-    return { metadata, designMd };
+  async getStyle(name: string): Promise<BrandStyleContent> {
+    const metadata = (await this.listStyles()).find((s) => s.name === name);
+    if (!metadata) throw new FormaError('INVALID_INPUT', 'Style not found', { style: name });
+    const [designMd, tokensCss, componentsHtml] = await Promise.all([
+      readFile(this.safeHomeStylePath(metadata.design_md_path), 'utf8'),
+      readFile(this.safeHomeStylePath(metadata.tokens_css_path), 'utf8'),
+      readFile(this.safeHomeStylePath(metadata.components_html_path), 'utf8'),
+    ]);
+    return { kind: 'brand', metadata, designMd, tokensCss, componentsHtml };
   }
 
-  withDefaultVariables(partial: Partial<StyleVariables>): StyleVariables {
-    return styleVariablesSchema.parse({ ...defaultVariables, ...partial });
+  async listSystemStyles(): Promise<SystemStyleMetadata[]> {
+    const file = join(this.stylesDir, '_system', 'system-styles.yaml');
+    if (!(await fileExists(file))) {
+      // 首装/未拷贝时从 bundled 读取
+      return (await readYamlAs(join(this.bundledStylesDir, '_system', 'system-styles.yaml'), systemStylesIndexSchema)).systems;
+    }
+    return (await readYamlAs(file, systemStylesIndexSchema)).systems;
   }
 
   private safeHomeStylePath(relativePath: string): string {
