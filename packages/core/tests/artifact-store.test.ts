@@ -495,3 +495,65 @@ describe('ArtifactStore', () => {
     });
   });
 });
+
+describe('A3 versioned artifact read/write', () => {
+  // 注意：现有测试里 lock 是每个 it 内局部声明（const lock = getProductMutationLock(testRoot)），
+  // 不在 beforeEach。下面每个 it 同样自行声明 lock。productId/productsRoot/testRoot 为模块级，已就绪。
+  let testRoot: string;
+  let productsRoot: string;
+  const productId = 'P-ab1234'; // must match /^P-[a-f0-9]{6}$/
+
+  beforeEach(async () => {
+    testRoot = join(tmpdir(), `artifact-store-a3-${randomBytes(6).toString('hex')}`);
+    productsRoot = join(testRoot, 'data', 'products');
+    await mkdir(productsRoot, { recursive: true });
+  });
+
+  afterEach(async () => {
+    await rm(testRoot, { recursive: true, force: true });
+  });
+
+  it('writes and reads v1 then v2 of the same artifact id', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'AbCdEfGhIjKlMnOp';
+    await store.writeArtifactVersion({
+      productId, artifactId: aid, version: 1,
+      manifest: makeManifest({ id: aid, kind: 'design-page', forma: { requirementId: 'R-1234abcd', pageId: 'login', variant: 'default' } }),
+      files: new Map([['index.html', Buffer.from('<h1>v1</h1>')]]),
+    });
+    await store.writeArtifactVersion({
+      productId, artifactId: aid, version: 2,
+      manifest: makeManifest({ id: aid, kind: 'design-page', forma: { requirementId: 'R-1234abcd', pageId: 'login', variant: 'default' } }),
+      files: new Map([['index.html', Buffer.from('<h1>v2</h1>')]]),
+    });
+
+    const v1 = await store.readArtifactVersion(productId, aid, 1);
+    const v2 = await store.readArtifactVersion(productId, aid, 2);
+    expect(v1.manifest.id).toBe(aid);
+    expect(v2.manifest.id).toBe(aid);
+
+    const versions = await store.listArtifactVersions(productId, aid);
+    expect(versions.sort((a, b) => a - b)).toEqual([1, 2]);
+  });
+
+  it('rejects overwriting an existing version', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'BbCdEfGhIjKlMnOp';
+    const input = {
+      productId, artifactId: aid, version: 1,
+      manifest: makeManifest({ id: aid, kind: 'design-page', forma: { variant: 'default' } }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    };
+    await store.writeArtifactVersion(input);
+    await expect(store.writeArtifactVersion(input)).rejects.toThrow(/already exists/i);
+  });
+
+  it('readArtifactVersion throws ARTIFACT_NOT_FOUND for missing version', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    await expect(store.readArtifactVersion(productId, 'ZZCdEfGhIjKlMnOp', 9)).rejects.toThrow();
+  });
+
+});
