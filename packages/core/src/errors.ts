@@ -20,7 +20,8 @@ export type FormaErrorCode =
   | "ARTIFACT_MANIFEST_INVALID"
   | "STYLE_NOT_FOUND"
   | "REQUIREMENT_PAGE_NOT_FOUND"
-  | "REQUIREMENT_PRODUCT_MISMATCH";
+  | "REQUIREMENT_PRODUCT_MISMATCH"
+  | "PREVIEW_RENDER_FAILED";
 
 export class FormaError extends Error {
   constructor(

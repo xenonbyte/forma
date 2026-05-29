@@ -134,6 +134,12 @@ FORMA_HOME=/path/to/forma-home forma status
 
 Runtime data lives under `$FORMA_HOME/data`, including products, requirements, baselines, copy translations, and history. Forma also stores local manifests, shared skills/commands, built-in styles, library files, and server state under the same Forma home.
 
+## Preview rendering (puppeteer)
+
+`@xenonbyte/forma-core` renders design-artifact bundles to PNG via bundled `puppeteer` (ships Chromium).
+- First `pnpm install` downloads Chromium (~150MB+). Air-gapped: pre-seed `~/.cache/puppeteer`, or set `PUPPETEER_SKIP_DOWNLOAD=1` and point `PUPPETEER_EXECUTABLE_PATH` at a system Chrome.
+- CI: cache `~/.cache/puppeteer`; headless launch uses `--no-sandbox`.
+
 ## Verification
 
 Useful release-readiness checks:

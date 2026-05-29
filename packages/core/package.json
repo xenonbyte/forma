@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
+    "puppeteer": "^25.1.0",
     "zod": "^4.1.0"
   }
 }
