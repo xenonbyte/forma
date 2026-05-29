@@ -6,6 +6,10 @@ import {
   getArtifactManifestPath,
   getArtifactPreviewPath,
   getOdProjectManifestPath,
+  getArtifactVersionDir,
+  getArtifactVersionManifestPath,
+  getArtifactVersionAssetsDir,
+  getArtifactVersionPreviewPath,
 } from '../src/artifact-paths.js';
 
 describe('artifact-paths', () => {
@@ -62,5 +66,25 @@ describe('artifact-paths', () => {
     expect(() => getArtifactDir(root, pid, '../AbCdEfGhIjKlMnOp')).toThrow('Invalid artifact id');
     expect(() => getArtifactManifestPath(root, pid, 'AbCdEfGhIjKlMnOp/../../escape')).toThrow('Invalid artifact id');
     expect(() => getArtifactPreviewPath(root, pid, 'AbCdEfGhIjKlMnOp\0', '2x')).toThrow('Invalid artifact id');
+  });
+});
+
+describe('A2 versioned artifact paths', () => {
+  const root = '/tmp/products';
+  const pid = 'P-ab1234';
+  const aid = 'AbCdEfGhIjKlMnOp';
+
+  it('builds v{n} dir under artifacts/{id}', () => {
+    expect(getArtifactVersionDir(root, pid, aid, 1).endsWith('od-project/artifacts/AbCdEfGhIjKlMnOp/v1')).toBe(true);
+  });
+  it('builds version manifest / assets / preview paths', () => {
+    expect(getArtifactVersionManifestPath(root, pid, aid, 2).endsWith('v2/manifest.json')).toBe(true);
+    expect(getArtifactVersionAssetsDir(root, pid, aid, 3).endsWith('v3/assets')).toBe(true);
+    expect(getArtifactVersionPreviewPath(root, pid, aid, 1, '2x').endsWith('v1/preview/2x.png')).toBe(true);
+  });
+  it('rejects non-positive-integer version', () => {
+    expect(() => getArtifactVersionDir(root, pid, aid, 0)).toThrow();
+    expect(() => getArtifactVersionDir(root, pid, aid, 1.5)).toThrow();
+    expect(() => getArtifactVersionDir(root, pid, aid, -1)).toThrow();
   });
 });

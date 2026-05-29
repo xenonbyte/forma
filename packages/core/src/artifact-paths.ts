@@ -83,6 +83,49 @@ function validateArtifactId(artifactId: string): string {
   return artifactId;
 }
 
+function validateVersion(version: number): string {
+  if (!Number.isInteger(version) || version < 1) {
+    throw new FormaError('ARTIFACT_INVALID_INPUT', 'Invalid artifact version', { version });
+  }
+  return `v${version}`;
+}
+
+export function getArtifactVersionDir(
+  productsRoot: string, productId: string, artifactId: string, version: number,
+): string {
+  return safeArtifactPath(
+    productsRoot, validateProductId(productId), 'od-project', 'artifacts',
+    validateArtifactId(artifactId), validateVersion(version),
+  );
+}
+
+export function getArtifactVersionManifestPath(
+  productsRoot: string, productId: string, artifactId: string, version: number,
+): string {
+  return safeArtifactPath(
+    productsRoot, validateProductId(productId), 'od-project', 'artifacts',
+    validateArtifactId(artifactId), validateVersion(version), 'manifest.json',
+  );
+}
+
+export function getArtifactVersionAssetsDir(
+  productsRoot: string, productId: string, artifactId: string, version: number,
+): string {
+  return safeArtifactPath(
+    productsRoot, validateProductId(productId), 'od-project', 'artifacts',
+    validateArtifactId(artifactId), validateVersion(version), 'assets',
+  );
+}
+
+export function getArtifactVersionPreviewPath(
+  productsRoot: string, productId: string, artifactId: string, version: number, resolution: '1x' | '2x',
+): string {
+  return safeArtifactPath(
+    productsRoot, validateProductId(productId), 'od-project', 'artifacts',
+    validateArtifactId(artifactId), validateVersion(version), 'preview', `${resolution}.png`,
+  );
+}
+
 function safeArtifactPath(productsRoot: string, ...segments: string[]): string {
   const path = join(productsRoot, ...segments);
   const root = resolve(productsRoot);
