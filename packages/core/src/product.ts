@@ -16,6 +16,19 @@ import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
 
+const pointerDesignStatuses = ['pending', 'active', 'expired'] as const;
+
+const designPointerSchema = z.object({
+  requirementId: z.string().min(1),
+  pageId: z.string().min(1),
+  variant: z.string().min(1),
+  artifactId: z.string().min(1),
+  version: z.number().int().min(1),
+  designStatus: z.enum(pointerDesignStatuses),
+}).strict();
+
+export type DesignPointer = z.infer<typeof designPointerSchema>;
+
 const productIndexEntrySchema = z.object({
   id: productIdSchema,
   name: z.string().min(1),
@@ -34,7 +47,8 @@ const productSchema = productIndexEntrySchema.extend({
   requirements: z.record(z.string(), z.object({
     latestArtifactId: z.string().optional()
   })).optional(),
-  designSystemArtifactId: z.string().optional()
+  designSystemArtifactId: z.string().optional(),
+  designPointers: z.array(designPointerSchema).optional()
 }).superRefine((product, context) => {
   const hasLanguages = product.languages !== undefined;
   const hasDefaultLanguage = product.default_language !== undefined;
@@ -66,6 +80,17 @@ const productSchema = productIndexEntrySchema.extend({
       message: "default_language must be included in languages",
       path: ["default_language"]
     });
+  }
+
+  if (product.designPointers) {
+    const seen = new Set<string>();
+    for (const ptr of product.designPointers) {
+      const key = JSON.stringify([ptr.requirementId, ptr.pageId, ptr.variant]);
+      if (seen.has(key)) {
+        context.addIssue({ code: 'custom', message: `duplicate design pointer for (${ptr.requirementId},${ptr.pageId},${ptr.variant})`, path: ['designPointers'] });
+      }
+      seen.add(key);
+    }
   }
 });
 
@@ -192,6 +217,35 @@ export class ProductService {
     const product = await this.getProduct(productId);
     const updated = productSchema.parse({ ...product, designSystemArtifactId: artifactId });
     await writeYamlAtomic(this.productFile(updated.id), updated);
+  }
+
+  async setDesignPointerLocked(productId: string, pointer: DesignPointer): Promise<void> {
+    const product = await this.getProduct(productId);
+    const parsed = designPointerSchema.parse(pointer);
+    const rest = (product.designPointers ?? []).filter(
+      (p) => !(p.requirementId === parsed.requirementId && p.pageId === parsed.pageId && p.variant === parsed.variant),
+    );
+    const updated = productSchema.parse({ ...product, designPointers: [...rest, parsed] });
+    await writeYamlAtomic(this.productFile(updated.id), updated);
+  }
+
+  async getDesignPointer(productId: string, requirementId: string, pageId: string, variant: string): Promise<DesignPointer | undefined> {
+    const product = await this.getProduct(productId);
+    return (product.designPointers ?? []).find(
+      (p) => p.requirementId === requirementId && p.pageId === pageId && p.variant === variant,
+    );
+  }
+
+  async listDesignPointers(productId: string): Promise<DesignPointer[]> {
+    return (await this.getProduct(productId)).designPointers ?? [];
+  }
+
+  async rollbackDesignPointerLocked(productId: string, requirementId: string, pageId: string, variant: string, targetVersion: number): Promise<void> {
+    const current = await this.getDesignPointer(productId, requirementId, pageId, variant);
+    if (!current) {
+      throw new FormaError('ARTIFACT_NOT_FOUND', 'Design pointer not found', { productId, requirementId, pageId, variant });
+    }
+    await this.setDesignPointerLocked(productId, { ...current, version: targetVersion });
   }
 
   private async readProductIndex(): Promise<z.infer<typeof productIndexSchema>> {
