@@ -27,3 +27,5 @@ export * from "./artifact-tmp-cleanup.js";
 export * from "./artifact-store.js";
 export * from "./od-runtime.js";
 export * from "./preview-store.js";
+export * from "./artifact-assets.js";
+export * from "./backfill-design-artifacts.js";
