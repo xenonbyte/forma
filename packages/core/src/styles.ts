@@ -38,7 +38,10 @@ export type StyleMetadata = z.infer<typeof styleMetadataSchema>;
 export interface StyleServiceOptions {
   home: string;
   bundledStylesDir?: string;
+  bundledCraftDir?: string;
 }
+
+export interface CraftDoc { slug: string; content: string; }
 
 const defaultVariables: StyleVariables = {
   primary: "#111827",
@@ -55,12 +58,14 @@ export class StyleService {
   private readonly stylesDir: string;
   private readonly stylesIndexFile: string;
   private readonly bundledStylesDir: string;
+  private readonly bundledCraftDir: string;
 
   constructor(options: StyleServiceOptions) {
     this.home = options.home;
     this.stylesDir = join(options.home, "styles");
     this.stylesIndexFile = join(this.stylesDir, "styles.yaml");
     this.bundledStylesDir = options.bundledStylesDir ?? getDefaultBundledStylesDir();
+    this.bundledCraftDir = options.bundledCraftDir ?? getDefaultBundledCraftDir();
   }
 
   async installBuiltInStyles(): Promise<StyleMetadata[]> {
@@ -117,10 +122,35 @@ export class StyleService {
 
     return file;
   }
+
+  async listCraftDocs(): Promise<CraftDoc[]> {
+    const { readdir } = await import('node:fs/promises');
+    const entries = await readdir(this.bundledCraftDir);
+    const slugs = entries
+      .filter((f) => f.endsWith('.md') && f !== 'README.md' && f !== 'ATTRIBUTION.md')
+      .map((f) => f.replace(/\.md$/, ''));
+    return Promise.all(slugs.map((slug) => this.readCraftDoc(slug)));
+  }
+
+  async readCraftDoc(slug: string): Promise<CraftDoc> {
+    if (!/^[a-z0-9-]+$/.test(slug)) {
+      throw new FormaError('INVALID_INPUT', 'Invalid craft slug', { slug });
+    }
+    const file = join(this.bundledCraftDir, `${slug}.md`);
+    try {
+      return { slug, content: await readFile(file, 'utf8') };
+    } catch {
+      throw new FormaError('INVALID_INPUT', 'Craft doc not found', { slug });
+    }
+  }
 }
 
 function getDefaultBundledStylesDir(): string {
   return resolve(dirname(fileURLToPath(import.meta.url)), "../../../styles");
+}
+
+function getDefaultBundledCraftDir(): string {
+  return resolve(dirname(fileURLToPath(import.meta.url)), "../../../craft");
 }
 
 function isSafeStyleDesignPath(value: string): boolean {

@@ -29,6 +29,7 @@ import { getFormaPaths } from "./paths.js";
 export interface FormaStoreOptions {
   home: string;
   bundledStylesDir?: string;
+  bundledCraftDir?: string;
   productMutationLock?: ProductMutationLock;
   onProductMutationWarning?: (warning: string) => void;
   artifactStore?: ArtifactStore;
@@ -99,7 +100,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     productMutationLock,
     onProductMutationWarning: options.onProductMutationWarning
   };
-  const styles = new StyleService({ home: options.home, bundledStylesDir: options.bundledStylesDir });
+  const styles = new StyleService({ home: options.home, bundledStylesDir: options.bundledStylesDir, bundledCraftDir: options.bundledCraftDir });
   const products = new ProductService({ home: options.home, ...productMutationOptions });
   const sessions = new SessionService({ home: options.home, products, ...productMutationOptions });
   const copy = new CopyService({ home: options.home, ...productMutationOptions });
