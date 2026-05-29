@@ -1,895 +1,751 @@
 styles:
-  - name: linear
-    description: Focused tool UI
-    design_md_path: styles/linear/DESIGN.md
-    variables:
-      primary: '#5E6AD2'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
-  - name: claude
-    description: Warm editorial workspace
-    design_md_path: styles/claude/DESIGN.md
-    variables:
-      primary: '#D97706'
-      background: '#FFFBF5'
-      text-primary: '#1F2937'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+  - name: agentic
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/agentic/DESIGN.md
+    tokens_css_path: styles/agentic/tokens.css
+    components_html_path: styles/agentic/components.html
   - name: airbnb
-    description: >-
-      A warm, generous consumer marketplace anchored on a clean white canvas and Airbnb Rausch (#ff385c), the single
-      brand voltage that carries every primary CTA, search-button orb, a...
+    description: 'Category: E-Commerce & Retail'
     design_md_path: styles/airbnb/DESIGN.md
-    variables:
-      primary: '#ff385c'
-      background: '#ffffff'
-      text-primary: '#222222'
-      font-heading: '''Airbnb Cereal VF'', Circular, -apple-system, system-ui, Roboto, ''Helvetica Neue'', sans-serif'
-      font-body: '''Airbnb Cereal VF'', Circular, sans-serif'
-      border-radius: 14px
-      spacing-unit: 12px
+    tokens_css_path: styles/airbnb/tokens.css
+    components_html_path: styles/airbnb/components.html
   - name: airtable
-    description: >-
-      A sober, editorial workflow-software interface anchored on white canvas and dark-ink type, where brand voltage
-      comes from full-bleed signature cards in coral, dark green, peach,...
+    description: 'Category: Design & Creative'
     design_md_path: styles/airtable/DESIGN.md
-    variables:
-      primary: '#181d26'
-      background: '#ffffff'
-      text-primary: '#181d26'
-      font-heading: Haas Groot Disp, Haas, sans-serif
-      font-body: Haas, sans-serif
-      border-radius: 10px
-      spacing-unit: 16px
+    tokens_css_path: styles/airtable/tokens.css
+    components_html_path: styles/airtable/components.html
+  - name: ant
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/ant/DESIGN.md
+    tokens_css_path: styles/ant/tokens.css
+    components_html_path: styles/ant/components.html
   - name: apple
-    description: A photography-first interface that turns marketing into a museum gallery.
+    description: 'Category: Media & Consumer'
     design_md_path: styles/apple/DESIGN.md
-    variables:
-      primary: '#0066cc'
-      background: '#ffffff'
-      text-primary: '#1d1d1f'
-      font-heading: SF Pro Display, system-ui, -apple-system, sans-serif
-      font-body: SF Pro Text, system-ui, -apple-system, sans-serif
-      border-radius: 11px
-      spacing-unit: 17px
+    tokens_css_path: styles/apple/tokens.css
+    components_html_path: styles/apple/components.html
+  - name: application
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/application/DESIGN.md
+    tokens_css_path: styles/application/tokens.css
+    components_html_path: styles/application/components.html
+  - name: arc
+    description: 'Category: Productivity & SaaS'
+    design_md_path: styles/arc/DESIGN.md
+    tokens_css_path: styles/arc/tokens.css
+    components_html_path: styles/arc/components.html
+  - name: artistic
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/artistic/DESIGN.md
+    tokens_css_path: styles/artistic/tokens.css
+    components_html_path: styles/artistic/components.html
+  - name: atelier-zero
+    description: 'Category: Editorial · Studio'
+    design_md_path: styles/atelier-zero/DESIGN.md
+    tokens_css_path: styles/atelier-zero/tokens.css
+    components_html_path: styles/atelier-zero/components.html
+  - name: bento
+    description: 'Category: Layout & Structure'
+    design_md_path: styles/bento/DESIGN.md
+    tokens_css_path: styles/bento/tokens.css
+    components_html_path: styles/bento/components.html
   - name: binance
-    description: >-
-      A confident financial-platform interface anchored on a deep near-black canvas, where Binance's iconic yellow
-      (#FCD535) carries every primary CTA, brand accent, and value-claim m...
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/binance/DESIGN.md
-    variables:
-      primary: '#fcd535'
-      background: '#fcd535'
-      text-primary: '#181a20'
-      font-heading: BinanceNova, sans-serif
-      font-body: BinanceNova, sans-serif
-      border-radius: 6px
-      spacing-unit: 16px
+    tokens_css_path: styles/binance/tokens.css
+    components_html_path: styles/binance/components.html
   - name: bmw
-    description: >-
-      BMW's corporate site — distinct from BMW M's motorsport-bombastic variant, this is a measured and settled
-      corporate-automotive interface.
+    description: 'Category: Automotive'
     design_md_path: styles/bmw/DESIGN.md
-    variables:
-      primary: '#1c69d4'
-      background: '#ffffff'
-      text-primary: '#262626'
-      font-heading: '''BMW Type Next Latin'', system-ui, -apple-system, BlinkMacSystemFont, ''Segoe UI'', Roboto, sans-serif'
-      font-body: '''BMW Type Next Latin'', sans-serif'
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/bmw/tokens.css
+    components_html_path: styles/bmw/components.html
   - name: bmw-m
-    description: >-
-      A motorsport-engineering interface anchored on a near-black canvas with white BMW Type Next Latin display
-      headlines in confident UPPERCASE.
+    description: 'Category: Automotive'
     design_md_path: styles/bmw-m/DESIGN.md
-    variables:
-      primary: '#ffffff'
-      background: '#000000'
-      text-primary: '#ffffff'
-      font-heading: BMWTypeNextLatin, sans-serif
-      font-body: BMWTypeNextLatin Light, BMWTypeNextLatin, sans-serif
-      border-radius: 6px
-      spacing-unit: 16px
+    tokens_css_path: styles/bmw-m/tokens.css
+    components_html_path: styles/bmw-m/components.html
+  - name: bold
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/bold/DESIGN.md
+    tokens_css_path: styles/bold/tokens.css
+    components_html_path: styles/bold/components.html
+  - name: brutalism
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/brutalism/DESIGN.md
+    tokens_css_path: styles/brutalism/tokens.css
+    components_html_path: styles/brutalism/components.html
   - name: bugatti
-    description: >-
-      An austere luxury-automotive interface that uses near-pure black canvas, white uppercase letterspaced display, and
-      full-bleed automotive photography as the only voltage.
+    description: 'Category: Automotive'
     design_md_path: styles/bugatti/DESIGN.md
-    variables:
-      primary: '#ffffff'
-      background: '#000000'
-      text-primary: '#ffffff'
-      font-heading: Bugatti Display, sans-serif
-      font-body: Bugatti Text Regular, serif
-      border-radius: 0px
-      spacing-unit: 16px
+    tokens_css_path: styles/bugatti/tokens.css
+    components_html_path: styles/bugatti/components.html
+  - name: cafe
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/cafe/DESIGN.md
+    tokens_css_path: styles/cafe/tokens.css
+    components_html_path: styles/cafe/components.html
   - name: cal
-    description: >-
-      A clean, calendar-software-first interface anchored on white canvas with black primary CTAs and custom Cal Sans
-      display typography.
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/cal/DESIGN.md
-    variables:
-      primary: '#111111'
-      background: '#ffffff'
-      text-primary: '#111111'
-      font-heading: Cal Sans, Inter, sans-serif
-      font-body: Inter, sans-serif
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/cal/tokens.css
+    components_html_path: styles/cal/components.html
+  - name: canva
+    description: 'Category: Design & Creative'
+    design_md_path: styles/canva/DESIGN.md
+    tokens_css_path: styles/canva/tokens.css
+    components_html_path: styles/canva/components.html
+  - name: cisco
+    description: 'Category: Backend & Data'
+    design_md_path: styles/cisco/DESIGN.md
+    tokens_css_path: styles/cisco/tokens.css
+    components_html_path: styles/cisco/components.html
+  - name: claude
+    description: 'Category: AI & LLM'
+    design_md_path: styles/claude/DESIGN.md
+    tokens_css_path: styles/claude/tokens.css
+    components_html_path: styles/claude/components.html
   - name: clay
-    description: A vibrant claymation-meets-data interface for Clay.com (GTM data-orchestration platform).
+    description: 'Category: Design & Creative'
     design_md_path: styles/clay/DESIGN.md
-    variables:
-      primary: '#0a0a0a'
-      background: '#fffaf0'
-      text-primary: '#0a0a0a'
-      font-heading: Plain Black, Inter, sans-serif
-      font-body: Inter, sans-serif
-      border-radius: 12px
-      spacing-unit: 16px
+    tokens_css_path: styles/clay/tokens.css
+    components_html_path: styles/clay/components.html
+  - name: claymorphism
+    description: 'Category: Morphism & Effects'
+    design_md_path: styles/claymorphism/DESIGN.md
+    tokens_css_path: styles/claymorphism/tokens.css
+    components_html_path: styles/claymorphism/components.html
+  - name: clean
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/clean/DESIGN.md
+    tokens_css_path: styles/clean/tokens.css
+    components_html_path: styles/clean/components.html
   - name: clickhouse
-    description: >-
-      A high-performance database interface anchored on near-pure black canvas with electric yellow as the brand
-      voltage.
+    description: 'Category: Backend & Data'
     design_md_path: styles/clickhouse/DESIGN.md
-    variables:
-      primary: '#faff69'
-      background: '#0a0a0a'
-      text-primary: '#ffffff'
-      font-heading: Inter, sans-serif
-      font-body: Inter, sans-serif
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/clickhouse/tokens.css
+    components_html_path: styles/clickhouse/components.html
   - name: cohere
-    description: >-
-      Cohere's 2026 web system is a controlled enterprise AI interface built from stark white editorial space, deep
-      green-black product bands, soft mineral surfaces, rounded media car...
+    description: 'Category: AI & LLM'
     design_md_path: styles/cohere/DESIGN.md
-    variables:
-      primary: '#17171c'
-      background: '#ffffff'
-      text-primary: '#212121'
-      font-heading: CohereText
-      font-body: Unica77 Cohere Web
-      border-radius: 16px
-      spacing-unit: 12px
+    tokens_css_path: styles/cohere/tokens.css
+    components_html_path: styles/cohere/components.html
   - name: coinbase
-    description: >-
-      An institutional-grade crypto exchange whose marketing surfaces read like a quietly-confident financial-services
-      brand.
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/coinbase/DESIGN.md
-    variables:
-      primary: '#0052ff'
-      background: '#ffffff'
-      text-primary: '#0a0b0d'
-      font-heading: '''Coinbase Display'', sans-serif'
-      font-body: '''Coinbase Sans'', sans-serif'
-      border-radius: 12px
-      spacing-unit: 20px
+    tokens_css_path: styles/coinbase/tokens.css
+    components_html_path: styles/coinbase/components.html
+  - name: colorful
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/colorful/DESIGN.md
+    tokens_css_path: styles/colorful/tokens.css
+    components_html_path: styles/colorful/components.html
   - name: composio
-    description: >-
-      A developer-tools brand for AI-agent tool integration whose marketing surfaces lean into a dark, technical
-      aesthetic with a single deep-electric-blue voltage (`#0007cd`).
+    description: 'Category: Backend & Data'
     design_md_path: styles/composio/DESIGN.md
-    variables:
-      primary: '#0007cd'
-      background: '#0f0f0f'
-      text-primary: '#ffffff'
-      font-heading: '''abcDiatype'', ui-sans-serif, system-ui, sans-serif'
-      font-body: '''abcDiatype'', ui-sans-serif, system-ui, sans-serif'
-      border-radius: 8px
-      spacing-unit: 20px
+    tokens_css_path: styles/composio/tokens.css
+    components_html_path: styles/composio/components.html
+  - name: contemporary
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/contemporary/DESIGN.md
+    tokens_css_path: styles/contemporary/tokens.css
+    components_html_path: styles/contemporary/components.html
+  - name: corporate
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/corporate/DESIGN.md
+    tokens_css_path: styles/corporate/tokens.css
+    components_html_path: styles/corporate/components.html
+  - name: cosmic
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/cosmic/DESIGN.md
+    tokens_css_path: styles/cosmic/tokens.css
+    components_html_path: styles/cosmic/components.html
+  - name: creative
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/creative/DESIGN.md
+    tokens_css_path: styles/creative/tokens.css
+    components_html_path: styles/creative/components.html
   - name: cursor
-    description: >-
-      An AI-first code editor whose marketing site reads like a quietly-confident developer-tools brand with a
-      warm-cream editorial canvas (`#f7f7f4`) instead of the typical dark IDE...
+    description: 'Category: Developer Tools'
     design_md_path: styles/cursor/DESIGN.md
-    variables:
-      primary: '#f54e00'
-      background: '#f7f7f4'
-      text-primary: '#26251e'
-      font-heading: '''CursorGothic'', sans-serif'
-      font-body: '''CursorGothic'', sans-serif'
-      border-radius: 8px
-      spacing-unit: 20px
+    tokens_css_path: styles/cursor/tokens.css
+    components_html_path: styles/cursor/components.html
+  - name: dashboard
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/dashboard/DESIGN.md
+    tokens_css_path: styles/dashboard/tokens.css
+    components_html_path: styles/dashboard/components.html
+  - name: default
+    description: 'Category: Starter'
+    design_md_path: styles/default/DESIGN.md
+    tokens_css_path: styles/default/tokens.css
+    components_html_path: styles/default/components.html
+  - name: discord
+    description: 'Category: Productivity & SaaS'
+    design_md_path: styles/discord/DESIGN.md
+    tokens_css_path: styles/discord/tokens.css
+    components_html_path: styles/discord/components.html
+  - name: dithered
+    description: 'Category: Retro & Nostalgic'
+    design_md_path: styles/dithered/DESIGN.md
+    tokens_css_path: styles/dithered/tokens.css
+    components_html_path: styles/dithered/components.html
+  - name: doodle
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/doodle/DESIGN.md
+    tokens_css_path: styles/doodle/tokens.css
+    components_html_path: styles/doodle/components.html
+  - name: dramatic
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/dramatic/DESIGN.md
+    tokens_css_path: styles/dramatic/tokens.css
+    components_html_path: styles/dramatic/components.html
+  - name: duolingo
+    description: 'Category: Productivity & SaaS'
+    design_md_path: styles/duolingo/DESIGN.md
+    tokens_css_path: styles/duolingo/tokens.css
+    components_html_path: styles/duolingo/components.html
+  - name: editorial
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/editorial/DESIGN.md
+    tokens_css_path: styles/editorial/tokens.css
+    components_html_path: styles/editorial/components.html
+  - name: elegant
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/elegant/DESIGN.md
+    tokens_css_path: styles/elegant/tokens.css
+    components_html_path: styles/elegant/components.html
   - name: elevenlabs
-    description: elevenlabs inspired design style
+    description: 'Category: AI & LLM'
     design_md_path: styles/elevenlabs/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/elevenlabs/tokens.css
+    components_html_path: styles/elevenlabs/components.html
+  - name: energetic
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/energetic/DESIGN.md
+    tokens_css_path: styles/energetic/tokens.css
+    components_html_path: styles/energetic/components.html
+  - name: enterprise
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/enterprise/DESIGN.md
+    tokens_css_path: styles/enterprise/tokens.css
+    components_html_path: styles/enterprise/components.html
   - name: expo
-    description: A React Native developer-platform whose marketing site reads like a quietly-confident infrastructure brand.
+    description: 'Category: Developer Tools'
     design_md_path: styles/expo/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#ffffff'
-      text-primary: '#171717'
-      font-heading: '''Inter'', sans-serif'
-      font-body: '''Inter'', sans-serif'
-      border-radius: 8px
-      spacing-unit: 20px
+    tokens_css_path: styles/expo/tokens.css
+    components_html_path: styles/expo/components.html
+  - name: expressive
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/expressive/DESIGN.md
+    tokens_css_path: styles/expressive/tokens.css
+    components_html_path: styles/expressive/components.html
+  - name: fantasy
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/fantasy/DESIGN.md
+    tokens_css_path: styles/fantasy/tokens.css
+    components_html_path: styles/fantasy/components.html
   - name: ferrari
-    description: A luxury-automotive brand whose marketing surfaces read as cinematic editorial.
+    description: 'Category: Automotive'
     design_md_path: styles/ferrari/DESIGN.md
-    variables:
-      primary: '#da291c'
-      background: '#181818'
-      text-primary: '#ffffff'
-      font-heading: '''FerrariSans'', sans-serif'
-      font-body: '''FerrariSans'', sans-serif'
-      border-radius: 6px
-      spacing-unit: 32px
+    tokens_css_path: styles/ferrari/tokens.css
+    components_html_path: styles/ferrari/components.html
   - name: figma
-    description: A confident black-and-white editorial frame interrupted by oversized, hand-cut pastel color blocks.
+    description: 'Category: Design & Creative'
     design_md_path: styles/figma/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: figmaSans
-      font-body: figmaSans
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/figma/tokens.css
+    components_html_path: styles/figma/components.html
+  - name: flat
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/flat/DESIGN.md
+    tokens_css_path: styles/flat/tokens.css
+    components_html_path: styles/flat/components.html
   - name: framer
-    description: >-
-      A confident dark-canvas builder marketing site that treats the page like a working artboard — pure black surfaces,
-      white display type set in GT Walsheim Medium with aggressive n...
+    description: 'Category: Design & Creative'
     design_md_path: styles/framer/DESIGN.md
-    variables:
-      primary: '#ffffff'
-      background: '#090909'
-      text-primary: '#ffffff'
-      font-heading: GT Walsheim Medium
-      font-body: Inter Variable
-      border-radius: 10px
-      spacing-unit: 15px
+    tokens_css_path: styles/framer/tokens.css
+    components_html_path: styles/framer/components.html
+  - name: friendly
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/friendly/DESIGN.md
+    tokens_css_path: styles/friendly/tokens.css
+    components_html_path: styles/friendly/components.html
+  - name: futuristic
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/futuristic/DESIGN.md
+    tokens_css_path: styles/futuristic/tokens.css
+    components_html_path: styles/futuristic/components.html
+  - name: github
+    description: 'Category: Developer Tools'
+    design_md_path: styles/github/DESIGN.md
+    tokens_css_path: styles/github/tokens.css
+    components_html_path: styles/github/components.html
+  - name: glassmorphism
+    description: 'Category: Morphism & Effects'
+    design_md_path: styles/glassmorphism/DESIGN.md
+    tokens_css_path: styles/glassmorphism/tokens.css
+    components_html_path: styles/glassmorphism/components.html
+  - name: gradient
+    description: 'Category: Morphism & Effects'
+    design_md_path: styles/gradient/DESIGN.md
+    tokens_css_path: styles/gradient/tokens.css
+    components_html_path: styles/gradient/components.html
   - name: hashicorp
-    description: >-
-      An enterprise-infrastructure marketing canvas built around a near-black ground (#000000) and a system of
-      per-product accent colors — Terraform purple, Vault yellow, Consul pink,...
+    description: 'Category: Backend & Data'
     design_md_path: styles/hashicorp/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#000000'
-      text-primary: '#ffffff'
-      font-heading: hashicorpSans
-      font-body: hashicorpSans
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/hashicorp/tokens.css
+    components_html_path: styles/hashicorp/components.html
+  - name: hud
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/hud/DESIGN.md
+    tokens_css_path: styles/hud/tokens.css
+    components_html_path: styles/hud/components.html
+  - name: huggingface
+    description: 'Category: AI & LLM'
+    design_md_path: styles/huggingface/DESIGN.md
+    tokens_css_path: styles/huggingface/tokens.css
+    components_html_path: styles/huggingface/components.html
   - name: ibm
-    description: >-
-      An enterprise-marketing canvas faithful to Carbon Design System: white surfaces, charcoal type, IBM Blue (#0f62fe)
-      as the single confident accent, and a deliberately flat-square...
+    description: 'Category: Media & Consumer'
     design_md_path: styles/ibm/DESIGN.md
-    variables:
-      primary: '#0f62fe'
-      background: '#ffffff'
-      text-primary: '#161616'
-      font-heading: IBM Plex Sans
-      font-body: IBM Plex Sans
-      border-radius: 6px
-      spacing-unit: 16px
+    tokens_css_path: styles/ibm/tokens.css
+    components_html_path: styles/ibm/components.html
   - name: intercom
-    description: >-
-      An editorial customer-service marketing canvas built around a soft cream-white ground, charcoal type set in Saans
-      (Intercom's proprietary geometric sans), and a single confident...
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/intercom/DESIGN.md
-    variables:
-      primary: '#111111'
-      background: '#f5f1ec'
-      text-primary: '#111111'
-      font-heading: Saans
-      font-body: Saans
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/intercom/tokens.css
+    components_html_path: styles/intercom/components.html
+  - name: kami
+    description: 'Category: Editorial & Print'
+    design_md_path: styles/kami/DESIGN.md
+    tokens_css_path: styles/kami/tokens.css
+    components_html_path: styles/kami/components.html
   - name: kraken
-    description: kraken inspired design style
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/kraken/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/kraken/tokens.css
+    components_html_path: styles/kraken/components.html
   - name: lamborghini
-    description: lamborghini inspired design style
+    description: 'Category: Automotive'
     design_md_path: styles/lamborghini/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
-  - name: linear.app
-    description: >-
-      A near-black product-focused marketing canvas built around #010102 (the deepest dark surface of any tool in this
-      collection), light gray text (#f7f8f8), and the signature Linear...
-    design_md_path: styles/linear.app/DESIGN.md
-    variables:
-      primary: '#5e6ad2'
-      background: '#010102'
-      text-primary: '#f7f8f8'
-      font-heading: Linear Display
-      font-body: Linear Text
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/lamborghini/tokens.css
+    components_html_path: styles/lamborghini/components.html
+  - name: levels
+    description: 'Category: Layout & Structure'
+    design_md_path: styles/levels/DESIGN.md
+    tokens_css_path: styles/levels/tokens.css
+    components_html_path: styles/levels/components.html
+  - name: linear-app
+    description: 'Category: Productivity & SaaS'
+    design_md_path: styles/linear-app/DESIGN.md
+    tokens_css_path: styles/linear-app/tokens.css
+    components_html_path: styles/linear-app/components.html
+  - name: lingo
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/lingo/DESIGN.md
+    tokens_css_path: styles/lingo/tokens.css
+    components_html_path: styles/lingo/components.html
+  - name: loom
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/loom/DESIGN.md
+    tokens_css_path: styles/loom/tokens.css
+    components_html_path: styles/loom/components.html
   - name: lovable
-    description: lovable inspired design style
+    description: 'Category: Developer Tools'
     design_md_path: styles/lovable/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/lovable/tokens.css
+    components_html_path: styles/lovable/components.html
+  - name: luxury
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/luxury/DESIGN.md
+    tokens_css_path: styles/luxury/tokens.css
+    components_html_path: styles/luxury/components.html
   - name: mastercard
-    description: mastercard inspired design style
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/mastercard/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/mastercard/tokens.css
+    components_html_path: styles/mastercard/components.html
+  - name: material
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/material/DESIGN.md
+    tokens_css_path: styles/material/tokens.css
+    components_html_path: styles/material/components.html
   - name: meta
-    description: >-
-      Meta's design system spans hardware commerce (Quest VR, Ray-Ban Meta AI glasses) and brand surfaces with a
-      confident product-merchandising voice.
+    description: 'Category: E-Commerce & Retail'
     design_md_path: styles/meta/DESIGN.md
-    variables:
-      primary: '#0064e0'
-      background: '#ffffff'
-      text-primary: '#1c1e21'
-      font-heading: Optimistic VF
-      font-body: Optimistic VF
-      border-radius: 6px
-      spacing-unit: 12px
+    tokens_css_path: styles/meta/tokens.css
+    components_html_path: styles/meta/components.html
+  - name: minimal
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/minimal/DESIGN.md
+    tokens_css_path: styles/minimal/tokens.css
+    components_html_path: styles/minimal/components.html
   - name: minimax
-    description: >-
-      MiniMax presents itself as a premium AI infrastructure brand through a striking duality — bold black-pill CTAs and
-      stark white canvas for marketing, paired with vibrant gradient...
+    description: 'Category: AI & LLM'
     design_md_path: styles/minimax/DESIGN.md
-    variables:
-      primary: '#0a0a0a'
-      background: '#ffffff'
-      text-primary: '#0a0a0a'
-      font-heading: DM Sans
-      font-body: DM Sans
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/minimax/tokens.css
+    components_html_path: styles/minimax/components.html
   - name: mintlify
-    description: >-
-      Mintlify presents documentation infrastructure with a dual-mode aesthetic — atmospheric sky-gradient marketing
-      heroes (cloud illustration backdrops, soft cream-to-blue washes) p...
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/mintlify/DESIGN.md
-    variables:
-      primary: '#0a0a0a'
-      background: '#ffffff'
-      text-primary: '#0a0a0a'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/mintlify/tokens.css
+    components_html_path: styles/mintlify/components.html
   - name: miro
-    description: >-
-      Miro presents itself as the AI-powered visual workspace through a confident, almost playful brand voice — anchored
-      by its signature canary yellow ({colors.brand-yellow}) wordmar...
+    description: 'Category: Design & Creative'
     design_md_path: styles/miro/DESIGN.md
-    variables:
-      primary: '#1c1c1e'
-      background: '#ffffff'
-      text-primary: '#1c1c1e'
-      font-heading: Roobert PRO
-      font-body: Roobert PRO
-      border-radius: 8px
-      spacing-unit: 16px
-  - name: mistral.ai
-    description: >-
-      Mistral AI brands itself with a singular signature — atmospheric sunset gradients (mustard, orange, deep red)
-      layered over photography of mountains, plus a horizontal "sunset st...
-    design_md_path: styles/mistral.ai/DESIGN.md
-    variables:
-      primary: '#fa520f'
-      background: '#ffffff'
-      text-primary: '#1f1f1f'
-      font-heading: PP Editorial Old
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/miro/tokens.css
+    components_html_path: styles/miro/components.html
+  - name: mission-control
+    description: 'Category: Developer Tools'
+    design_md_path: styles/mission-control/DESIGN.md
+    tokens_css_path: styles/mission-control/tokens.css
+    components_html_path: styles/mission-control/components.html
+  - name: mistral-ai
+    description: 'Category: AI & LLM'
+    design_md_path: styles/mistral-ai/DESIGN.md
+    tokens_css_path: styles/mistral-ai/tokens.css
+    components_html_path: styles/mistral-ai/components.html
+  - name: modern
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/modern/DESIGN.md
+    tokens_css_path: styles/modern/tokens.css
+    components_html_path: styles/modern/components.html
   - name: mongodb
-    description: >-
-      MongoDB carries a strong dual-mode visual identity — dark deep-teal hero bands with bright MongoDB green
-      ({colors.brand-green}) CTAs paired with stark white documentation surfaces.
+    description: 'Category: Backend & Data'
     design_md_path: styles/mongodb/DESIGN.md
-    variables:
-      primary: '#00ed64'
-      background: '#ffffff'
-      text-primary: '#001e2b'
-      font-heading: Euclid Circular A
-      font-body: Euclid Circular A
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/mongodb/tokens.css
+    components_html_path: styles/mongodb/components.html
+  - name: mono
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/mono/DESIGN.md
+    tokens_css_path: styles/mono/tokens.css
+    components_html_path: styles/mono/components.html
+  - name: neobrutalism
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/neobrutalism/DESIGN.md
+    tokens_css_path: styles/neobrutalism/tokens.css
+    components_html_path: styles/neobrutalism/components.html
+  - name: neon
+    description: 'Category: Morphism & Effects'
+    design_md_path: styles/neon/DESIGN.md
+    tokens_css_path: styles/neon/tokens.css
+    components_html_path: styles/neon/components.html
+  - name: neumorphism
+    description: 'Category: Morphism & Effects'
+    design_md_path: styles/neumorphism/DESIGN.md
+    tokens_css_path: styles/neumorphism/tokens.css
+    components_html_path: styles/neumorphism/components.html
   - name: nike
-    description: >-
-      A photography-first commerce system built on extreme typographic contrast — towering uppercase Futura display
-      lockups burned into editorial campaign imagery, sitting above a den...
+    description: 'Category: E-Commerce & Retail'
     design_md_path: styles/nike/DESIGN.md
-    variables:
-      primary: '#111111'
-      background: '#ffffff'
-      text-primary: '#111111'
-      font-heading: Helvetica Now Display Medium
-      font-body: Helvetica Now Text
-      border-radius: 24px
-      spacing-unit: 12px
+    tokens_css_path: styles/nike/tokens.css
+    components_html_path: styles/nike/components.html
   - name: notion
-    description: >-
-      Notion presents itself as the all-in-one workspace through a confident, illustration-rich brand voice — anchored
-      by a deep navy hero band ({colors.brand-navy}) decorated with br...
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/notion/DESIGN.md
-    variables:
-      primary: '#5645d4'
-      background: '#ffffff'
-      text-primary: '#1a1a1a'
-      font-heading: Notion Sans
-      font-body: Notion Sans
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/notion/tokens.css
+    components_html_path: styles/notion/components.html
   - name: nvidia
-    description: >-
-      An engineering-grade marketing system organized around two surface modes — a deep black canvas for hero and footer
-      chapters and a flat paper-white canvas for body content — conn...
+    description: 'Category: Media & Consumer'
     design_md_path: styles/nvidia/DESIGN.md
-    variables:
-      primary: '#76b900'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: NVIDIA-EMEA
-      font-body: NVIDIA-EMEA
-      border-radius: 2px
-      spacing-unit: 12px
+    tokens_css_path: styles/nvidia/tokens.css
+    components_html_path: styles/nvidia/components.html
   - name: ollama
-    description: >-
-      An almost defiantly minimal documentation-first system that treats the home page like a Markdown README —
-      paper-white canvas, 36px center-aligned heading, a single black pill CT...
+    description: 'Category: AI & LLM'
     design_md_path: styles/ollama/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: SF Pro Rounded
-      font-body: ui-sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
-  - name: opencode.ai
-    description: >-
-      A terminal-native marketing system rendered entirely in Berkeley Mono — every word on the page, from the hero
-      headline down to the footer fine print, is monospaced.
-    design_md_path: styles/opencode.ai/DESIGN.md
-    variables:
-      primary: '#201d1d'
-      background: '#fdfcfc'
-      text-primary: '#201d1d'
-      font-heading: Berkeley Mono
-      font-body: Berkeley Mono
-      border-radius: 4px
-      spacing-unit: 12px
+    tokens_css_path: styles/ollama/tokens.css
+    components_html_path: styles/ollama/components.html
+  - name: openai
+    description: 'Category: AI & LLM'
+    design_md_path: styles/openai/DESIGN.md
+    tokens_css_path: styles/openai/tokens.css
+    components_html_path: styles/openai/components.html
+  - name: opencode-ai
+    description: 'Category: AI & LLM'
+    design_md_path: styles/opencode-ai/DESIGN.md
+    tokens_css_path: styles/opencode-ai/tokens.css
+    components_html_path: styles/opencode-ai/components.html
+  - name: pacman
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/pacman/DESIGN.md
+    tokens_css_path: styles/pacman/tokens.css
+    components_html_path: styles/pacman/components.html
+  - name: paper
+    description: 'Category: Retro & Nostalgic'
+    design_md_path: styles/paper/DESIGN.md
+    tokens_css_path: styles/paper/tokens.css
+    components_html_path: styles/paper/components.html
+  - name: perplexity
+    description: 'Category: AI & LLM'
+    design_md_path: styles/perplexity/DESIGN.md
+    tokens_css_path: styles/perplexity/tokens.css
+    components_html_path: styles/perplexity/components.html
+  - name: perspective
+    description: 'Category: Layout & Structure'
+    design_md_path: styles/perspective/DESIGN.md
+    tokens_css_path: styles/perspective/tokens.css
+    components_html_path: styles/perspective/components.html
   - name: pinterest
-    description: >-
-      A photography-first discovery system organized around the Pinterest Red CTA, the masonry pin grid, and a soft
-      warm-cream chrome that gets out of the imagery's way.
+    description: 'Category: Media & Consumer'
     design_md_path: styles/pinterest/DESIGN.md
-    variables:
-      primary: '#e60023'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: Pin Sans
-      font-body: Pin Sans
-      border-radius: 16px
-      spacing-unit: 12px
+    tokens_css_path: styles/pinterest/tokens.css
+    components_html_path: styles/pinterest/components.html
   - name: playstation
-    description: >-
-      A three-surface marketing system organized around alternating black, white, and PlayStation Blue chapters that
-      scroll past the viewer like a console launch trailer.
+    description: 'Category: Media & Consumer'
     design_md_path: styles/playstation/DESIGN.md
-    variables:
-      primary: '#0070d1'
-      background: '#0070d1'
-      text-primary: '#000000'
-      font-heading: PlayStation SST
-      font-body: PlayStation SST
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/playstation/tokens.css
+    components_html_path: styles/playstation/components.html
   - name: posthog
-    description: >-
-      A playful developer-tools system rendered on a warm cream canvas with hand-drawn hedgehog mascots dotted across
-      every page like marginalia in a sketchbook.
+    description: 'Category: Backend & Data'
     design_md_path: styles/posthog/DESIGN.md
-    variables:
-      primary: '#f7a501'
-      background: '#eeefe9'
-      text-primary: '#23251d'
-      font-heading: IBM Plex Sans Variable
-      font-body: IBM Plex Sans Variable
-      border-radius: 6px
-      spacing-unit: 12px
+    tokens_css_path: styles/posthog/tokens.css
+    components_html_path: styles/posthog/components.html
+  - name: premium
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/premium/DESIGN.md
+    tokens_css_path: styles/premium/tokens.css
+    components_html_path: styles/premium/components.html
+  - name: professional
+    description: 'Category: Professional & Corporate'
+    design_md_path: styles/professional/DESIGN.md
+    tokens_css_path: styles/professional/tokens.css
+    components_html_path: styles/professional/components.html
+  - name: publication
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/publication/DESIGN.md
+    tokens_css_path: styles/publication/tokens.css
+    components_html_path: styles/publication/components.html
   - name: raycast
-    description: raycast inspired design style
+    description: 'Category: Developer Tools'
     design_md_path: styles/raycast/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/raycast/tokens.css
+    components_html_path: styles/raycast/components.html
+  - name: refined
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/refined/DESIGN.md
+    tokens_css_path: styles/refined/tokens.css
+    components_html_path: styles/refined/components.html
   - name: renault
-    description: >-
-      Renault's web presence pairs the freshly-modernised Renault diamond (the 2021 flat-line rhombus mark) with a stark
-      black-and-white canvas, a signature Sunlight Yellow accent, an...
+    description: 'Category: Automotive'
     design_md_path: styles/renault/DESIGN.md
-    variables:
-      primary: '#ffed00'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: NouvelR
-      font-body: NouvelR
-      border-radius: 4px
-      spacing-unit: 16px
+    tokens_css_path: styles/renault/tokens.css
+    components_html_path: styles/renault/components.html
   - name: replicate
-    description: >-
-      Replicate's marketing surfaces pair the warm-cream developer-tools aesthetic of an indie ML playground with a
-      confident hot-orange brand accent and a signature display typeface...
+    description: 'Category: AI & LLM'
     design_md_path: styles/replicate/DESIGN.md
-    variables:
-      primary: '#ea2804'
-      background: '#f9f7f3'
-      text-primary: '#202020'
-      font-heading: rb-freigeist-neue
-      font-body: basier-square
-      border-radius: 10px
-      spacing-unit: 12px
+    tokens_css_path: styles/replicate/tokens.css
+    components_html_path: styles/replicate/components.html
   - name: resend
-    description: >-
-      Resend's marketing surfaces sit on a near-pure black canvas with off-white text and a single signature color — the
-      deep editorial-serif Domaine Display headline mark — that give...
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/resend/DESIGN.md
-    variables:
-      primary: '#fcfdff'
-      background: '#000000'
-      text-primary: '#fcfdff'
-      font-heading: Domaine Display
-      font-body: ABC Favorit
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/resend/tokens.css
+    components_html_path: styles/resend/components.html
+  - name: retro
+    description: 'Category: Retro & Nostalgic'
+    design_md_path: styles/retro/DESIGN.md
+    tokens_css_path: styles/retro/tokens.css
+    components_html_path: styles/retro/components.html
   - name: revolut
-    description: >-
-      Revolut's marketing surfaces pair a stark black canvas with the brand's cobalt-violet (`#494fdf`) and a wide
-      accent palette of deep, fully-saturated product colours — teal, ligh...
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/revolut/DESIGN.md
-    variables:
-      primary: '#494fdf'
-      background: '#494fdf'
-      text-primary: '#191c1f'
-      font-heading: Aeonik Pro
-      font-body: Inter
-      border-radius: 12px
-      spacing-unit: 14px
+    tokens_css_path: styles/revolut/tokens.css
+    components_html_path: styles/revolut/components.html
   - name: runwayml
-    description: runwayml inspired design style
+    description: 'Category: AI & LLM'
     design_md_path: styles/runwayml/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/runwayml/tokens.css
+    components_html_path: styles/runwayml/components.html
   - name: sanity
-    description: sanity inspired design style
+    description: 'Category: Backend & Data'
     design_md_path: styles/sanity/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/sanity/tokens.css
+    components_html_path: styles/sanity/components.html
   - name: sentry
-    description: >-
-      An inspired interpretation of Sentri's design language — a developer-tools brand built on a deep purple-violet
-      midnight canvas, electric lime accents, and a slightly subversive...
+    description: 'Category: Backend & Data'
     design_md_path: styles/sentry/DESIGN.md
-    variables:
-      primary: '#150f23'
-      background: '#150f23'
-      text-primary: '#1f1633'
-      font-heading: Rubik, -apple-system, system-ui, Segoe UI, Helvetica, Arial, sans-serif
-      font-body: Rubik, -apple-system, system-ui, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/sentry/tokens.css
+    components_html_path: styles/sentry/components.html
+  - name: shadcn
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/shadcn/DESIGN.md
+    tokens_css_path: styles/shadcn/tokens.css
+    components_html_path: styles/shadcn/components.html
   - name: shopify
-    description: >-
-      An inspired interpretation of Shopifi's design language — a cinematic commerce platform that runs two parallel
-      design tracks.
+    description: 'Category: E-Commerce & Retail'
     design_md_path: styles/shopify/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#000000'
-      text-primary: '#000000'
-      font-heading: NeueHaasGrotesk Display, Helvetica, Arial, sans-serif
-      font-body: Inter Variable, Inter, Helvetica, Arial, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/shopify/tokens.css
+    components_html_path: styles/shopify/components.html
+  - name: simple
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/simple/DESIGN.md
+    tokens_css_path: styles/simple/tokens.css
+    components_html_path: styles/simple/components.html
+  - name: skeumorphism
+    description: 'Category: Morphism & Effects'
+    design_md_path: styles/skeumorphism/DESIGN.md
+    tokens_css_path: styles/skeumorphism/tokens.css
+    components_html_path: styles/skeumorphism/components.html
   - name: slack
-    description: >-
-      An inspired interpretation of Slacc's design language — a workplace messaging brand built on a deep aubergine
-      primary, with cream-lavender hero gradients, blue inline links, and...
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/slack/DESIGN.md
-    variables:
-      primary: '#4a154b'
-      background: '#ffffff'
-      text-primary: '#1d1d1d'
-      font-heading: Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif
-      font-body: Salesforce-Sans, system-ui, -apple-system, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/slack/tokens.css
+    components_html_path: styles/slack/components.html
+  - name: sleek
+    description: 'Category: Modern & Minimal'
+    design_md_path: styles/sleek/DESIGN.md
+    tokens_css_path: styles/sleek/tokens.css
+    components_html_path: styles/sleek/components.html
   - name: spacex
-    description: spacex inspired design style
+    description: 'Category: Media & Consumer'
     design_md_path: styles/spacex/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/spacex/tokens.css
+    components_html_path: styles/spacex/components.html
+  - name: spacious
+    description: 'Category: Layout & Structure'
+    design_md_path: styles/spacious/DESIGN.md
+    tokens_css_path: styles/spacious/tokens.css
+    components_html_path: styles/spacious/components.html
   - name: spotify
-    description: spotify inspired design style
+    description: 'Category: Media & Consumer'
     design_md_path: styles/spotify/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/spotify/tokens.css
+    components_html_path: styles/spotify/components.html
   - name: starbucks
-    description: starbucks inspired design style
+    description: 'Category: E-Commerce & Retail'
     design_md_path: styles/starbucks/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/starbucks/tokens.css
+    components_html_path: styles/starbucks/components.html
+  - name: storytelling
+    description: 'Category: Creative & Artistic'
+    design_md_path: styles/storytelling/DESIGN.md
+    tokens_css_path: styles/storytelling/tokens.css
+    components_html_path: styles/storytelling/components.html
   - name: stripe
-    description: >-
-      An inspired interpretation of Stripi's design language — a financial-infrastructure brand built on a deep navy
-      ink, an electric indigo primary, and a recurring atmospheric gradi...
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/stripe/DESIGN.md
-    variables:
-      primary: '#533afd'
-      background: '#ffffff'
-      text-primary: '#0d253d'
-      font-heading: sohne-var, 'SF Pro Display', system-ui, -apple-system, sans-serif
-      font-body: sohne-var, 'SF Pro Display', system-ui, -apple-system, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/stripe/tokens.css
+    components_html_path: styles/stripe/components.html
   - name: supabase
-    description: supabase inspired design style
+    description: 'Category: Backend & Data'
     design_md_path: styles/supabase/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/supabase/tokens.css
+    components_html_path: styles/supabase/components.html
   - name: superhuman
-    description: >-
-      An inspired interpretation of Superhumon's design language — a fast-email productivity brand split between an
-      editorial dark hero (deep indigo navy with violet-sky atmospheric b...
+    description: 'Category: Developer Tools'
     design_md_path: styles/superhuman/DESIGN.md
-    variables:
-      primary: '#1b1938'
-      background: '#ffffff'
-      text-primary: '#292827'
-      font-heading: '''Super Sans VF'', system-ui, -apple-system, ''Segoe UI'', Roboto, sans-serif'
-      font-body: '''Super Sans VF'', system-ui, -apple-system, ''Segoe UI'', Roboto, sans-serif'
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/superhuman/tokens.css
+    components_html_path: styles/superhuman/components.html
   - name: tesla
-    description: tesla inspired design style
+    description: 'Category: Automotive'
     design_md_path: styles/tesla/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
+    tokens_css_path: styles/tesla/tokens.css
+    components_html_path: styles/tesla/components.html
+  - name: tetris
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/tetris/DESIGN.md
+    tokens_css_path: styles/tetris/tokens.css
+    components_html_path: styles/tetris/components.html
   - name: theverge
-    description: theverge inspired design style
+    description: 'Category: Media & Consumer'
     design_md_path: styles/theverge/DESIGN.md
-    variables:
-      primary: '#111827'
-      background: '#FFFFFF'
-      text-primary: '#111827'
-      font-heading: Inter
-      font-body: Inter
-      border-radius: 8px
-      spacing-unit: 8px
-  - name: together.ai
-    description: >-
-      An inspired interpretation of Together AI's design language — an AI infrastructure platform whose surface
-      alternates between near-black hero bands (with a three-color orange-mag...
-    design_md_path: styles/together.ai/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: The Future, Inter, Helvetica Neue, Arial, sans-serif
-      font-body: The Future, Inter, Helvetica Neue, Arial, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/theverge/tokens.css
+    components_html_path: styles/theverge/components.html
+  - name: together-ai
+    description: 'Category: AI & LLM'
+    design_md_path: styles/together-ai/DESIGN.md
+    tokens_css_path: styles/together-ai/tokens.css
+    components_html_path: styles/together-ai/components.html
+  - name: totality-festival
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/totality-festival/DESIGN.md
+    tokens_css_path: styles/totality-festival/tokens.css
+    components_html_path: styles/totality-festival/components.html
+  - name: trading-terminal
+    description: 'Category: Themed & Unique'
+    design_md_path: styles/trading-terminal/DESIGN.md
+    tokens_css_path: styles/trading-terminal/tokens.css
+    components_html_path: styles/trading-terminal/components.html
   - name: uber
-    description: >-
-      An inspired interpretation of Uber's design language — a transportation-and-delivery super-app brand whose web
-      surface is a black-and-white duet, framed by a custom geometric di...
+    description: 'Category: Media & Consumer'
     design_md_path: styles/uber/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: UberMove, UberMoveText, system-ui, Helvetica Neue, Arial, sans-serif
-      font-body: UberMoveText, system-ui, Helvetica Neue, Arial, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/uber/tokens.css
+    components_html_path: styles/uber/components.html
+  - name: urdu
+    description: 'Category: Editorial / Personal / Publication'
+    design_md_path: styles/urdu/DESIGN.md
+    tokens_css_path: styles/urdu/tokens.css
+    components_html_path: styles/urdu/components.html
   - name: vercel
-    description: >-
-      An inspired interpretation of Vercel's design language — a developer-platform brand whose surface is a stark
-      black-and-ink duet on near-white canvas, broken at hero scale by a m...
+    description: 'Category: Developer Tools'
     design_md_path: styles/vercel/DESIGN.md
-    variables:
-      primary: '#171717'
-      background: '#ffffff'
-      text-primary: '#171717'
-      font-heading: Geist, Inter, system-ui, -apple-system, sans-serif
-      font-body: Geist, Inter, system-ui, -apple-system, sans-serif
-      border-radius: 8px
-      spacing-unit: 16px
+    tokens_css_path: styles/vercel/tokens.css
+    components_html_path: styles/vercel/components.html
+  - name: vibrant
+    description: 'Category: Bold & Expressive'
+    design_md_path: styles/vibrant/DESIGN.md
+    tokens_css_path: styles/vibrant/tokens.css
+    components_html_path: styles/vibrant/components.html
+  - name: vintage
+    description: 'Category: Retro & Nostalgic'
+    design_md_path: styles/vintage/DESIGN.md
+    tokens_css_path: styles/vintage/tokens.css
+    components_html_path: styles/vintage/components.html
   - name: vodafone
-    description: >-
-      An inspired interpretation of Vodafone's design language — a telecom super-brand whose web surface alternates
-      between editorial photography hero bands with massive uppercase dis...
+    description: 'Category: Media & Consumer'
     design_md_path: styles/vodafone/DESIGN.md
-    variables:
-      primary: '#e60000'
-      background: '#ffffff'
-      text-primary: '#25282b'
-      font-heading: Vodafone, Vodafone Rg, Helvetica Neue, Arial, sans-serif
-      font-body: Vodafone, Vodafone Rg, Helvetica Neue, Arial, sans-serif
-      border-radius: 6px
-      spacing-unit: 12px
+    tokens_css_path: styles/vodafone/tokens.css
+    components_html_path: styles/vodafone/components.html
   - name: voltagent
-    description: >-
-      An inspired interpretation of Voltagent's design language — a developer-focused AI agent engineering platform
-      whose surface is an unrelenting near-black canvas broken only by a...
+    description: 'Category: AI & LLM'
     design_md_path: styles/voltagent/DESIGN.md
-    variables:
-      primary: '#00d992'
-      background: '#101010'
-      text-primary: '#f2f2f2'
-      font-heading: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif
-      font-body: Inter, system-ui, -apple-system, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/voltagent/tokens.css
+    components_html_path: styles/voltagent/components.html
+  - name: warm-editorial
+    description: 'Category: Starter'
+    design_md_path: styles/warm-editorial/DESIGN.md
+    tokens_css_path: styles/warm-editorial/tokens.css
+    components_html_path: styles/warm-editorial/components.html
   - name: warp
-    description: >-
-      An inspired interpretation of Warp's design language — an agentic terminal-and-development-environment brand whose
-      surface is a warm near-charcoal canvas (a tint warmer than pur...
+    description: 'Category: Developer Tools'
     design_md_path: styles/warp/DESIGN.md
-    variables:
-      primary: '#f7f5f0'
-      background: '#2b2622'
-      text-primary: '#f7f5f0'
-      font-heading: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif
-      font-body: Inter, system-ui, -apple-system, sans-serif
-      border-radius: 4px
-      spacing-unit: 10px
+    tokens_css_path: styles/warp/tokens.css
+    components_html_path: styles/warp/components.html
+  - name: webex
+    description: 'Category: Productivity & SaaS'
+    design_md_path: styles/webex/DESIGN.md
+    tokens_css_path: styles/webex/tokens.css
+    components_html_path: styles/webex/components.html
   - name: webflow
-    description: >-
-      An inspired interpretation of Webflow's design language — a visual web development platform whose surface
-      contrasts a deep near-black `#080808` primary against a generous white...
+    description: 'Category: Design & Creative'
     design_md_path: styles/webflow/DESIGN.md
-    variables:
-      primary: '#080808'
-      background: '#ffffff'
-      text-primary: '#080808'
-      font-heading: WF Visual Sans Variable, Inter, system-ui, sans-serif
-      font-body: WF Visual Sans Variable, Inter, system-ui, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/webflow/tokens.css
+    components_html_path: styles/webflow/components.html
+  - name: wechat
+    description: 'Category: Social & Messaging'
+    design_md_path: styles/wechat/DESIGN.md
+    tokens_css_path: styles/wechat/tokens.css
+    components_html_path: styles/wechat/components.html
   - name: wired
-    description: >-
-      An inspired interpretation of Wired's design language — a flagship technology-magazine brand whose surface is a
-      strict editorial duet of stark black wordmark on white canvas, an...
+    description: 'Category: Media & Consumer'
     design_md_path: styles/wired/DESIGN.md
-    variables:
-      primary: '#000000'
-      background: '#ffffff'
-      text-primary: '#000000'
-      font-heading: WiredDisplay, "Times New Roman", Georgia, serif
-      font-body: Apercu, "Helvetica Neue", Helvetica, Arial, sans-serif
-      border-radius: 0px
-      spacing-unit: 12px
+    tokens_css_path: styles/wired/tokens.css
+    components_html_path: styles/wired/components.html
   - name: wise
-    description: >-
-      An inspired interpretation of Wise's design language — a global money-transfer brand whose surface combines an
-      unusually heavy near-black display sans (weight 900 at 64–126 px)...
+    description: 'Category: Fintech & Crypto'
     design_md_path: styles/wise/DESIGN.md
-    variables:
-      primary: '#9fe870'
-      background: '#ffffff'
-      text-primary: '#0e0f0c'
-      font-heading: Wise Sans, Inter, system-ui, sans-serif
-      font-body: Inter, system-ui, sans-serif
-      border-radius: 12px
-      spacing-unit: 12px
-  - name: x.ai
-    description: >-
-      An inspired interpretation of xAI's design language — Elon Musk's frontier-AI company whose web surface is a
-      strict near-black canvas broken only by white pill outlines, occasio...
-    design_md_path: styles/x.ai/DESIGN.md
-    variables:
-      primary: '#ffffff'
-      background: '#0a0a0a'
-      text-primary: '#ffffff'
-      font-heading: universalSans, Inter, system-ui, -apple-system, sans-serif
-      font-body: universalSans, Inter, system-ui, sans-serif
-      border-radius: 8px
-      spacing-unit: 12px
+    tokens_css_path: styles/wise/tokens.css
+    components_html_path: styles/wise/components.html
+  - name: x-ai
+    description: 'Category: AI & LLM'
+    design_md_path: styles/x-ai/DESIGN.md
+    tokens_css_path: styles/x-ai/tokens.css
+    components_html_path: styles/x-ai/components.html
+  - name: xiaohongshu
+    description: 'Category: Media & Consumer'
+    design_md_path: styles/xiaohongshu/DESIGN.md
+    tokens_css_path: styles/xiaohongshu/tokens.css
+    components_html_path: styles/xiaohongshu/components.html
   - name: zapier
-    description: >-
-      An inspired interpretation of Zapier's design language — a workflow-automation platform whose surface combines
-      warm-cream neutrals (`#fffefb` canvas, `#f8f4f0` soft cream) with...
+    description: 'Category: Productivity & SaaS'
     design_md_path: styles/zapier/DESIGN.md
-    variables:
-      primary: '#ff4f00'
-      background: '#fffefb'
-      text-primary: '#201515'
-      font-heading: Degular Display, Inter, system-ui, -apple-system, sans-serif
-      font-body: Inter, system-ui, sans-serif
-      border-radius: 12px
-      spacing-unit: 12px
+    tokens_css_path: styles/zapier/tokens.css
+    components_html_path: styles/zapier/components.html

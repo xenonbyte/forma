@@ -1,482 +1,363 @@
----
-version: alpha
-name: Slacc-Inspired-design-analysis
-description: An inspired interpretation of Slacc's design language — a workplace messaging brand built on a deep aubergine primary, with cream-lavender hero gradients, blue inline links, and pill CTAs. The system pairs a proprietary humanist sans for display with a separate utility sans for body, and stages product UI mockups inside soft pastel-mesh hero composites that act as both decoration and feature explanation.
+# Design System Inspired by Slack
 
-colors:
-  primary: "#4a154b"
-  primary-deep: "#481a54"
-  primary-press: "#611f69"
-  primary-tint: "#592466"
-  on-primary: "#ffffff"
-  ink: "#1d1d1d"
-  ink-mute: "#696969"
-  link-blue: "#1264a3"
-  link-hover: "#3860be"
-  canvas: "#ffffff"
-  canvas-cream: "#f4ede4"
-  canvas-lavender: "#f9f0ff"
-  surface-elev: "#ffffff"
-  surface-aubergine: "#4a154b"
-  hairline: "#e6e6e6"
-  hairline-strong: "#000000"
-  semantic-error: "#cc4117"
-  semantic-success: "#007a5a"
-  on-aubergine-mute: "#d9bdde"
+> Category: Productivity & SaaS
+> Workplace communication platform. Aubergine-primary, multi-accent logo palette, light surfaces with dark sidebar, warm and approachable.
 
-typography:
-  display-xxl:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 64px
-    fontWeight: 700
-    lineHeight: 1.12
-    letterSpacing: -0.768px
-  display-xl:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 58px
-    fontWeight: 600
-    lineHeight: 1.25
-    letterSpacing: -0.464px
-  display-lg:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 50px
-    fontWeight: 700
-    lineHeight: 1.12
-    letterSpacing: -0.6px
-  display-md:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 32px
-    fontWeight: 700
-    lineHeight: 1.25
-    letterSpacing: -0.256px
-  heading-lg:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 24px
-    fontWeight: 700
-    lineHeight: 1.33
-    letterSpacing: -0.096px
-  heading-md:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 22px
-    fontWeight: 600
-    lineHeight: 1.4
-    letterSpacing: 0
-  heading-sm:
-    fontFamily: "Salesforce-Avant-Garde, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-    fontSize: 18px
-    fontWeight: 600
-    lineHeight: 1.56
-    letterSpacing: -0.0216px
-  body-lg:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 18px
-    fontWeight: 400
-    lineHeight: 1.55
-    letterSpacing: -0.0216px
-  body-md:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 16px
-    fontWeight: 400
-    lineHeight: 1.55
-    letterSpacing: 0
-  body-strong:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 16px
-    fontWeight: 700
-    lineHeight: 1.5
-    letterSpacing: 0.16px
-  button-lg:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 18px
-    fontWeight: 700
-    lineHeight: 1.0
-    letterSpacing: 0
-  button-md:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 16px
-    fontWeight: 700
-    lineHeight: 1.38
-    letterSpacing: 0.2px
-  button-cap:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 14.4px
-    fontWeight: 700
-    lineHeight: 1.0
-    letterSpacing: 0.144px
-  caption:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 14px
-    fontWeight: 400
-    lineHeight: 1.43
-    letterSpacing: 0.1px
-  micro-cap:
-    fontFamily: "Salesforce-Sans, system-ui, -apple-system, sans-serif"
-    fontSize: 12px
-    fontWeight: 700
-    lineHeight: 1.0
-    letterSpacing: 0.96px
+## 1. Visual Theme & Atmosphere
 
-rounded:
-  xs: 2px
-  sm: 4px
-  md: 8px
-  lg: 12px
-  xl: 16px
-  xxl: 48px
-  pill: 90px
+Slack's identity is built around the idea that work should feel human and even a little fun. The canonical surface is **light** — white content areas with a deep aubergine (`#4A154B`) sidebar — the inverse of dark-first tools. This contrast is intentional: the sidebar is a calm, always-present navigation anchor, while the content area is bright and open.
 
-spacing:
-  xs: 4px
-  sm: 8px
-  md: 12px
-  lg: 16px
-  xl: 20px
-  xxl: 24px
-  huge: 28px
-
-components:
-  button-primary-pill:
-    backgroundColor: "{colors.primary}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.button-md}"
-    rounded: "{rounded.pill}"
-    padding: 14px 28px
-  button-primary-pill-pressed:
-    backgroundColor: "{colors.primary-press}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.button-md}"
-    rounded: "{rounded.pill}"
-    padding: 14px 28px
-  button-secondary-pill:
-    backgroundColor: "{colors.canvas-lavender}"
-    textColor: "{colors.ink}"
-    typography: "{typography.button-md}"
-    rounded: "{rounded.pill}"
-    padding: 10px 30px
-  button-outline-aubergine:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.primary}"
-    typography: "{typography.button-md}"
-    rounded: "{rounded.pill}"
-    padding: 14px 28px
-  button-outline-on-aubergine:
-    backgroundColor: "{colors.surface-aubergine}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.button-md}"
-    rounded: "{rounded.pill}"
-    padding: 14px 28px
-  text-input:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.sm}"
-    padding: 10px 12px
-  pill-cap-shade:
-    backgroundColor: "{colors.canvas-cream}"
-    textColor: "{colors.ink}"
-    typography: "{typography.micro-cap}"
-    rounded: "{rounded.pill}"
-    padding: 4px 12px
-  card-pricing:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  card-pricing-featured:
-    backgroundColor: "{colors.surface-aubergine}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  card-feature-cream:
-    backgroundColor: "{colors.canvas-cream}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  card-aubergine-band:
-    backgroundColor: "{colors.surface-aubergine}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.body-lg}"
-    rounded: "{rounded.xl}"
-    padding: 48px
-  card-stat:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.primary}"
-    typography: "{typography.display-lg}"
-    rounded: "{rounded.xl}"
-    padding: 32px
-  nav-bar-light:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.ink}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xs}"
-    padding: 16px 24px
-  link-on-light:
-    backgroundColor: "{colors.canvas}"
-    textColor: "{colors.link-blue}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xs}"
-    padding: 0px
-  link-on-aubergine:
-    backgroundColor: "{colors.surface-aubergine}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.body-md}"
-    rounded: "{rounded.xs}"
-    padding: 0px
-  footer-aubergine:
-    backgroundColor: "{colors.surface-aubergine}"
-    textColor: "{colors.on-primary}"
-    typography: "{typography.caption}"
-    rounded: "{rounded.xs}"
-    padding: 32px 24px
----
-
-## Overview
-
-Slacc's design language centers on a deep aubergine primary (`{colors.primary}`) — the brand's most enduring visual asset — applied as the dominant button color, the footer band, the featured pricing tier, and the brand wordmark. Around that aubergine the system stages an unusually delicate ecosystem: cream-lavender hero canvases with soft pastel-mesh gradients (peachy oranges, lavenders, dusty greens) that pulse behind floating product UI mockups, with the actual interface chrome rendered in fine detail at 3:2 aspect.
-
-Typography splits between two proprietary humanist sans families. The display tier runs at 700 weight at sizes 32–64px with negative letter-spacing for tight optical density on hero headlines. The UI tier uses the second family at 400–700 with slightly relaxed leading (1.55) — the brand's body copy reads quietly without competing with the aubergine moments.
-
-Buttons are pill-shaped at 90px radius with an unusual amount of horizontal padding (28–30px), giving them a distinctly comfortable, almost over-padded feel. The primary aubergine pill is the only filled button in most contexts; secondary actions use a soft lavender pill (`{colors.canvas-lavender}`) which reads as a gentler echo of the primary surface. Inline links shift to a saturated blue (`{colors.link-blue}`) — the brand's only chromatic departure from the aubergine-and-cream world.
+The logo palette — blue, green, yellow, red — appears primarily in the hashtag icon and marketing contexts, not scattered through the UI. In the product itself, Slack uses a restrained, professional color system with aubergine as the sole brand anchor.
 
 **Key Characteristics:**
-- Single aubergine primary (`{colors.primary}`) reused across CTAs, the featured pricing tier, the footer band, and the wordmark — the brand's chromatic monotheism.
-- Cream-lavender hero canvas (`{colors.canvas-cream}` / `{colors.canvas-lavender}`) with diffused pastel-mesh atmospheric gradients and floating UI mockups composited above.
-- Pill buttons at `{rounded.pill}` (90px radius) with generous 28–30px horizontal padding — over-padded by SaaS-default standards, deliberately so.
-- Tight negative letter-spacing on display sizes (-0.768px on 64px hero) for editorial-density headlines.
-- Blue inline links (`{colors.link-blue}`) — the only non-aubergine chromatic accent in body type.
-- Pastel-mesh gradient atmospherics: every hero band has a subtle peach-lavender-dusty-green wash behind it; product UI sits on top, never inside, the gradient.
-- Statistics cards rendered in massive aubergine display type (90% / 43 / 87%) on white — quantitative emphasis through scale alone.
+- Light-first content surfaces: white `#FFFFFF` and near-white `#F8F8F8`
+- Deep aubergine `#4A154B` sidebar — the brand's most recognizable UI element
+- Four logo accent colors (blue, green, yellow, red) used sparingly as highlights only
+- Larsseit for headings (marketing), system sans-serif for UI
+- Rounded but not cartoonish: 4–8px radius on most components
+- Dense but breathable: compact message rows with clear thread hierarchy
+- Warm and conversational tone — emojis, reactions, and illustrations are first-class
 
-## Colors
+---
 
-> **Source pages:** home (`/`), `/features/channels`, `/pricing`, `/contact-sales`.
+## 2. Color Palette & Roles
 
-### Brand & Accent
-- **Aubergine** (`{colors.primary}` — `#4a154b`): The brand's primary surface and CTA color. Deep, warm purple with a hint of ruby — used on filled buttons, the featured pricing tier, the footer band, and the brand wordmark.
-- **Aubergine Deep** (`{colors.primary-deep}` — `#481a54`): A near-identical sibling of `{colors.primary}` extracted from a different surface; treat as functionally equivalent.
-- **Aubergine Press** (`{colors.primary-press}` — `#611f69`): Pressed-state lift of the primary, slightly lighter and warmer.
-- **Aubergine Tint** (`{colors.primary-tint}` — `#592466`): Border accent on aubergine-on-aubergine surfaces.
-- **Link Blue** (`{colors.link-blue}` — `#1264a3`): Inline link color — saturated, slightly warm blue. The only chromatic alternative to aubergine in body type.
-- **Link Hover** (`{colors.link-hover}` — `#3860be`): A more saturated blue used on link hover state.
+### Brand Primary
+| Token | Hex | Role |
+|---|---|---|
+| `--color-aubergine` | `#4A154B` | Sidebar background, primary brand color |
+| `--color-aubergine-dark` | `#350d36` | Hover states on aubergine surfaces |
+| `--color-aubergine-light` | `#611f69` | Active item highlight in sidebar |
 
-### Surface
-- **Canvas White** (`{colors.canvas}` — `#ffffff`): Default content surface.
-- **Canvas Cream** (`{colors.canvas-cream}` — `#f4ede4`): Warm off-white used on hero gradients and feature bands. Adds editorial warmth.
-- **Canvas Lavender** (`{colors.canvas-lavender}` — `#f9f0ff`): Pale lavender tint used as the secondary-button surface and as a soft section band.
-- **Surface Aubergine** (`{colors.surface-aubergine}` — `#4a154b`): The primary aubergine reused as a surface — featured pricing tier, footer, dark feature bands.
-- **Hairline** (`{colors.hairline}` — `#e6e6e6`): 1px borders on cards and table dividers.
+### Logo Accent Colors (use sparingly — highlights, icons, marketing only)
+| Token | Hex | Name | Role |
+|---|---|---|---|
+| `--color-blue` | `#36C5F0` | Sky Blue | Channel icons, links, info states |
+| `--color-green` | `#2EB67D` | Teal Green | Online status, success states |
+| `--color-yellow` | `#ECB22E` | Gold | Away status, warnings, highlights |
+| `--color-red` | `#E01E5A` | Ruby | Notifications, errors, mentions badge |
 
-### Text
-- **Ink** (`{colors.ink}` — `#1d1d1d`): Primary body text on light surfaces. Just shy of pure black.
-- **Ink Mute** (`{colors.ink-mute}` — `#696969`): Secondary text, captions, helper copy.
-- **On Primary** (`{colors.on-primary}` — `#ffffff`): Text on aubergine surfaces and filled CTAs.
-- **On Aubergine Mute** (`{colors.on-aubergine-mute}` — `#d9bdde`): Secondary text on aubergine surfaces — a desaturated mauve that reads as muted-light.
+### Surface & Background
+| Token | Hex | Role |
+|---|---|---|
+| `--bg-primary` | `#FFFFFF` | Main message area, modals |
+| `--bg-secondary` | `#F8F8F8` | Thread panels, secondary surfaces |
+| `--bg-tertiary` | `#F1F1F1` | Input backgrounds, hover states |
+| `--bg-sidebar` | `#4A154B` | Left sidebar (aubergine) |
+| `--bg-sidebar-hover` | `rgba(255,255,255,0.1)` | Sidebar item hover |
+| `--bg-sidebar-active` | `rgba(255,255,255,0.2)` | Active sidebar item |
+| `--bg-message-hover` | `#F8F8F8` | Message row hover |
 
-### Semantic
-- **Error** (`{colors.semantic-error}` — `#cc4117`): Form error and destructive-action color.
-- **Success** (`{colors.semantic-success}` — `#007a5a`): Inline success indicators.
+### Text Colors
+| Token | Hex | Role |
+|---|---|---|
+| `--text-primary` | `#1D1C1D` | Primary body text (near-black) |
+| `--text-secondary` | `#616061` | Timestamps, muted labels |
+| `--text-sidebar` | `rgba(255,255,255,0.9)` | Sidebar channel names |
+| `--text-sidebar-muted` | `rgba(255,255,255,0.6)` | Sidebar inactive items |
+| `--text-link` | `#1264A3` | Inline links in messages |
+| `--text-mention` | `#1264A3` | @mention text color |
 
-## Typography
+### Semantic Colors
+| Token | Hex | Role |
+|---|---|---|
+| `--color-success` | `#2EB67D` | Success toasts, positive states |
+| `--color-warning` | `#ECB22E` | Warning states |
+| `--color-danger` | `#E01E5A` | Error states, destructive actions |
+| `--color-info` | `#36C5F0` | Informational highlights |
 
-### Font Family
+### Border & Divider
+| Token | Hex | Role |
+|---|---|---|
+| `--border-default` | `#DDDDDD` | Standard dividers, card borders |
+| `--border-subtle` | `#F1F1F1` | Subtle separators between rows |
+| `--border-focus` | `#1264A3` | Focus ring color |
 
-The display tier is **Salesforce Avant Garde** — a proprietary humanist sans with broad apertures and a slightly geometric character. When unavailable, fall back to the system font stack (`system-ui, -apple-system, BlinkMacSystemFont`).
+---
 
-The UI tier is **Salesforce Sans** — a separate proprietary face used for body, captions, and button labels. Same fallback chain.
+## 3. Typography Rules
 
-Both faces are proprietary and not freely available. Substitute with **Inter** (open-source via Google Fonts) at matching weights for both display and body — Inter is the closest open analogue across both tiers.
+### Typefaces
+| Role | Official | Web Fallback |
+|---|---|---|
+| Display / Marketing Headings | Larsseit | `'Larsseit', 'Helvetica Neue', Arial, sans-serif` |
+| UI / Body / Chrome | Slack Lato (custom) | `system-ui, -apple-system, BlinkMacSystemFont, sans-serif` |
+| Code / Monospace | — | `'Monaco', 'Menlo', 'Courier New', monospace` |
 
-### Hierarchy
+> Slack uses **Larsseit** for marketing headlines and a custom Lato variant for in-product UI. For web use, `system-ui` is the safest fallback.
 
-| Token | Size | Weight | Line Height | Letter Spacing | Use |
+### Type Scale
+
+| Level | Size | Weight | Line Height | Letter Spacing | Usage |
 |---|---|---|---|---|---|
-| `{typography.display-xxl}` | 64px | 700 | 1.12 | -0.768px | Marketing hero headline |
-| `{typography.display-xl}` | 58px | 600 | 1.25 | -0.464px | Section openers |
-| `{typography.display-lg}` | 50px | 700 | 1.12 | -0.6px | Statistics callouts |
-| `{typography.display-md}` | 32px | 700 | 1.25 | -0.256px | Card / feature titles |
-| `{typography.heading-lg}` | 24px | 700 | 1.33 | -0.096px | Pricing tier names |
-| `{typography.heading-md}` | 22px | 600 | 1.4 | 0 | Sub-section heading |
-| `{typography.heading-sm}` | 18px | 600 | 1.56 | -0.0216px | Compact card title |
-| `{typography.body-lg}` | 18px | 400 | 1.55 | -0.0216px | Marketing body lead |
-| `{typography.body-md}` | 16px | 400 | 1.55 | 0 | Default UI body |
-| `{typography.body-strong}` | 16px | 700 | 1.5 | 0.16px | Emphasized body |
-| `{typography.button-lg}` | 18px | 700 | 1.0 | 0 | Hero pill button label |
-| `{typography.button-md}` | 16px | 700 | 1.38 | 0.2px | Standard pill button label |
-| `{typography.button-cap}` | 14.4px | 700 | 1.0 | 0.144px | Compact pill label |
-| `{typography.caption}` | 14px | 400 | 1.43 | 0.1px | Helper, footnote |
-| `{typography.micro-cap}` | 12px | 700 | 1.0 | 0.96px | All-caps eyebrow |
+| Display XL | 48px | 800 | 1.1 | -1px | Marketing hero headlines |
+| Display L | 36px | 700 | 1.15 | -0.5px | Section heroes |
+| Heading 1 | 28px | 700 | 1.25 | normal | Modal titles, page headers |
+| Heading 2 | 22px | 700 | 1.3 | normal | Card titles, settings sections |
+| Heading 3 | 18px | 700 | 1.35 | normal | Sub-section headers |
+| Body L | 16px | 400 | 1.5 | normal | Message text, descriptions |
+| Body | 15px | 400 | 1.46667 | normal | Default UI text (Slack's base size) |
+| Body SM | 13px | 400 | 1.38462 | normal | Secondary metadata |
+| Caption | 12px | 400 | 1.33 | normal | Timestamps, hints |
+| Code | 12px | 400 | 1.5 | normal | Inline code, code blocks |
 
-### Principles
-- **Tight tracking on display.** Negative letter-spacing across 32–64px sizes; the proprietary face is wide by default, the negative tracking pulls it into editorial density.
-- **Body at 1.55 leading.** Slightly relaxed for marketing readability without crossing into airy / 1.7+ territory.
-- **Caps for eyebrows.** All eyebrows render uppercase with positive 0.96–0.144px tracking depending on size.
+### Type Rules
+- Slack's base body size is **15px** — slightly smaller than 16px for density
+- Unread channels: weight 700 — bold is the primary unread indicator
+- Timestamps: 12px `--text-secondary`, show on hover only
+- Code blocks: background `#F8F8F8`, border `1px solid #DDDDDD`, border-radius 4px
+- Never use font sizes below 12px
+- Marketing headings: letter-spacing `-1px` for large display sizes
 
-### Note on Font Substitutes
-Use **Inter** (open-source Google Fonts) for both display and UI tiers — Inter at 700 weight with `-0.768px` letter-spacing closely approximates the brand's display behavior. For maximum brand fidelity, **Lato** is a softer humanist alternative that pairs well at body sizes. Avoid System UI fonts on the body — the brand's subtle warmth disappears at default weights.
+---
 
-## Layout
-
-### Spacing System
-- **Base unit**: 8px (with 4 / 12 / 16 / 20 / 24 / 28 sub-tokens for fine vertical rhythm).
-- **Tokens**: `{spacing.xs}` 4px · `{spacing.sm}` 8px · `{spacing.md}` 12px · `{spacing.lg}` 16px · `{spacing.xl}` 20px · `{spacing.xxl}` 24px · `{spacing.huge}` 28px.
-- **Section padding**: 64–96px on marketing surfaces; tightens to 48px on transactional pages.
-- **Card internal padding**: 32px on pricing cards; 48px on aubergine band cards.
-
-### Grid & Container
-- Marketing pages center in a ~1240px container with edge-bleeding pastel-mesh gradients escaping the container.
-- Pricing collapses 4-up → 2-up → 1-up at 992 / 768 breakpoints.
-- Statistics row: 3-column grid with massive 50px aubergine display numerals.
-
-### Whitespace Philosophy
-The pastel-mesh gradients fill most of the negative space on marketing pages — sections feel expansive without being literally empty. On transactional pages the gradients drop, and whitespace reverts to traditional 48px-section breathing room.
-
-## Elevation & Depth
-
-| Level | Treatment | Use |
-|---|---|---|
-| 0 | Flat | Default surface |
-| 1 | `box-shadow: rgba(0,0,0,0.1) 0 5px 20px 0` | Floating buttons on hero |
-| 2 | `box-shadow: rgba(0,0,0,0.1) 0 0 32px 0` | Product UI mockup composites |
-| 3 | `box-shadow: rgba(0,0,0,0.2) 0 1px 10px 0` | Toast / notification chrome |
-| 4 | `box-shadow: rgb(97,31,105) 0 0 0 1px inset` | Aubergine inset border (button focus, special chrome) |
-
-### Decorative Depth
-The brand's depth language is the **pastel-mesh gradient** — peach, lavender, dusty green stops blurred together at large radii to create soft atmospheric backdrops behind product UI screenshots. The gradient is the brand's flavor of "depth without shadows": the eye perceives the product mockup as floating above a luminous backdrop without any literal lift.
-
-## Shapes
-
-### Border Radius Scale
-
-| Token | Value | Use |
-|---|---|---|
-| `{rounded.xs}` | 2px | Hairline tags, status pills (rare) |
-| `{rounded.sm}` | 4px | Form inputs |
-| `{rounded.md}` | 8px | Compact card chrome, video frames |
-| `{rounded.lg}` | 12px | Mid-size cards, secondary surface |
-| `{rounded.xl}` | 16px | Pricing cards, feature cards |
-| `{rounded.xxl}` | 48px | Stat badge backdrops |
-| `{rounded.pill}` | 90px | All buttons |
-
-### Photography Geometry
-The brand uses **product UI screenshots** more than photography. UI mockups sit on top of pastel-mesh gradients at roughly 4:3 aspect, with no shadow but with the gradient providing the "lift" the eye expects. Real photography appears in customer-logo strips and the occasional case-study card, treated as full-bleed inside `{rounded.xl}` containers.
-
-## Components
+## 4. Component Stylings
 
 ### Buttons
 
-**`button-primary-pill`** — the dominant CTA system-wide.
-- Background `{colors.primary}`, text `{colors.on-primary}`, type `{typography.button-md}`, padding `14px 28px`, rounded `{rounded.pill}` 90px.
-- Pressed state `button-primary-pill-pressed` shifts background to `{colors.primary-press}`.
+```css
+/* Primary */
+.btn-primary {
+  background: #4A154B;
+  color: #FFFFFF;
+  border-radius: 4px;
+  padding: 0 16px;
+  height: 36px;
+  font-size: 15px;
+  font-weight: 700;
+  border: none;
+}
+.btn-primary:hover { background: #611f69; }
 
-**`button-secondary-pill`** — the soft lavender alternative.
-- Background `{colors.canvas-lavender}`, text `{colors.ink}`, padding `10px 30px`, same pill geometry. Used as the second action beside the primary aubergine pill.
+/* Secondary */
+.btn-secondary {
+  background: #FFFFFF;
+  color: #1D1C1D;
+  border: 1px solid #DDDDDD;
+  border-radius: 4px;
+  padding: 0 16px;
+  height: 36px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.btn-secondary:hover { background: #F8F8F8; }
 
-**`button-outline-aubergine`** — outline variant on white surfaces.
-- Background `{colors.canvas}`, text `{colors.primary}`, 2px solid `{colors.primary}` border, same pill shape.
+/* Danger */
+.btn-danger {
+  background: #E01E5A;
+  color: #FFFFFF;
+  border-radius: 4px;
+}
+.btn-danger:hover { background: #B3114A; }
+```
 
-**`button-outline-on-aubergine`** — outline on aubergine canvas.
-- Background `{colors.surface-aubergine}` (transparent over the surface), text `{colors.on-primary}`, 2px solid `{colors.on-primary}` border, same pill shape.
+### Input Fields
+```css
+.input {
+  background: #FFFFFF;
+  border: 1px solid #DDDDDD;
+  border-radius: 4px;
+  color: #1D1C1D;
+  font-size: 15px;
+  padding: 8px 12px;
+  height: 36px;
+}
+.input:focus {
+  border-color: #1264A3;
+  box-shadow: 0 0 0 2px rgba(18,100,163,0.25);
+  outline: none;
+}
+```
 
-### Cards & Containers
+### Sidebar Channel Item
+```css
+.channel-item {
+  height: 28px;
+  padding: 0 16px;
+  border-radius: 6px;
+  color: rgba(255,255,255,0.7);
+  font-size: 15px;
+  font-weight: 400;
+}
+.channel-item:hover {
+  background: rgba(255,255,255,0.1);
+  color: #FFFFFF;
+}
+.channel-item.active {
+  background: rgba(255,255,255,0.2);
+  color: #FFFFFF;
+}
+.channel-item.unread {
+  color: #FFFFFF;
+  font-weight: 700;
+}
+```
 
-**`card-pricing`** — standard pricing tier card.
-- Background `{colors.canvas}`, padding `{spacing.xxl}+` (32px), rounded `{rounded.xl}` 16px, 1px `{colors.hairline}` border. Title in `{typography.heading-lg}`, price in `{typography.display-md}`, body in `{typography.body-md}`, CTA pinned to bottom as `button-primary-pill`.
+### Unread Badge
+```css
+.badge {
+  background: #E01E5A;
+  color: #FFFFFF;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  min-width: 18px;
+}
+```
 
-**`card-pricing-featured`** — the inverted aubergine featured tier.
-- Background `{colors.surface-aubergine}`, text `{colors.on-primary}`, otherwise identical to `card-pricing`. The aubergine fill is the brand's signature featured-tier choice.
+### Message Attachments / Cards
+```css
+.attachment {
+  border-left: 4px solid #DDDDDD;
+  background: #F8F8F8;
+  border-radius: 0 4px 4px 0;
+  padding: 8px 12px;
+  margin: 4px 0;
+}
+```
 
-**`card-feature-cream`** — feature explanation card on the cream track.
-- Background `{colors.canvas-cream}`, text `{colors.ink}`, rounded `{rounded.xl}`, padding 32px.
+### Reactions
+```css
+.reaction {
+  border: 1px solid #DDDDDD;
+  border-radius: 24px;
+  background: #F8F8F8;
+  padding: 2px 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.reaction:hover { background: #F1F1F1; }
+.reaction.active {
+  background: rgba(18,100,163,0.1);
+  border-color: #1264A3;
+}
+```
 
-**`card-aubergine-band`** — large horizontal band card with aubergine fill, often containing the closing CTA of a marketing page.
-- Background `{colors.surface-aubergine}`, text `{colors.on-primary}`, padding 48px, rounded `{rounded.xl}` 16px.
+---
 
-**`card-stat`** — statistics callout card.
-- Background `{colors.canvas}`, text `{colors.primary}` rendered in `{typography.display-lg}` (50px aubergine numeral). Holds a single percentage/number with a small caption underneath.
+## 5. Layout Principles
 
-### Inputs & Forms
+### Three-Column Layout
+```
+┌──────────────┬──────────────────────────────┬─────────────┐
+│   Sidebar    │        Message Area          │   Thread    │
+│   (240px)    │          (flex: 1)           │  (400px)    │
+│  #4A154B     │          #FFFFFF             │  optional   │
+└──────────────┴──────────────────────────────┴─────────────┘
+```
 
-**`text-input`** — standard form field.
-- Background `{colors.canvas}`, text `{colors.ink}`, type `{typography.body-md}`, padding `10px 12px`, rounded `{rounded.sm}` 4px, 1px `{colors.hairline}` border.
+### Spacing System (4px base)
+| Token | Value | Usage |
+|---|---|---|
+| `--space-1` | 4px | Tight gaps |
+| `--space-2` | 8px | Component padding |
+| `--space-3` | 12px | Input padding |
+| `--space-4` | 16px | Standard padding |
+| `--space-6` | 24px | Card padding |
+| `--space-8` | 32px | Section gaps |
 
-### Navigation
+### Sidebar Structure
+```
+[Workspace Name ▼]
+────────────────────
+Threads
+All DMs
+Drafts & Sent
+────────────────────
+▼ Channels
+  # general
+  # random
+  # design  ● (unread)
+────────────────────
+▼ Direct Messages
+  John Doe
+  Jane Smith
+```
 
-**`nav-bar-light`** — top nav across all marketing pages.
-- Background `{colors.canvas}`, text `{colors.ink}`, padding `{spacing.lg} {spacing.xxl}`. Logo wordmark on the left, nav items center, two pill buttons on the right (`button-secondary-pill` for "Sign In", `button-primary-pill` for "Try For Free").
+### Message Composer
+- Pinned to bottom of message area
+- `border: 1px solid #DDDDDD`, `border-radius: 8px`, `margin: 0 16px 16px`
+- Toolbar: emoji, attach, format, send button
 
-### Pills, Tags, and Chips
+---
 
-**`pill-cap-shade`** — small all-caps pill used as eyebrow above pricing-tier titles.
-- Background `{colors.canvas-cream}`, text `{colors.ink}`, type `{typography.micro-cap}`, padding `4px 12px`, rounded `{rounded.pill}`.
+## 6. Depth & Elevation
 
-### Signature Components
+Slack uses light shadows on a light surface:
 
-**Pastel-Mesh Gradient Backdrop** — peach (`#fff0e6`-ish) + lavender (`#e9d8ff`) + dusty green stops blurred together behind hero bands. Implemented as a CSS radial-gradient stack, not a single image. Provides the brand's depth/luminosity without literal shadows.
+| Level | Usage | Shadow |
+|---|---|---|
+| Flat | Message rows, sidebar items | none |
+| Low | Cards, inputs | `0 1px 3px rgba(0,0,0,0.08)` |
+| Medium | Dropdowns, popovers | `0 4px 12px rgba(0,0,0,0.12)` |
+| High | Modals, dialogs | `0 8px 24px rgba(0,0,0,0.15)` |
+| Overlay | Modal backdrops | `rgba(0,0,0,0.5)` |
 
-**Floating Product UI Mockup** — product screenshots framed in `{rounded.lg}` (12px) containers, positioned above the pastel-mesh gradient with no border or shadow. The gradient does the lifting.
+---
 
-**Aubergine Footer Band** — every marketing page closes with a full-bleed `card-aubergine-band` containing a closing CTA in white type. The band height is generous (~480–600px on desktop) and reads as the page's signature.
+## 7. Do's and Don'ts
 
-**`link-on-light`** — inline links in body copy on light surfaces.
-- Text `{colors.link-blue}` rendered in `{typography.body-md}`. No underline by default; underline appears on hover via the link-hover behavior.
+### ✅ Do
+- Use aubergine `#4A154B` for the sidebar — it is Slack's most iconic UI element
+- Keep the main content area white and light
+- Use `#1D1C1D` (near-black) for all body text, not pure black
+- Bold channel names to show unread status — weight is the indicator
+- Use the four accent colors only for semantic roles (success, warning, danger, info)
+- Apply `border-left: 4px` on message attachments and embeds
+- Show timestamps on hover only
+- Use `#1264A3` for links and focus states
+- Keep sidebar items compact: 28px height, 6px border-radius
 
-**`link-on-aubergine`** — links inside aubergine surfaces.
-- Text `{colors.on-primary}` with persistent underline.
+### ❌ Don't
+- Don't use a dark main content area — Slack is light-first
+- Don't scatter blue/green/yellow/red as decorative accents
+- Don't use pure black `#000000` for text
+- Don't use speech bubbles — messages are flat rows
+- Don't make buttons large-radius — 4px is standard
+- Don't show timestamps permanently
+- Don't use ALL CAPS for channel names
+- Don't use font sizes below 12px
 
-**`footer-aubergine`** — site-wide footer.
-- Background `{colors.surface-aubergine}`, text `{colors.on-primary}` rendered in `{typography.caption}`, padding `{spacing.huge}+ {spacing.xxl}` (32px 24px). Holds 4–5 columns of `{colors.on-aubergine-mute}` link groups, social icons, and a small legal/copyright row at the bottom.
+---
 
-## Do's and Don'ts
-
-### Do
-- Reserve `{colors.primary}` aubergine for filled CTAs, the featured pricing tier, and the closing aubergine band — it's the brand's chromatic monotheism.
-- Use `{rounded.pill}` (90px) for every button across the system — never a rounded-rectangle button.
-- Pair display tiers with negative letter-spacing (`-0.768px` at 64px); the proprietary face needs the tracking pull.
-- Compose hero bands with pastel-mesh gradient backdrop + floating product UI mockup; the gradient is the depth.
-- Use `{colors.link-blue}` for inline links — it's the only chromatic departure from aubergine and is part of the brand voice.
-
-### Don't
-- Don't add a third accent color to the system — the aubergine + blue link combination is exhaustive.
-- Don't shrink button padding below `14px 28px` — the over-padded pill is part of the brand feel.
-- Don't render display tiers at default tracking (0) — without negative letter-spacing the headlines read loose and unedited.
-- Don't put product UI screenshots inside cards — they sit ABOVE the pastel-mesh gradient, never inside chrome.
-- Don't use aubergine for body text — it's a surface and CTA color, not a type color at body sizes.
-- Don't replace the pill shape with a square button anywhere.
-
-## Responsive Behavior
+## 8. Responsive Behavior
 
 ### Breakpoints
-
-| Name | Width | Key Changes |
+| Breakpoint | Width | Layout |
 |---|---|---|
-| Wide | ≥ 1440px | Full-bleed pastel-mesh hero; pricing 4-up |
-| Desktop | 1024–1440px | Default content max-width; pricing 4-up |
-| Tablet | 768–1023px | Pricing 2-up; product UI mockups crop to focal panel |
-| Mobile | < 768px | Pricing 1-up; hamburger nav; display-xxl drops 64 → 40px |
+| Mobile | < 768px | Single panel, sidebar as left drawer |
+| Tablet | 768–1024px | Sidebar + message area only |
+| Desktop | > 1024px | Full three-column layout |
 
-### Touch Targets
-- Pill buttons hit ≥ 48×48px due to the over-padded geometry. WCAG AAA compliant.
-- Form fields stay at the 44px minimum height.
+### Mobile Adaptations
+- Sidebar: left drawer, swipe right to open
+- Bottom tab bar: Home, DMs, Activity, You
+- Thread panel: full-screen overlay
+- Composer: pinned above keyboard
+- Channel list items: 44px touch target height
+- Aubergine top header bar retained on mobile
 
-### Collapsing Strategy
-- Display tiers stair-step 64 → 50 → 32 → 28 → 24 across breakpoints.
-- Pastel-mesh gradients re-tile on mobile to prevent the wash from disappearing entirely.
-- Floating product UI mockups crop to the most actionable inner panel on mobile.
-- Pricing tiers stair-step 4 → 2 → 1; aubergine featured tier stays distinguished.
-- Top nav collapses to hamburger below 768px; menu inherits canvas color.
+---
 
-### Image Behavior
-Product UI mockups use `srcset` for desktop / tablet / mobile crops; the mobile crop centers on the most actionable inner panel rather than scaling the whole composite down.
+## 9. Agent Prompt Guide
 
-## Iteration Guide
+When generating Slack-styled designs, follow this approach:
 
-1. Focus on ONE component at a time.
-2. Reference component names and tokens directly (`{colors.primary}`, `{button-primary-pill}-pressed`, `{rounded.pill}`).
-3. Run `npx @google/design.md lint DESIGN.md` after edits.
-4. Add new variants as separate entries.
-5. Default body to `{typography.body-md}`; reserve `{typography.body-lg}` for marketing leads.
-6. Keep aubergine scarce — one filled aubergine button per viewport.
-7. Pair every hero band with the pastel-mesh gradient backdrop; bare-canvas heroes read as off-brand.
+**Color application:**
+> Set `background: #FFFFFF` as the main canvas. Use `#4A154B` (aubergine) for the sidebar. All primary text is `#1D1C1D`. Links and focus rings use `#1264A3`. The four logo colors — `#36C5F0`, `#2EB67D`, `#ECB22E`, `#E01E5A` — are semantic only: info, success, warning, danger.
+
+**Typography:**
+> Use `system-ui, -apple-system, sans-serif` for all UI. Base size is 15px. Unread channels: weight 700. Body text: weight 400. Timestamps: 12px `#616061`, hover-only. Code: `Monaco, Menlo, monospace`, 12px, `#F8F8F8` background.
+
+**Layout:**
+> Three columns: 240px aubergine sidebar + flex white message area + optional 400px thread panel. Sidebar items: 28px height, 6px radius, bold when unread. Composer: pinned bottom, `border: 1px solid #DDDDDD`, `border-radius: 8px`.
+
+**Components:**
+> Buttons: 4px radius, 36px height, aubergine primary. Inputs: `1px solid #DDDDDD` border, `#1264A3` focus ring. Message rows: flat, no bubbles, 36px circle avatar. Reactions: pill `border: 1px solid #DDDDDD`, `border-radius: 24px`.
+
+**Tone:**
+> Slack is warm, professional, and human. Empty states use friendly illustrations. CTAs are direct: "Send message", "Get started". Error messages are clear and helpful. Never alarming.
+
+**Anti-patterns to avoid:**
+> No dark content area. No speech bubbles. No pure black text. No scattered multi-color accents. No ALL CAPS channel names. No font below 12px. No large button radius.
