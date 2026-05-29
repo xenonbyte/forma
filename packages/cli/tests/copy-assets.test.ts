@@ -3,14 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { assertBuiltInStyles, assertCopiedBuiltInStyles, assertWebAssets, copyAssets } from "../../../scripts/copy-assets.ts";
-
-const minimalPng = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00,
-  0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00,
-  0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01,
-  0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82
-]);
+import { assertBuiltInStyles, assertCopiedBuiltInStyles, assertWebAssets, assetCopies, copyAssets } from "../../../scripts/copy-assets.ts";
 
 const formaCommands = [
   "fm-list-product",
@@ -43,59 +36,41 @@ type AgentPlatform = "claude" | "codex" | "gemini";
 
 const agentTemplatesDir = new URL("../../../packages/agent/templates/", import.meta.url);
 
+describe("copy-assets asset list", () => {
+  it("includes a craft entry in assetCopies", () => {
+    expect(assetCopies.some((c) => c.label === "craft")).toBe(true);
+  });
+});
+
 describe("copy-assets built-in style checks", () => {
   it("requires at least 50 built-in styles", async () => {
     const stylesDir = await mkdtemp(join(tmpdir(), "forma-styles-"));
-    await writeFile(
-      join(stylesDir, "styles.yaml"),
-      [
-        "styles:",
-        ...Array.from({ length: 49 }, (_, index) => {
-          const name = `style-${index}`;
-          return [
-            `  - name: ${name}`,
-            "    description: Test style",
-            `    design_md_path: styles/${name}/DESIGN.md`,
-            "    variables:",
-            "      primary: '#111827'",
-            "      background: '#FFFFFF'",
-            "      text-primary: '#111827'",
-            "      font-heading: Inter",
-            "      font-body: Inter",
-            "      border-radius: 8px",
-            "      spacing-unit: 8px"
-          ].join("\n");
-        })
-      ].join("\n"),
-      "utf8"
-    );
+    const names = Array.from({ length: 49 }, (_, index) => `style-${index}`);
+    await writeStylesYaml(stylesDir, names);
+    for (const name of names) {
+      await writeStyleFiles(stylesDir, name);
+    }
 
     await expect(assertBuiltInStyles(stylesDir)).rejects.toThrow("Expected at least 50 built-in styles, found 49");
   });
 
   it("validates the repository built-in styles", async () => {
     const styles = await assertBuiltInStyles(new URL("../../../styles", import.meta.url));
-    const previewTemplate = JSON.parse(await readFile(new URL("../../../styles/_preview-template.pen", import.meta.url), "utf8")) as {
-      children?: unknown[];
-      variables?: Record<string, unknown>;
-    };
 
     expect(styles.length).toBeGreaterThanOrEqual(50);
-    expect(previewTemplate.children?.length).toBeGreaterThan(0);
-    expect(previewTemplate.variables).toHaveProperty("--primary");
     expect(styles).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "linear", designMdPath: "styles/linear/DESIGN.md" }),
-        expect.objectContaining({ name: "claude", designMdPath: "styles/claude/DESIGN.md" })
+        expect.objectContaining({ name: "linear-app", designMdPath: "styles/linear-app/DESIGN.md", tokensCssPath: "styles/linear-app/tokens.css", componentsHtmlPath: "styles/linear-app/components.html" }),
+        expect.objectContaining({ name: "claude", designMdPath: "styles/claude/DESIGN.md", tokensCssPath: "styles/claude/tokens.css", componentsHtmlPath: "styles/claude/components.html" })
       ])
     );
   });
 
-  it("fails when a copied style preview is missing", async () => {
+  it("fails when a copied style tokens.css is missing", async () => {
     const { sourceStylesDir, copiedStylesDir } = await createCopiedStyleFixture(["style-0", "style-1"]);
-    await rm(join(copiedStylesDir, "style-1", "preview@2x.png"));
+    await rm(join(copiedStylesDir, "style-1", "tokens.css"));
 
-    await expect(assertCopiedBuiltInStyles(sourceStylesDir, copiedStylesDir)).rejects.toThrow("preview@2x.png");
+    await expect(assertCopiedBuiltInStyles(sourceStylesDir, copiedStylesDir)).rejects.toThrow("tokens.css");
   });
 
   it("fails when copied style names do not match source styles", async () => {
@@ -321,14 +296,8 @@ async function writeStylesYaml(stylesDir: string, names: string[]) {
           `  - name: ${name}`,
           "    description: Test style",
           `    design_md_path: styles/${name}/DESIGN.md`,
-          "    variables:",
-          "      primary: '#111827'",
-          "      background: '#FFFFFF'",
-          "      text-primary: '#111827'",
-          "      font-heading: Inter",
-          "      font-body: Inter",
-          "      border-radius: 8px",
-          "      spacing-unit: 8px"
+          `    tokens_css_path: styles/${name}/tokens.css`,
+          `    components_html_path: styles/${name}/components.html`
         ].join("\n")
       )
     ].join("\n"),
@@ -339,7 +308,8 @@ async function writeStylesYaml(stylesDir: string, names: string[]) {
 async function writeStyleFiles(stylesDir: string, name: string) {
   await mkdir(join(stylesDir, name), { recursive: true });
   await writeFile(join(stylesDir, name, "DESIGN.md"), `# ${name}\n`, "utf8");
-  await writeFile(join(stylesDir, name, "preview@2x.png"), minimalPng);
+  await writeFile(join(stylesDir, name, "tokens.css"), `:root { --color: #000; }\n`, "utf8");
+  await writeFile(join(stylesDir, name, "components.html"), `<div class="${name}"></div>\n`, "utf8");
 }
 
 function templateUrl(platform: AgentPlatform, command: string): URL {

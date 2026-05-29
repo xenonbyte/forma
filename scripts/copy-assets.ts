@@ -1,7 +1,8 @@
 import { constants } from "node:fs";
 import { access, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep, posix } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { load } from "js-yaml";
 
 export interface AssetCopy {
   label: string;
@@ -13,6 +14,8 @@ export interface BuiltInStyleAsset {
   name: string;
   description: string;
   designMdPath: string;
+  tokensCssPath: string;
+  componentsHtmlPath: string;
 }
 
 export interface BuiltInStyleCheckOptions {
@@ -23,17 +26,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cliAssetsDir = resolve(repoRoot, "packages/cli/dist/assets");
 const repoStylesDir = resolve(repoRoot, "styles");
 const minimumBuiltInStyleCount = 50;
-const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-const requiredStyleVariableKeys = [
-  "primary",
-  "background",
-  "text-primary",
-  "font-heading",
-  "font-body",
-  "border-radius",
-  "spacing-unit"
-];
-const assetCopies: AssetCopy[] = [
+export const assetCopies: AssetCopy[] = [
   {
     label: "agent templates",
     source: resolve(repoRoot, "packages/agent/templates"),
@@ -43,6 +36,11 @@ const assetCopies: AssetCopy[] = [
     label: "styles",
     source: resolve(repoRoot, "styles"),
     target: resolve(repoRoot, "packages/cli/dist/assets/styles")
+  },
+  {
+    label: "craft",
+    source: resolve(repoRoot, "craft"),
+    target: resolve(repoRoot, "packages/cli/dist/assets/craft")
   },
   {
     label: "web dist",
@@ -80,6 +78,7 @@ export async function checkAssets(): Promise<void> {
   console.log(`validated styles: ${sourceStyles.length} built-in styles in ${relative(repoRoot, repoStylesDir)}`);
 
   await checkCopiedStyleAssets();
+  await checkCopiedCraftAssets();
   await checkCopiedWebAssets();
 }
 
@@ -106,7 +105,8 @@ export async function assertBuiltInStyles(
     const styleDir = resolve(stylesDir, style.name);
     assertPathInside(stylesDir, styleDir);
     await access(resolve(styleDir, "DESIGN.md"), constants.F_OK);
-    await assertPng(resolve(styleDir, "preview@2x.png"));
+    await access(resolve(styleDir, "tokens.css"), constants.F_OK);
+    await access(resolve(styleDir, "components.html"), constants.F_OK);
   }
 
   return styles;
@@ -137,6 +137,11 @@ export async function assertWebAssets(webAssetsDirInput: string | URL): Promise<
   }
 }
 
+export async function assertCraftAssets(craftDirInput: string | URL): Promise<void> {
+  const craftDir = filePath(craftDirInput);
+  await access(resolve(craftDir, "color.md"), constants.F_OK);
+}
+
 function assertSafeAssetTarget(target: string): void {
   const relativeTarget = relative(cliAssetsDir, resolve(target));
   if (relativeTarget === "" || relativeTarget.startsWith("..") || relativeTarget.startsWith("/")) {
@@ -153,6 +158,17 @@ async function checkCopiedStyleAssets(): Promise<void> {
 
   const copiedStyles = await assertCopiedBuiltInStyles(repoStylesDir, copiedStylesDir);
   console.log(`validated copied styles: ${copiedStyles.length} built-in styles in ${relative(repoRoot, copiedStylesDir)}`);
+}
+
+async function checkCopiedCraftAssets(): Promise<void> {
+  const copiedCraftDir = resolve(cliAssetsDir, "craft");
+  if (!(await pathExists(copiedCraftDir))) {
+    console.log(`skip copied craft: ${relative(repoRoot, copiedCraftDir)} does not exist; run pnpm build to create it`);
+    return;
+  }
+
+  await assertCraftAssets(copiedCraftDir);
+  console.log(`validated copied craft assets in ${relative(repoRoot, copiedCraftDir)}`);
 }
 
 async function checkCopiedWebAssets(): Promise<void> {
@@ -200,75 +216,22 @@ function assertMatchingStyleNames(sourceStyles: BuiltInStyleAsset[], copiedStyle
 }
 
 function parseStyleIndex(source: string): BuiltInStyleAsset[] {
-  if (!/^styles:\s*$/m.test(source)) {
-    throw new Error("Expected styles/styles.yaml to contain a top-level styles list");
+  const doc = load(source) as { styles?: Array<Record<string, string>> };
+  if (!doc?.styles || !Array.isArray(doc.styles)) {
+    throw new Error("Expected styles/styles.yaml to contain a styles list");
   }
-
-  const styles: BuiltInStyleAsset[] = [];
-  let current: (Partial<BuiltInStyleAsset> & { variableKeys: Set<string> }) | undefined;
-  let inVariables = false;
-  const flush = () => {
-    if (!current) {
-      return;
+  return doc.styles.map((s) => {
+    if (!s.name || !s.description || !s.design_md_path || !s.tokens_css_path || !s.components_html_path) {
+      throw new Error(`Incomplete built-in style entry: ${JSON.stringify(s)}`);
     }
-    const entry = current;
-    if (!entry.name || !entry.description || !entry.designMdPath) {
-      throw new Error(`Incomplete built-in style entry in styles.yaml: ${JSON.stringify(entry)}`);
-    }
-    const missingVariables = requiredStyleVariableKeys.filter((key) => !entry.variableKeys.has(key));
-    if (missingVariables.length > 0) {
-      throw new Error(`Built-in style ${entry.name} is missing required variables: ${missingVariables.join(", ")}`);
-    }
-    styles.push({ name: entry.name, description: entry.description, designMdPath: entry.designMdPath });
-  };
-
-  for (const line of source.split(/\r?\n/)) {
-    const nameMatch = line.match(/^  - name:\s*(.+)\s*$/);
-    if (nameMatch) {
-      flush();
-      current = { name: parseYamlScalar(nameMatch[1]), variableKeys: new Set<string>() };
-      inVariables = false;
-      continue;
-    }
-
-    const descriptionMatch = line.match(/^    description:\s*(.+)\s*$/);
-    if (descriptionMatch && current) {
-      current.description = parseYamlScalar(descriptionMatch[1]);
-      inVariables = false;
-      continue;
-    }
-
-    const designPathMatch = line.match(/^    design_md_path:\s*(.+)\s*$/);
-    if (designPathMatch && current) {
-      current.designMdPath = parseYamlScalar(designPathMatch[1]);
-      inVariables = false;
-      continue;
-    }
-
-    if (/^    variables:\s*$/.test(line) && current) {
-      inVariables = true;
-      continue;
-    }
-
-    const variableMatch = line.match(/^      ([A-Za-z0-9_-]+):\s*.+$/);
-    if (variableMatch && current && inVariables) {
-      current.variableKeys.add(variableMatch[1]);
-    }
-  }
-  flush();
-
-  return styles;
-}
-
-function parseYamlScalar(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
-    return trimmed.slice(1, -1).replaceAll("''", "'");
-  }
-  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-    return JSON.parse(trimmed) as string;
-  }
-  return trimmed;
+    return {
+      name: s.name,
+      description: s.description,
+      designMdPath: s.design_md_path,
+      tokensCssPath: s.tokens_css_path,
+      componentsHtmlPath: s.components_html_path
+    };
+  });
 }
 
 function assertSafeStyleDesignPath(style: BuiltInStyleAsset): void {
@@ -292,52 +255,6 @@ function assertPathInside(root: string, file: string): void {
   const relativePath = relative(resolve(root), resolve(file));
   if (relativePath === "" || relativePath.startsWith("..") || relativePath.startsWith(sep)) {
     throw new Error(`Expected style asset to stay inside ${root}: ${file}`);
-  }
-}
-
-async function assertPng(file: string): Promise<void> {
-  const data = await readFile(file);
-  if (data.length < pngSignature.length || !data.subarray(0, pngSignature.length).equals(pngSignature)) {
-    throw new Error(`Expected a valid PNG preview: ${file}`);
-  }
-
-  if (data.length < 33) {
-    throw new Error(`Expected a complete PNG preview: ${file}`);
-  }
-
-  const ihdrLength = data.readUInt32BE(8);
-  const firstChunkType = data.subarray(12, 16).toString("ascii");
-  const width = data.readUInt32BE(16);
-  const height = data.readUInt32BE(20);
-  if (ihdrLength !== 13 || firstChunkType !== "IHDR" || width === 0 || height === 0) {
-    throw new Error(`Expected a PNG preview with a nonzero IHDR: ${file}`);
-  }
-
-  let offset = 8;
-  let foundIend = false;
-  while (offset + 12 <= data.length) {
-    const chunkLength = data.readUInt32BE(offset);
-    const typeStart = offset + 4;
-    const dataStart = offset + 8;
-    const nextOffset = dataStart + chunkLength + 4;
-    if (nextOffset > data.length) {
-      throw new Error(`Expected a complete PNG chunk stream: ${file}`);
-    }
-
-    const chunkType = data.subarray(typeStart, dataStart).toString("ascii");
-    if (chunkType === "IEND") {
-      if (chunkLength !== 0) {
-        throw new Error(`Expected a valid PNG IEND chunk: ${file}`);
-      }
-      foundIend = true;
-      break;
-    }
-
-    offset = nextOffset;
-  }
-
-  if (!foundIend) {
-    throw new Error(`Expected a PNG IEND chunk: ${file}`);
   }
 }
 
