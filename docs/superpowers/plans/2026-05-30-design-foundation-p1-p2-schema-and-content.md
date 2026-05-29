@@ -111,12 +111,14 @@ describe('A1 manifest.forma extension + kind migration', () => {
     expect(validateFormaExtension({ assets: [{ path: '../escape.png', density: [1], role: 'image' }] }).ok).toBe(false);
   });
 
-  it('design-page manifest requires forma.variant; legacy missing variant normalizes to default', () => {
+  it('design-page manifest requires forma and forma.variant; legacy missing variant normalizes to default', () => {
     const base = {
       version: 1, id: 'AbCdEfGhIjKlMnOp', kind: 'design-page', renderer: 'html',
       title: 'Login', entry: 'index.html', status: 'complete', exports: ['index.html'],
       createdAt: '2026-05-30T00:00:00.000Z', updatedAt: '2026-05-30T00:00:00.000Z',
     };
+    // design-page 缺 forma → 校验失败（新写入不能绕过 variant 约束）
+    expect(validateArtifactManifest(base).ok).toBe(false);
     // design-page 缺 forma.variant → 校验失败
     expect(validateArtifactManifest({ ...base, forma: { requirementId: 'R-1234abcd', pageId: 'login' } }).ok).toBe(false);
     // 有 variant → 通过
@@ -300,14 +302,20 @@ export function validateFormaExtension(forma: unknown): FormaValidationResult {
 (c) 在 `validateArtifactManifest` 的 `return { ok: true, ... }` **之前**插入 forma 加性校验 + design-page variant 约束：
 
 ```ts
-  // forma 扩展（加性、可选）
+  // forma 扩展（整体加性、但 design-page 写入必须带 forma.variant）
+  let formaResult: FormaValidationResult | undefined;
   if (m['forma'] !== undefined) {
-    const formaResult = validateFormaExtension(m['forma']);
+    formaResult = validateFormaExtension(m['forma']);
     if (!formaResult.ok) {
       return { ok: false, error: formaResult.error };
     }
-    // design-page：forma.variant 必填（写入期强制；读取期用 normalizeFormaExtension 补默认）
-    if (m['kind'] === 'design-page' && formaResult.value.variant === undefined) {
+  }
+  // design-page：forma + forma.variant 必填（写入期强制；旧 html 读取兼容仍靠 normalize/backfill）
+  if (m['kind'] === 'design-page') {
+    if (formaResult === undefined) {
+      return { ok: false, error: 'design-page manifest requires forma' };
+    }
+    if (formaResult.value.variant === undefined) {
       return { ok: false, error: 'design-page manifest requires forma.variant' };
     }
   }
@@ -823,7 +831,7 @@ export type DesignPointer = z.infer<typeof designPointerSchema>;
   if (product.designPointers) {
     const seen = new Set<string>();
     for (const ptr of product.designPointers) {
-      const key = `${ptr.requirementId} ${ptr.pageId} ${ptr.variant}`;
+      const key = JSON.stringify([ptr.requirementId, ptr.pageId, ptr.variant]);
       if (seen.has(key)) {
         context.addIssue({ code: 'custom', message: `duplicate design pointer for (${ptr.requirementId},${ptr.pageId},${ptr.variant})`, path: ['designPointers'] });
       }
@@ -955,6 +963,38 @@ describe('A6 backfill', () => {
     expect(pointers).toHaveLength(1);
     expect(pointers[0]).toMatchObject({ requirementId: 'R-1234abcd', variant: 'default', version: 1 });
   });
+
+  it('recovers an interrupted migration where v1 exists but flat manifest cleanup did not finish', async () => {
+    const store = await makeStore();
+    const p = await store.products.createProduct({ name: 'X', description: 'y' });
+    await seedLegacyArtifact(store.home, p.id, 'AbCdEfGhIjKlMnOp', 'html', 'R-1234abcd');
+    const artifactDir = join(store.home, 'data', 'products', p.id, 'od-project', 'artifacts', 'AbCdEfGhIjKlMnOp');
+    await mkdir(join(artifactDir, 'v1'), { recursive: true });
+    await writeFile(join(artifactDir, 'v1', 'manifest.json'), JSON.stringify({
+      version: 1, id: 'AbCdEfGhIjKlMnOp', kind: 'design-page', renderer: 'html',
+      title: 'Legacy', entry: 'index.html', status: 'complete', exports: ['index.html'],
+      forma: { requirementId: 'R-1234abcd', pageId: 'R-1234abcd', variant: 'default' },
+      createdAt: '2026-05-28T00:00:00.000Z', updatedAt: '2026-05-28T00:00:00.000Z',
+    }), 'utf8');
+    await writeFile(join(artifactDir, 'v1', 'index.html'), '<h1>already copied</h1>', 'utf8');
+
+    const report = await backfillDesignArtifacts({ home: store.home });
+    expect(report.recovered).toBe(1);
+    await expect(readFile(join(artifactDir, 'manifest.json'), 'utf8')).rejects.toThrow();
+    expect(await store.products.listDesignPointers(p.id)).toHaveLength(1);
+  });
+
+  it('runs product pointer writes under the product mutation lock', async () => {
+    const store = await makeStore();
+    const p = await store.products.createProduct({ name: 'X', description: 'y' });
+    await seedLegacyArtifact(store.home, p.id, 'AbCdEfGhIjKlMnOp', 'html', 'R-1234abcd');
+    const operations: string[] = [];
+    await backfillDesignArtifacts({
+      home: store.home,
+      productMutationLock: { run: async (input, fn) => { operations.push(input.operation); return fn({ warnings: [] }); } },
+    });
+    expect(operations).toContain('backfill_design_artifacts');
+  });
 });
 ```
 
@@ -970,26 +1010,38 @@ Expected: FAIL（模块不存在）
 `packages/core/src/backfill-design-artifacts.ts`：
 
 ```ts
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { getArtifactsDir, getArtifactVersionDir } from './artifact-paths.js';
 import { getFormaPaths } from './paths.js';
 import { normalizeKind, validateArtifactManifest, type ArtifactManifest } from './artifact-manifest.js';
 import { ProductService } from './product.js';
+import { getProductMutationLock, type ProductMutationLock } from './product-mutation-lock.js';
 
-export interface BackfillOptions { home: string; }
-export interface BackfillReport { migrated: number; skipped: number; notes: string[]; }
+export interface BackfillOptions { home: string; productMutationLock?: ProductMutationLock; }
+export interface BackfillReport { migrated: number; skipped: number; recovered: number; notes: string[]; }
 
 /**
  * 幂等补齐：把旧扁平 artifact（manifest.json 在 artifacts/{id}/）迁为版本化 v1/，
  * kind 归一（html→design-page / design-system→component-library），
  * 补 forma.variant=default + forma.requirementId（若有），并建当前版本指针。
  * 已是 v{n} 布局的（含 forma）视为已迁移，跳过。
+ * 崩溃恢复：先写 v1 临时目录并原子 rename；若重跑时发现 v1 已存在但 flat manifest 仍在，
+ * 校验 v1 manifest、补指针、清理 flat 遗留后标记 recovered。
  */
 export async function backfillDesignArtifacts(options: BackfillOptions): Promise<BackfillReport> {
-  const report: BackfillReport = { migrated: 0, skipped: 0, notes: [] };
-  const products = new ProductService({ home: options.home });
-  const productsRoot = getFormaPaths(options.home).productsDir; // = home/data/products
+  const report: BackfillReport = { migrated: 0, skipped: 0, recovered: 0, notes: [] };
+  const lock = options.productMutationLock ?? getProductMutationLock(options.home);
+  const products = new ProductService({ home: options.home, productMutationLock: lock });
+  return lock.run({ operation: 'backfill_design_artifacts' }, async () => {
+    await backfillDesignArtifactsLocked(options.home, products, report);
+    return report;
+  });
+}
+
+async function backfillDesignArtifactsLocked(home: string, products: ProductService, report: BackfillReport): Promise<void> {
+  const productsRoot = getFormaPaths(home).productsDir; // = home/data/products
 
   let productIds: string[];
   try {
@@ -1009,6 +1061,16 @@ export async function backfillDesignArtifacts(options: BackfillOptions): Promise
       const flatManifest = join(artifactsDir, artifactId, 'manifest.json');
       const isFlat = await fileExists(flatManifest);
       if (!isFlat) { report.skipped += 1; continue; } // 已是版本化布局
+      const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, 1);
+      if (await dirExists(versionDir)) {
+        const existing = JSON.parse(await readFile(join(versionDir, 'manifest.json'), 'utf8')) as ArtifactManifest;
+        const validation = validateArtifactManifest(existing);
+        if (!validation.ok) { report.notes.push(`blocked ${artifactId}: existing v1 invalid: ${validation.error}`); report.skipped += 1; continue; }
+        await cleanupFlatLegacyAfterVersionExists(join(artifactsDir, artifactId));
+        await maybeSetPointer(products, productId, artifactId, existing);
+        report.recovered += 1;
+        continue;
+      }
 
       const legacy = JSON.parse(await readFile(flatManifest, 'utf8')) as ArtifactManifest & { requirementId?: string };
       const newKind = normalizeKind(legacy.kind);
@@ -1027,38 +1089,57 @@ export async function backfillDesignArtifacts(options: BackfillOptions): Promise
       const validation = validateArtifactManifest(migrated);
       if (!validation.ok) { report.notes.push(`skip ${artifactId}: ${validation.error}`); report.skipped += 1; continue; }
 
-      // 把整个旧目录搬进 v1/（原子 rename：先建临时 v1 同级再移）
-      const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, 1);
+      // 先 copy 到 v1 临时目录，再原子 rename 到 v1；成功后清理旧 flat 文件
       await moveLegacyDirIntoV1(join(artifactsDir, artifactId), versionDir, migrated);
       report.migrated += 1;
-
-      if (isDesignPage && requirementId) {
-        await products.setDesignPointerLocked(productId, {
-          requirementId, pageId, variant: 'default', artifactId, version: 1, designStatus: 'active',
-        });
-      }
+      await maybeSetPointer(products, productId, artifactId, migrated);
     }
   }
-  return report;
 }
 
 async function moveLegacyDirIntoV1(artifactDir: string, versionDir: string, migratedManifest: ArtifactManifest): Promise<void> {
-  await mkdir(versionDir, { recursive: true });
+  const tmpVersionDir = `${versionDir}.tmp-${randomBytes(4).toString('hex')}`;
+  await rm(tmpVersionDir, { recursive: true, force: true });
+  await mkdir(tmpVersionDir, { recursive: true });
   for (const entry of await readdir(artifactDir, { withFileTypes: true })) {
     if (entry.name === 'manifest.json') continue;                 // 重写后写新 manifest
-    if (/^v\d+$/.test(entry.name)) continue;                       // 已有版本目录不动（含刚建的 v1）
-    await rename(join(artifactDir, entry.name), join(versionDir, entry.name));
+    if (/^v\d+($|\.tmp-)/.test(entry.name)) continue;              // 已有版本/临时版本目录不复制
+    await cp(join(artifactDir, entry.name), join(tmpVersionDir, entry.name), { recursive: true });
   }
-  await writeFile(join(versionDir, 'manifest.json'), JSON.stringify(migratedManifest, null, 2), 'utf8');
+  await writeFile(join(tmpVersionDir, 'manifest.json'), JSON.stringify(migratedManifest, null, 2), 'utf8');
+  await rename(tmpVersionDir, versionDir);
+  await cleanupFlatLegacyAfterVersionExists(artifactDir);
+}
+
+async function cleanupFlatLegacyAfterVersionExists(artifactDir: string): Promise<void> {
   await rm(join(artifactDir, 'manifest.json'), { force: true });
+  for (const entry of await readdir(artifactDir, { withFileTypes: true })) {
+    if (/^v\d+$/.test(entry.name)) continue;
+    await rm(join(artifactDir, entry.name), { recursive: true, force: true });
+  }
+}
+
+async function maybeSetPointer(products: ProductService, productId: string, artifactId: string, manifest: ArtifactManifest): Promise<void> {
+  if (manifest.kind !== 'design-page' || !manifest.forma?.requirementId || !manifest.forma.pageId || !manifest.forma.variant) return;
+  await products.setDesignPointerLocked(productId, {
+    requirementId: manifest.forma.requirementId,
+    pageId: manifest.forma.pageId,
+    variant: manifest.forma.variant,
+    artifactId,
+    version: 1,
+    designStatus: 'active',
+  });
 }
 
 async function fileExists(file: string): Promise<boolean> {
   try { await stat(file); return true; } catch { return false; }
 }
+async function dirExists(dir: string): Promise<boolean> {
+  try { return (await stat(dir)).isDirectory(); } catch { return false; }
+}
 ```
 
-> 并发安全：backfill 是一次性离线脚本，`setDesignPointerLocked` 在此**不另加锁**（单线程顺序执行）。不要用 `createFormaStore` 跑 backfill——它在构造时跑 `validateStrictStoreReadModels`，会在半迁移/旧数据上抛错；故直接 `new ProductService({ home })`。
+> 并发安全：backfill 是一次性离线脚本，但仍用 `getProductMutationLock(options.home)` 包住整轮迁移，并把同一把锁传给 `ProductService`；`setDesignPointerLocked` 只在该锁内执行。不要用 `createFormaStore` 跑 backfill——它在构造时跑 `validateStrictStoreReadModels`，会在半迁移/旧数据上抛错；故直接 `new ProductService({ home, productMutationLock })`。
 
 - [ ] **Step 4: 跑测试确认通过**
 
