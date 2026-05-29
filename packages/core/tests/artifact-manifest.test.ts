@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { validateArtifactManifest, validateSupportingPath } from '../src/artifact-manifest.js';
+import {
+  validateArtifactManifest,
+  validateSupportingPath,
+  ALLOWED_KINDS,
+  normalizeKind,
+  validateFormaExtension,
+  normalizeFormaExtension,
+} from '../src/artifact-manifest.js';
 
 // 合法的最小 manifest
 const validManifest = {
@@ -213,5 +220,67 @@ describe('validateSupportingPath', () => {
   // 空字符串 → null
   it('returns null for empty string', () => {
     expect(validateSupportingPath('')).toBeNull();
+  });
+});
+
+describe('A1 manifest.forma extension + kind migration', () => {
+  it('accepts new kinds design-page and component-library', () => {
+    expect(ALLOWED_KINDS).toContain('design-page');
+    expect(ALLOWED_KINDS).toContain('component-library');
+    expect(ALLOWED_KINDS).toContain('html');
+    expect(ALLOWED_KINDS).toContain('design-system');
+  });
+
+  it('normalizeKind maps legacy kinds to new', () => {
+    expect(normalizeKind('html')).toBe('design-page');
+    expect(normalizeKind('design-system')).toBe('component-library');
+    expect(normalizeKind('design-page')).toBe('design-page');
+    expect(normalizeKind('svg')).toBe('svg');
+  });
+
+  it('validateFormaExtension accepts a full valid extension', () => {
+    const r = validateFormaExtension({
+      requirementId: 'R-1234abcd',
+      pageId: 'login',
+      variant: 'default',
+      brandStyle: 'ant',
+      systemStyle: 'shadcn-ui',
+      platform: 'web',
+      language: 'zh-CN',
+      provenance: { model: 'claude', sourceSkillId: 'fm-design', generatedAt: '2026-05-30T00:00:00.000Z', promptDigest: 'abc' },
+      quality: { craftChecks: [{ id: 'accent-budget', passed: true }] },
+      preview: { status: 'ready', generatedAt: '2026-05-30T00:00:00.000Z' },
+      assets: [{ path: 'assets/hero@1x.png', density: [1, 2], role: 'image' }],
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects invalid forma fields (bad preview status, empty variant, asset density not array)', () => {
+    expect(validateFormaExtension({ preview: { status: 'pending' } }).ok).toBe(false);
+    expect(validateFormaExtension({ variant: '' }).ok).toBe(false);
+    expect(validateFormaExtension({ assets: [{ path: 'assets/a.png', density: 1, role: 'image' }] }).ok).toBe(false);
+    expect(validateFormaExtension({ assets: [{ path: '../escape.png', density: [1], role: 'image' }] }).ok).toBe(false);
+  });
+
+  it('design-page manifest requires forma and forma.variant; legacy missing variant normalizes to default', () => {
+    const base = {
+      version: 1, id: 'AbCdEfGhIjKlMnOp', kind: 'design-page', renderer: 'html',
+      title: 'Login', entry: 'index.html', status: 'complete', exports: ['index.html'],
+      createdAt: '2026-05-30T00:00:00.000Z', updatedAt: '2026-05-30T00:00:00.000Z',
+    };
+    expect(validateArtifactManifest(base).ok).toBe(false);
+    expect(validateArtifactManifest({ ...base, forma: { requirementId: 'R-1234abcd', pageId: 'login' } }).ok).toBe(false);
+    const ok = validateArtifactManifest({ ...base, forma: { requirementId: 'R-1234abcd', pageId: 'login', variant: 'default' } });
+    expect(ok.ok).toBe(true);
+    expect(normalizeFormaExtension({ pageId: 'login' }).variant).toBe('default');
+  });
+
+  it('non-forma legacy manifest still validates (additive)', () => {
+    const legacy = {
+      version: 1, id: 'AbCdEfGhIjKlMnOp', kind: 'html', renderer: 'html',
+      title: 'Old', entry: 'index.html', status: 'complete', exports: ['index.html'],
+      createdAt: '2026-05-28T00:00:00.000Z', updatedAt: '2026-05-28T00:00:00.000Z',
+    };
+    expect(validateArtifactManifest(legacy).ok).toBe(true);
   });
 });

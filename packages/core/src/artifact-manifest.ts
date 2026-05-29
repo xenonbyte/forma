@@ -11,6 +11,8 @@
 export const ALLOWED_KINDS = [
   'html',
   'design-system',
+  'design-page',          // 新：需求页面设计稿（替代旧 html 用法）
+  'component-library',    // 新：generate_components 产物（替代旧 design-system 用法）
   'markdown-document',
   'svg',
   'image',
@@ -41,6 +43,128 @@ export type ArtifactKind = typeof ALLOWED_KINDS[number];
 export type ArtifactRenderer = typeof ALLOWED_RENDERERS[number];
 export type ArtifactStatus = typeof ALLOWED_STATUSES[number];
 
+// ─── forma 扩展命名空间 ─────────────────────────────────────────────────────
+const PREVIEW_STATUSES = ['ready', 'failed'] as const;
+const POINTER_DESIGN_STATUSES = ['pending', 'active', 'expired'] as const;
+
+export interface ArtifactAssetEntry {
+  /** 相对 bundle 根、须 ⊆ supportingFiles、不得逃逸 */
+  path: string;
+  /** 实际可得 density 集合（如 [1,2,3]；SVG 单份 [1]）。绝不上采样 */
+  density: number[];
+  /** 资源角色，如 image / icon / font */
+  role: string;
+  /** master 不足时实际档位不全 → true */
+  degraded?: boolean;
+}
+
+export interface ArtifactProvenance {
+  model?: string;
+  sourceSkillId?: string;
+  generatedAt?: string;
+  promptDigest?: string;
+}
+
+export interface ArtifactCraftCheck {
+  id: string;
+  passed: boolean;
+  detail?: string;
+}
+
+export interface ArtifactPreview {
+  status: typeof PREVIEW_STATUSES[number];
+  generatedAt?: string;
+  error?: string;
+}
+
+export interface ArtifactFormaExtension {
+  requirementId?: string;
+  pageId?: string;
+  variant?: string;        // design-page: 始终存在、默认 'default'、同 page 唯一
+  brandStyle?: string;
+  systemStyle?: string;
+  platform?: string;
+  language?: string;
+  provenance?: ArtifactProvenance;
+  quality?: { craftChecks?: ArtifactCraftCheck[] };
+  preview?: ArtifactPreview;
+  assets?: ArtifactAssetEntry[];
+}
+
+const LEGACY_KIND_MAP: Record<string, ArtifactKind> = {
+  html: 'design-page',
+  'design-system': 'component-library',
+};
+
+/** 读取面归一：把旧 kind 映射到新 kind，其余原样返回 */
+export function normalizeKind(kind: string): ArtifactKind {
+  return (LEGACY_KIND_MAP[kind] ?? kind) as ArtifactKind;
+}
+
+/** 读取面归一：缺 variant 的扩展补 'default' */
+export function normalizeFormaExtension(forma: ArtifactFormaExtension): ArtifactFormaExtension {
+  return { ...forma, variant: forma.variant ?? 'default' };
+}
+
+type FormaValidationResult =
+  | { ok: true; value: ArtifactFormaExtension }
+  | { ok: false; error: string };
+
+export function validateFormaExtension(forma: unknown): FormaValidationResult {
+  if (typeof forma !== 'object' || forma === null || Array.isArray(forma)) {
+    return { ok: false, error: 'forma must be a non-null object' };
+  }
+  const f = forma as Record<string, unknown>;
+
+  for (const key of ['requirementId', 'pageId', 'brandStyle', 'systemStyle', 'platform', 'language'] as const) {
+    if (f[key] !== undefined && (typeof f[key] !== 'string' || (f[key] as string).length === 0)) {
+      return { ok: false, error: `forma.${key} must be a non-empty string` };
+    }
+  }
+  if (f['variant'] !== undefined && (typeof f['variant'] !== 'string' || (f['variant'] as string).length === 0)) {
+    return { ok: false, error: 'forma.variant must be a non-empty string' };
+  }
+
+  if (f['preview'] !== undefined) {
+    const p = f['preview'] as Record<string, unknown>;
+    if (typeof p !== 'object' || p === null || !(PREVIEW_STATUSES as readonly string[]).includes(p['status'] as string)) {
+      return { ok: false, error: `forma.preview.status must be one of: ${PREVIEW_STATUSES.join(', ')}` };
+    }
+  }
+
+  if (f['assets'] !== undefined) {
+    if (!Array.isArray(f['assets'])) {
+      return { ok: false, error: 'forma.assets must be an array' };
+    }
+    for (const a of f['assets'] as unknown[]) {
+      if (typeof a !== 'object' || a === null) return { ok: false, error: 'forma.assets entry must be an object' };
+      const entry = a as Record<string, unknown>;
+      if (validateSupportingPath(entry['path']) === null) {
+        return { ok: false, error: `forma.assets path invalid: ${String(entry['path'])}` };
+      }
+      if (!Array.isArray(entry['density']) || (entry['density'] as unknown[]).some((d) => typeof d !== 'number' || d <= 0)) {
+        return { ok: false, error: 'forma.assets density must be a non-empty array of positive numbers' };
+      }
+      if (typeof entry['role'] !== 'string' || entry['role'].length === 0) {
+        return { ok: false, error: 'forma.assets role must be a non-empty string' };
+      }
+    }
+  }
+
+  if (f['provenance'] !== undefined && (typeof f['provenance'] !== 'object' || f['provenance'] === null || Array.isArray(f['provenance']))) {
+    return { ok: false, error: 'forma.provenance must be an object' };
+  }
+  if (f['quality'] !== undefined) {
+    const q = f['quality'] as Record<string, unknown>;
+    if (typeof q !== 'object' || q === null || Array.isArray(q)) return { ok: false, error: 'forma.quality must be an object' };
+    if (q['craftChecks'] !== undefined && !Array.isArray(q['craftChecks'])) {
+      return { ok: false, error: 'forma.quality.craftChecks must be an array' };
+    }
+  }
+  void POINTER_DESIGN_STATUSES; // 指针 designStatus 在 product.ts 校验，此处仅声明词表来源
+  return { ok: true, value: f as ArtifactFormaExtension };
+}
+
 export interface ArtifactManifest {
   version: 1;
   id: string;
@@ -57,6 +181,7 @@ export interface ArtifactManifest {
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+  forma?: ArtifactFormaExtension;
 }
 
 // ─── validateSupportingPath ───────────────────────────────────────────────────
@@ -226,6 +351,26 @@ export function validateArtifactManifest(manifest: unknown): ValidationResult {
     const serialized = JSON.stringify(m['metadata']);
     if (Buffer.byteLength(serialized, 'utf8') > MAX_METADATA_BYTES) {
       return { ok: false, error: `metadata must not exceed ${MAX_METADATA_BYTES} bytes when serialized` };
+    }
+  }
+
+  // forma 扩展（整体加性、但 design-page 写入必须带 forma.variant）
+  let formaResult: FormaValidationResult | undefined;
+  if (m['forma'] !== undefined) {
+    formaResult = validateFormaExtension(m['forma']);
+    if (!formaResult.ok) {
+      return { ok: false, error: formaResult.error };
+    }
+  }
+  // design-page：forma + forma.variant 必填（写入期强制；旧 html 读取兼容仍靠 normalize/backfill）
+  if (m['kind'] === 'design-page') {
+    if (formaResult === undefined) {
+      return { ok: false, error: 'design-page manifest requires forma' };
+    }
+    // Redundant narrowing guard for tsc control-flow analysis (branch is unreachable at runtime)
+    if (!formaResult.ok) return { ok: false, error: formaResult.error };
+    if (formaResult.value.variant === undefined) {
+      return { ok: false, error: 'design-page manifest requires forma.variant' };
     }
   }
 
