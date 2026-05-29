@@ -53,7 +53,7 @@ export class SessionService {
 
   async setCurrentProductLocked(productId: string): Promise<FormaSession> {
     const product = await this.products.getProduct(productId);
-    assertProductConfig(product, productId, ["platform", "style", "languages"]);
+    assertProductConfig(product, productId, ["platform", "brand_style", "languages"]);
 
     const session = sessionSchema.parse({ current_product: productId });
     await writeYamlAtomic(this.sessionFile, session);

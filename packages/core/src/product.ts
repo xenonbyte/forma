@@ -11,7 +11,6 @@ import {
   type ProductMutationLock
 } from "./product-mutation-lock.js";
 import { languages, platforms } from "./schemas.js";
-import { styleMetadataSchema } from "./styles.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
@@ -41,7 +40,8 @@ const productIndexSchema = z.object({
 
 const productSchema = productIndexEntrySchema.extend({
   platform: z.enum(platforms).optional(),
-  style: styleMetadataSchema.optional(),
+  brand_style: z.string().min(1).optional(),
+  system_style: z.string().min(1).optional(),
   languages: z.array(z.enum(languages)).optional(),
   default_language: z.enum(languages).optional(),
   requirements: z.record(z.string(), z.object({
@@ -96,7 +96,8 @@ const productSchema = productIndexEntrySchema.extend({
 
 const productConfigSchema = z.object({
   platform: z.enum(platforms),
-  style: styleMetadataSchema,
+  brand_style: z.string().min(1),
+  system_style: z.string().min(1).optional(),
   languages: z.array(z.enum(languages)).min(1),
   default_language: z.enum(languages)
 }).superRefine((config, context) => {
@@ -112,7 +113,7 @@ const productConfigSchema = z.object({
 export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
 export type Product = z.infer<typeof productSchema>;
 export type ProductConfig = z.infer<typeof productConfigSchema>;
-export type ProductConfigField = "platform" | "style" | "languages";
+export type ProductConfigField = "platform" | "brand_style" | "languages";
 export type ProductRequirements = Record<string, { latestArtifactId?: string }>;
 
 export interface ProductServiceOptions {
@@ -317,8 +318,8 @@ function isProductConfigFieldIncomplete(product: unknown, field: ProductConfigFi
   switch (field) {
     case "platform":
       return product.platform === undefined;
-    case "style":
-      return product.style === undefined;
+    case "brand_style":
+      return product.brand_style === undefined;
     case "languages":
       return (
         !Array.isArray(product.languages) ||

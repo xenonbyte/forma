@@ -120,12 +120,7 @@ async function createStoreWithStyle() {
   const store = await createTestStore();
   return {
     store,
-    style: {
-      name: "linear",
-      description: "Focused tool UI",
-      design_md_path: "styles/linear/DESIGN.md",
-      variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
-    }
+    brand_style: "linear"
   };
 }
 
@@ -145,14 +140,9 @@ async function seedReadyProduct(store: Awaited<ReturnType<typeof createTestStore
   const product = await store.products.createProduct({ name, description: "Mobile shop" });
   await store.products.initProductConfig(product.id, {
     platform: "mobile",
+    brand_style: "linear",
     languages: ["en"],
-    default_language: "en",
-    style: {
-      name: "linear",
-      description: "Focused tool UI",
-      design_md_path: "styles/linear/DESIGN.md",
-      variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
-    }
+    default_language: "en"
   });
   return product;
 }
@@ -307,11 +297,11 @@ describe("product session and style services", () => {
   });
 
   it("serializes direct session writes behind a global maintenance lock", async () => {
-    const { store, style } = await createStoreWithStyle();
+    const { store, brand_style } = await createStoreWithStyle();
     const products = new ProductService({ home: store.home });
     const sessions = new SessionService({ home: store.home, products });
     const product = await products.createProduct({ name: "Shop App", description: "Mobile shop" });
-    await products.initProductConfig(product.id, { platform: "mobile", languages: ["en"], default_language: "en", style });
+    await products.initProductConfig(product.id, { platform: "mobile", brand_style, languages: ["en"], default_language: "en" });
     const release = deferred();
     const events: string[] = [];
     const hold = getProductMutationLock(store.home).run({ operation: "test_hold" }, async () => {
@@ -337,7 +327,7 @@ describe("product session and style services", () => {
   });
 
   it("uses stable operation names for direct product and session mutations", async () => {
-    const { store, style } = await createStoreWithStyle();
+    const { store, brand_style } = await createStoreWithStyle();
     const productMutationLock = createRecordingLock();
     const products = new ProductService({ home: store.home, productMutationLock });
     const sessions = new SessionService({ home: store.home, products, productMutationLock });
@@ -345,9 +335,9 @@ describe("product session and style services", () => {
     const product = await products.createProduct({ name: "Shop App", description: "Mobile shop" });
     await products.initProductConfig(product.id, {
       platform: "mobile",
+      brand_style,
       languages: ["en"],
-      default_language: "en",
-      style
+      default_language: "en"
     });
     await writeComponentLibrary(store.home, product.id, { children: [{ id: "button" }] });
     await sessions.setCurrentProduct(product.id);
@@ -509,19 +499,19 @@ describe("product session and style services", () => {
     await expect(store.sessions.setCurrentProduct(product.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
       details: {
-        missing: ["platform", "style", "languages"]
+        missing: ["platform", "brand_style", "languages"]
       }
     });
   });
 
   it("stores product language config and rejects invalid defaults", async () => {
-    const { store, style } = await createStoreWithStyle();
+    const { store, brand_style } = await createStoreWithStyle();
     const product = await store.products.createProduct({ name: "App", description: "Demo" });
 
     await expect(
       store.products.initProductConfig(product.id, {
         platform: "web",
-        style,
+        brand_style,
         languages: ["zh-CN", "en"],
         default_language: "en"
       })
@@ -537,7 +527,7 @@ describe("product session and style services", () => {
     await expect(
       store.products.initProductConfig(product.id, {
         platform: "web",
-        style,
+        brand_style,
         languages: ["zh-CN"],
         default_language: "en"
       })
@@ -574,14 +564,9 @@ describe("product session and style services", () => {
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
     await store.products.initProductConfig(product.id, {
       platform: "mobile",
+      brand_style: "linear",
       languages: ["en"],
-      default_language: "en",
-      style: {
-        name: "linear",
-        description: "Focused tool UI",
-        design_md_path: "styles/linear/DESIGN.md",
-        variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
-      }
+      default_language: "en"
     });
     await writeComponentLibrary(store.home, product.id);
     await store.sessions.setCurrentProduct(product.id);
@@ -590,13 +575,13 @@ describe("product session and style services", () => {
   });
 
   it("sets session after platform style languages and default language exist without initialized components", async () => {
-    const { store, style } = await createStoreWithStyle();
+    const { store, brand_style } = await createStoreWithStyle();
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
     await store.products.initProductConfig(product.id, {
       platform: "mobile",
+      brand_style,
       languages: ["en"],
-      default_language: "en",
-      style
+      default_language: "en"
     });
 
     await store.sessions.setCurrentProduct(product.id);
@@ -606,9 +591,9 @@ describe("product session and style services", () => {
   });
 
   it("rejects session when required base product config fields are incomplete", async () => {
-    const { store, style } = await createStoreWithStyle();
+    const { store } = await createStoreWithStyle();
     const missingPlatform = await store.products.createProduct({ name: "Missing Platform", description: "Demo" });
-    const missingStyle = await store.products.createProduct({ name: "Missing Style", description: "Demo" });
+    const missingBrandStyle = await store.products.createProduct({ name: "Missing Brand Style", description: "Demo" });
     const missingLanguages = await store.products.createProduct({ name: "Missing Languages", description: "Demo" });
     const missingDefaultLanguage = await store.products.createProduct({ name: "Missing Default", description: "Demo" });
     const invalidDefaultLanguage = await store.products.createProduct({ name: "Invalid Default", description: "Demo" });
@@ -619,23 +604,18 @@ describe("product session and style services", () => {
         `id: ${missingPlatform.id}`,
         "name: Missing Platform",
         "description: Demo",
+        "brand_style: linear",
         "languages:",
         "  - en",
         "default_language: en",
-        "style:",
-        "  name: linear",
-        "  description: Focused tool UI",
-        "  design_md_path: styles/linear/DESIGN.md",
-        "  variables:",
-        ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
         ""
       ].join("\n")
     );
     await writeFile(
-      join(store.home, "data", missingStyle.id, "product.yaml"),
+      join(store.home, "data", missingBrandStyle.id, "product.yaml"),
       [
-        `id: ${missingStyle.id}`,
-        "name: Missing Style",
+        `id: ${missingBrandStyle.id}`,
+        "name: Missing Brand Style",
         "description: Demo",
         "platform: web",
         "languages:",
@@ -651,12 +631,7 @@ describe("product session and style services", () => {
         "name: Missing Languages",
         "description: Demo",
         "platform: web",
-        "style:",
-        "  name: linear",
-        "  description: Focused tool UI",
-        "  design_md_path: styles/linear/DESIGN.md",
-        "  variables:",
-        ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
+        "brand_style: linear",
         ""
       ].join("\n")
     );
@@ -667,14 +642,9 @@ describe("product session and style services", () => {
         "name: Missing Default",
         "description: Demo",
         "platform: web",
+        "brand_style: linear",
         "languages:",
         "  - en",
-        "style:",
-        "  name: linear",
-        "  description: Focused tool UI",
-        "  design_md_path: styles/linear/DESIGN.md",
-        "  variables:",
-        ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
         ""
       ].join("\n")
     );
@@ -685,15 +655,10 @@ describe("product session and style services", () => {
         "name: Invalid Default",
         "description: Demo",
         "platform: web",
+        "brand_style: linear",
         "languages:",
         "  - zh-CN",
         "default_language: en",
-        "style:",
-        "  name: linear",
-        "  description: Focused tool UI",
-        "  design_md_path: styles/linear/DESIGN.md",
-        "  variables:",
-        ...Object.entries(style.variables).map(([key, value]) => `    ${key}: ${JSON.stringify(value)}`),
         ""
       ].join("\n")
     );
@@ -702,9 +667,9 @@ describe("product session and style services", () => {
       code: "PRODUCT_CONFIG_INCOMPLETE",
       details: { missing: ["platform"] }
     });
-    await expect(store.sessions.setCurrentProduct(missingStyle.id)).rejects.toMatchObject({
+    await expect(store.sessions.setCurrentProduct(missingBrandStyle.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { missing: ["style"] }
+      details: { missing: ["brand_style"] }
     });
     await expect(store.sessions.setCurrentProduct(missingLanguages.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
@@ -1308,52 +1273,16 @@ describe("product session and style services", () => {
     await expect(store.products.getProduct("P-missing")).rejects.toMatchObject({ code: "PRODUCT_NOT_FOUND" });
   });
 
-  it("rejects unsafe style design paths in product config", async () => {
-    const store = await createTestStore();
-    const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
-    const baseConfig = {
-      platform: "mobile" as const,
-      languages: ["en"] as ["en"],
-      default_language: "en" as const,
-      style: {
-        name: "linear",
-        description: "Focused tool UI",
-        design_md_path: "styles/linear/DESIGN.md",
-        variables: store.styles.withDefaultVariables({})
-      }
-    };
-
-    await expect(
-      store.products.initProductConfig(product.id, {
-        ...baseConfig,
-        style: { ...baseConfig.style, design_md_path: "../outside.md" }
-      })
-    ).rejects.toThrow();
-    await expect(
-      store.products.initProductConfig(product.id, {
-        ...baseConfig,
-        style: { ...baseConfig.style, design_md_path: "/tmp/outside.md" }
-      })
-    ).rejects.toThrow();
-  });
-
-  it("rejects incomplete style variables in product config", async () => {
+  it("rejects empty brand_style in product config", async () => {
     const store = await createTestStore();
     const product = await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
 
     await expect(
       store.products.initProductConfig(product.id, {
         platform: "mobile",
+        brand_style: "",
         languages: ["en"],
-        default_language: "en",
-        style: {
-          name: "linear",
-          description: "Focused tool UI",
-          design_md_path: "styles/linear/DESIGN.md",
-          variables: {
-            primary: "#5E6AD2"
-          }
-        }
+        default_language: "en"
       })
     ).rejects.toThrow();
   });
@@ -1367,9 +1296,8 @@ describe("product session and style services", () => {
     expect(styles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "linear",
-          description: "Focused tool UI",
-          design_md_path: "styles/linear/DESIGN.md"
+          name: "agentic",
+          design_md_path: "styles/agentic/DESIGN.md"
         }),
         expect.objectContaining({
           name: "claude",
@@ -1379,9 +1307,9 @@ describe("product session and style services", () => {
     );
     expect(await readFile(join(store.home, "styles", "_preview-template.pen"), "utf8")).toContain("Forma Style Preview");
 
-    const linear = await store.styles.getStyle("linear");
-    expect(linear.metadata).toMatchObject({ name: "linear", description: "Focused tool UI" });
-    expect(linear.designMd).toContain("# Linear");
+    const agentic = await store.styles.getStyle("agentic");
+    expect(agentic.metadata).toMatchObject({ name: "agentic" });
+    expect(agentic.designMd).toBeTruthy();
 
     await expect(store.styles.getStyle("missing")).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
@@ -1391,32 +1319,20 @@ describe("product session and style services", () => {
 
     const styles = await store.styles.listStyles();
 
-    expect(styles).toEqual(expect.arrayContaining([expect.objectContaining({ name: "linear" })]));
+    expect(styles).toEqual(expect.arrayContaining([expect.objectContaining({ name: "agentic" })]));
     await expect(access(join(store.home, "styles", "styles.yaml"))).resolves.toBeUndefined();
-    await expect(access(join(store.home, "styles", "linear", "DESIGN.md"))).resolves.toBeUndefined();
+    await expect(access(join(store.home, "styles", "agentic", "DESIGN.md"))).resolves.toBeUndefined();
   });
 
   it("does not overwrite existing home styles on reinstall", async () => {
     const store = await createTestStore();
     await store.styles.installBuiltInStyles();
-    await writeFile(join(store.home, "styles", "linear", "DESIGN.md"), "# Local Linear\n");
+    await writeFile(join(store.home, "styles", "agentic", "DESIGN.md"), "# Local Agentic\n");
 
     await store.styles.installBuiltInStyles();
 
-    expect(await readFile(join(store.home, "styles", "linear", "DESIGN.md"), "utf8")).toBe("# Local Linear\n");
+    expect(await readFile(join(store.home, "styles", "agentic", "DESIGN.md"), "utf8")).toBe("# Local Agentic\n");
   });
 
-  it("fills default style variables", async () => {
-    const store = await createTestStore();
-
-    expect(store.styles.withDefaultVariables({ primary: "#5E6AD2" })).toEqual({
-      primary: "#5E6AD2",
-      background: "#FFFFFF",
-      "text-primary": "#111827",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "8px",
-      "spacing-unit": "8px"
-    });
-  });
 });
+
