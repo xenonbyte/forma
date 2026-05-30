@@ -33,6 +33,7 @@ describe('extractDom via renderArtifactPreview', () => {
       expect(title).toBeDefined();
       expect(title!.color[0]).toBeLessThan(40);
       expect(title!.backgroundColor.slice(0, 3)).toEqual([255, 255, 255]);
+      expect(title!.backgroundSolid).toBe(true);
       expect(title!.fontFamily).toContain('inter');
     } finally {
       await rm(bundleDir, { recursive: true, force: true });
@@ -71,11 +72,64 @@ describe('extractDom via renderArtifactPreview', () => {
       const copy = result.snapshot!.textNodes.find((n) => n.text.includes('Overlay copy'));
       expect(copy).toBeDefined();
       expect(copy!.backgroundColor.slice(0, 3)).toEqual([128, 128, 128]);
+      expect(copy!.backgroundSolid).toBe(true);
       const ratio = contrastRatio(
         [copy!.color[0], copy!.color[1], copy!.color[2]],
         [copy!.backgroundColor[0], copy!.backgroundColor[1], copy!.backgroundColor[2]],
       );
       expect(ratio).toBeLessThan(4.5);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('marks text over a CSS gradient/background-image as non-solid (not a white fallback)', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap4-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <section style="background:linear-gradient(#000000,#333333)">
+           <p style="color:#ffffff;font-size:16px;font-family:Inter">On gradient</p>
+         </section>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const onGradient = result.snapshot!.textNodes.find((n) => n.text.includes('On gradient'));
+      expect(onGradient).toBeDefined();
+      expect(onGradient!.backgroundSolid).toBe(false);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('captures rendered text from form controls (submit value, placeholder)', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap5-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <input type="submit" value="Save Changes" style="color:#111111;font-size:14px;font-family:Inter">
+         <input type="text" placeholder="Search here" style="color:#111111;font-size:14px;font-family:Inter">
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      const submit = nodes.find((n) => n.text === 'Save Changes');
+      expect(submit).toBeDefined();
+      expect(submit!.tag).toBe('input');
+      expect(submit!.color[0]).toBeLessThan(40); // near-#111
+      expect(submit!.backgroundSolid).toBe(true);
+      const placeholder = nodes.find((n) => n.text === 'Search here');
+      expect(placeholder).toBeDefined();
     } finally {
       await rm(bundleDir, { recursive: true, force: true });
     }

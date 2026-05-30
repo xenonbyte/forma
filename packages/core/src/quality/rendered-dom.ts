@@ -17,9 +17,18 @@ export interface RenderedTextNode {
    * effective (ancestor-resolved, opaque) background color as rgba. Always opaque
    * (alpha=1): extractSnapshotInPage composites translucent ancestor layers down
    * to a solid color, and lintCraft relies on this — it ignores the alpha channel.
+   * Only meaningful when `backgroundSolid` is true; otherwise it is a best-effort
+   * fallback and must not be used to judge contrast/palette.
    */
   backgroundColor: [number, number, number, number];
-  /** trimmed direct text content, truncated */
+  /**
+   * true when the node's backdrop reduces to a single solid color. false when the
+   * nearest painted backdrop is a CSS gradient or background-image, in which case
+   * `backgroundColor` is indeterminate and contrast/palette skip the node rather
+   * than judging it against a wrong white fallback.
+   */
+  backgroundSolid: boolean;
+  /** trimmed rendered text (direct text, or a form control's value/placeholder), truncated */
   text: string;
 }
 
@@ -63,19 +72,47 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     ];
   }
 
-  function effectiveBackground(el: Element): [number, number, number, number] {
+  function resolveBackground(el: Element): { color: [number, number, number, number]; solid: boolean } {
     const layers: Array<[number, number, number, number]> = [];
     let node: Element | null = el;
+    let solid = true;
     while (node) {
-      const bg = parseRgb(getComputedStyle(node).backgroundColor);
-      if (bg[3] > 0) layers.push(bg);
+      const cs = getComputedStyle(node);
+      // A gradient or background-image is the actual backdrop here; it cannot be
+      // reduced to one color, so mark the stack non-solid and stop.
+      if (cs.backgroundImage && cs.backgroundImage !== 'none') {
+        solid = false;
+        break;
+      }
+      const bg = parseRgb(cs.backgroundColor);
+      if (bg[3] > 0) {
+        layers.push(bg);
+        if (bg[3] >= 1) break; // an opaque layer seals everything beneath it
+      }
       node = node.parentElement;
     }
     let resolved: [number, number, number, number] = [255, 255, 255, 1];
     for (const layer of layers.reverse()) {
       resolved = compositeOver(layer, resolved);
     }
-    return [resolved[0], resolved[1], resolved[2], 1];
+    return { color: [resolved[0], resolved[1], resolved[2], 1], solid };
+  }
+
+  function primaryFamily(cs: CSSStyleDeclaration): string {
+    return (cs.fontFamily.split(',')[0] ?? '').replace(/['"]/g, '').trim().toLowerCase();
+  }
+
+  function pushNode(el: Element, cs: CSSStyleDeclaration, color: [number, number, number, number], text: string): void {
+    const bg = resolveBackground(el);
+    textNodes.push({
+      tag: el.tagName.toLowerCase(),
+      fontSizePx: parseFloat(cs.fontSize) || 0,
+      fontFamily: primaryFamily(cs),
+      color,
+      backgroundColor: bg.color,
+      backgroundSolid: bg.solid,
+      text: text.trim().slice(0, 80),
+    });
   }
 
   function hasDirectText(el: Element): boolean {
@@ -85,22 +122,46 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return false;
   }
 
+  /**
+   * Rendered text for a form control comes from attributes, not child text nodes.
+   * Returns the visible label (value, else placeholder) and the color it renders
+   * in, or null when the control shows no judgeable text.
+   */
+  function formControlText(el: Element, cs: CSSStyleDeclaration): { text: string; color: [number, number, number, number] } | null {
+    const tag = el.tagName.toLowerCase();
+    if (tag !== 'input' && tag !== 'textarea') return null;
+    const type = (el.getAttribute('type') ?? 'text').toLowerCase();
+    const control = el as HTMLInputElement | HTMLTextAreaElement;
+    const value = control.value != null ? String(control.value) : '';
+    // password renders masked dots — not real text to judge.
+    if (value.trim().length > 0 && type !== 'password') {
+      return { text: value, color: parseRgb(cs.color) };
+    }
+    const placeholder = el.getAttribute('placeholder');
+    if (placeholder && placeholder.trim().length > 0) {
+      const pcs = getComputedStyle(el, '::placeholder');
+      const pColor = pcs && pcs.color ? parseRgb(pcs.color) : parseRgb(cs.color);
+      return { text: placeholder, color: pColor };
+    }
+    return null;
+  }
+
   const textNodes: RenderedTextNode[] = [];
   const all = document.body ? document.body.querySelectorAll('*') : [];
   for (const el of Array.from(all)) {
     if (textNodes.length >= MAX) break;
-    if (!hasDirectText(el)) continue;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
-    const family = (cs.fontFamily.split(',')[0] ?? '').replace(/['"]/g, '').trim().toLowerCase();
-    textNodes.push({
-      tag: el.tagName.toLowerCase(),
-      fontSizePx: parseFloat(cs.fontSize) || 0,
-      fontFamily: family,
-      color: parseRgb(cs.color),
-      backgroundColor: effectiveBackground(el),
-      text: (el.textContent ?? '').trim().slice(0, 80),
-    });
+
+    const tag = el.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea') {
+      const fc = formControlText(el, cs);
+      if (fc) pushNode(el, cs, fc.color, fc.text);
+      continue;
+    }
+
+    if (!hasDirectText(el)) continue;
+    pushNode(el, cs, parseRgb(cs.color), el.textContent ?? '');
   }
 
   return {

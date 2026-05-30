@@ -33,11 +33,12 @@ function rgbKey(c: Rgb): string {
  * Deterministic craft lint over a rendered-DOM snapshot. Pure: no browser, no IO.
  * Returns one ArtifactCraftCheck per rule. Brand-agnostic; thresholds via options.
  *
- * Invariant: each node's `backgroundColor` is treated as opaque — only its RGB
- * channels are used and the alpha is ignored. `extractSnapshotInPage` guarantees
- * this by resolving ancestor backgrounds to an opaque color (alpha=1). A caller
- * that hand-builds a snapshot with a translucent `backgroundColor` must composite
- * it to opaque first, or contrast/palette results will be off.
+ * Invariant: a node's `backgroundColor` is used (RGB only, alpha ignored) only when
+ * `backgroundSolid` is true. `extractSnapshotInPage` resolves ancestor backgrounds
+ * to an opaque color and sets `backgroundSolid=false` when the backdrop is a
+ * gradient/image — those nodes are skipped by the contrast/palette rules. A caller
+ * that hand-builds a snapshot must set `backgroundSolid` accordingly (and composite
+ * any translucent background to opaque) or contrast/palette results will be off.
  */
 export function lintCraft(snapshot: RenderedDomSnapshot, options: LintOptions = {}): ArtifactCraftCheck[] {
   const opts = { ...DEFAULTS, ...options };
@@ -52,22 +53,29 @@ export function lintCraft(snapshot: RenderedDomSnapshot, options: LintOptions = 
 }
 
 function contrastCheck(nodes: RenderedTextNode[], min: number): ArtifactCraftCheck {
+  // Only nodes with a solid backdrop are judgeable. Text over a gradient/image has
+  // no single background color, so it is skipped rather than judged against a wrong
+  // white fallback (which would produce both false fails and false passes).
+  const judgeable = nodes.filter((n) => n.backgroundSolid);
+  const skipped = nodes.length - judgeable.length;
+  const skipNote = skipped > 0 ? ` (${skipped} skipped: non-solid background)` : '';
+
   const failures: Array<{ text: string; ratio: number }> = [];
-  for (const n of nodes) {
+  for (const n of judgeable) {
     const fg = compositeOver(n.color, [n.backgroundColor[0], n.backgroundColor[1], n.backgroundColor[2]]);
     const bg: Rgb = [n.backgroundColor[0], n.backgroundColor[1], n.backgroundColor[2]];
     const ratio = contrastRatio(fg, bg);
     if (ratio < min) failures.push({ text: n.text, ratio });
   }
   if (failures.length === 0) {
-    return { id: 'contrast-aa', passed: true, detail: `all ${nodes.length} text node(s) ≥ ${min}:1` };
+    return { id: 'contrast-aa', passed: true, detail: `all ${judgeable.length} text node(s) ≥ ${min}:1${skipNote}` };
   }
   const worst = failures.reduce((a, b) => (b.ratio < a.ratio ? b : a));
   const sample = failures.slice(0, 3).map((f) => `"${f.text}" (${f.ratio.toFixed(2)}:1)`).join('; ');
   return {
     id: 'contrast-aa',
     passed: false,
-    detail: `${failures.length}/${nodes.length} text node(s) below ${min}:1 (worst ${worst.ratio.toFixed(2)}:1). e.g. ${sample}`,
+    detail: `${failures.length}/${judgeable.length} text node(s) below ${min}:1 (worst ${worst.ratio.toFixed(2)}:1)${skipNote}. e.g. ${sample}`,
   };
 }
 
@@ -84,8 +92,14 @@ function typeScaleCheck(nodes: RenderedTextNode[], max: number): ArtifactCraftCh
 function colorPaletteCheck(nodes: RenderedTextNode[], max: number): ArtifactCraftCheck {
   const colors = new Set<string>();
   for (const n of nodes) {
-    colors.add(rgbKey(compositeOver(n.color, [n.backgroundColor[0], n.backgroundColor[1], n.backgroundColor[2]])));
-    colors.add(rgbKey([n.backgroundColor[0], n.backgroundColor[1], n.backgroundColor[2]]));
+    if (n.backgroundSolid) {
+      colors.add(rgbKey(compositeOver(n.color, [n.backgroundColor[0], n.backgroundColor[1], n.backgroundColor[2]])));
+      colors.add(rgbKey([n.backgroundColor[0], n.backgroundColor[1], n.backgroundColor[2]]));
+    } else {
+      // Backdrop color is indeterminate; count only the author's text color, not a
+      // fabricated white background.
+      colors.add(rgbKey([n.color[0], n.color[1], n.color[2]]));
+    }
   }
   const passed = colors.size <= max;
   return {

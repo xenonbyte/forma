@@ -9,6 +9,7 @@ function node(over: Partial<RenderedTextNode> = {}): RenderedTextNode {
     fontFamily: 'inter',
     color: [17, 17, 17, 1],
     backgroundColor: [255, 255, 255, 1],
+    backgroundSolid: true,
     text: 'sample',
     ...over,
   };
@@ -74,6 +75,40 @@ describe('lintCraft', () => {
 
   it('ignores invisible nodes (alpha 0 / size 0) in contrast', () => {
     const c = check(lintCraft(snap([node({ color: [170, 170, 170, 0] }), node({ color: [17, 17, 17, 1] })])), 'contrast-aa');
+    expect(c.passed).toBe(true);
+  });
+
+  it('skips non-solid-background nodes in contrast (gradient/image is unsupported, not a false fail)', () => {
+    // A would-be failing pair (light grey text) but its backdrop is a gradient/image.
+    const c = check(lintCraft(snap([node({ color: [200, 200, 200, 1], backgroundSolid: false })])), 'contrast-aa');
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/skipped/);
+  });
+
+  it('judges only solid-background nodes, noting skipped non-solid ones', () => {
+    const c = check(
+      lintCraft(
+        snap([
+          node({ color: [17, 17, 17, 1], backgroundSolid: true }), // judgeable, passes
+          node({ color: [10, 10, 10, 1], backgroundSolid: false }), // skipped
+        ]),
+      ),
+      'contrast-aa',
+    );
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/1 text node/);
+    expect(c.detail).toMatch(/1 skipped/);
+  });
+
+  it('non-solid nodes do not inject a fabricated white background into the palette', () => {
+    // Two non-solid nodes sharing one text color → 1 distinct color, not 1 color + white.
+    const c = check(
+      lintCraft(snap([
+        node({ color: [10, 20, 30, 1], backgroundSolid: false }),
+        node({ color: [10, 20, 30, 1], backgroundSolid: false }),
+      ]), { maxColors: 1 }),
+      'color-palette',
+    );
     expect(c.passed).toBe(true);
   });
 
