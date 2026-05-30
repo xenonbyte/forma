@@ -57,3 +57,39 @@ describe("fm-design template", () => {
     expect(t.blob).toContain("<script>");
   });
 });
+
+describe("fm-refine-components template", () => {
+  it("uses the Forma route header on every platform", async () => {
+    const t = await loadCommand("fm-refine-components");
+    expect(t.claude).toContain("# Forma route: fm-refine-components");
+    expect(t.codex).toContain("name: fm-refine-components");
+    expect(t.gemini).toContain("# Forma route: fm-refine-components");
+  });
+
+  it("uses get_style for knowledge (no get_design_context) before the component save tool", async () => {
+    const t = await loadCommand("fm-refine-components");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("get_style");
+      expect(lc).not.toContain("get_design_context");
+      expectOrder(lc, "get_style", "generate_components");
+    }
+  });
+
+  it("uses brand_style + system_style and the component save tool", async () => {
+    const t = await loadCommand("fm-refine-components");
+    expect(t.blob).toContain("brand_style");
+    expect(t.blob).toContain("system_style");
+    expect(t.blob).toContain("generate_components");
+  });
+
+  it("enforces self-review via craftChecks read-back", async () => {
+    const t = await loadCommand("fm-refine-components");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("get_product_artifact");
+      expect(lc).toContain("craftchecks");
+      expect(lc).toContain("self-review");
+    }
+  });
+});

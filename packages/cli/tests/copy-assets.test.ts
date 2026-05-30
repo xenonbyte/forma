@@ -10,10 +10,11 @@ const formaCommands = [
   "fm-status",
   "fm-requirement",
   "fm-rollback-design",
-  "fm-design"
+  "fm-design",
+  "fm-refine-components"
 ] as const;
 
-const disabledRuntimeCommands = ["fm-refine-components", "fm-change-style"] as const;
+const disabledRuntimeCommands = ["fm-change-style"] as const;
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
 const removedLegacyDesignTools = [
   "complete_product_init",
@@ -31,7 +32,8 @@ const codexSkillDescriptions = {
   "fm-status": "Report Forma product, requirement, and artifact status. Read-only.",
   "fm-requirement": "Add or update a Forma requirement from any granularity of product input.",
   "fm-rollback-design": "Roll back a Forma design artifact to a previous version.",
-  "fm-design": "Generate a static-HTML page design for a Forma requirement via MCP, then self-review."
+  "fm-design": "Generate a static-HTML page design for a Forma requirement via MCP, then self-review.",
+  "fm-refine-components": "Generate or refine a Forma product component library (static HTML) via MCP, then self-review."
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";
