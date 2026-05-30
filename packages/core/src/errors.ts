@@ -21,7 +21,8 @@ export type FormaErrorCode =
   | "STYLE_NOT_FOUND"
   | "REQUIREMENT_PAGE_NOT_FOUND"
   | "REQUIREMENT_PRODUCT_MISMATCH"
-  | "PREVIEW_RENDER_FAILED";
+  | "PREVIEW_RENDER_FAILED"
+  | "ARTIFACT_REMOTE_RESOURCE";
 
 export class FormaError extends Error {
   constructor(

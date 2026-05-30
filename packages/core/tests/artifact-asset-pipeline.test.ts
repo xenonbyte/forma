@@ -1,0 +1,244 @@
+/**
+ * artifact-asset-pipeline.test.ts
+ * TDD tests for localizeArtifactAssets — written BEFORE the implementation.
+ *
+ * Acceptance cases:
+ *   1. data: raster PNG → 3 density files in `files`, srcset rewrite, assets[0].density=[1,2,3]
+ *   2. data: SVG → single .svg file, density [1]
+ *   3. data: text/css via <link> → single .css file, role 'stylesheet'
+ *   4. remote <img src="https://..."> → throws ARTIFACT_REMOTE_RESOURCE
+ *   5. remote url(...) inside inline <style> → throws ARTIFACT_REMOTE_RESOURCE
+ */
+
+import { createHash } from 'node:crypto';
+import { beforeAll, describe, expect, it } from 'vitest';
+import sharp from 'sharp';
+import { localizeArtifactAssets } from '../src/artifact-asset-pipeline.js';
+import { FormaError } from '../src/errors.js';
+
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+let pngBuffer: Buffer;
+let pngBase64: string;
+
+/** Minimal valid SVG */
+const SVG_SRC = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>';
+const SVG_BASE64 = Buffer.from(SVG_SRC, 'utf8').toString('base64');
+
+/** Minimal CSS */
+const CSS_SRC = 'body { margin: 0; }';
+const CSS_BASE64 = Buffer.from(CSS_SRC, 'utf8').toString('base64');
+
+/** Helper: sha256 first 16 hex chars */
+function shortHash(buf: Buffer): string {
+  return createHash('sha256').update(buf).digest('hex').slice(0, 16);
+}
+
+beforeAll(async () => {
+  // Generate a 9×9 solid PNG — wide enough for 3x/2x/1x downscaling (widths: 9, 6, 3)
+  pngBuffer = await sharp({
+    create: { width: 9, height: 9, channels: 3, background: '#888888' },
+  })
+    .png()
+    .toBuffer();
+  pngBase64 = pngBuffer.toString('base64');
+});
+
+// ─── Case 1: data: raster PNG → 3 density files ───────────────────────────────
+
+describe('Case 1: data: PNG in <img src>', () => {
+  it('writes 3 density files and rewrites to srcset', async () => {
+    const html = `<img src="data:image/png;base64,${pngBase64}" alt="test">`;
+    const result = await localizeArtifactAssets({ html });
+
+    // exactly one asset entry
+    expect(result.assets).toHaveLength(1);
+    const asset = result.assets[0];
+
+    // density should be [1, 2, 3]
+    expect(asset.density).toEqual([1, 2, 3]);
+    expect(asset.role).toBe('image');
+    expect(asset.degraded).toBeFalsy();
+
+    // path ends with @1x.png
+    expect(asset.path).toMatch(/@1x\.png$/);
+    expect(asset.path).toMatch(/^assets\//);
+
+    // all 3 density files present in `files`
+    const hash = shortHash(pngBuffer);
+    const path1x = `assets/${hash}@1x.png`;
+    const path2x = `assets/${hash}@2x.png`;
+    const path3x = `assets/${hash}@3x.png`;
+    expect(result.files.has(path1x)).toBe(true);
+    expect(result.files.has(path2x)).toBe(true);
+    expect(result.files.has(path3x)).toBe(true);
+
+    // canonical path = @1x
+    expect(asset.path).toBe(path1x);
+
+    // every assets[].path is a key in files
+    for (const a of result.assets) {
+      expect(result.files.has(a.path)).toBe(true);
+    }
+
+    // rewritten HTML has srcset with 3 entries
+    expect(result.html).toContain('srcset=');
+    expect(result.html).toContain('1x');
+    expect(result.html).toContain('2x');
+    expect(result.html).toContain('3x');
+    // original data: URL must not appear in output
+    expect(result.html).not.toContain('data:image/png');
+
+    // src fallback set to @1x
+    expect(result.html).toContain(`src="${path1x}"`);
+  });
+
+  it('@3x file has the same bytes as the master PNG', async () => {
+    const html = `<img src="data:image/png;base64,${pngBase64}">`;
+    const result = await localizeArtifactAssets({ html });
+    const hash = shortHash(pngBuffer);
+    const buf3x = result.files.get(`assets/${hash}@3x.png`);
+    expect(buf3x).toBeDefined();
+    // master bytes == @3x bytes
+    expect(buf3x!.equals(pngBuffer)).toBe(true);
+  });
+
+  it('@2x width is Math.round(masterWidth * 2/3)', async () => {
+    const html = `<img src="data:image/png;base64,${pngBase64}">`;
+    const result = await localizeArtifactAssets({ html });
+    const hash = shortHash(pngBuffer);
+    const buf2x = result.files.get(`assets/${hash}@2x.png`);
+    expect(buf2x).toBeDefined();
+    const meta2x = await sharp(buf2x!).metadata();
+    expect(meta2x.width).toBe(Math.round(9 * 2 / 3)); // = 6
+  });
+
+  it('@1x width is Math.round(masterWidth * 1/3)', async () => {
+    const html = `<img src="data:image/png;base64,${pngBase64}">`;
+    const result = await localizeArtifactAssets({ html });
+    const hash = shortHash(pngBuffer);
+    const buf1x = result.files.get(`assets/${hash}@1x.png`);
+    expect(buf1x).toBeDefined();
+    const meta1x = await sharp(buf1x!).metadata();
+    expect(meta1x.width).toBe(Math.round(9 * 1 / 3)); // = 3
+  });
+});
+
+// ─── Case 2: data: SVG ────────────────────────────────────────────────────────
+
+describe('Case 2: data: SVG in <img src>', () => {
+  it('writes single .svg file with density [1]', async () => {
+    const html = `<img src="data:image/svg+xml;base64,${SVG_BASE64}" alt="icon">`;
+    const result = await localizeArtifactAssets({ html });
+
+    expect(result.assets).toHaveLength(1);
+    const asset = result.assets[0];
+    expect(asset.density).toEqual([1]);
+    expect(asset.role).toBe('image');
+    expect(asset.path).toMatch(/^assets\/.+\.svg$/);
+
+    // present in files
+    expect(result.files.has(asset.path)).toBe(true);
+
+    // file contents match original SVG
+    const written = result.files.get(asset.path)!;
+    expect(written.toString('utf8')).toBe(SVG_SRC);
+
+    // HTML rewritten to local relative path, no data: URL
+    expect(result.html).not.toContain('data:image/svg+xml');
+    expect(result.html).toContain(asset.path);
+  });
+});
+
+// ─── Case 3: data: text/css via <link> ───────────────────────────────────────
+
+describe('Case 3: data:text/css via <link rel="stylesheet">', () => {
+  it('writes single .css file, role=stylesheet, reference rewritten', async () => {
+    const html = `<link rel="stylesheet" href="data:text/css;base64,${CSS_BASE64}">`;
+    const result = await localizeArtifactAssets({ html });
+
+    expect(result.assets).toHaveLength(1);
+    const asset = result.assets[0];
+    expect(asset.role).toBe('stylesheet');
+    expect(asset.density).toEqual([1]);
+    expect(asset.path).toMatch(/^assets\/.+\.css$/);
+
+    // present in files
+    expect(result.files.has(asset.path)).toBe(true);
+
+    // file contents match original CSS
+    const written = result.files.get(asset.path)!;
+    expect(written.toString('utf8')).toBe(CSS_SRC);
+
+    // HTML rewritten to local path, no data: URL
+    expect(result.html).not.toContain('data:text/css');
+    expect(result.html).toContain(asset.path);
+  });
+});
+
+// ─── Case 4: remote <img src="https://..."> → reject ─────────────────────────
+
+describe('Case 4: remote img src', () => {
+  it('throws FormaError with code ARTIFACT_REMOTE_RESOURCE', async () => {
+    const html = `<img src="https://example.com/image.png" alt="remote">`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+
+  it('error details contain the remote url', async () => {
+    const remoteUrl = 'https://example.com/image.png';
+    const html = `<img src="${remoteUrl}">`;
+    try {
+      await localizeArtifactAssets({ html });
+      expect.fail('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(FormaError);
+      expect((e as FormaError).details.url).toBe(remoteUrl);
+    }
+  });
+});
+
+// ─── Case 5: remote url() inside inline <style> → reject ─────────────────────
+
+describe('Case 5: remote url() in inline <style>', () => {
+  it('throws FormaError ARTIFACT_REMOTE_RESOURCE for url(https://...)', async () => {
+    const html = `<style>body { background: url('https://cdn.example.com/bg.jpg'); }</style>`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+
+  it('throws for @import url(https://...)', async () => {
+    const html = `<style>@import url('https://fonts.googleapis.com/css2?family=Roboto');</style>`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+});
+
+// ─── dedup: same data: used twice gets same hash ─────────────────────────────
+
+describe('Deduplication', () => {
+  it('same data: URL twice → one asset entry, files contain it once', async () => {
+    const html = `<img src="data:image/svg+xml;base64,${SVG_BASE64}"><img src="data:image/svg+xml;base64,${SVG_BASE64}">`;
+    const result = await localizeArtifactAssets({ html });
+    // Both assets entries point at same path → deduped
+    expect(result.assets).toHaveLength(1);
+    expect(result.files.size).toBe(1);
+  });
+});
+
+// ─── custom assetDirName ──────────────────────────────────────────────────────
+
+describe('Custom assetDirName', () => {
+  it('uses the provided directory name', async () => {
+    const html = `<img src="data:image/svg+xml;base64,${SVG_BASE64}">`;
+    const result = await localizeArtifactAssets({ html, assetDirName: 'static' });
+    expect(result.assets[0].path).toMatch(/^static\//);
+    expect([...result.files.keys()][0]).toMatch(/^static\//);
+  });
+});

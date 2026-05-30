@@ -30,3 +30,4 @@ export * from "./preview-store.js";
 export * from "./artifact-assets.js";
 export * from "./backfill-design-artifacts.js";
 export * from "./preview-renderer.js";
+export * from "./artifact-asset-pipeline.js";
