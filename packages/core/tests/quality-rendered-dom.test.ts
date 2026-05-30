@@ -163,4 +163,86 @@ describe('extractDom via renderArtifactPreview', () => {
       await rm(bundleDir, { recursive: true, force: true });
     }
   }, 60000);
+
+  it('resolves modern CSS colors (oklch/color-mix) to real sRGB, not silent black', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap7-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <p style="color:oklch(0.7 0.15 250);font-size:16px;font-family:Inter">Oklch blue</p>
+         <p style="color:color-mix(in srgb, red 50%, blue 50%);font-size:16px;font-family:Inter">Mixed</p>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      const oklch = nodes.find((n) => n.text.includes('Oklch'));
+      const mixed = nodes.find((n) => n.text.includes('Mixed'));
+      expect(oklch).toBeDefined();
+      expect(mixed).toBeDefined();
+      // Not silently parsed as opaque black: real resolved color, alpha 1.
+      expect(oklch!.color[0] + oklch!.color[1] + oklch!.color[2]).toBeGreaterThan(0);
+      expect(oklch!.color[3]).toBe(1);
+      // oklch hue 250 is blue-ish: blue channel dominates red.
+      expect(oklch!.color[2]).toBeGreaterThan(oklch!.color[0]);
+      expect(mixed!.color[0] + mixed!.color[1] + mixed!.color[2]).toBeGreaterThan(0);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('excludes text hidden by an ancestor display:none', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap8-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div style="display:none"><p style="color:#aaaaaa;font-size:16px;font-family:Inter">hidden template text</p></div>
+         <p style="color:#111111;font-size:16px;font-family:Inter">visible text</p>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      expect(nodes.some((n) => n.text.includes('visible text'))).toBe(true);
+      expect(nodes.some((n) => n.text.includes('hidden template text'))).toBe(false);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('does not capture non-text input values (checkbox value="on") as snapshot text', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap9-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <input type="checkbox" checked>
+         <input type="radio" name="r" checked>
+         <input type="range" min="0" max="10" value="7">
+         <input type="submit" value="Submit it" style="color:#111111;font-size:14px;font-family:Inter">
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      // checkbox/radio submit value "on" and range value "7" are not drawn text.
+      expect(nodes.some((n) => n.text === 'on')).toBe(false);
+      expect(nodes.some((n) => n.text === '7')).toBe(false);
+      // the real button label is still captured.
+      expect(nodes.some((n) => n.text === 'Submit it')).toBe(true);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
 });

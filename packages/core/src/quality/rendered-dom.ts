@@ -48,15 +48,59 @@ const MAX_TEXT_NODES = 5000;
 export function extractSnapshotInPage(): RenderedDomSnapshot {
   const MAX = 5000;
 
-  function parseRgb(value: string): [number, number, number, number] {
-    const m = value.match(/rgba?\(([^)]+)\)/);
-    if (!m) return [0, 0, 0, 1];
-    const parts = m[1].split(',').map((p) => p.trim());
-    const r = Number(parts[0]) || 0;
-    const g = Number(parts[1]) || 0;
-    const b = Number(parts[2]) || 0;
+  function parseRgbString(value: string): [number, number, number, number] | null {
+    const m = value.match(/rgba?\(([^)]+)\)/i);
+    if (!m) return null;
+    const parts = m[1].split(/[,/\s]+/).map((p) => p.trim()).filter((p) => p.length > 0);
+    if (parts.length < 3) return null;
+    const r = Number(parts[0]);
+    const g = Number(parts[1]);
+    const b = Number(parts[2]);
+    if (![r, g, b].every((n) => Number.isFinite(n))) return null;
     const a = parts[3] === undefined ? 1 : Number(parts[3]);
     return [r, g, b, Number.isFinite(a) ? a : 1];
+  }
+
+  // Canvas-backed resolver for modern CSS colors. getComputedStyle may report
+  // oklch()/color-mix()/color(...) verbatim (not rgb()); painting the value and
+  // reading the pixel back resolves ANY browser-renderable color to sRGB bytes.
+  const colorCache = new Map<string, [number, number, number, number]>();
+  const probeCanvas = document.createElement('canvas');
+  probeCanvas.width = 1;
+  probeCanvas.height = 1;
+  const probeCtx = probeCanvas.getContext('2d', { willReadFrequently: true });
+
+  /**
+   * Resolve any computed CSS color string to sRGB rgba (0–255, alpha 0–1). Tries a
+   * fast rgb()/rgba() parse, then falls back to canvas painting for modern formats.
+   * Returns [0,0,0,0] (transparent) when the color cannot be resolved — so the node
+   * drops out of judging rather than being silently treated as opaque black.
+   */
+  function resolveRgba(value: string): [number, number, number, number] {
+    if (!value) return [0, 0, 0, 0];
+    const hit = colorCache.get(value);
+    if (hit) return hit;
+    let out = parseRgbString(value);
+    if (!out && probeCtx) {
+      // An invalid color assignment leaves fillStyle unchanged; probe two sentinels
+      // to tell "accepted" (both normalize equal) from "rejected" (stay different).
+      probeCtx.fillStyle = '#000';
+      probeCtx.fillStyle = value;
+      const a1 = probeCtx.fillStyle;
+      probeCtx.fillStyle = '#fff';
+      probeCtx.fillStyle = value;
+      const a2 = probeCtx.fillStyle;
+      if (a1 === a2) {
+        probeCtx.clearRect(0, 0, 1, 1);
+        probeCtx.fillStyle = value;
+        probeCtx.fillRect(0, 0, 1, 1);
+        const d = probeCtx.getImageData(0, 0, 1, 1).data;
+        out = [d[0], d[1], d[2], d[3] / 255];
+      }
+    }
+    const resolved: [number, number, number, number] = out ?? [0, 0, 0, 0];
+    colorCache.set(value, resolved);
+    return resolved;
   }
 
   function compositeOver(fg: [number, number, number, number], bg: [number, number, number, number]): [number, number, number, number] {
@@ -84,7 +128,7 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
         solid = false;
         break;
       }
-      const bg = parseRgb(cs.backgroundColor);
+      const bg = resolveRgba(cs.backgroundColor);
       if (bg[3] > 0) {
         layers.push(bg);
         if (bg[3] >= 1) break; // an opaque layer seals everything beneath it
@@ -130,27 +174,46 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return out;
   }
 
+  function placeholderText(el: Element, cs: CSSStyleDeclaration): { text: string; color: [number, number, number, number] } | null {
+    const placeholder = el.getAttribute('placeholder');
+    if (!placeholder || placeholder.trim().length === 0) return null;
+    const pcs = getComputedStyle(el, '::placeholder');
+    const pColor = pcs && pcs.color ? resolveRgba(pcs.color) : resolveRgba(cs.color);
+    return { text: placeholder, color: pColor };
+  }
+
   /**
-   * Rendered text for a form control comes from attributes, not child text nodes.
-   * Returns the visible label (value, else placeholder) and the color it renders
-   * in, or null when the control shows no judgeable text.
+   * Rendered text for a form control comes from attributes, not child text nodes —
+   * but only for controls whose value/placeholder is actually painted as text.
+   * <input type=checkbox|radio|file|color|range|hidden|image|date…> draw no text
+   * label (their .value is a submit value like "on"), so they are skipped. Returns
+   * the visible label + its rendered color, or null when there is none to judge.
    */
   function formControlText(el: Element, cs: CSSStyleDeclaration): { text: string; color: [number, number, number, number] } | null {
     const tag = el.tagName.toLowerCase();
-    if (tag !== 'input' && tag !== 'textarea') return null;
-    const type = (el.getAttribute('type') ?? 'text').toLowerCase();
     const control = el as HTMLInputElement | HTMLTextAreaElement;
     const value = control.value != null ? String(control.value) : '';
-    // password renders masked dots — not real text to judge.
-    if (value.trim().length > 0 && type !== 'password') {
-      return { text: value, color: parseRgb(cs.color) };
+
+    if (tag === 'textarea') {
+      if (value.trim().length > 0) return { text: value, color: resolveRgba(cs.color) };
+      return placeholderText(el, cs);
     }
-    const placeholder = el.getAttribute('placeholder');
-    if (placeholder && placeholder.trim().length > 0) {
-      const pcs = getComputedStyle(el, '::placeholder');
-      const pColor = pcs && pcs.color ? parseRgb(pcs.color) : parseRgb(cs.color);
-      return { text: placeholder, color: pColor };
+    if (tag !== 'input') return null;
+
+    const type = (el.getAttribute('type') ?? 'text').toLowerCase();
+    // Buttons paint their value as the label.
+    if (type === 'submit' || type === 'button' || type === 'reset') {
+      return value.trim().length > 0 ? { text: value, color: resolveRgba(cs.color) } : null;
     }
+    // Textual inputs paint their value; password masks it (skip value), but all
+    // of these can show placeholder text.
+    if (type === 'text' || type === 'search' || type === 'email' || type === 'tel' || type === 'url' || type === 'number' || type === 'password') {
+      if (value.trim().length > 0 && type !== 'password') {
+        return { text: value, color: resolveRgba(cs.color) };
+      }
+      return placeholderText(el, cs);
+    }
+    // checkbox / radio / file / color / range / hidden / image / date / … → no drawn text.
     return null;
   }
 
@@ -160,6 +223,9 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     if (textNodes.length >= MAX) break;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    // An ancestor display:none leaves this element's own computed display intact,
+    // so check actual layout: an unrendered element generates no client rects.
+    if (el.getClientRects().length === 0) continue;
 
     const tag = el.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
@@ -170,7 +236,7 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
 
     const own = directText(el);
     if (own.trim().length === 0) continue;
-    pushNode(el, cs, parseRgb(cs.color), own);
+    pushNode(el, cs, resolveRgba(cs.color), own);
   }
 
   return {
