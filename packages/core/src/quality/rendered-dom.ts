@@ -146,13 +146,30 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return (cs.fontFamily.split(',')[0] ?? '').replace(/['"]/g, '').trim().toLowerCase();
   }
 
+  // CSS opacity compounds multiplicatively down the ancestor chain, but
+  // getComputedStyle(...).color stays opaque. Fold the effective opacity into the
+  // captured foreground alpha so faded/disabled copy is judged on its rendered
+  // lightness (and opacity:0 text becomes alpha 0, which the lint filters out).
+  function effectiveOpacity(el: Element): number {
+    let op = 1;
+    let node: Element | null = el;
+    while (node) {
+      const v = parseFloat(getComputedStyle(node).opacity);
+      if (Number.isFinite(v)) op *= Math.max(0, Math.min(1, v));
+      node = node.parentElement;
+    }
+    return op;
+  }
+
   function pushNode(el: Element, cs: CSSStyleDeclaration, color: [number, number, number, number], text: string): void {
     const bg = resolveBackground(el);
+    const op = effectiveOpacity(el);
+    const folded: [number, number, number, number] = [color[0], color[1], color[2], color[3] * op];
     textNodes.push({
       tag: el.tagName.toLowerCase(),
       fontSizePx: parseFloat(cs.fontSize) || 0,
       fontFamily: primaryFamily(cs),
-      color,
+      color: folded,
       backgroundColor: bg.color,
       backgroundSolid: bg.solid,
       text: text.trim().slice(0, 80),
@@ -218,8 +235,12 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
   }
 
   const textNodes: RenderedTextNode[] = [];
-  const all = document.body ? document.body.querySelectorAll('*') : [];
-  for (const el of Array.from(all)) {
+  // Include <body> itself: querySelectorAll('*') yields only descendants, so text
+  // placed directly under body (<body>Hello</body>) would otherwise be unlinted.
+  const all = document.body
+    ? [document.body, ...Array.from(document.body.querySelectorAll('*'))]
+    : [];
+  for (const el of all) {
     if (textNodes.length >= MAX) break;
     const cs = getComputedStyle(el);
     if (cs.visibility === 'hidden' || cs.display === 'none') continue;
@@ -231,6 +252,18 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     if (tag === 'input' || tag === 'textarea') {
       const fc = formControlText(el, cs);
       if (fc) pushNode(el, cs, fc.color, fc.text);
+      continue;
+    }
+
+    // <select> renders its selected option's label; that text lives in descendant
+    // <option> nodes, so directText(select) misses it — capture it explicitly.
+    if (tag === 'select') {
+      const sel = el as HTMLSelectElement;
+      const opt = sel.selectedOptions && sel.selectedOptions.length > 0
+        ? sel.selectedOptions[0]
+        : (sel.options ? sel.options[sel.selectedIndex] : null);
+      const label = opt ? (opt.textContent ?? '') : '';
+      if (label.trim().length > 0) pushNode(el, cs, resolveRgba(cs.color), label);
       continue;
     }
 

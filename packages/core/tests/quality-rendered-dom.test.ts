@@ -245,4 +245,83 @@ describe('extractDom via renderArtifactPreview', () => {
       await rm(bundleDir, { recursive: true, force: true });
     }
   }, 60000);
+
+  it('folds CSS opacity into the captured foreground alpha', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap10-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div style="opacity:0.5">
+           <p style="color:#111111;opacity:0.4;font-size:16px;font-family:Inter">Faded copy</p>
+         </div>
+         <p style="color:#111111;opacity:0;font-size:16px;font-family:Inter">Invisible copy</p>
+         <p style="color:#111111;font-size:16px;font-family:Inter">Full copy</p>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      const faded = nodes.find((n) => n.text === 'Faded copy');
+      const invisible = nodes.find((n) => n.text === 'Invisible copy');
+      const full = nodes.find((n) => n.text === 'Full copy');
+      expect(faded).toBeDefined();
+      // 0.5 (ancestor) * 0.4 (self) = 0.2
+      expect(faded!.color[3]).toBeCloseTo(0.2, 2);
+      expect(invisible!.color[3]).toBe(0);
+      expect(full!.color[3]).toBe(1);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('captures the selected option label of a <select>', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap11-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <select style="color:#111111;font-size:14px;font-family:Inter">
+           <option value="a">Apple</option>
+           <option value="b" selected>Banana</option>
+         </select>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      const select = nodes.find((n) => n.tag === 'select');
+      expect(select).toBeDefined();
+      expect(select!.text).toBe('Banana');
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('includes text rendered directly under <body>', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap12-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff;color:#111111;font-size:16px;font-family:Inter">Hello body</body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      const body = nodes.find((n) => n.tag === 'body');
+      expect(body).toBeDefined();
+      expect(body!.text).toBe('Hello body');
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
 });
