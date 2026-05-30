@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 启用三个设计生成技能命令 `fm-design` / `fm-refine-components` / `fm-change-style`，在 claude/codex/gemini 三平台各落一份**薄胶水**模板：编排 P4 的 MCP 工具（生成前 `get_design_context` / `get_style`、生成后 save）、不内联 craft 知识、并**强制 self-review**（读回 `manifest.forma.quality.craftChecks`，违规重生成 + prose craft 清单）。
+**Goal:** 启用三个设计生成技能命令 `fm-design` / `fm-refine-components` / `fm-change-style`，在 claude/codex/gemini 三平台各落一份**薄胶水**模板：编排 P4 的 MCP 工具（生成前 `get_design_context` / `get_style`、生成后 save）、不内联 craft 知识、并**强制 self-review**（读回 `manifest.forma.quality.craftChecks`，违规重生成 + prose craft 清单）。同时把现有 `fm-rollback-design` 模板同步到 P4 的 page/variant/version rollback 语义。
 
 **Architecture:** 模板是纯 prose 胶水，知识本体仍由 MCP 即时下发。安装器是**数据驱动**的：`InstallService.installCommandTemplates`（`packages/core/src/install.ts`）遍历 `formaInstallCommands` × 平台元数据，把 `templates/{platform}/<pattern>` 拷到目标路径。所以「启用一个命令」= 在 `formaInstallCommands`（install 真源）+ `formaAgentCommands`（agent 镜像）注册 + 为三平台各建一份模板。**但现状不是从零**：这三个命令此刻被测试**显式禁止**——`copy-assets.test.ts` 的 `disabledRuntimeCommands` 与 `install.test.ts` 的 `removedLegacyCommands` 断言它们的模板不存在、且命令数组里没有它们。P6 的核心是**把它们从「禁用」翻到「启用」**：建模板 + 注册 + 翻转这些测试守卫。
 
@@ -24,7 +24,7 @@
 8. **两个命令数组必须始终相等**：`formaInstallCommands`（install.ts）与 `formaAgentCommands`（agent/src/index.ts）—— `copy-assets.test.ts` 的 `agent template inventory` 断言两者都等于同一列表、且三平台模板目录列举（`sourceCommands`）也等于该列表。故**每个 task 必须同步**：建三平台模板 + 两个 src 数组 + 两处测试命令数组 + 移出禁用列表，一次到位（否则 `sourceCommands` 相等断言会红）。
 9. **shared SKILL.md 禁词**：`copy-assets.test.ts` 断言 shared SKILL.md `not.toContain("generate_components")` 且 `not.toContain("set_current_session")`。P6.4 给 shared 加 self-review 指引时**不得**出现 `generate_components` 字面（用命令名 `fm-refine-components` 或描述性措辞）。
 10. **`fm-refine-design` 永久移除**：它是更早的遗留名、不在本期三命令内，保留在两处测试的「removed」列表里。
-11. **fm-rollback-design 不在本期**：现有模板已是 P4 的 rollback 语义，无需改。
+11. **fm-rollback-design 必须先修**：现有模板仍是旧 `target_artifact_id` 语义；P6.0 先同步到 P4 当前 schema：`rollback_requirement_design(product_id, requirement_id, page_id, variant?, target_version)`，并更新测试禁止旧字段。
 
 ---
 
@@ -47,11 +47,14 @@
 修改：
 | 文件 | 改动 |
 |---|---|
+| `packages/agent/templates/claude/fm-rollback-design.md` | P6.0 更新为 page/variant/version rollback 语义 |
+| `packages/agent/templates/codex/fm-rollback-design/SKILL.md` | P6.0 更新为 page/variant/version rollback 语义 |
+| `packages/agent/templates/gemini/fm-rollback-design.toml` | P6.0 更新为 page/variant/version rollback 语义 |
 | `packages/core/src/install.ts` | `formaInstallCommands` 追加 3 命令 |
 | `packages/agent/src/index.ts` | `formaAgentCommands` 追加 3 命令 |
 | `packages/core/tests/install.test.ts` | `commands` 加 3；`removedLegacyCommands` 收缩为 `["fm-refine-design"]` |
-| `packages/cli/tests/copy-assets.test.ts` | `formaCommands` 加 3；移除 `disabledRuntimeCommands` 的对应项 + 其断言循环；`codexSkillDescriptions` 加 3 条 |
-| `packages/agent/templates/shared/SKILL.md` | P6.4 增一行 self-review（craftChecks 读回）指引，避开禁词 |
+| `packages/cli/tests/copy-assets.test.ts` | P6.0 更新 rollback 断言；后续 `formaCommands` 加 3、移除 `disabledRuntimeCommands` 的对应项 + 其断言循环、`codexSkillDescriptions` 加 3 条 |
+| `packages/agent/templates/shared/SKILL.md` | P6.4 拆分页面/组件取知识指引，并增 self-review（craftChecks 读回）指引，避开禁词 |
 
 新增测试：
 - `packages/cli/tests/design-commands.test.ts` — 跨平台校验设计命令模板的胶水语义：调用顺序（context 工具 → save 工具）、引用正确 save 工具、用 `brand_style`+`system_style`、含 self-review（`get_product_artifact` + `craftChecks`）。
@@ -62,11 +65,127 @@
 - `grep` 在本 shell 偶发不可用，用 `rg` / `node -e` / Read 代替。
 - 各 task 末尾跑 install/copy-assets 测试确认守卫全绿；最终集成在 P6.4。
 - 三平台同一命令的步骤文案保持一致（仅 frontmatter / 平台路由行不同）。
+- 先执行 P6.0；当前 rollback 模板与 P4 MCP schema 不兼容，不修会让已安装命令继续调用旧字段。
 
 > **CODEX 描述常量（三处必须字面一致：codex 模板 frontmatter、copy-assets 测试 `codexSkillDescriptions`）：**
 > - fm-design: `Generate a static-HTML page design for a Forma requirement via MCP, then self-review.`
 > - fm-refine-components: `Generate or refine a Forma product component library (static HTML) via MCP, then self-review.`
 > - fm-change-style: `Re-skin a Forma artifact under a new brand and system style via MCP, then self-review.`
+
+---
+
+## Task P6.0: fm-rollback-design 适配 P4 page/variant/version rollback
+
+**Files:**
+- Modify: `packages/agent/templates/claude/fm-rollback-design.md`
+- Modify: `packages/agent/templates/codex/fm-rollback-design/SKILL.md`
+- Modify: `packages/agent/templates/gemini/fm-rollback-design.toml`
+- Modify: `packages/cli/tests/copy-assets.test.ts`
+
+- [ ] **Step 1: 先更新 rollback 内容断言**
+
+Edit the `documents v8 design artifact workflows` test in `packages/cli/tests/copy-assets.test.ts`. Keep the existing assertions for `rollback_requirement_design`, `list_product_artifacts`, and `include_superseded`, then replace the stale artifact-id assertion with:
+
+```ts
+expect(rollback).toContain("page_id");
+expect(rollback).toContain("variant");
+expect(rollback).toContain("target_version");
+expect(rollback).toContain("current_version");
+expect(rollback).toContain("versions");
+expect(rollback).not.toContain("target_artifact_id");
+```
+
+Run: `npx vitest run packages/cli/tests/copy-assets.test.ts`
+Expected: FAIL until the three rollback templates are updated.
+
+- [ ] **Step 2: 更新 claude rollback 模板**
+
+Replace `packages/agent/templates/claude/fm-rollback-design.md` with:
+
+```markdown
+---
+description: Roll back a Forma design artifact to a previous version.
+---
+
+# Forma route: fm-rollback-design
+
+Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
+
+Cold path scenario:
+The user wants to undo a recent design generation by moving one requirement page/variant back to an earlier saved version. The agent lists available design-page artifacts and versions, asks the user to choose the page, variant, and target version, then calls `rollback_requirement_design` once to flip that page/variant pointer.
+
+Execution:
+1. Require product_id from context or ask the user to run `fm-list-product` first. If requirement_id is unknown, call `get_requirement` with product_id to retrieve it and its pages.
+2. Call `list_product_artifacts` with product_id, `include_superseded: true`, and `kind: "design-page"` to display available design artifacts. If requirement_id is known, only present artifacts for that requirement.
+3. For each candidate, show artifact_id, page_id, variant (default `default`), current_version, versions, title, preview URL, and whether it is superseded. Superseded artifacts are history only; choose `target_version` from the current non-superseded artifact for that page/variant. Do not ask for an artifact id as the rollback target; rollback is by page/variant pointer plus target_version.
+4. Ask the user to confirm `page_id`, `variant` (or `default`), and `target_version`.
+5. Call `rollback_requirement_design(product_id, requirement_id, page_id, variant, target_version)`.
+6. Report the restored `page_id`, `variant`, `version`, and stable error codes exactly as returned.
+```
+
+- [ ] **Step 3: 更新 codex rollback 模板**
+
+Replace `packages/agent/templates/codex/fm-rollback-design/SKILL.md` with the same body as Step 2, with Codex frontmatter and route line:
+
+```markdown
+---
+name: fm-rollback-design
+description: Roll back a Forma design artifact to a previous version.
+---
+
+# Forma route: fm-rollback-design
+
+Codex route: `$fm-rollback-design`.
+
+Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
+
+Cold path scenario:
+The user wants to undo a recent design generation by moving one requirement page/variant back to an earlier saved version. The agent lists available design-page artifacts and versions, asks the user to choose the page, variant, and target version, then calls `rollback_requirement_design` once to flip that page/variant pointer.
+
+Execution:
+1. Require product_id from context or ask the user to run `$fm-list-product` first. If requirement_id is unknown, call `get_requirement` with product_id to retrieve it and its pages.
+2. Call `list_product_artifacts` with product_id, `include_superseded: true`, and `kind: "design-page"` to display available design artifacts. If requirement_id is known, only present artifacts for that requirement.
+3. For each candidate, show artifact_id, page_id, variant (default `default`), current_version, versions, title, preview URL, and whether it is superseded. Superseded artifacts are history only; choose `target_version` from the current non-superseded artifact for that page/variant. Do not ask for an artifact id as the rollback target; rollback is by page/variant pointer plus target_version.
+4. Ask the user to confirm `page_id`, `variant` (or `default`), and `target_version`.
+5. Call `rollback_requirement_design(product_id, requirement_id, page_id, variant, target_version)`.
+6. Report the restored `page_id`, `variant`, `version`, and stable error codes exactly as returned.
+```
+
+- [ ] **Step 4: 更新 gemini rollback 模板**
+
+Replace `packages/agent/templates/gemini/fm-rollback-design.toml` with:
+
+```toml
+description = "Roll back a Forma design artifact to a previous version."
+prompt = """
+# Forma route: fm-rollback-design
+
+Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
+
+Cold path scenario:
+The user wants to undo a recent design generation by moving one requirement page/variant back to an earlier saved version. The agent lists available design-page artifacts and versions, asks the user to choose the page, variant, and target version, then calls `rollback_requirement_design` once to flip that page/variant pointer.
+
+Execution:
+1. Require product_id from context or ask the user to run `fm-list-product` first. If requirement_id is unknown, call `get_requirement` with product_id to retrieve it and its pages.
+2. Call `list_product_artifacts` with product_id, `include_superseded: true`, and `kind: "design-page"` to display available design artifacts. If requirement_id is known, only present artifacts for that requirement.
+3. For each candidate, show artifact_id, page_id, variant (default `default`), current_version, versions, title, preview URL, and whether it is superseded. Superseded artifacts are history only; choose `target_version` from the current non-superseded artifact for that page/variant. Do not ask for an artifact id as the rollback target; rollback is by page/variant pointer plus target_version.
+4. Ask the user to confirm `page_id`, `variant` (or `default`), and `target_version`.
+5. Call `rollback_requirement_design(product_id, requirement_id, page_id, variant, target_version)`.
+6. Report the restored `page_id`, `variant`, `version`, and stable error codes exactly as returned.
+"""
+```
+
+- [ ] **Step 5: 跑测试确认通过**
+
+Run: `npx vitest run packages/cli/tests/copy-assets.test.ts`
+Expected: PASS, and `target_artifact_id` no longer appears in any rollback template.
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add packages/agent/templates/claude/fm-rollback-design.md packages/agent/templates/codex/fm-rollback-design/SKILL.md packages/agent/templates/gemini/fm-rollback-design.toml packages/cli/tests/copy-assets.test.ts
+git commit -m "fix(p6): align rollback template with page version rollback"
+```
 
 ---
 
@@ -420,7 +539,7 @@ Generate or refine a product's static-HTML component library. You write the HTML
 Execution:
 1. Require product_id from context or ask the user to run `fm-list-product` first.
 2. Confirm the `brand_style` and optional `system_style` (read product config / `list_styles`); confirm with the user when not already chosen.
-3. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so `get_design_context` does not apply here.
+3. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so requirement page context does not apply here.
 4. Generate the component library as one self-contained static HTML document following the style tokens and these craft principles: avoid generic AI-slop; clear type hierarchy on a small type scale; restrained color with accent reserved for primary actions; WCAG AA contrast; cover component states (default/hover/disabled/empty/error); accessible form controls; purposeful motion; honor core UX laws. Pure-static contract: no `<script>`, no inline `on*` handlers, no `javascript:` URLs, no external scripts/stylesheets; inline images as `data:` URLs; no remote URLs anywhere.
 5. Save the component library with the component save tool, passing product_id, html, title, brand_style, and system_style. It returns `artifact_id`, `version`, `preview_status`.
 6. Self-review (MANDATORY):
@@ -455,7 +574,7 @@ Generate or refine a product's static-HTML component library. You write the HTML
 Execution:
 1. Require product_id from context or ask the user to run `$fm-list-product` first.
 2. Confirm the `brand_style` and optional `system_style` (read product config / `list_styles`); confirm with the user when not already chosen.
-3. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so `get_design_context` does not apply here.
+3. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so requirement page context does not apply here.
 4. Generate the component library as one self-contained static HTML document following the style tokens and these craft principles: avoid generic AI-slop; clear type hierarchy on a small type scale; restrained color with accent reserved for primary actions; WCAG AA contrast; cover component states (default/hover/disabled/empty/error); accessible form controls; purposeful motion; honor core UX laws. Pure-static contract: no `<script>`, no inline `on*` handlers, no `javascript:` URLs, no external scripts/stylesheets; inline images as `data:` URLs; no remote URLs anywhere.
 5. Save the component library with the component save tool, passing product_id, html, title, brand_style, and system_style. It returns `artifact_id`, `version`, `preview_status`.
 6. Self-review (MANDATORY):
@@ -483,7 +602,7 @@ Generate or refine a product's static-HTML component library. You write the HTML
 Execution:
 1. Require product_id from context or ask the user to run `fm-list-product` first.
 2. Confirm the `brand_style` and optional `system_style` (read product config / `list_styles`); confirm with the user when not already chosen.
-3. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so `get_design_context` does not apply here.
+3. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so requirement page context does not apply here.
 4. Generate the component library as one self-contained static HTML document following the style tokens and these craft principles: avoid generic AI-slop; clear type hierarchy on a small type scale; restrained color with accent reserved for primary actions; WCAG AA contrast; cover component states (default/hover/disabled/empty/error); accessible form controls; purposeful motion; honor core UX laws. Pure-static contract: no `<script>`, no inline `on*` handlers, no `javascript:` URLs, no external scripts/stylesheets; inline images as `data:` URLs; no remote URLs anywhere.
 5. Save the component library with the component save tool, passing product_id, html, title, brand_style, and system_style. It returns `artifact_id`, `version`, `preview_status`.
 6. Self-review (MANDATORY):
@@ -727,14 +846,16 @@ git commit -m "feat(p6): enable fm-change-style thin-glue template (context -> c
 - Modify: `packages/agent/templates/shared/SKILL.md`
 - Test: 全仓验证（无新文件）
 
-- [ ] **Step 1: 在 shared SKILL.md 增 self-review 指引（避开禁词）**
+- [ ] **Step 1: 拆分 shared SKILL.md 取知识指引，并增 self-review 指引（避开禁词）**
 
 Edit `packages/agent/templates/shared/SKILL.md`. Find this line:
 ```markdown
 - Design generation commands (fm-design, fm-refine-components, fm-change-style) save an AI-generated static HTML design artifact: the model produces the HTML, Forma localizes its assets, validates it is pure-static (no JS, local-only resources), stores it as a versioned bundle, and renders a preview. Call `get_design_context` before generating to fetch craft rules + the selected brand/system style + the page spec.
 ```
-Add a new bullet immediately AFTER it:
+Replace it with these bullets:
 ```markdown
+- Page-design and style-change commands (fm-design, fm-change-style) save AI-generated static HTML design artifacts: the model produces the HTML, Forma localizes assets, validates pure-static output (no JS, local-only resources), stores a versioned bundle, and renders a preview. Call `get_design_context` before generating a requirement page artifact to fetch craft rules + selected brand/system style + the page spec.
+- Component-library work (fm-refine-components) has no requirement page; fetch knowledge before generating with `get_style` for the selected brand style and optional system style.
 - After saving a design, self-review is mandatory: read the saved artifact back with `get_product_artifact` and inspect `manifest.forma.quality.craftChecks`; for any check that did not pass, fix the violation and save again. For component-library work, which has no requirement, fetch knowledge with `get_style` instead of `get_design_context`.
 ```
 > 禁词检查：该 bullet 不得出现 `generate_components` 或 `set_current_session`。用 `get_style` / `get_product_artifact` 等措辞。
@@ -742,7 +863,7 @@ Add a new bullet immediately AFTER it:
 - [ ] **Step 2: 跑 shared-doc 相关测试**
 
 Run: `npx vitest run packages/cli/tests/copy-assets.test.ts packages/core/tests/install.test.ts`
-Expected: PASS — shared-doc assertions still hold: `not.toContain("generate_components")`, `not.toContain("set_current_session")`, and the positive snippets (`ui_affected=false`, `confirm_product_id`, `recovery_warnings`, etc.) unchanged.
+Expected: PASS — shared-doc assertions still hold: `not.toContain("generate_components")`, `not.toContain("set_current_session")`, the positive snippets (`ui_affected=false`, `confirm_product_id`, `recovery_warnings`, etc.) unchanged, and shared guidance no longer says component-library work calls `get_design_context`.
 
 - [ ] **Step 3: 构建（模板拷进 dist/assets）**
 
@@ -781,12 +902,13 @@ git commit -m "docs(p6): note mandatory craftChecks self-review in shared agent 
 ## Self-Review（plan 作者自检）
 
 **1. Spec 覆盖（对照 master Phase 6）**
+- 「fm-rollback-design 适配 P4 page/variant/version rollback」→ P6.0 更新三平台模板 + copy-assets 断言 ✅
 - 「fm-design / fm-refine-components / fm-change-style 薄胶水，三平台」→ P6.1/P6.2/P6.3 各建三平台模板 ✅
 - 「调用顺序 context → 生成 → save」→ 模板 + 内容测试 `expectOrder` ✅
 - 「强制 self-review（违规重生成）」→ 每模板末步读回 craftChecks + 重生成 + prose 清单；内容测试断言 ✅（决策 1）
 - 「入参用 brand_style+system_style」→ 模板 + 测试 ✅；fm-change-style 拆 style 入参 ✅
 - 「formaInstallCommands（install.ts）与 formaAgentCommands（agent/src/index.ts）扩容」→ 两数组各加 3，逐 task 同步 ✅（决策 8；修正了草稿「install.ts 不改」的错误）
-- 「fm-rollback-design 适配 P4 语义」→ 已是 P4 语义、无需改（决策 11）✅
+- 「fm-rollback-design 适配 P4 语义」→ P6.0 明确修旧 `target_artifact_id` 模板，改为 `page_id`/`variant`/`target_version` ✅
 - 验收「三平台安装产出对应文件」→ P6.4 Step 6 smoke + install/copy-assets 测试自动覆盖 ✅
 - 验收「模板薄、知识不内联、显式调 MCP」→ 模板仅编排 + 契约 + self-review，知识走 `get_design_context`/`get_style` ✅
 - fm-refine-components 用 `get_style` + 内嵌 craft 清单（决策 2，用户定）→ P6.2 + 测试断言「不含 get_design_context、含 get_style」✅
@@ -795,10 +917,10 @@ git commit -m "docs(p6): note mandatory craftChecks self-review in shared agent 
 - `copy-assets.test.ts` 的 `disabledRuntimeCommands` / `sourceCommands` 相等 / `codexSkillDescriptions` 严格匹配 → P6.1-P6.3 Step 8 逐条翻转 ✅
 - `install.test.ts` 的 `commands` / `removedLegacyCommands` → 逐 task 翻转，`fm-refine-design` 永久保留 removed ✅
 - 模板格式 `# Forma route: <cmd>` + `Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.` + codex 严格 frontmatter + `Codex route: $<cmd>` → 全部模板照 `fm-rollback-design` 现有约定 ✅
-- shared SKILL.md 禁词 `generate_components` / `set_current_session` → P6.4 Step 1 显式避开 ✅（决策 9）
+- shared SKILL.md 禁词 `generate_components` / `set_current_session` → P6.4 Step 1 显式避开，并拆分页面/组件取知识指引 ✅（决策 9）
 
-**3. Placeholder 扫描**：无 TBD / 「类似 TaskN」/ 省略；9 个模板与测试给全文。✅
+**3. Placeholder 扫描**：无 TBD / 「类似 TaskN」/ 省略；12 个模板（含 3 个 rollback 更新 + 9 个新设计命令模板）与测试给全文。✅
 
-**4. 类型/常量一致性**：`formaInstallCommands` 与 `formaAgentCommands` 在三 task 同步递增到 7、两处测试命令数组同步、codex 描述常量三处（模板 frontmatter / 测试 `codexSkillDescriptions`）字面一致；MCP 工具名（`get_design_context`/`generate_requirement_design`/`generate_components`/`change_artifact_style`/`get_style`/`get_product_artifact`/`list_product_artifacts`/`list_styles`/`get_requirement`）已对照 `packages/mcp/src/tools.ts` 的 `formaToolNames` 全部存在；`manifest.forma.quality.craftChecks` 与 P5 落盘字段一致。✅
+**4. 类型/常量一致性**：`formaInstallCommands` 与 `formaAgentCommands` 在三 task 同步递增到 7、两处测试命令数组同步、codex 描述常量三处（模板 frontmatter / 测试 `codexSkillDescriptions`）字面一致；MCP 工具名（`get_design_context`/`generate_requirement_design`/`generate_components`/`change_artifact_style`/`rollback_requirement_design`/`get_style`/`get_product_artifact`/`list_product_artifacts`/`list_styles`/`get_requirement`）已对照 `packages/mcp/src/tools.ts` 的 `formaToolNames` 全部存在；`manifest.forma.quality.craftChecks` 与 P5 落盘字段一致。✅
 
 **依赖前置**：P4（MCP 工具，已在 main）、P5（craftChecks 落盘，已在 main）。安装器数据驱动、无需改逻辑。
