@@ -1146,6 +1146,17 @@ describe("artifact routes", () => {
     });
   });
 
+  it("GET /api/products/:pid/artifacts?kind=html surfaces new design-page artifacts (alias-aware filter)", async () => {
+    const app = await appWith(versionedOnlyStore());
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts?kind=html" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0].id).toBe("A-abcdef1234567890");
+  });
+
   it("GET /api/products/:pid/artifacts/:aid returns the current version manifest for a versioned-only artifact", async () => {
     const app = await appWith(versionedOnlyStore());
 

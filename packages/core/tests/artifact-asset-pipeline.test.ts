@@ -373,6 +373,34 @@ describe('Review #2: data: URL inside srcset attribute', () => {
   });
 });
 
+// ─── Review #4: srcset descriptor density is honored (no @1x mislabel) ────────
+
+describe('Review #4: srcset candidate keeps its declared density', () => {
+  it('a "2x" candidate references the original image bytes and keeps the 2x descriptor', async () => {
+    const png = await sharp({ create: { width: 9, height: 9, channels: 3, background: '#0a0b0c' } })
+      .png()
+      .toBuffer();
+    const html = `<img srcset="data:image/png;base64,${png.toString('base64')} 2x">`;
+    const result = await localizeArtifactAssets({ html });
+
+    const m = result.html.match(/srcset="([^"]+)"/);
+    expect(m).toBeTruthy();
+    const value = m![1].trim();
+    // descriptor preserved as 2x (not coerced to 1x)
+    expect(value).toMatch(/\s2x$/);
+
+    const url = value.split(/\s+/)[0];
+    // the referenced file holds the ORIGINAL bytes — no down-sample, no @1x mislabel
+    const buf = result.files.get(url);
+    expect(buf).toBeDefined();
+    expect(buf!.equals(png)).toBe(true);
+
+    // asset density reflects the declared 2x
+    const asset = result.assets.find((a: { path: string; density: number[] }) => a.path === url);
+    expect(asset?.density).toContain(2);
+  });
+});
+
 // ─── dedup: same data: used twice gets same hash ─────────────────────────────
 
 describe('Deduplication', () => {

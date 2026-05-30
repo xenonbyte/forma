@@ -410,6 +410,39 @@ function parseSrcsetCandidates(srcset: string): Array<{ url: string; descriptor:
   return candidates;
 }
 
+/** Density from a srcset descriptor: "2x" → 2, "1.5x" → 1.5, "300w"/"" → undefined. */
+function parseDescriptorDensity(descriptor: string): number | undefined {
+  const match = /^(\d+(?:\.\d+)?)x$/.exec(descriptor.trim());
+  return match ? Number(match[1]) : undefined;
+}
+
+/**
+ * Localize a raster data: URL that already carries an explicit srcset descriptor.
+ * Unlike `localizeDataUrl`/`buildSrcset`, this stores the provided image as a
+ * single file at face value (no down-sampling, no fabricated density tiers) so
+ * the candidate's descriptor (e.g. "2x") keeps pointing at the exact pixels the
+ * author supplied instead of mislabeling a down-sampled @1x file.
+ */
+function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density: number): string {
+  const { mime, payload } = parsed;
+  const ext = mimeToExt(mime);
+  const hash = contentHash(payload);
+  const path = `${ctx.assetDir}/${hash}.${ext}`;
+
+  if (!ctx.files.has(path)) {
+    ctx.files.set(path, payload);
+  }
+  const existing = ctx.assets.get(path);
+  if (existing) {
+    if (!existing.density.includes(density)) {
+      existing.density = [...existing.density, density].sort((a, b) => a - b);
+    }
+  } else {
+    ctx.assets.set(path, { path, density: [density], role: 'image' });
+  }
+  return path;
+}
+
 // ─── Main localization walk ───────────────────────────────────────────────────
 
 export async function localizeArtifactAssets(input: LocalizeInput): Promise<LocalizeResult> {
@@ -454,7 +487,11 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
         rejectRemote(url);
         const parsed = parseDataUrl(url);
         if (parsed) {
-          const path = await localizeDataUrl(parsed, ctx);
+          // Store the candidate at its declared density (default 1x) so the
+          // descriptor keeps pointing at the exact image the author provided.
+          const path = RASTER_MIMES.has(parsed.mime)
+            ? localizeRasterSingle(parsed, ctx, parseDescriptorDensity(descriptor) ?? 1)
+            : await localizeDataUrl(parsed, ctx);
           newParts.push(descriptor ? `${path} ${descriptor}` : path);
           changed = true;
         } else {

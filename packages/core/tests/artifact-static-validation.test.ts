@@ -239,6 +239,33 @@ describe("validateStaticArtifact", () => {
     assertOk(validateStaticArtifact(input));
   });
 
+  // Review #3: SVG hrefs must reject javascript: and residual data:, not just remote
+  it("svgFiles with <a href='javascript:...'> → ok:false", () => {
+    const input: StaticValidationInput = {
+      html: `<html><body></body></html>`,
+      svgFiles: new Map([["icons/js.svg", `<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><rect width="10" height="10"/></a></svg>`]]),
+    };
+    const violations = assertNotOk(validateStaticArtifact(input));
+    expect(violations.some((v) => v.toLowerCase().includes("javascript"))).toBe(true);
+  });
+
+  it("svgFiles with <image href='data:...'> (residual data:) → ok:false", () => {
+    const input: StaticValidationInput = {
+      html: `<html><body></body></html>`,
+      svgFiles: new Map([["icons/data.svg", `<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,AAAA" width="10" height="10"/></svg>`]]),
+    };
+    const violations = assertNotOk(validateStaticArtifact(input));
+    expect(violations.some((v) => v.toLowerCase().includes("data:"))).toBe(true);
+  });
+
+  it("svgFiles with a local href (#gradient) → ok:true", () => {
+    const input: StaticValidationInput = {
+      html: `<html><body></body></html>`,
+      svgFiles: new Map([["icons/local.svg", `<svg xmlns="http://www.w3.org/2000/svg"><use href="#sprite"/><rect fill="url(#grad)" width="10" height="10"/></svg>`]]),
+    };
+    assertOk(validateStaticArtifact(input));
+  });
+
   // ── Bug #6: protocol-relative URL detection ─────────────────────────────────
   it("Bug #6: <img src='//cdn/x.png'> → ok:false (protocol-relative remote img)", () => {
     const input: StaticValidationInput = {

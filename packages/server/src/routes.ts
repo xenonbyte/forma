@@ -11,6 +11,7 @@ import {
   getArtifactVersionPreviewPath,
   getFormaPaths,
   isSameOrChildPath,
+  normalizeKind,
   type ArtifactManifest,
   type BrandStyleContent,
   type Language,
@@ -352,7 +353,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         } catch {
           continue; // unreadable artifact — skip rather than fail the whole listing
         }
-        if (kindFilter && manifest.kind !== kindFilter) continue;
+        // Match legacy and new kind aliases (html↔design-page, design-system↔component-library)
+        if (kindFilter && normalizeKind(manifest.kind) !== normalizeKind(kindFilter)) continue;
         const requirementId = manifest.requirementId ?? manifest.forma?.requirementId;
         const superseded = requirementId !== undefined && !currentPointerIds.has(artifactId);
         if (!includeSuperseded && superseded) continue;

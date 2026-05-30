@@ -218,20 +218,37 @@ function scanSvg(path: string, svgText: string, violations: string[]): void {
       }
     }
 
-    // href
+    // href — reject remote, javascript:, and residual data: (no JS / no remote /
+    // no residual data: in localized SVG assets)
     const href = el.getAttribute("href");
-    if (href && isRemoteUrl(href.trim())) {
-      violations.push(`Remote http(s) href in SVG file "${path}": ${href.trim()}`);
+    if (href) {
+      scanSvgHref(href, "href", path, tag, violations);
     }
 
     // xlink:href
     const xlinkHref =
       el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
-    if (xlinkHref && isRemoteUrl(xlinkHref.trim())) {
-      violations.push(
-        `Remote http(s) xlink:href in SVG file "${path}": ${xlinkHref.trim()}`
-      );
+    if (xlinkHref) {
+      scanSvgHref(xlinkHref, "xlink:href", path, tag, violations);
     }
+  }
+}
+
+/** Flag remote / javascript: / residual data: targets on an SVG href attribute. */
+function scanSvgHref(
+  value: string,
+  attr: string,
+  path: string,
+  tag: string,
+  violations: string[]
+): void {
+  const trimmed = value.trim();
+  if (isRemoteUrl(trimmed)) {
+    violations.push(`Remote http(s) ${attr} on <${tag}> in SVG file "${path}": ${trimmed}`);
+  } else if (isJavascriptUrl(trimmed)) {
+    violations.push(`javascript: URL in ${attr} on <${tag}> in SVG file "${path}": ${trimmed}`);
+  } else if (isDataUrl(trimmed)) {
+    violations.push(`Residual data: URL in ${attr} on <${tag}> in SVG file "${path}": ${trimmed.slice(0, 64)}`);
   }
 }
 
