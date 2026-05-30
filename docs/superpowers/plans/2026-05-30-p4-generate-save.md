@@ -18,8 +18,9 @@
 4. **master 多倍图来源 ✅**：data: 内联即 master 位图，sharp **只降采样不升采样**；不足三档登记实际 density + `degraded`；SVG 单份。
 5. **server bundle 路由 URL ✅ 确认**：`GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/*`（静态服务该版本 bundle 目录，含 index.html + assets/）。viewer 的 `<iframe src>` 指这里；`get_product_artifact` 把各 asset 的 served URL **读时算**出来。
 6. **`get_product_artifact` 响应形状 ✅ 确认**（A/B，见 P4.8）：返回 `{ manifest, bundle_url, assets:[{path,role,density,urls}], preview_url, versions }`。
+7. **`manifest.forma` 持久字段命名 ✅ 按当前 P1 core 实现**：P4 继续使用 `ArtifactFormaExtension` 的 camelCase 字段（`requirementId/pageId/brandStyle/systemStyle/generatedAt` 等）；MCP/API 入参可保留 snake_case，但落盘 manifest 与 core 类型对齐。此项明确 supersede 参考主规划 Q5 中的 snake_case 记法，避免执行期双契约。
 
-> 四处拍板点（sharp 沿用 / node-html-parser 批准 / bundle URL / 响应形状）已锁定。其余按本 plan 执行。
+> 上述锁定项（sharp 沿用 / node-html-parser 批准 / AI 资源交付形态 / 多倍图来源 / bundle URL / 响应形状 / manifest.forma 字段命名）已锁定。其余按本 plan 执行。
 
 ---
 
@@ -77,11 +78,12 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
 - 用 `node-html-parser` 解析；遍历资源入口：`<img src|srcset>`、`<source src|srcset>`、`<link href>`（icon/preload 等）、`<image href>`(SVG)、`poster`、内联 `<style>` 与 `style=` 的 `url()`。
 - 每个 **`data:` 栅格图**（png/jp/webp）→ 解码为 master Buffer → `sharp` 产 **实际可得** 1x/2x/3x（**不上采样**：以 master 像素宽度为最高档，向下产更低档；登记实际 density 集；不足标 `degraded`）→ 写 `assets/<hash>@{n}x.<ext>` → 把该引用改写为本地 `srcset="assets/<hash>@1x.. 1x, ..@2x.. 2x, ..@3x.. 3x"`（仅含实际档位）。
 - 每个 **`data:` SVG/字体** → 单份写 `assets/<hash>.<ext>`，引用改本地相对路径，density `[1]`。
+- 每个 **`data:text/css`**（`<link href>` 或 CSS `@import url(data:text/css...)`）→ 解码 CSS 文本，先对其内部 `url(data:)`/远程 URL 跑同一 CSS 资源本地化/远程拒绝规则，再写 `assets/<hash>.css`，引用改本地相对路径，`assets` 登记 `role:'stylesheet'`、density `[1]`。
 - 任一 **远程 `http(s):` 引用**（任意入口，含 CSS url()/@import/@font-face）→ **抛 `FormaError('ARTIFACT_REMOTE_RESOURCE')`**（零 fetch、fail-loud）。
 - CSS 文本里的 `url(data:)`/`@font-face` data: 同样抽取本地化；CSS 里残留 `url(http...)`/`@import url(http...)` → 拒绝。
-- 返回的 `assets[].path` 全部出现在 `files` 键里（与 A4 `validateAssetsAgainstSupportingFiles` 兼容）。
+- 返回的 `assets[].path` 全部出现在 `files` 键里（与 A4 `validateAssetsAgainstSupportingFiles` 兼容）；若本地化结果包含 `.svg` 或 `.css` 文件，后续 save 管线必须把这些文本文件传给静态校验。
 **关键实现点：** 命名用内容 hash（sha256 前 16）避免碰撞；ext 由 data: MIME 推断；sharp `resize` 仅在目标宽 < master 宽时执行。
-**验收：** data: 栅格图 → 产多档本地 + 本地 srcset、master 不足档位标 degraded、绝不上采样；SVG 单份；远程引用（HTML/CSS 任一入口）抛 `ARTIFACT_REMOTE_RESOURCE`；assets ⊆ files。
+**验收：** data: 栅格图 → 产多档本地 + 本地 srcset、master 不足档位标 degraded、绝不上采样；SVG 单份；`data:text/css` → 本地 `.css` 文件 + 引用改写 + 进入 `files`/`assets`；远程引用（HTML/CSS 任一入口）抛 `ARTIFACT_REMOTE_RESOURCE`；assets ⊆ files。
 **deps：** P1 的 `ArtifactAssetEntry`。新增 `errors.ts` code `ARTIFACT_REMOTE_RESOURCE`。
 
 ---
@@ -102,7 +104,7 @@ export function validateStaticArtifact(input: StaticValidationInput): StaticVali
 - `srcset`/`<source>`/`poster`/`<link href>` 出现远程 → 违规。
 - **任一入口残留 `data:`** → 违规（必须已被 P4.1 本地化；二者串用时此规则保证「未本地化即拒」）。
 - SVG（svgFiles）含 `<script>`/事件属性/外链 `href`(http) → 违规（默认拒绝，不 sanitize）。
-**验收：** 上述每条都有红/绿用例；干净的纯静态 HTML 通过；带 `<script>`/`on*`/`javascript:`/远程/残留 data:/SVG 脚本 各自报对应 violation。
+**验收：** 上述每条都有红/绿用例；干净的纯静态 HTML 通过；带 `<script>`/`on*`/`javascript:`/远程/残留 data:/SVG 脚本 各自报对应 violation；`svgFiles` 中的脚本/事件/外链与 `cssFiles` 中的远程 URL/残留 data: 均有独立用例，证明 save 管线传入的本地化资源也被校验。
 **注：** 与 P4.1 顺序——save 管线先 localize（抽 data:）后 validate（此时不应再有 data:/远程）。
 
 ---
@@ -130,14 +132,14 @@ export async function saveDesignArtifact(store, input: SaveDesignInput): Promise
 ```
 **流程（在 product mutation lock 内）：**
 1. `localizeArtifactAssets(html)` → 改写 html + files + assets。
-2. `validateStaticArtifact({ html, svgFiles, cssFiles })` → 不过即抛 `FormaError('ARTIFACT_NOT_STATIC', {violations})`。
-3. 解析 entry：写 `index.html`(改写后) + assets files；构造 `ArtifactManifest`（kind、entry `index.html`、supportingFiles=所有文件、`forma`：variant 默认 default(design-page)、assets 清单、provenance、brandStyle/systemStyle、platform/language）。
+2. 从本地化结果 `files` 中提取 `.svg`/`image/svg+xml` 为 `svgFiles`、`.css`/`text/css` 为 `cssFiles`（UTF-8 文本，提取失败 fail loud），然后 `validateStaticArtifact({ html: localized.html, svgFiles, cssFiles })` → 不过即抛 `FormaError('ARTIFACT_NOT_STATIC', {violations})`。这一步必须覆盖被抽成本地文件的 data SVG/CSS，不能只校验 HTML 字符串。
+3. 解析 entry：写 `index.html`(改写后) + assets files；构造 `ArtifactManifest`（kind、entry `index.html`、supportingFiles=所有文件、`forma`：variant 默认 default(design-page)、assets 清单、provenance、brandStyle/systemStyle、platform/language）。`manifest.forma` 持久字段使用 P1 core camelCase 契约；MCP snake_case 入参在工具层映射到 camelCase。
 4. 版本号：`artifactId` 已存在 → `max(listArtifactVersions)+1`，否则新 `artifactId` + v1。`writeArtifactVersion(...)`。
 5. 预览：从 bundle 版本目录 base 调 P3 `renderArtifactPreview({ bundleDir: versionDir, outDir: versionDir/preview })`；成功 → `manifest.forma.preview={status:'ready',generatedAt}`，失败 → `{status:'failed',error,generatedAt}`。**冻结时一次性写定**（renderer 在 writeArtifactVersion 之后跑，需把 preview 状态写回该版本 manifest——实现：先写 bundle（不含 preview 字段），渲染后**原子改写该版本 manifest.json** 追加 preview 字段；或先渲染暂存再一次性写。选后者更干净：渲染到临时目录→拿到 status→带 preview 字段一次性 `writeArtifactVersion`）。**采用：先 localize/validate → 临时 bundle 落临时目录 → 渲染 preview → 带 preview 状态 + preview png 一次性 `writeArtifactVersion`。**（无 pending。）
 6. design-page → `setDesignPointerLocked((req,page,variant)→{artifactId,version,designStatus:'active'})`。
 7. 返回。
 **store.ts 改：** `generateRequirementDesign`/`generateComponents`/`changeArtifactStyle` 不再 `createOdRuntime().generate()`；改为接收 HTML 参数并调 `saveDesignArtifact`。**签名变更**（加 `html`/forma 字段；去 odRuntime）。`createOdRuntime` import 删除；`od-runtime.ts` 文件删除；`OD_RUNTIME_FAILED` 仓库内不再产生（保留 error code 定义可，但无产生路径）。
-**验收：** 给定干净 HTML（内联 data: 图）→ 产 versioned bundle（index.html+assets+preview/{1,2}x.png）、manifest.forma 完整（assets/preview=ready/variant）、design-page 建指针；含 `<script>` → 抛 `ARTIFACT_NOT_STATIC`；含远程图 → 抛 `ARTIFACT_REMOTE_RESOURCE`；同 artifactId 再 save → v2 + 指针指 v2；预览渲染失败（构造坏 bundle）→ previewStatus='failed' 且 manifest 记 failed（不抛、产物仍在）；`od-runtime.ts` 已删、仓库无 `mainOdRuntime`。
+**验收：** 给定干净 HTML（内联 data: 图）→ 产 versioned bundle（index.html+assets+preview/{1,2}x.png）、manifest.forma 完整（assets/preview=ready/variant）、design-page 建指针；含 `<script>` → 抛 `ARTIFACT_NOT_STATIC`；含远程图 → 抛 `ARTIFACT_REMOTE_RESOURCE`；data SVG 被本地化后仍含 `<script>`/事件属性/外链 `href` → 抛 `ARTIFACT_NOT_STATIC`；data CSS 被本地化后仍含远程 `url()`/`@import` 或残留 `data:` → 抛 `ARTIFACT_NOT_STATIC`（若本地化阶段已拒绝远程则断言对应 `ARTIFACT_REMOTE_RESOURCE`）；同 artifactId 再 save → v2 + 指针指 v2；预览渲染失败（构造坏 bundle）→ previewStatus='failed' 且 manifest 记 failed（不抛、产物仍在）；`od-runtime.ts` 已删、仓库无 `mainOdRuntime`。
 **deps：** P4.1/P4.2/P3 + P1 store/pointer。
 
 ---
@@ -203,18 +205,18 @@ export async function buildDesignContext(store, input): Promise<DesignContextRes
 **get_product_artifact 响应（A）：**
 ```jsonc
 {
-  "manifest": { /* manifest.forma normalized: kind=normalizeKind, variant 补 default */ },
+  "manifest": { /* manifest.forma normalized: camelCase persisted fields, kind=normalizeKind, variant 补 default */ },
   "bundle_url": "/api/products/{pid}/artifacts/{aid}/versions/{v}/bundle/index.html",
   "assets": [{ "path":"assets/x@1x.png", "role":"image", "density":[1,2,3],
                "urls": { "1x":".../bundle/assets/x@1x.png", "2x":"...","3x":"..." } }],
-  "preview_url": ".../versions/{v}/preview/2x.png",
+  "preview_url": "/api/products/{pid}/artifacts/{aid}/versions/{v}/preview/2x.png",
   "versions": [1,2,3], "current_version": 3
 }
 ```
-- URL **读时算**（manifest 只存相对 path）。默认取 current pointer 的 version（design-page）或最新 version。
+- URL **读时算**（manifest 只存相对 path）。默认取 current pointer 的 version（design-page）或最新 version；`preview_url` 必须使用 versioned preview 路由，不能回退到旧 unversioned 预览路径。
 **list_product_artifacts（B）：** 加 `page_id`/`variant` 分组维度；每条带版本历史（`versions`）；kind 枚举更新（见 P4.9）；分组：按 `(requirementId,pageId,variant)`。
-**验收：** 开发者经 MCP 拿到 served bundle URL + 各 asset URL（读时算）+ density + 版本历史；能按 page/variant 查稿。
-**deps：** P4.10 的 bundle 路由（URL 形态一致）；可与 P4.10 并行定 URL 常量。
+**验收：** 开发者经 MCP 拿到 served bundle URL + preview URL + 各 asset URL（读时算）+ density + 版本历史；能按 page/variant 查稿。
+**deps：** P4.10 的 bundle/preview 路由（URL 形态一致）；可与 P4.10 并行定 URL 常量。
 
 ---
 
@@ -223,10 +225,11 @@ export async function buildDesignContext(store, input): Promise<DesignContextRes
 **Files:** Modify `tools.ts`。
 - **C**：移除 6 个 `session_*`（`formaToolNames`/schemas/descriptions/handlers/`V6ServiceOverrides`/`sessionToolFallback` 全清）。
 - **D**：`kind` 枚举（`listProductArtifactsSchema` 等）`design-system`→`component-library` + 加 `design-page`；清理 `get_baseline_page`/`get_baseline_image`/`get_style` 描述里「design-system 基线 artifact」措辞。
+- **D2 / get_style 新响应契约**：`get_style` 按 style 类型返回 typed model：brand style → core `BrandStyleContent`（含 `DESIGN.md`、`tokens.css`、`components.html` 三文件内容/路径元数据，字段名与 P2 core 类型对齐）；system style → catalog metadata（`name/upstream/mode/description` 等 `SystemStyleMetadata`，不伪装成 brand 三文件）。移除旧 `styleVariablesSchema`/旧 `styleMetadataSchema` 以及「design-system artifact / token variables」假设，避免读取面继续返回旧 shape。
 - **E**：`generate_*`/`change_artifact_style` 描述去 `OD_RUNTIME_FAILED`、改 save 语义。
 - **F**：`export_artifact`：`html`/`svg` 仅导出**单 entry 文件**；`zip` = 完整自包含包（index.html+assets/+manifest）；`png` = preview/2x。对 assetful artifact 的 html 导出**明确告知 assets 不随单文件走**。
 - **G**：`help`（+ 若有 `develop_frontend`）补 artifact + asset 取数指引（bundle_url/assets urls/版本/导出）。
-**验收：** 工具列表无 `session_*`、无 Pencil 残留；kind 无 `design-system`、有 `design-page`/`component-library`；export html/svg 单文件、zip 完整；help 含取数指引。
+**验收：** 工具列表无 `session_*`、无 Pencil 残留；kind 无 `design-system`、有 `design-page`/`component-library`；`get_style` brand 返回 `BrandStyleContent` 三文件，system 返回 catalog metadata，且无旧 token-variable/design-system artifact schema 残留；export html/svg 单文件、zip 完整；help 含取数指引。
 **deps：** 无强依赖（可在 P4.8 后做）。
 
 ---
@@ -236,9 +239,10 @@ export async function buildDesignContext(store, input): Promise<DesignContextRes
 **Files:** Modify `packages/server/src/routes.ts` + `app.ts`。
 - **修红**：`FormaRoutesStore.getStyle` 类型由旧 `{metadata:{design_md_path};...}` 改为 core 的 `BrandStyleContent`；`/api/products/:id/config` 路由（line ~246-249）适配 `brand_style`/`system_style`（取 brand_style 名→`getStyle`，system_style 名→catalog）。`FormaServerStore`/`FormaRoutesStore` 随之对齐，消除 `app.ts:33` TS2322。
 - **新增 bundle 路由**：`GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/*` → 经 `getArtifactVersionDir` 定位、`path-boundary` 夹紧、按扩展名设 content-type、流式返回（index.html / assets/*）。供 viewer iframe src。
-- **artifact list/get 路由**：适配版本化 + manifest.forma（与 P4.8 MCP 形状对齐：bundle_url/assets/versions）。
-**验收：** `pnpm --filter @xenonbyte/forma-server typecheck` 干净（跨包红消除）；bundle 路由能取 index.html + assets（路径越界拒绝）；config 路由写 brand_style/system_style；现有 server 测试更新通过。
-**deps：** P2（BrandStyleContent）、P4.3/P4.8（artifact 模型）。**完成后 `pnpm build`/全量 typecheck 应恢复绿（web 若仍引用旧形态，归 P8）。**
+- **新增 preview 路由**：`GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res`（`res` 仅允许 `1x.png`/`2x.png` 等实际预览文件）→ 经 `getArtifactVersionPreviewPath` 或等价版本目录 helper 定位，path-boundary 夹紧并返回 PNG；缺失返回 404。P4.8/P4.10 共用 URL helper，确保 MCP/server `preview_url` 都指向该 versioned 路由。
+- **artifact list/get 路由**：适配版本化 + camelCase `manifest.forma`（与 P4.8 MCP 形状对齐：bundle_url/preview_url/assets/versions）。
+**验收：** `pnpm --filter @xenonbyte/forma-server typecheck` 干净（跨包红消除）；bundle 路由能取 index.html + assets（路径越界拒绝）；preview 路由能取 versioned `preview/2x.png`，不存在的 preview/res 与路径越界均拒绝；artifact list/get 返回 versioned `preview_url` 而非旧 unversioned 路径；config 路由写 brand_style/system_style；现有 server 测试更新通过。
+**deps：** P2（BrandStyleContent）、P4.3/P4.8（artifact 模型）。**P4 验证门限于 core/mcp/server 与 shared template；全仓 `pnpm build`/web 旧形态适配归 P8，不作为 P4 必过门。**
 
 ---
 
@@ -255,11 +259,11 @@ export async function buildDesignContext(store, input): Promise<DesignContextRes
 - `get_design_context` 生成前可取 craft+style+页面规格+规则。
 - rollback 改 page/variant 指针；读取面 A–G 全落（served bundle URL + assets urls 读时算、按 page/variant 查、版本历史、无 session_*、kind 更新、export html/svg 单文件+zip 完整、help 指引）。
 - `od-runtime.ts` 删除、无 `OD_RUNTIME_FAILED` 产生路径；SKILL.md 清理。
-- server bundle 路由可用；**跨包红消除**：`pnpm --filter forma-server typecheck` + `pnpm build` 绿（web 残留归 P8）。
-- `sharp`/`node-html-parser` 依赖就位（air-gapped 说明）。`pnpm test`（core/mcp/server）全绿、typecheck 绿。
+- server bundle/preview 路由可用；**跨包红消除**：`pnpm --filter @xenonbyte/forma-server typecheck` 绿。
+- `sharp`/`node-html-parser` 依赖就位（air-gapped 说明）。P4 目标检查绿：core/mcp/server 相关 Vitest、`pnpm --filter @xenonbyte/forma-core typecheck`、`pnpm --filter @xenonbyte/forma-mcp typecheck`、`pnpm --filter @xenonbyte/forma-server typecheck`。全仓 build/typecheck 若仍因 web 旧形态失败，记录并留给 P8。
 
 ## 风险 / 开放项
-- **新依赖**：`sharp`（原生，已锁）+ `node-html-parser`（待你批）。Context7 不可用 → 二者 API 按稳定知识用、以测试为准（UNCONFIRMED）。
+- **新依赖**：`sharp`（原生，已锁）+ `node-html-parser`（已批准）。Context7 不可用 → 二者 API 按稳定知识用、以测试为准（UNCONFIRMED）。
 - **预览冻结时机**：采用「临时 bundle→渲染→带 preview 一次性 writeArtifactVersion」避免二次改写 manifest（P4.3 已定）。
 - **data: 抽取边界**：MIME→ext 推断、CSS url() 扫描范围、SVG 内 image href data: —— 用解析器 + 受控 CSS 正则，红/绿用例覆盖。
 - **MCP/server 大改**：tools.ts 1010 行 + routes.ts，执行期每 task 对照当前文件展开 TDD；P4.8/P4.10 的 URL 形态须一致（共享常量）。
