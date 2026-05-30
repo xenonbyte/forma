@@ -1,8 +1,7 @@
 import { cleanupArtifactTmpDirs, hasArtifactTmpDirs } from "./artifact-tmp-cleanup.js";
 import { createArtifactStore, type ArtifactStore } from "./artifact-store.js";
-import { type ArtifactKind } from "./artifact-manifest.js";
 import { CopyService } from "./copy.js";
-import { createOdRuntime } from "./od-runtime.js";
+import { saveDesignArtifact } from "./design-save.js";
 import {
   deleteProductLocked,
   recoverPendingProductDeletesLocked,
@@ -36,9 +35,36 @@ export interface FormaStoreOptions {
   productDeletionHooks?: ProductDeletionHooks;
 }
 
-export interface SeedComponent {
-  name: string;
-  description?: string;
+export interface GenerateRequirementDesignInput {
+  html: string;
+  title: string;
+  pageId: string;
+  variant?: string;
+  brandStyle?: string;
+  systemStyle?: string;
+  platform?: string;
+  language?: string;
+  provenance?: import("./artifact-manifest.js").ArtifactProvenance;
+}
+
+export interface GenerateComponentsInput {
+  html: string;
+  title: string;
+  brandStyle?: string;
+  systemStyle?: string;
+  platform?: string;
+  language?: string;
+  provenance?: import("./artifact-manifest.js").ArtifactProvenance;
+}
+
+export interface ChangeArtifactStyleInput {
+  html: string;
+  title: string;
+  brandStyle?: string;
+  systemStyle?: string;
+  platform?: string;
+  language?: string;
+  provenance?: import("./artifact-manifest.js").ArtifactProvenance;
 }
 
 export interface FormaStore {
@@ -49,20 +75,17 @@ export interface FormaStore {
   generateRequirementDesign(
     productId: string,
     requirementId: string,
-    mode: "generate" | "rebuild",
-    sourceSkillId?: string
-  ): Promise<{ artifact_id: string; preview_url: string }>;
+    input: GenerateRequirementDesignInput
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   generateComponents(
     productId: string,
-    seedComponents: SeedComponent[],
-    sourceSkillId?: string
-  ): Promise<{ artifact_id: string; preview_url: string }>;
+    input: GenerateComponentsInput
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   changeArtifactStyle(
     productId: string,
     artifactId: string,
-    style: string,
-    sourceSkillId?: string
-  ): Promise<{ artifact_id: string; preview_url: string }>;
+    input: ChangeArtifactStyleInput
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   products: ProductService;
   recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
   requirements: RequirementService;
@@ -136,79 +159,104 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
       };
     });
 
-  function artifactPreviewUrl(productId: string, artifactId: string): string {
-    return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/2x`;
-  }
+  const productsRoot = getFormaPaths(options.home).productsDir;
+  const saveDesignDeps = { artifacts, products, runProductMutation, productsRoot };
 
   async function generateRequirementDesign(
     productId: string,
     requirementId: string,
-    mode: "generate" | "rebuild",
-    sourceSkillId?: string
-  ): Promise<{ artifact_id: string; preview_url: string }> {
-    const odRuntime = createOdRuntime();
-    const output = await odRuntime.generate({
-      kind: "html" as ArtifactKind,
-      requirementId,
-      sourceSkillId: sourceSkillId ?? "fm-design",
-      ignoreInternalCache: mode === "rebuild"
-    });
-    const { artifactId } = await artifacts.writeArtifact({
+    input: GenerateRequirementDesignInput
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
+    const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
-      manifest: { ...output.manifest, requirementId, sourceSkillId },
-      files: new Map(
-        [...output.supportingFiles].map(([k, v]) => [k, Buffer.from(v)])
-      )
+      kind: 'design-page',
+      html: input.html,
+      title: input.title,
+      forma: {
+        requirementId,
+        pageId: input.pageId,
+        variant: input.variant,
+        brandStyle: input.brandStyle,
+        systemStyle: input.systemStyle,
+        platform: input.platform,
+        language: input.language,
+        provenance: input.provenance,
+      },
     });
-    return { artifact_id: artifactId, preview_url: artifactPreviewUrl(productId, artifactId) };
+    return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
   }
 
   async function generateComponents(
     productId: string,
-    seedComponents: SeedComponent[],
-    sourceSkillId?: string
-  ): Promise<{ artifact_id: string; preview_url: string }> {
-    const odRuntime = createOdRuntime();
-    const instructions = seedComponents
-      .map((c) => `- ${c.name}${c.description ? `: ${c.description}` : ""}`)
-      .join("\n");
-    const output = await odRuntime.generate({
-      kind: "design-system" as ArtifactKind,
-      instructions,
-      sourceSkillId: sourceSkillId ?? "fm-refine-components"
-    });
-    const { artifactId } = await artifacts.writeArtifact({
+    input: GenerateComponentsInput
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
+    const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
-      manifest: { ...output.manifest, sourceSkillId },
-      files: new Map(
-        [...output.supportingFiles].map(([k, v]) => [k, Buffer.from(v)])
-      )
+      kind: 'component-library',
+      html: input.html,
+      title: input.title,
+      forma: {
+        brandStyle: input.brandStyle,
+        systemStyle: input.systemStyle,
+        platform: input.platform,
+        language: input.language,
+        provenance: input.provenance,
+      },
     });
-    return { artifact_id: artifactId, preview_url: artifactPreviewUrl(productId, artifactId) };
+    return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
   }
 
   async function changeArtifactStyle(
     productId: string,
     artifactId: string,
-    style: string,
-    sourceSkillId?: string
-  ): Promise<{ artifact_id: string; preview_url: string }> {
-    const { manifest: sourceManifest } = await artifacts.readArtifact(productId, artifactId);
-    const odRuntime = createOdRuntime();
-    const output = await odRuntime.generate({
-      kind: sourceManifest.kind,
-      requirementId: sourceManifest.requirementId,
-      style,
-      sourceSkillId: sourceSkillId ?? "fm-change-style"
-    });
-    const { artifactId: newArtifactId } = await artifacts.writeArtifact({
+    input: ChangeArtifactStyleInput
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
+    // Read source artifact's latest version manifest to recover kind/forma
+    const versions = await artifacts.listArtifactVersions(productId, artifactId);
+    if (versions.length === 0) {
+      // Fall back to flat artifact read for legacy artifacts
+      const { manifest: sourceManifest } = await artifacts.readArtifact(productId, artifactId);
+      return changeArtifactStyleWithManifest(productId, artifactId, input, sourceManifest);
+    }
+    const latestVersion = Math.max(...versions);
+    const { manifest: sourceManifest } = await artifacts.readArtifactVersion(productId, artifactId, latestVersion);
+    return changeArtifactStyleWithManifest(productId, artifactId, input, sourceManifest);
+  }
+
+  async function changeArtifactStyleWithManifest(
+    productId: string,
+    artifactId: string,
+    input: ChangeArtifactStyleInput,
+    sourceManifest: import("./artifact-manifest.js").ArtifactManifest,
+  ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
+
+    // Determine kind: map legacy kinds to new ones
+    let kind: 'design-page' | 'component-library';
+    if (sourceManifest.kind === 'design-page' || sourceManifest.kind === 'html') {
+      kind = 'design-page';
+    } else {
+      kind = 'component-library';
+    }
+
+    const sourceForma = sourceManifest.forma ?? {};
+    const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
-      manifest: { ...output.manifest, requirementId: sourceManifest.requirementId, sourceSkillId },
-      files: new Map(
-        [...output.supportingFiles].map(([k, v]) => [k, Buffer.from(v)])
-      )
+      kind,
+      html: input.html,
+      title: input.title,
+      artifactId, // same artifactId → new version
+      forma: {
+        requirementId: sourceForma.requirementId ?? sourceManifest.requirementId,
+        pageId: sourceForma.pageId,
+        variant: sourceForma.variant,
+        brandStyle: input.brandStyle ?? sourceForma.brandStyle,
+        systemStyle: input.systemStyle ?? sourceForma.systemStyle,
+        platform: input.platform ?? sourceForma.platform,
+        language: input.language ?? sourceForma.language,
+        provenance: input.provenance,
+      },
     });
-    return { artifact_id: newArtifactId, preview_url: artifactPreviewUrl(productId, newArtifactId) };
+    return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
   }
 
   return {
