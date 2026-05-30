@@ -6,6 +6,7 @@ import {
 import { join } from "node:path";
 import {
   FormaError,
+  buildDesignContext,
   getArtifactDir,
   getFormaPaths,
   languages,
@@ -42,6 +43,7 @@ export const formaToolNames = [
   "generate_requirement_design",
   "generate_components",
   "change_artifact_style",
+  "get_design_context",
   "session_get_guidelines",
   "session_get_variables",
   "session_batch_get",
@@ -212,6 +214,15 @@ const changeArtifactStyleSchema = z.object({
   system_style: z.string().min(1).optional()
 }).strict();
 
+const getDesignContextSchema = z.object({
+  product_id: z.string().min(1),
+  requirement_id: z.string().min(1),
+  page_id: z.string().min(1).optional(),
+  brand_style: z.string().min(1).optional(),
+  system_style: z.string().min(1).optional(),
+  craft_slugs: z.array(z.string().min(1)).optional()
+}).strict();
+
 const getRequirementSchema = z.object({
   requirement_id: z.string().min(1).optional(),
   product_id: z.string().min(1).optional()
@@ -333,6 +344,7 @@ export const formaToolInputSchemas = {
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
   change_artifact_style: changeArtifactStyleSchema,
+  get_design_context: getDesignContextSchema,
   session_get_guidelines: sessionGetGuidelinesSchema,
   session_get_variables: sessionGetVariablesSchema,
   session_batch_get: sessionBatchGetSchema,
@@ -366,6 +378,7 @@ const descriptions = {
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   change_artifact_style: "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
+  get_design_context: "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
   session_get_guidelines: "Read guidelines for a Forma-owned Pencil session.",
   session_get_variables: "Read variables for a Forma-owned Pencil session.",
   session_batch_get: "Read multiple nodes for a Forma-owned Pencil session.",
@@ -446,6 +459,18 @@ export function createFormaTools(store: FormaStore): FormaTools {
         brandStyle: input.brand_style,
         systemStyle: input.system_style
       })),
+    get_design_context: tool("get_design_context", async (input) =>
+      buildDesignContext(
+        { styles: store.styles, requirements: store.requirements, products: store.products },
+        {
+          productId: input.product_id,
+          requirementId: input.requirement_id,
+          pageId: input.page_id,
+          brandStyle: input.brand_style,
+          systemStyle: input.system_style,
+          craftSlugs: input.craft_slugs
+        }
+      )),
     session_get_guidelines: tool("session_get_guidelines", async (input) =>
       v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionToolFallback("session_get_guidelines")),
     session_get_variables: tool("session_get_variables", async (input) =>

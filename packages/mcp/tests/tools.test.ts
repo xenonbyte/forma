@@ -230,6 +230,7 @@ describe("MCP forma tools", () => {
       "generate_requirement_design",
       "generate_components",
       "change_artifact_style",
+      "get_design_context",
       "session_get_guidelines",
       "session_get_variables",
       "session_batch_get",
@@ -1885,5 +1886,191 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+});
+
+describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
+  function fakeStoreWithDesignContext(overrides: Record<string, unknown> = {}) {
+    return fakeStore({
+      styles: {
+        getStyle: vi.fn(async () => ({ metadata: { name: "linear" }, designMd: "# Linear Design" })),
+        listStyles: vi.fn(async () => [{ name: "linear" }]),
+        listCraftDocs: vi.fn(async () => [{ slug: "spacing", content: "# Spacing rules" }]),
+        readCraftDoc: vi.fn(async () => ({ slug: "spacing", content: "# Spacing rules" })),
+        listSystemStyles: vi.fn(async () => [{ name: "material", tokens: {} }])
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          status: "active",
+          pages: [
+            {
+              page_id: "checkout",
+              name: "Checkout",
+              baseline_page: "checkout",
+              features: "Pay for an order",
+              change_type: "new"
+            }
+          ]
+        })),
+        getProductRules: vi.fn(async () => [
+          {
+            id: "R-12345678-rule-1",
+            page_id: "checkout",
+            given: "cart has items",
+            when: "checkout opens",
+            then: "payment form appears",
+            source_requirement: "R-12345678"
+          }
+        ])
+      },
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          brand_style: "linear",
+          system_style: "material",
+          languages: ["en"],
+          default_language: "en",
+          requirements: {}
+        }))
+      },
+      ...overrides
+    });
+  }
+
+  it("get_design_context appears in formaToolNames", () => {
+    expect(formaToolNames).toContain("get_design_context");
+  });
+
+  it("get_design_context schema accepts valid minimal input", () => {
+    expectSchemaSuccess("get_design_context", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678"
+    });
+  });
+
+  it("get_design_context schema accepts all optional fields", () => {
+    expectSchemaSuccess("get_design_context", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      brand_style: "linear",
+      system_style: "material",
+      craft_slugs: ["spacing", "typography"]
+    });
+  });
+
+  it("get_design_context schema rejects missing required fields", () => {
+    expectSchemaFailure("get_design_context", { requirement_id: "R-12345678" });
+    expectSchemaFailure("get_design_context", { product_id: "P-123abc" });
+    expectSchemaFailure("get_design_context", {});
+  });
+
+  it("get_design_context schema rejects unknown fields (strict)", () => {
+    expectSchemaFailure("get_design_context", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      unknown_field: "value"
+    });
+  });
+
+  it("get_design_context returns craft docs, brand style, and page for a specific page_id", async () => {
+    const store = fakeStoreWithDesignContext();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.craft).toEqual(expect.arrayContaining([
+      expect.objectContaining({ slug: "spacing" })
+    ]));
+    expect(payload.brandStyle).toMatchObject({ metadata: { name: "linear" } });
+    expect(payload.page).toMatchObject({ page_id: "checkout" });
+    expect(payload.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ page_id: "checkout" })
+    ]));
+  });
+
+  it("get_design_context uses explicit brand_style over product config", async () => {
+    const store = fakeStoreWithDesignContext({
+      styles: {
+        getStyle: vi.fn(async (name: string) => ({ metadata: { name }, designMd: `# ${name}` })),
+        listStyles: vi.fn(async () => []),
+        listCraftDocs: vi.fn(async () => []),
+        readCraftDoc: vi.fn(async () => ({ slug: "x", content: "" })),
+        listSystemStyles: vi.fn(async () => [])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      brand_style: "darkmode"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.brandStyle).toMatchObject({ metadata: { name: "darkmode" } });
+    expect((store as unknown as { styles: { getStyle: ReturnType<typeof vi.fn> } }).styles.getStyle)
+      .toHaveBeenCalledWith("darkmode");
+  });
+
+  it("get_design_context with craft_slugs fetches only specified craft docs", async () => {
+    const readCraftDoc = vi.fn(async (slug: string) => ({ slug, content: `# ${slug}` }));
+    const store = fakeStoreWithDesignContext({
+      styles: {
+        getStyle: vi.fn(async () => ({ metadata: { name: "linear" }, designMd: "# Linear" })),
+        listStyles: vi.fn(async () => []),
+        listCraftDocs: vi.fn(async () => []),
+        readCraftDoc,
+        listSystemStyles: vi.fn(async () => [])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      craft_slugs: ["spacing", "typography"]
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.craft).toHaveLength(2);
+    expect(readCraftDoc).toHaveBeenCalledWith("spacing");
+    expect(readCraftDoc).toHaveBeenCalledWith("typography");
+  });
+
+  it("get_design_context passes through PRODUCT_NOT_FOUND as MCP error result", async () => {
+    const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
+    const store = fakeStoreWithDesignContext({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => {
+          throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
+        })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-missing",
+      requirement_id: "R-12345678"
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
   });
 });
