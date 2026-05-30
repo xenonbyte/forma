@@ -142,7 +142,11 @@ export function validateFormaExtension(forma: unknown): FormaValidationResult {
       if (validateSupportingPath(entry['path']) === null) {
         return { ok: false, error: `forma.assets path invalid: ${String(entry['path'])}` };
       }
-      if (!Array.isArray(entry['density']) || (entry['density'] as unknown[]).some((d) => typeof d !== 'number' || d <= 0)) {
+      if (
+        !Array.isArray(entry['density']) ||
+        (entry['density'] as unknown[]).length === 0 ||
+        (entry['density'] as unknown[]).some((d) => typeof d !== 'number' || d <= 0)
+      ) {
         return { ok: false, error: 'forma.assets density must be a non-empty array of positive numbers' };
       }
       if (typeof entry['role'] !== 'string' || entry['role'].length === 0) {

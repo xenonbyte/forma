@@ -259,6 +259,8 @@ describe('A1 manifest.forma extension + kind migration', () => {
     expect(validateFormaExtension({ preview: { status: 'pending' } }).ok).toBe(false);
     expect(validateFormaExtension({ variant: '' }).ok).toBe(false);
     expect(validateFormaExtension({ assets: [{ path: 'assets/a.png', density: 1, role: 'image' }] }).ok).toBe(false);
+    // 空 density 数组必须被拒（错误文案要求 non-empty）
+    expect(validateFormaExtension({ assets: [{ path: 'assets/a.png', density: [], role: 'image' }] }).ok).toBe(false);
     expect(validateFormaExtension({ assets: [{ path: '../escape.png', density: [1], role: 'image' }] }).ok).toBe(false);
   });
 
