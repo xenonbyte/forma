@@ -32,3 +32,4 @@ export * from "./preview-renderer.js";
 export * from "./artifact-asset-pipeline.js";
 export * from "./artifact-static-validation.js";
 export * from "./design-save.js";
+export * from "./design-context.js";
