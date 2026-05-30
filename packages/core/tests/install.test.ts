@@ -8,11 +8,12 @@ const commands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-rollback-design"
+  "fm-rollback-design",
+  "fm-design"
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
-const removedLegacyCommands = ["fm-refine-design", "fm-design", "fm-refine-components", "fm-change-style"] as const;
+const removedLegacyCommands = ["fm-refine-design", "fm-refine-components", "fm-change-style"] as const;
 
 type Platform = "claude" | "codex" | "gemini";
 

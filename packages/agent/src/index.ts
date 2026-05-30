@@ -8,7 +8,8 @@ export const formaAgentCommands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-rollback-design"
+  "fm-rollback-design",
+  "fm-design"
 ] as const;
 
 export type FormaAgentCommand = (typeof formaAgentCommands)[number];
