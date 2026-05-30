@@ -11,10 +11,10 @@ const formaCommands = [
   "fm-requirement",
   "fm-rollback-design",
   "fm-design",
-  "fm-refine-components"
+  "fm-refine-components",
+  "fm-change-style"
 ] as const;
 
-const disabledRuntimeCommands = ["fm-change-style"] as const;
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
 const removedLegacyDesignTools = [
   "complete_product_init",
@@ -33,7 +33,8 @@ const codexSkillDescriptions = {
   "fm-requirement": "Add or update a Forma requirement from any granularity of product input.",
   "fm-rollback-design": "Roll back a Forma design artifact to a previous version.",
   "fm-design": "Generate a static-HTML page design for a Forma requirement via MCP, then self-review.",
-  "fm-refine-components": "Generate or refine a Forma product component library (static HTML) via MCP, then self-review."
+  "fm-refine-components": "Generate or refine a Forma product component library (static HTML) via MCP, then self-review.",
+  "fm-change-style": "Re-skin a Forma artifact under a new brand and system style via MCP, then self-review."
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";
@@ -106,9 +107,6 @@ describe("agent template inventory", () => {
       for (const command of removedRequirementCommands) {
         await expect(pathExists(templateUrl(platform, command))).resolves.toBe(false);
       }
-      for (const command of disabledRuntimeCommands) {
-        await expect(pathExists(templateUrl(platform, command))).resolves.toBe(false);
-      }
     }
   });
 
@@ -163,10 +161,6 @@ describe("agent template inventory", () => {
       expect(listProduct).toContain("confirm_product_id");
       expect(listProduct).toContain("latest requirement");
       expect(listProduct).not.toContain("set_current_session");
-
-      for (const command of disabledRuntimeCommands) {
-        await expect(pathExists(templateUrl(platform, command))).resolves.toBe(false);
-      }
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");

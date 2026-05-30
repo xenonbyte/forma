@@ -93,3 +93,43 @@ describe("fm-refine-components template", () => {
     }
   });
 });
+
+describe("fm-change-style template", () => {
+  it("uses the Forma route header on every platform", async () => {
+    const t = await loadCommand("fm-change-style");
+    expect(t.claude).toContain("# Forma route: fm-change-style");
+    expect(t.codex).toContain("name: fm-change-style");
+    expect(t.gemini).toContain("# Forma route: fm-change-style");
+  });
+
+  it("selects the source artifact then changes style with brand_style + system_style", async () => {
+    const t = await loadCommand("fm-change-style");
+    expect(t.blob).toContain("list_product_artifacts");
+    expect(t.blob).toContain("artifact_id");
+    expect(t.blob).toContain("brand_style");
+    expect(t.blob).toContain("system_style");
+    expect(t.blob).toContain("change_artifact_style");
+  });
+
+  it("fetches context before the change save tool on every platform", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      const ctxIdx = [lc.indexOf("get_design_context"), lc.indexOf("get_style")].filter((i) => i >= 0);
+      expect(ctxIdx.length).toBeGreaterThan(0);
+      const ctx = Math.min(...ctxIdx);
+      const save = lc.indexOf("change_artifact_style");
+      expect(save).toBeGreaterThan(ctx);
+    }
+  });
+
+  it("enforces self-review via craftChecks read-back", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("get_product_artifact");
+      expect(lc).toContain("craftchecks");
+      expect(lc).toContain("self-review");
+    }
+  });
+});

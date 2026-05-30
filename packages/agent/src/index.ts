@@ -10,7 +10,8 @@ export const formaAgentCommands = [
   "fm-requirement",
   "fm-rollback-design",
   "fm-design",
-  "fm-refine-components"
+  "fm-refine-components",
+  "fm-change-style"
 ] as const;
 
 export type FormaAgentCommand = (typeof formaAgentCommands)[number];

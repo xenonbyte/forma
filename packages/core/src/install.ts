@@ -14,7 +14,8 @@ export const formaInstallCommands = [
   "fm-requirement",
   "fm-rollback-design",
   "fm-design",
-  "fm-refine-components"
+  "fm-refine-components",
+  "fm-change-style"
 ] as const;
 
 export type FormaInstallCommand = (typeof formaInstallCommands)[number];
