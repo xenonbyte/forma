@@ -24,10 +24,11 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ArtifactStore } from './artifact-store.js';
-import type { ArtifactFormaExtension, ArtifactManifest, ArtifactProvenance } from './artifact-manifest.js';
+import type { ArtifactCraftCheck, ArtifactFormaExtension, ArtifactManifest, ArtifactProvenance } from './artifact-manifest.js';
 import { localizeArtifactAssets } from './artifact-asset-pipeline.js';
 import { validateStaticArtifact } from './artifact-static-validation.js';
 import { renderArtifactPreview } from './preview-renderer.js';
+import { lintCraft } from './quality/craft-lint.js';
 import type { ProductService } from './product.js';
 import type { ProductMutationContext } from './product-mutation-lock.js';
 import { FormaError } from './errors.js';
@@ -132,6 +133,7 @@ export async function saveDesignArtifact(
   let previewError: string | undefined;
   let preview1xBuf: Buffer | undefined;
   let preview2xBuf: Buffer | undefined;
+  let craftChecks: ArtifactCraftCheck[] | undefined;
 
   try {
     await mkdir(tempDir, { recursive: true });
@@ -144,10 +146,20 @@ export async function saveDesignArtifact(
 
     const previewOutDir = join(tempDir, 'preview');
     try {
-      await renderArtifactPreview({ bundleDir: tempDir, outDir: previewOutDir });
+      const renderResult = await renderArtifactPreview({ bundleDir: tempDir, outDir: previewOutDir, extractDom: true });
       preview1xBuf = await readFile(join(previewOutDir, '1x.png'));
       preview2xBuf = await readFile(join(previewOutDir, '2x.png'));
       previewStatus = 'ready';
+      if (renderResult.snapshotError) {
+        craftChecks = [{ id: 'craft-lint', passed: false, detail: `snapshot extraction failed: ${renderResult.snapshotError}` }];
+      } else if (renderResult.snapshot) {
+        try {
+          craftChecks = lintCraft(renderResult.snapshot);
+        } catch (err) {
+          // Lint is observable but non-blocking: record a single failed check.
+          craftChecks = [{ id: 'craft-lint', passed: false, detail: `lint failed: ${err instanceof Error ? err.message : String(err)}` }];
+        }
+      }
     } catch (err) {
       previewError = err instanceof FormaError ? err.message : String(err);
       previewStatus = 'failed';
@@ -161,6 +173,7 @@ export async function saveDesignArtifact(
   const finalPreviewError = previewError;
   const finalPreview1x = preview1xBuf;
   const finalPreview2x = preview2xBuf;
+  const finalCraftChecks = craftChecks;
 
   // ── Step 4: Determine artifact id (version is allocated atomically by the store)
   // An existing artifactId appends a new version; otherwise this is a fresh v1.
@@ -190,6 +203,7 @@ export async function saveDesignArtifact(
       generatedAt: now,
       ...(finalPreviewError ? { error: finalPreviewError } : {}),
     },
+    ...(finalCraftChecks ? { quality: { craftChecks: finalCraftChecks } } : {}),
   };
 
   const manifest: ArtifactManifest = {

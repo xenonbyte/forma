@@ -273,4 +273,34 @@ describe('saveDesignArtifact', () => {
     const pointer = await store.products.getDesignPointer(productId, 'req-006', 'page-006', 'default');
     expect(pointer).toBeTruthy();
   }, 90000);
+
+  it('persists deterministic craft checks into manifest.forma.quality.craftChecks', async () => {
+    const input = await makeCleanInput({
+      html: `<!doctype html><html><body style="margin:0;background:#ffffff">
+        <h1 style="color:#111111;font-size:32px;font-family:Inter">Quality Title</h1>
+        <p style="color:#222222;font-size:16px;font-family:Inter">Readable body text</p>
+      </body></html>`,
+      forma: { requirementId: 'req-q1', pageId: 'page-q1', variant: 'default' },
+    });
+    const deps = makeDeps();
+    const result = await saveDesignArtifact(deps, input);
+    expect(result.previewStatus).toBe('ready');
+
+    const { productsRoot } = deps;
+    const manifestJson = await readFile(
+      join(productsRoot, productId, 'od-project', 'artifacts', result.artifactId, 'v1', 'manifest.json'),
+      'utf8',
+    );
+    const manifest = JSON.parse(manifestJson);
+    const checks = manifest.forma.quality?.craftChecks;
+    expect(Array.isArray(checks)).toBe(true);
+    const ids = checks.map((c: { id: string }) => c.id).sort();
+    expect(ids).toEqual(['color-palette', 'contrast-aa', 'font-families', 'type-scale']);
+    const contrast = checks.find((c: { id: string }) => c.id === 'contrast-aa');
+    expect(contrast?.detail).toMatch(/\d+ text node/);
+    for (const c of checks) {
+      expect(typeof c.id).toBe('string');
+      expect(typeof c.passed).toBe('boolean');
+    }
+  }, 90000);
 });
