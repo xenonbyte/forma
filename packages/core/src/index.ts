@@ -34,3 +34,4 @@ export * from "./artifact-static-validation.js";
 export * from "./design-save.js";
 export * from "./design-context.js";
 export * from "./artifact-urls.js";
+export { isSameOrChildPath } from "./path-boundary.js";

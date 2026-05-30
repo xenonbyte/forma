@@ -1,14 +1,18 @@
 import { access, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { extname, join, resolve } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   recoverV6NormalizationJournal,
   restoreV6NormalizationBackup,
   SchemaNormalizationRecoveryError,
   getArtifactDir,
+  getArtifactVersionDir,
+  getArtifactVersionPreviewPath,
   getFormaPaths,
+  isSameOrChildPath,
   type ArtifactManifest,
+  type BrandStyleContent,
   type Language,
   type Platform,
   type SchemaNormalizationRecoveryState
@@ -81,7 +85,7 @@ export interface FormaRoutesStore {
     saveRequirement(input: unknown): Promise<unknown>;
   };
   styles: {
-    getStyle(name: string): Promise<{ metadata: { design_md_path: string; [key: string]: unknown }; [key: string]: unknown }>;
+    getStyle(name: string): Promise<BrandStyleContent>;
     listStyles(): Promise<unknown>;
   };
 }
@@ -246,13 +250,16 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/config", async (request, reply) => {
     if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
-    const style = await store.styles.getStyle(requiredString(body, "style"));
-    return store.products.initProductConfig(request.params.id, {
+    const config: Record<string, unknown> = {
       platform: requiredPlatform(body, "platform"),
-      style: style.metadata,
+      brand_style: requiredString(body, "brand_style"),
       languages: requiredStringArray(body, "languages") as Language[],
       default_language: requiredString(body, "default_language") as Language
-    });
+    };
+    if (body["system_style"] !== undefined) {
+      config["system_style"] = requiredString(body, "system_style");
+    }
+    return store.products.initProductConfig(request.params.id, config);
   });
 
   // ─── Requirement routes ────────────────────────────────────────────────────
@@ -383,6 +390,83 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       const productsDir = getFormaPaths(store.home).productsDir;
       const artifactDir = getArtifactDir(productsDir, request.params.pid, request.params.aid);
       const previewPath = join(artifactDir, "preview", `${res}.png`);
+      if (!(await fileExists(previewPath))) {
+        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview not found", details: {} });
+        return;
+      }
+      const content = await readFile(previewPath);
+      const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
+      reply.header("Content-Type", "image/png");
+      reply.header("ETag", etag);
+      reply.header("Cache-Control", "public, max-age=3600");
+      reply.send(content);
+    }
+  );
+
+  // ─── Versioned artifact bundle route ──────────────────────────────────────
+
+  app.get<{ Params: { pid: string; aid: string; v: string; "*": string } }>(
+    "/api/products/:pid/artifacts/:aid/versions/:v/bundle/*",
+    async (request, reply) => {
+      const { pid, aid, v } = request.params;
+      const relPath = request.params["*"];
+      const version = Number(v);
+      if (!Number.isInteger(version) || version < 1) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact version", details: { version: v } });
+        return;
+      }
+      const productsDir = getFormaPaths(store.home).productsDir;
+      let versionDir: string;
+      try {
+        versionDir = getArtifactVersionDir(productsDir, pid, aid, version);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        return;
+      }
+      if (!relPath) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Bundle path is required", details: {} });
+        return;
+      }
+      const resolvedFile = resolve(versionDir, relPath);
+      if (!isSameOrChildPath(resolve(versionDir), resolvedFile)) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes bundle directory", details: {} });
+        return;
+      }
+      if (!(await fileExists(resolvedFile))) {
+        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Bundle file not found", details: {} });
+        return;
+      }
+      const content = await readFile(resolvedFile);
+      reply.header("Content-Type", contentTypeForPath(resolvedFile));
+      reply.header("Cache-Control", "public, max-age=3600");
+      reply.send(content);
+    }
+  );
+
+  // ─── Versioned artifact preview route ─────────────────────────────────────
+
+  app.get<{ Params: { pid: string; aid: string; v: string; res: string } }>(
+    "/api/products/:pid/artifacts/:aid/versions/:v/preview/:res",
+    async (request, reply) => {
+      const { pid, aid, v, res } = request.params;
+      if (res !== "1x.png" && res !== "2x.png") {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Preview resolution must be 1x.png or 2x.png", details: { res } });
+        return;
+      }
+      const version = Number(v);
+      if (!Number.isInteger(version) || version < 1) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact version", details: { version: v } });
+        return;
+      }
+      const productsDir = getFormaPaths(store.home).productsDir;
+      const resolution: "1x" | "2x" = res === "2x.png" ? "2x" : "1x";
+      let previewPath: string;
+      try {
+        previewPath = getArtifactVersionPreviewPath(productsDir, pid, aid, version, resolution);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        return;
+      }
       if (!(await fileExists(previewPath))) {
         reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview not found", details: {} });
         return;
@@ -652,5 +736,34 @@ async function fileExists(file: string): Promise<boolean> {
       return false;
     }
     throw error;
+  }
+}
+
+function contentTypeForPath(file: string): string {
+  switch (extname(file)) {
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+    case ".mjs":
+      return "text/javascript; charset=utf-8";
+    case ".json":
+      return "application/json; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".svg":
+      return "image/svg+xml";
+    case ".woff2":
+      return "font/woff2";
+    case ".woff":
+      return "font/woff";
+    case ".ttf":
+      return "font/ttf";
+    default:
+      return "application/octet-stream";
   }
 }

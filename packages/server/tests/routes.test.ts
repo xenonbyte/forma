@@ -97,23 +97,19 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
     recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
     styles: {
       getStyle: vi.fn(async () => ({
+        kind: "brand" as const,
         metadata: {
-          name: "linear",
+          name: "linear-app",
           description: "Focused tool UI",
-          design_md_path: "styles/linear/DESIGN.md",
-          variables: {
-            primary: "#111827",
-            background: "#ffffff",
-            "text-primary": "#111827",
-            "font-heading": "Inter",
-            "font-body": "Inter",
-            "border-radius": "8px",
-            "spacing-unit": "8px"
-          }
+          design_md_path: "styles/linear-app/DESIGN.md",
+          tokens_css_path: "styles/linear-app/tokens.css",
+          components_html_path: "styles/linear-app/components.html"
         },
-        designMd: "# Linear"
+        designMd: "# Linear App",
+        tokensCss: ":root {}",
+        componentsHtml: "<div></div>"
       })),
-      listStyles: vi.fn(async () => [{ name: "linear", description: "Focused tool UI" }])
+      listStyles: vi.fn(async () => [{ name: "linear-app", description: "Focused tool UI", design_md_path: "styles/linear-app/DESIGN.md", tokens_css_path: "styles/linear-app/tokens.css", components_html_path: "styles/linear-app/components.html" }])
     }
   } satisfies FormaServerStore;
 
@@ -148,12 +144,7 @@ async function seedReadyProduct(store: FormaStore, name = "Shop App") {
     platform: "mobile",
     languages: ["en"],
     default_language: "en",
-    style: {
-      name: "linear",
-      description: "Focused tool UI",
-      design_md_path: "styles/linear/DESIGN.md",
-      variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
-    }
+    brand_style: "linear-app"
   });
   return product;
 }
@@ -465,7 +456,7 @@ describe("Fastify API routes", () => {
     expect(response.json()).toMatchObject({ error_code: "PRODUCT_DELETION_RECOVERY_FAILED" });
   });
 
-  it("initializes product config with style metadata, platform, languages, and default language", async () => {
+  it("initializes product config with brand_style name, platform, languages, and default language", async () => {
     const store = fakeStore();
     const app = await appWith(store);
 
@@ -474,30 +465,17 @@ describe("Fastify API routes", () => {
       url: "/api/products/P-123abc/config",
       payload: {
         platform: "web",
-        style: "linear",
+        brand_style: "linear-app",
         languages: ["zh-CN", "en"],
         default_language: "zh-CN"
       }
     });
 
     expect(response.statusCode).toBe(200);
-    expect(store.styles.getStyle).toHaveBeenCalledWith("linear");
+    expect(store.styles.getStyle).not.toHaveBeenCalled();
     expect(store.products.initProductConfig).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
-      style: {
-        name: "linear",
-        description: "Focused tool UI",
-        design_md_path: "styles/linear/DESIGN.md",
-        variables: {
-          primary: "#111827",
-          background: "#ffffff",
-          "text-primary": "#111827",
-          "font-heading": "Inter",
-          "font-body": "Inter",
-          "border-radius": "8px",
-          "spacing-unit": "8px"
-        }
-      },
+      brand_style: "linear-app",
       languages: ["zh-CN", "en"],
       default_language: "zh-CN"
     });
@@ -506,6 +484,32 @@ describe("Fastify API routes", () => {
       platform: "web",
       languages: ["zh-CN", "en"],
       default_language: "zh-CN"
+    });
+  });
+
+  it("initializes product config with optional system_style", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products/P-123abc/config",
+      payload: {
+        platform: "mobile",
+        brand_style: "linear-app",
+        system_style: "material",
+        languages: ["en"],
+        default_language: "en"
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(store.products.initProductConfig).toHaveBeenCalledWith("P-123abc", {
+      platform: "mobile",
+      brand_style: "linear-app",
+      system_style: "material",
+      languages: ["en"],
+      default_language: "en"
     });
   });
 
@@ -987,7 +991,15 @@ describe("Fastify API routes", () => {
     const response = await app.inject({ method: "GET", url: "/api/styles" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual(expect.arrayContaining([expect.objectContaining({ name: "linear" })]));
+    expect(response.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: "linear-app",
+        description: expect.any(String),
+        design_md_path: expect.any(String),
+        tokens_css_path: expect.any(String),
+        components_html_path: expect.any(String)
+      })
+    ]));
   });
 });
 
@@ -1074,6 +1086,122 @@ describe("artifact routes", () => {
     const app = await appWith(fakeStore({ home: await mkdtemp(join(tmpdir(), "forma-artifact-preview-")) }));
 
     const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x" });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* serves index.html from versioned bundle", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-bundle-route-"));
+    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), "<!doctype html><body>Bundle</body>", "utf8");
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/index.html"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/html");
+    expect(response.body).toContain("Bundle");
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* serves nested asset file", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-bundle-asset-"));
+    const assetsDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v2", "assets");
+    await mkdir(assetsDir, { recursive: true });
+    await writeFile(join(assetsDir, "style.css"), "body { color: red; }", "utf8");
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/2/bundle/assets/style.css"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/css");
+    expect(response.body).toContain("color: red");
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* rejects path traversal", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-bundle-traversal-"));
+    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    await mkdir(versionDir, { recursive: true });
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/..%2F..%2Fsecret"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* returns 404 for missing file", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-bundle-missing-"));
+    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    await mkdir(versionDir, { recursive: true });
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/missing.html"
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res serves 2x.png", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-vpreview-"));
+    const previewDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1", "preview");
+    await mkdir(previewDir, { recursive: true });
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await writeFile(join(previewDir, "2x.png"), pngBytes);
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/2x.png"
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.rawPayload).toEqual(pngBytes);
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res returns 400 for invalid resolution", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-vpreview-bad-res-"));
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/3x.png"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res returns 404 when preview file missing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-vpreview-missing-"));
+    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    await mkdir(versionDir, { recursive: true });
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/1x.png"
+    });
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
