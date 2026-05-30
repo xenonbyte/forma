@@ -3,16 +3,22 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { launch, type Browser } from 'puppeteer';
 import { FormaError } from './errors.js';
+import { extractSnapshotInPage, type RenderedDomSnapshot } from './quality/rendered-dom.js';
 
 export interface RenderPreviewInput {
   bundleDir: string;
   outDir: string;
   entry?: string;
   viewport?: { width: number; height: number };
+  /** When true, also extract a rendered-DOM snapshot from the 1x page for craft lint. */
+  extractDom?: boolean;
 }
 
 export interface RenderPreviewResult {
   files: { '1x': string; '2x': string };
+  snapshot?: RenderedDomSnapshot;
+  /** Non-blocking DOM extraction failure; preview files may still be ready. */
+  snapshotError?: string;
 }
 
 const RELEVANT_RESOURCE_TYPES = new Set(['image', 'stylesheet', 'font', 'media']);
@@ -35,6 +41,8 @@ export async function renderArtifactPreview(input: RenderPreviewInput): Promise<
     await mkdir(input.outDir, { recursive: true });
 
     const files: Record<'1x' | '2x', string> = { '1x': '', '2x': '' };
+    let snapshot: RenderedDomSnapshot | undefined;
+    let snapshotError: string | undefined;
     for (const [label, deviceScaleFactor] of [['1x', 1], ['2x', 2]] as const) {
       const page = await browser.newPage();
       try {
@@ -55,11 +63,18 @@ export async function renderArtifactPreview(input: RenderPreviewInput): Promise<
         const file = join(input.outDir, `${label}.png`);
         await writeFile(file, buf);
         files[label] = file;
+        if (label === '1x' && input.extractDom) {
+          try {
+            snapshot = await page.evaluate(extractSnapshotInPage);
+          } catch (err) {
+            snapshotError = err instanceof Error ? err.message : String(err);
+          }
+        }
       } finally {
         await page.close().catch(() => undefined);
       }
     }
-    return { files };
+    return { files, ...(snapshot ? { snapshot } : {}), ...(snapshotError ? { snapshotError } : {}) };
   } catch (err) {
     if (err instanceof FormaError) throw err;
     throw new FormaError('PREVIEW_RENDER_FAILED', `Preview render failed: ${err instanceof Error ? err.message : String(err)}`, {
