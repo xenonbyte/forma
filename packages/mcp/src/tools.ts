@@ -134,21 +134,6 @@ const ruleInputSchema = z.object({
   semantic: ruleSemanticSchema.optional(),
   replaces_rule_id: z.string().optional()
 }).strict();
-const styleVariablesSchema = z.object({
-  primary: z.string(),
-  background: z.string(),
-  "text-primary": z.string(),
-  "font-heading": z.string(),
-  "font-body": z.string(),
-  "border-radius": z.string(),
-  "spacing-unit": z.string()
-});
-const styleMetadataSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  design_md_path: z.string().min(1),
-  variables: styleVariablesSchema
-});
 const requirementPageInputSchema = z.object({
   page_id: z.string().min(1),
   name: z.string().min(1),
@@ -243,7 +228,8 @@ const getPageCopySchema = z.object({
 const productConfigSchema = z.object({
   product_id: z.string().min(1),
   platform: z.enum(platforms),
-  style: styleMetadataSchema,
+  brand_style: z.string().min(1),
+  system_style: z.string().min(1).optional(),
   languages: z.array(z.enum(languages)).min(1),
   default_language: z.enum(languages)
 }).strict().refine((config) => config.languages.includes(config.default_language), {

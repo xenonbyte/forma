@@ -101,23 +101,6 @@ function expectSchemaFailure(toolName: FormaToolName, input: unknown, message?: 
   }
 }
 
-function sampleStyle() {
-  return {
-    name: "linear",
-    description: "Focused tool UI",
-    design_md_path: "styles/linear/DESIGN.md",
-    variables: {
-      primary: "#5E6AD2",
-      background: "#FFFFFF",
-      "text-primary": "#111827",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "8px",
-      "spacing-unit": "8px"
-    }
-  };
-}
-
 function fakeManifest() {
   return {
     version: 1 as const,
@@ -517,14 +500,9 @@ describe("MCP forma tools", () => {
     const product = await store.products.createProduct({ name: "Delete Me", description: "Temporary" });
     await store.products.initProductConfig(product.id, {
       platform: "web",
+      brand_style: "linear",
       languages: ["en"],
-      default_language: "en",
-      style: {
-        name: "linear",
-        description: "Focused tool UI",
-        design_md_path: "styles/linear/DESIGN.md",
-        variables: store.styles.withDefaultVariables({ primary: "#5E6AD2" })
-      }
+      default_language: "en"
     });
     await store.sessions.setCurrentProduct(product.id);
 
@@ -544,19 +522,18 @@ describe("MCP forma tools", () => {
   it("init_product_config updates config for an existing product and does not create products", async () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
-    const style = sampleStyle();
 
     await tools.init_product_config({
       product_id: "P-123abc",
       platform: "web",
-      style,
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "en"
     });
 
     expect(store.products.initProductConfig).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
-      style,
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "en"
     });
@@ -567,7 +544,7 @@ describe("MCP forma tools", () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
 
-    const result = await tools.init_product_config({ product_id: "P-123abc", platform: "web", style: sampleStyle() });
+    const result = await tools.init_product_config({ product_id: "P-123abc", platform: "web", brand_style: "linear" });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
@@ -582,7 +559,7 @@ describe("MCP forma tools", () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
 
-    const result = await tools.update_product_config({ product_id: "P-123abc", platform: "web", style: sampleStyle() });
+    const result = await tools.update_product_config({ product_id: "P-123abc", platform: "web", brand_style: "linear" });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
@@ -596,26 +573,25 @@ describe("MCP forma tools", () => {
   it("config tools share the language-aware schema and validate default_language membership", async () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
-    const style = sampleStyle();
 
     const invalid = await tools.update_product_config({
       product_id: "P-123abc",
       platform: "web",
-      style,
+      brand_style: "linear",
       languages: ["en"],
       default_language: "zh-CN"
     });
     await tools.init_product_config({
       product_id: "P-123abc",
       platform: "web",
-      style,
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "zh-CN"
     });
     await tools.update_product_config({
       product_id: "P-123abc",
       platform: "mobile",
-      style,
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "en"
     });
@@ -627,13 +603,13 @@ describe("MCP forma tools", () => {
     });
     expect(store.products.initProductConfig).toHaveBeenNthCalledWith(1, "P-123abc", {
       platform: "web",
-      style,
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "zh-CN"
     });
     expect(store.products.initProductConfig).toHaveBeenNthCalledWith(2, "P-123abc", {
       platform: "mobile",
-      style,
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "en"
     });
