@@ -278,6 +278,32 @@ describe('extractDom via renderArtifactPreview', () => {
     }
   }, 60000);
 
+  it('marks text under a faded group (ancestor opacity<1 painting a background) as non-solid', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap13-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <section style="opacity:0.5;background:#000000">
+           <p style="color:#ffffff;font-size:16px;font-family:Inter">Faded group text</p>
+         </section>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const copy = result.snapshot!.textNodes.find((n) => n.text.includes('Faded group text'));
+      expect(copy).toBeDefined();
+      // The black backdrop renders faded (gray over white), so it is not a single
+      // solid color — must not be judged as opaque black (which would false-pass).
+      expect(copy!.backgroundSolid).toBe(false);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it('captures the selected option label of a <select>', async () => {
     const bundleDir = join(tmpdir(), `forma-snap11-${randomBytes(6).toString('hex')}`);
     const outDir = join(bundleDir, 'preview');

@@ -37,16 +37,17 @@ export interface RenderedDomSnapshot {
   textNodes: RenderedTextNode[];
 }
 
-/** Hard cap so a pathological page cannot produce an unbounded snapshot. */
-const MAX_TEXT_NODES = 5000;
-
 /**
  * Runs INSIDE the browser via `page.evaluate`. MUST be self-contained: it may not
  * reference any module-scope identifier — only window/document/getComputedStyle.
  * Returns a JSON-serializable RenderedDomSnapshot.
  */
 export function extractSnapshotInPage(): RenderedDomSnapshot {
+  // Hard caps so a pathological page cannot produce an unbounded snapshot or stall
+  // the extractor: at most MAX captured text nodes, and at most MAX_VISITED elements
+  // walked. Locals (not module-scope) to keep this function self-contained.
   const MAX = 5000;
+  const MAX_VISITED = 100000;
 
   function parseRgbString(value: string): [number, number, number, number] | null {
     const m = value.match(/rgba?\(([^)]+)\)/i);
@@ -120,18 +121,40 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     const layers: Array<[number, number, number, number]> = [];
     let node: Element | null = el;
     let solid = true;
+    let sawBgLayer = false; // a background color has joined the stack
+    let sealed = false;     // an opaque layer caps the background; stop collecting
     while (node) {
       const cs = getComputedStyle(node);
-      // A gradient or background-image is the actual backdrop here; it cannot be
-      // reduced to one color, so mark the stack non-solid and stop.
-      if (cs.backgroundImage && cs.backgroundImage !== 'none') {
+      const op = parseFloat(cs.opacity);
+      const hasOpacity = Number.isFinite(op) && op < 1;
+      // CSS opacity<1 fades the element's whole group (its own background + every
+      // descendant) over the parent backdrop. If a background color is in that
+      // group, the recorded color is not what renders, so it cannot be reduced to
+      // one solid color → mark non-solid. (Opacity on a node that contributes no
+      // background only fades the foreground, already folded into the fg alpha.)
+      if (hasOpacity && sawBgLayer) {
         solid = false;
         break;
       }
-      const bg = resolveRgba(cs.backgroundColor);
-      if (bg[3] > 0) {
-        layers.push(bg);
-        if (bg[3] >= 1) break; // an opaque layer seals everything beneath it
+      if (!sealed) {
+        // A gradient/background-image is the actual backdrop here; not a solid color.
+        if (cs.backgroundImage && cs.backgroundImage !== 'none') {
+          solid = false;
+          break;
+        }
+        const bg = resolveRgba(cs.backgroundColor);
+        if (bg[3] > 0) {
+          // This node both paints a background and fades itself → that background
+          // renders faded; non-solid.
+          if (hasOpacity) {
+            solid = false;
+            break;
+          }
+          layers.push(bg);
+          sawBgLayer = true;
+          if (bg[3] >= 1) sealed = true; // opaque: stop collecting, but keep
+                                         // scanning ancestors for a fading group
+        }
       }
       node = node.parentElement;
     }
@@ -234,25 +257,18 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return null;
   }
 
-  const textNodes: RenderedTextNode[] = [];
-  // Include <body> itself: querySelectorAll('*') yields only descendants, so text
-  // placed directly under body (<body>Hello</body>) would otherwise be unlinted.
-  const all = document.body
-    ? [document.body, ...Array.from(document.body.querySelectorAll('*'))]
-    : [];
-  for (const el of all) {
-    if (textNodes.length >= MAX) break;
+  function visit(el: Element): void {
     const cs = getComputedStyle(el);
-    if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+    if (cs.visibility === 'hidden' || cs.display === 'none') return;
     // An ancestor display:none leaves this element's own computed display intact,
     // so check actual layout: an unrendered element generates no client rects.
-    if (el.getClientRects().length === 0) continue;
+    if (el.getClientRects().length === 0) return;
 
     const tag = el.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea') {
       const fc = formControlText(el, cs);
       if (fc) pushNode(el, cs, fc.color, fc.text);
-      continue;
+      return;
     }
 
     // <select> renders its selected option's label; that text lives in descendant
@@ -264,12 +280,30 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
         : (sel.options ? sel.options[sel.selectedIndex] : null);
       const label = opt ? (opt.textContent ?? '') : '';
       if (label.trim().length > 0) pushNode(el, cs, resolveRgba(cs.color), label);
-      continue;
+      return;
     }
 
     const own = directText(el);
-    if (own.trim().length === 0) continue;
-    pushNode(el, cs, resolveRgba(cs.color), own);
+    if (own.trim().length > 0) pushNode(el, cs, resolveRgba(cs.color), own);
+  }
+
+  const textNodes: RenderedTextNode[] = [];
+  // Stream the tree instead of materializing every element up front: a generated
+  // artifact can carry a huge decorative/hidden DOM with few text nodes, and this
+  // extractor runs on every save. We cap BOTH the captured text nodes (MAX) and the
+  // total elements visited (MAX_VISITED) so a pathological page can't stall or
+  // exhaust memory. <body> itself is visited first so text directly under it
+  // (<body>Hello</body>) is linted (querySelectorAll('*') would skip body).
+  let visited = 0;
+  const stack: Element[] = document.body ? [document.body] : [];
+  while (stack.length > 0) {
+    if (textNodes.length >= MAX || visited >= MAX_VISITED) break;
+    const el = stack.pop()!;
+    visited++;
+    visit(el);
+    // Push children reversed so they are processed in document order.
+    const children = el.children;
+    for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
   }
 
   return {
