@@ -123,7 +123,10 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       writeArtifact: vi.fn(async () => ({ artifactId: "ABCDEFGHIJ123456", etag: "sha256:abc" })),
       readArtifact: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
       listArtifacts: vi.fn(async () => []),
-      deleteArtifact: vi.fn(async () => undefined)
+      deleteArtifact: vi.fn(async () => undefined),
+      listArtifactVersions: vi.fn(async () => [1, 2]),
+      writeArtifactVersion: vi.fn(async () => ({ etag: "sha256:abc" })),
+      readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
     },
     copy: {
       getTranslations: vi.fn(async () => []),
@@ -169,7 +172,16 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       initProductConfig: vi.fn(async (_productId: string, config: unknown) => ({ id: "P-123abc", ...config as object })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
       setRequirementArtifactPointerLocked: vi.fn(async () => undefined as string | undefined),
-      setDesignSystemArtifactPointerLocked: vi.fn(async () => undefined)
+      setDesignSystemArtifactPointerLocked: vi.fn(async () => undefined),
+      getDesignPointer: vi.fn(async () => ({
+        requirementId: "R-12345678",
+        pageId: "page-home",
+        variant: "default",
+        artifactId: "ABCDEFGHIJ123456",
+        version: 2,
+        designStatus: "active" as const
+      })),
+      rollbackDesignPointerLocked: vi.fn(async () => undefined)
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
     requirements: {
@@ -1171,83 +1183,46 @@ describe("artifact tools (C-03)", () => {
 
   // ─── rollback_requirement_design ─────────────────────────────────────────
 
-  it("rollback_requirement_design returns rolled_back_to and previous_pointer", async () => {
-    const manifest = { ...fakeManifest(), id: "TARGET_ARTIFACT123", requirementId: "R-12345678" };
-    const store = fakeStore({
-      artifacts: {
-        ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      }
-    });
+  it("rollback_requirement_design flips the version pointer to the target version", async () => {
+    const store = fakeStore();
     const tools = createFormaTools(store);
 
     const result = await tools.rollback_requirement_design({
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      target_artifact_id: "TARGET_ARTIFACT123"
-    });
-    const payload = textPayload(result);
-
-    expect(result.isError).toBeUndefined();
-    expect(payload).toMatchObject({
-      rolled_back_to: "TARGET_ARTIFACT123",
-      previous_pointer: expect.anything()
-    });
-    expect(store.products.setRequirementArtifactPointerLocked).toHaveBeenCalled();
-  });
-
-  it("rollback_requirement_design is a no-op when target matches current pointer", async () => {
-    const manifest = { ...fakeManifest(), id: "OLDARTIFACT12345", requirementId: "R-12345678" };
-    const store = fakeStore({
-      artifacts: {
-        ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.rollback_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      target_artifact_id: "OLDARTIFACT12345"
+      page_id: "page-home",
+      target_version: 1
     });
     const payload = textPayload(result);
 
     expect(result.isError).toBeUndefined();
     expect(payload).toEqual({
-      rolled_back_to: "OLDARTIFACT12345",
-      previous_pointer: "OLDARTIFACT12345"
+      requirement_id: "R-12345678",
+      page_id: "page-home",
+      variant: "default",
+      version: 1
     });
-    expect(store.products.setRequirementArtifactPointerLocked).not.toHaveBeenCalled();
+    expect(store.products.rollbackDesignPointerLocked).toHaveBeenCalledWith(
+      "P-123abc",
+      "R-12345678",
+      "page-home",
+      "default",
+      1
+    );
   });
 
-  it("rollback_requirement_design returns REQUIREMENT_NOT_FOUND when requirement is missing", async () => {
+  it("rollback_requirement_design uses the provided variant", async () => {
     const store = fakeStore({
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => {
-          throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found");
-        })
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.rollback_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-missing1",
-      target_artifact_id: "ABCDEFGHIJ123456"
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FOUND" });
-  });
-
-  it("rollback_requirement_design returns ARTIFACT_NOT_FOUND when target artifact requirementId mismatches", async () => {
-    const manifest = { ...fakeManifest(), id: "ABCDEFGHIJ123456", requirementId: "R-other111" };
-    const store = fakeStore({
-      artifacts: {
-        ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      products: {
+        ...fakeStore().products,
+        getDesignPointer: vi.fn(async () => ({
+          requirementId: "R-12345678",
+          pageId: "page-home",
+          variant: "dark",
+          artifactId: "ABCDEFGHIJ123456",
+          version: 2,
+          designStatus: "active" as const
+        }))
       }
     });
     const tools = createFormaTools(store);
@@ -1255,11 +1230,72 @@ describe("artifact tools (C-03)", () => {
     const result = await tools.rollback_requirement_design({
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      target_artifact_id: "ABCDEFGHIJ123456"
+      page_id: "page-home",
+      variant: "dark",
+      target_version: 1
+    });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload).toMatchObject({ variant: "dark", version: 1 });
+  });
+
+  it("rollback_requirement_design returns ARTIFACT_NOT_FOUND when design pointer is missing", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getDesignPointer: vi.fn(async () => undefined)
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.rollback_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "page-missing",
+      target_version: 1
     });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("rollback_requirement_design returns ARTIFACT_NOT_FOUND when target version is not on disk", async () => {
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1, 2])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.rollback_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "page-home",
+      target_version: 99
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("rollback_requirement_design fails schema validation when target_version is missing", async () => {
+    expectSchemaFailure("rollback_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "page-home"
+    });
+  });
+
+  it("rollback_requirement_design fails schema validation for old target_artifact_id field", async () => {
+    expectSchemaFailure("rollback_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "page-home",
+      target_artifact_id: "ABCDEFGHIJ123456",
+      target_version: 1
+    });
   });
 });
 

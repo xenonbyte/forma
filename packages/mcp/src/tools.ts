@@ -183,7 +183,9 @@ const exportArtifactSchema = z.object({
 const rollbackRequirementDesignSchema = z.object({
   product_id: z.string().min(1),
   requirement_id: z.string().min(1),
-  target_artifact_id: z.string().min(1)
+  page_id: z.string().min(1),
+  variant: z.string().min(1).optional(),
+  target_version: z.number().int().min(1)
 }).strict();
 
 const generateRequirementDesignSchema = z.object({
@@ -374,7 +376,7 @@ const descriptions = {
   list_product_artifacts: "List open-design artifacts for a product.",
   get_product_artifact: "Read an open-design artifact manifest and supporting file list.",
   export_artifact: "Export an open-design artifact to html, svg, png, or zip.",
-  rollback_requirement_design: "Rewind the requirement artifact pointer to a previous artifact.",
+  rollback_requirement_design: "Roll back a page/variant's design to a previous version (flips the version pointer; older versions are kept).",
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   change_artifact_style: "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
@@ -727,39 +729,33 @@ function archiveDirname(relPath: string): string {
 async function rollbackRequirementDesign(
   store: FormaStore,
   input: z.infer<typeof rollbackRequirementDesignSchema>
-): Promise<{ rolled_back_to: string; previous_pointer: string | null }> {
-  const { product_id, requirement_id, target_artifact_id } = input;
+): Promise<{ requirement_id: string; page_id: string; variant: string; version: number }> {
+  const { product_id, requirement_id, page_id, target_version } = input;
+  const variant = input.variant ?? "default";
 
-  const req = await store.requirements.getRequirement({ requirement_id });
-  if (req.product_id !== product_id) {
-    throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found for this product", {
-      product_id,
-      requirement_id
-    });
-  }
-
-  const { manifest: targetManifest } = await store.artifacts.readArtifact(product_id, target_artifact_id);
-
-  if (targetManifest.requirementId !== requirement_id) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact does not belong to this requirement", {
+  const pointer = await store.products.getDesignPointer(product_id, requirement_id, page_id, variant);
+  if (!pointer) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "Design pointer not found", {
       product_id,
       requirement_id,
-      artifact_id: target_artifact_id
+      page_id,
+      variant
     });
   }
 
-  const product = await store.products.getProduct(product_id);
-  const currentPointer = product.requirements?.[requirement_id]?.latestArtifactId ?? null;
-
-  if (currentPointer === target_artifact_id) {
-    return { rolled_back_to: target_artifact_id, previous_pointer: target_artifact_id };
+  const versions = await store.artifacts.listArtifactVersions(product_id, pointer.artifactId);
+  if (!versions.includes(target_version)) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "Target version not found", {
+      target_version,
+      available: versions
+    });
   }
 
-  await store.runProductMutation({ operation: "rollback_requirement_pointer", product_id }, async () => {
-    await store.products.setRequirementArtifactPointerLocked(product_id, requirement_id, target_artifact_id);
-  });
+  await store.runProductMutation({ operation: "rollback_requirement_design", product_id }, () =>
+    store.products.rollbackDesignPointerLocked(product_id, requirement_id, page_id, variant, target_version)
+  );
 
-  return { rolled_back_to: target_artifact_id, previous_pointer: currentPointer };
+  return { requirement_id, page_id, variant, version: target_version };
 }
 
 // ─── New C-04 tool implementations ───────────────────────────────────────────
