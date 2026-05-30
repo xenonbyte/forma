@@ -191,7 +191,12 @@ describe("agent template inventory", () => {
       expect(rollback).toContain("rollback_requirement_design");
       expect(rollback).toContain("list_product_artifacts");
       expect(rollback).toContain("include_superseded");
-      expect(rollback).toContain("target_artifact_id");
+      expect(rollback).toContain("page_id");
+      expect(rollback).toContain("variant");
+      expect(rollback).toContain("target_version");
+      expect(rollback).toContain("current_version");
+      expect(rollback).toContain("versions");
+      expect(rollback).not.toContain("target_artifact_id");
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");

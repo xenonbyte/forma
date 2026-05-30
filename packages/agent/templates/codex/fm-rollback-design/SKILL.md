@@ -10,11 +10,12 @@ Codex route: `$fm-rollback-design`.
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Cold path scenario:
-The user wants to undo a recent design generation and restore an earlier artifact. The agent lists available artifacts for the product, asks the user to choose a target, then calls `rollback_requirement_design` once to restore it.
+The user wants to undo a recent design generation by moving one requirement page/variant back to an earlier saved version. The agent lists available design-page artifacts and versions, asks the user to choose the page, variant, and target version, then calls `rollback_requirement_design` once to flip that page/variant pointer.
 
 Execution:
-1. Require product_id from context or ask the user to run `$fm-list-product` first. If requirement_id is unknown, call `get_requirement` with product_id to retrieve it.
-2. Call `list_product_artifacts` with product_id, `include_superseded: true`, and `kind` when known to display available artifact versions (id, type, created_at, preview URL). If requirement_id is known, only present artifacts for that requirement.
-3. Ask the user to confirm the target artifact_id to roll back to.
-4. Call `rollback_requirement_design(product_id, requirement_id, target_artifact_id)` with the confirmed artifact_id.
-5. Report the restored artifact_id, preview URL, and stable error codes exactly as returned.
+1. Require product_id from context or ask the user to run `$fm-list-product` first. If requirement_id is unknown, call `get_requirement` with product_id to retrieve it and its pages.
+2. Call `list_product_artifacts` with product_id, `include_superseded: true`, and `kind: "design-page"` to display available design artifacts. If requirement_id is known, only present artifacts for that requirement.
+3. For each candidate, show artifact_id, page_id, variant (default `default`), current_version, versions, title, preview URL, and whether it is superseded. Superseded artifacts are history only; choose `target_version` from the current non-superseded artifact for that page/variant. Do not ask for an artifact id as the rollback target; rollback is by page/variant pointer plus target_version.
+4. Ask the user to confirm `page_id`, `variant` (or `default`), and `target_version`.
+5. Call `rollback_requirement_design(product_id, requirement_id, page_id, variant, target_version)`.
+6. Report the restored `page_id`, `variant`, `version`, and stable error codes exactly as returned.
