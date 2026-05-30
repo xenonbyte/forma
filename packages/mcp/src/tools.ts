@@ -202,26 +202,29 @@ const rollbackRequirementDesignSchema = z.object({
 const generateRequirementDesignSchema = z.object({
   product_id: z.string().min(1),
   requirement_id: z.string().min(1),
-  mode: z.enum(["generate", "rebuild"]),
-  source_skill_id: z.string().min(1).optional()
-}).strict();
-
-const seedComponentSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().optional()
+  page_id: z.string().min(1),
+  html: z.string().min(1),
+  title: z.string().min(1),
+  brand_style: z.string().min(1),
+  system_style: z.string().min(1).optional(),
+  variant: z.string().optional()
 }).strict();
 
 const generateComponentsSchema = z.object({
   product_id: z.string().min(1),
-  seed_components: z.array(seedComponentSchema).min(1),
-  source_skill_id: z.string().min(1).optional()
+  html: z.string().min(1),
+  title: z.string().min(1),
+  brand_style: z.string().min(1),
+  system_style: z.string().min(1).optional()
 }).strict();
 
 const changeArtifactStyleSchema = z.object({
   product_id: z.string().min(1),
   artifact_id: z.string().min(1),
-  style: z.string().min(1),
-  source_skill_id: z.string().min(1).optional()
+  html: z.string().min(1),
+  title: z.string().min(1),
+  brand_style: z.string().min(1),
+  system_style: z.string().min(1).optional()
 }).strict();
 
 const getRequirementSchema = z.object({
@@ -374,9 +377,9 @@ const descriptions = {
   get_product_artifact: "Read an open-design artifact manifest and supporting file list.",
   export_artifact: "Export an open-design artifact to html, svg, png, or zip.",
   rollback_requirement_design: "Rewind the requirement artifact pointer to a previous artifact.",
-  generate_requirement_design: "Generate an open-design artifact for a requirement. Returns OD_RUNTIME_FAILED until the OD runtime is wired.",
-  generate_components: "Generate a design-system artifact from seed component definitions. Returns OD_RUNTIME_FAILED until the OD runtime is wired.",
-  change_artifact_style: "Re-generate an artifact with a new style applied. Returns OD_RUNTIME_FAILED until the OD runtime is wired.",
+  generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
+  generate_components: "Save an AI-generated static HTML component-library artifact.",
+  change_artifact_style: "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
   session_get_guidelines: "Read guidelines for a Forma-owned Pencil session.",
   session_get_variables: "Read variables for a Forma-owned Pencil session.",
   session_batch_get: "Read multiple nodes for a Forma-owned Pencil session.",
@@ -435,11 +438,28 @@ export function createFormaTools(store: FormaStore): FormaTools {
     rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
       rollbackRequirementDesign(store, input)),
     generate_requirement_design: tool("generate_requirement_design", async (input) =>
-      store.generateRequirementDesign(input.product_id, input.requirement_id, input.mode, input.source_skill_id)),
+      store.generateRequirementDesign(input.product_id, input.requirement_id, {
+        html: input.html,
+        title: input.title,
+        pageId: input.page_id,
+        variant: input.variant,
+        brandStyle: input.brand_style,
+        systemStyle: input.system_style
+      })),
     generate_components: tool("generate_components", async (input) =>
-      store.generateComponents(input.product_id, input.seed_components, input.source_skill_id)),
+      store.generateComponents(input.product_id, {
+        html: input.html,
+        title: input.title,
+        brandStyle: input.brand_style,
+        systemStyle: input.system_style
+      })),
     change_artifact_style: tool("change_artifact_style", async (input) =>
-      store.changeArtifactStyle(input.product_id, input.artifact_id, input.style, input.source_skill_id)),
+      store.changeArtifactStyle(input.product_id, input.artifact_id, {
+        html: input.html,
+        title: input.title,
+        brandStyle: input.brand_style,
+        systemStyle: input.system_style
+      })),
     session_get_guidelines: tool("session_get_guidelines", async (input) =>
       v6.sessionGetGuidelines ? v6.sessionGetGuidelines({ home: store.home, ...input }) : sessionToolFallback("session_get_guidelines")),
     session_get_variables: tool("session_get_variables", async (input) =>

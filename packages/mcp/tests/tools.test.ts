@@ -155,15 +155,18 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     })),
     generateRequirementDesign: vi.fn(async () => ({
       artifact_id: "ABCDEFGHIJ123456",
-      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
+      version: 1,
+      preview_status: "pending"
     })),
     generateComponents: vi.fn(async () => ({
       artifact_id: "ABCDEFGHIJ123456",
-      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
+      version: 1,
+      preview_status: "pending"
     })),
     changeArtifactStyle: vi.fn(async () => ({
       artifact_id: "ABCDEFGHIJ123456",
-      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
+      version: 1,
+      preview_status: "pending"
     })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
@@ -1621,72 +1624,117 @@ describe("C-04 retained tools", () => {
   });
 });
 
-describe("OD runtime generation tools (C-03 remainder)", () => {
+describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
   // ─── generate_requirement_design ─────────────────────────────────────────
 
   it("generate_requirement_design schema accepts valid input", () => {
     expectSchemaSuccess("generate_requirement_design", {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      mode: "generate"
+      page_id: "checkout",
+      html: "<main>Hello</main>",
+      title: "Checkout",
+      brand_style: "linear"
     });
     expectSchemaSuccess("generate_requirement_design", {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      mode: "rebuild",
-      source_skill_id: "fm-design"
+      page_id: "checkout",
+      html: "<main>Hello</main>",
+      title: "Checkout",
+      brand_style: "linear",
+      system_style: "material",
+      variant: "dark"
     });
   });
 
   it("generate_requirement_design schema rejects missing required fields", () => {
-    expectSchemaFailure("generate_requirement_design", { product_id: "P-123abc", requirement_id: "R-12345678" });
-    expectSchemaFailure("generate_requirement_design", { product_id: "P-123abc", mode: "generate" });
-    expectSchemaFailure("generate_requirement_design", { requirement_id: "R-12345678", mode: "generate" });
+    // missing html
+    expectSchemaFailure("generate_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      title: "Checkout",
+      brand_style: "linear"
+    });
+    // missing page_id
+    expectSchemaFailure("generate_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      html: "<main/>",
+      title: "Checkout",
+      brand_style: "linear"
+    });
+    // missing brand_style
+    expectSchemaFailure("generate_requirement_design", {
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      html: "<main/>",
+      title: "Checkout"
+    });
+    // missing product_id
+    expectSchemaFailure("generate_requirement_design", {
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+      html: "<main/>",
+      title: "Checkout",
+      brand_style: "linear"
+    });
   });
 
-  it("generate_requirement_design delegates to store and returns artifact_id and preview_url", async () => {
-    const store = fakeStore();
+  it("generate_requirement_design delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
+    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
+    const store = fakeStore({
+      generateRequirementDesign: vi.fn(async () => fakeResult)
+    });
     const tools = createFormaTools(store);
 
     const result = await tools.generate_requirement_design({
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      mode: "generate"
+      page_id: "checkout",
+      html: "<main>Checkout</main>",
+      title: "Checkout",
+      brand_style: "linear",
+      system_style: "material",
+      variant: "dark"
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
-    expect(payload).toMatchObject({
-      artifact_id: "ABCDEFGHIJ123456",
-      preview_url: expect.stringContaining("ABCDEFGHIJ123456")
-    });
+    expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" });
     expect((store as unknown as { generateRequirementDesign: ReturnType<typeof vi.fn> }).generateRequirementDesign)
-      .toHaveBeenCalledWith("P-123abc", "R-12345678", "generate", undefined);
+      .toHaveBeenCalledWith("P-123abc", "R-12345678", {
+        html: "<main>Checkout</main>",
+        title: "Checkout",
+        pageId: "checkout",
+        variant: "dark",
+        brandStyle: "linear",
+        systemStyle: "material"
+      });
   });
 
-  it("generate_requirement_design returns OD_RUNTIME_FAILED when od-runtime is not wired", async () => {
+  it("generate_requirement_design passes through store errors as MCP error results", async () => {
     const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
     const store = fakeStore({
       generateRequirementDesign: vi.fn(async () => {
-        throw new ActualFormaError("OD_RUNTIME_FAILED", "od-plugin-runtime main path not yet wired", {
-          cause: "main_path_stub",
-          reason: "pending_integration"
-        });
+        throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
       })
     });
     const tools = createFormaTools(store);
 
     const result = await tools.generate_requirement_design({
-      product_id: "P-123abc",
+      product_id: "P-missing",
       requirement_id: "R-12345678",
-      mode: "generate"
+      page_id: "checkout",
+      html: "<main/>",
+      title: "Checkout",
+      brand_style: "linear"
     });
 
     expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({
-      error_code: "OD_RUNTIME_FAILED",
-      details: { reason: "pending_integration" }
-    });
+    expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
   });
 
   // ─── generate_components ─────────────────────────────────────────────────
@@ -1694,58 +1742,73 @@ describe("OD runtime generation tools (C-03 remainder)", () => {
   it("generate_components schema accepts valid input", () => {
     expectSchemaSuccess("generate_components", {
       product_id: "P-123abc",
-      seed_components: [{ name: "Button" }, { name: "Input", description: "Text input field" }]
+      html: "<section>Button</section>",
+      title: "Button Library",
+      brand_style: "linear"
     });
     expectSchemaSuccess("generate_components", {
       product_id: "P-123abc",
-      seed_components: [{ name: "Card" }],
-      source_skill_id: "fm-refine-components"
+      html: "<section>Card</section>",
+      title: "Component Library",
+      brand_style: "linear",
+      system_style: "material"
     });
   });
 
-  it("generate_components schema rejects empty seed_components array", () => {
-    expectSchemaFailure("generate_components", { product_id: "P-123abc", seed_components: [] });
-    expectSchemaFailure("generate_components", { product_id: "P-123abc" });
+  it("generate_components schema rejects missing required fields", () => {
+    // missing html
+    expectSchemaFailure("generate_components", { product_id: "P-123abc", title: "Library", brand_style: "linear" });
+    // missing brand_style
+    expectSchemaFailure("generate_components", { product_id: "P-123abc", html: "<section/>", title: "Library" });
+    // missing product_id
+    expectSchemaFailure("generate_components", { html: "<section/>", title: "Library", brand_style: "linear" });
   });
 
-  it("generate_components delegates to store and returns artifact_id and preview_url", async () => {
-    const store = fakeStore();
+  it("generate_components delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
+    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
+    const store = fakeStore({
+      generateComponents: vi.fn(async () => fakeResult)
+    });
     const tools = createFormaTools(store);
 
     const result = await tools.generate_components({
       product_id: "P-123abc",
-      seed_components: [{ name: "Button" }, { name: "Input", description: "Text field" }]
+      html: "<section>Button</section>",
+      title: "Button Library",
+      brand_style: "linear",
+      system_style: "material"
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
-    expect(payload).toMatchObject({
-      artifact_id: "ABCDEFGHIJ123456",
-      preview_url: expect.stringContaining("ABCDEFGHIJ123456")
-    });
+    expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" });
     expect((store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents)
-      .toHaveBeenCalledWith("P-123abc", [{ name: "Button" }, { name: "Input", description: "Text field" }], undefined);
+      .toHaveBeenCalledWith("P-123abc", {
+        html: "<section>Button</section>",
+        title: "Button Library",
+        brandStyle: "linear",
+        systemStyle: "material"
+      });
   });
 
-  it("generate_components returns OD_RUNTIME_FAILED when od-runtime is not wired", async () => {
+  it("generate_components passes through store errors as MCP error results", async () => {
     const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
     const store = fakeStore({
       generateComponents: vi.fn(async () => {
-        throw new ActualFormaError("OD_RUNTIME_FAILED", "od-plugin-runtime main path not yet wired", {
-          cause: "main_path_stub",
-          reason: "pending_integration"
-        });
+        throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
       })
     });
     const tools = createFormaTools(store);
 
     const result = await tools.generate_components({
-      product_id: "P-123abc",
-      seed_components: [{ name: "Button" }]
+      product_id: "P-missing",
+      html: "<section/>",
+      title: "Library",
+      brand_style: "linear"
     });
 
     expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "OD_RUNTIME_FAILED" });
+    expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
   });
 
   // ─── change_artifact_style ───────────────────────────────────────────────
@@ -1754,61 +1817,97 @@ describe("OD runtime generation tools (C-03 remainder)", () => {
     expectSchemaSuccess("change_artifact_style", {
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
-      style: "dark"
+      html: "<main>Restyled</main>",
+      title: "Checkout (Dark)",
+      brand_style: "dark"
     });
     expectSchemaSuccess("change_artifact_style", {
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
-      style: "linear",
-      source_skill_id: "fm-change-style"
+      html: "<main>Restyled</main>",
+      title: "Checkout (Linear)",
+      brand_style: "linear",
+      system_style: "material"
     });
   });
 
   it("change_artifact_style schema rejects missing required fields", () => {
-    expectSchemaFailure("change_artifact_style", { product_id: "P-123abc", artifact_id: "ABCDEFGHIJ123456" });
-    expectSchemaFailure("change_artifact_style", { product_id: "P-123abc", style: "dark" });
-    expectSchemaFailure("change_artifact_style", { artifact_id: "ABCDEFGHIJ123456", style: "dark" });
+    // missing html
+    expectSchemaFailure("change_artifact_style", {
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      title: "Checkout",
+      brand_style: "dark"
+    });
+    // missing brand_style
+    expectSchemaFailure("change_artifact_style", {
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      html: "<main/>",
+      title: "Checkout"
+    });
+    // missing artifact_id
+    expectSchemaFailure("change_artifact_style", {
+      product_id: "P-123abc",
+      html: "<main/>",
+      title: "Checkout",
+      brand_style: "dark"
+    });
+    // missing product_id
+    expectSchemaFailure("change_artifact_style", {
+      artifact_id: "ABCDEFGHIJ123456",
+      html: "<main/>",
+      title: "Checkout",
+      brand_style: "dark"
+    });
   });
 
-  it("change_artifact_style delegates to store and returns artifact_id and preview_url", async () => {
-    const store = fakeStore();
+  it("change_artifact_style delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
+    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 2, preview_status: "pending" };
+    const store = fakeStore({
+      changeArtifactStyle: vi.fn(async () => fakeResult)
+    });
     const tools = createFormaTools(store);
 
     const result = await tools.change_artifact_style({
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
-      style: "dark"
+      html: "<main>Restyled</main>",
+      title: "Checkout (Dark)",
+      brand_style: "dark",
+      system_style: "material"
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
-    expect(payload).toMatchObject({
-      artifact_id: "ABCDEFGHIJ123456",
-      preview_url: expect.stringContaining("ABCDEFGHIJ123456")
-    });
+    expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 2, preview_status: "pending" });
     expect((store as unknown as { changeArtifactStyle: ReturnType<typeof vi.fn> }).changeArtifactStyle)
-      .toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", "dark", undefined);
+      .toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", {
+        html: "<main>Restyled</main>",
+        title: "Checkout (Dark)",
+        brandStyle: "dark",
+        systemStyle: "material"
+      });
   });
 
-  it("change_artifact_style returns OD_RUNTIME_FAILED when od-runtime is not wired", async () => {
+  it("change_artifact_style passes through store errors as MCP error results", async () => {
     const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
     const store = fakeStore({
       changeArtifactStyle: vi.fn(async () => {
-        throw new ActualFormaError("OD_RUNTIME_FAILED", "od-plugin-runtime main path not yet wired", {
-          cause: "main_path_stub",
-          reason: "pending_integration"
-        });
+        throw new ActualFormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
       })
     });
     const tools = createFormaTools(store);
 
     const result = await tools.change_artifact_style({
       product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      style: "dark"
+      artifact_id: "MISSING12345678",
+      html: "<main/>",
+      title: "Checkout",
+      brand_style: "dark"
     });
 
     expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "OD_RUNTIME_FAILED" });
+    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
   });
 });
