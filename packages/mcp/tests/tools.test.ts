@@ -181,6 +181,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         version: 2,
         designStatus: "active" as const
       })),
+      listDesignPointers: vi.fn(async () => []),
       rollbackDesignPointerLocked: vi.fn(async () => undefined)
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
@@ -964,7 +965,8 @@ describe("artifact tools (C-03)", () => {
       artifacts: {
         ...fakeStore().artifacts,
         listArtifacts: vi.fn(async () => [{ artifactId: "OLDARTIFACT12345", etag: "sha256:abc" }]),
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        listArtifactVersions: vi.fn(async () => [1, 2]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
       }
     });
     const tools = createFormaTools(store);
@@ -976,10 +978,13 @@ describe("artifact tools (C-03)", () => {
     expect(payload.artifacts).toHaveLength(1);
     expect(payload.artifacts[0]).toMatchObject({
       id: "OLDARTIFACT12345",
-      kind: "html",
+      // legacy html kind is normalized to design-page
+      kind: "design-page",
       title: "Test Page",
       superseded: false,
-      preview_url: "/api/products/P-123abc/artifacts/OLDARTIFACT12345/preview/2x"
+      versions: [1, 2],
+      current_version: 2,
+      preview_url: "/api/products/P-123abc/artifacts/OLDARTIFACT12345/versions/2/preview/2x.png"
     });
   });
 
@@ -989,7 +994,8 @@ describe("artifact tools (C-03)", () => {
       artifacts: {
         ...fakeStore().artifacts,
         listArtifacts: vi.fn(async () => [{ artifactId: "SUPERSEDEDART123", etag: "sha256:old" }]),
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:old" }))
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:old" }))
       }
     });
     const tools = createFormaTools(store);
@@ -1021,14 +1027,80 @@ describe("artifact tools (C-03)", () => {
     expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
   });
 
+  it("list_product_artifacts returns page_id, variant, versions, current_version per artifact", async () => {
+    const manifest = {
+      ...fakeManifest(),
+      id: "ABCDEFGHIJ123456",
+      kind: "design-page" as const,
+      forma: {
+        requirementId: "R-12345678",
+        pageId: "checkout",
+        variant: "default"
+      }
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "ABCDEFGHIJ123456", etag: "sha256:abc" }]),
+        listArtifactVersions: vi.fn(async () => [1, 2]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        // Make ABCDEFGHIJ123456 the current pointer so it's not filtered as superseded
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          requirements: {
+            "R-12345678": { latestArtifactId: "ABCDEFGHIJ123456" }
+          }
+        })),
+        listDesignPointers: vi.fn(async () => [{
+          requirementId: "R-12345678",
+          pageId: "checkout",
+          variant: "default",
+          artifactId: "ABCDEFGHIJ123456",
+          version: 2,
+          designStatus: "active" as const
+        }])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts).toHaveLength(1);
+    expect(payload.artifacts[0]).toMatchObject({
+      id: "ABCDEFGHIJ123456",
+      kind: "design-page",
+      page_id: "checkout",
+      variant: "default",
+      requirement_id: "R-12345678",
+      versions: [1, 2],
+      current_version: 2
+    });
+  });
+
+  it("list_product_artifacts kind filter accepts new kinds (design-page, component-library)", () => {
+    // Schema-level test — these kinds must be valid enum values
+    const parsed = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "design-page" });
+    expect(parsed.success).toBe(true);
+    const parsed2 = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "component-library" });
+    expect(parsed2.success).toBe(true);
+  });
+
   // ─── get_product_artifact ─────────────────────────────────────────────────
 
-  it("get_product_artifact returns manifest and preview_url", async () => {
+  it("get_product_artifact returns versioned manifest, bundle_url, preview_url, assets, versions, current_version", async () => {
     const manifest = fakeManifest();
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        listArtifactVersions: vi.fn(async () => [1, 2]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
       }
     });
     const tools = createFormaTools(store);
@@ -1037,21 +1109,56 @@ describe("artifact tools (C-03)", () => {
     const payload = textPayload(result);
 
     expect(result.isError).toBeUndefined();
-    expect(payload).toMatchObject({
-      manifest,
-      supportingFiles: [],
-      preview_url: "/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/preview/2x"
-    });
-    expect(store.artifacts.readArtifact).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456");
+    // versions and current_version
+    expect(payload.versions).toEqual([1, 2]);
+    expect(payload.current_version).toBe(2);
+    // bundle_url and preview_url use versioned path
+    expect(payload.bundle_url).toBe("/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/versions/2/bundle/index.html");
+    expect(payload.preview_url).toBe("/api/products/P-123abc/artifacts/ABCDEFGHIJ123456/versions/2/preview/2x.png");
+    // assets is empty (no forma.assets on this manifest)
+    expect(payload.assets).toEqual([]);
+    // kind is normalized (html → design-page)
+    expect(payload.manifest.kind).toBe("design-page");
+    expect(store.artifacts.readArtifactVersion).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", 2);
   });
 
-  it("get_product_artifact returns ARTIFACT_NOT_FOUND when artifact is missing", async () => {
+  it("get_product_artifact uses design pointer version when available", async () => {
+    const manifest = fakeManifest();
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => {
-          throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
-        })
+        listArtifactVersions: vi.fn(async () => [1, 2, 3]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [{
+          requirementId: "R-12345678",
+          pageId: "page-home",
+          variant: "default",
+          artifactId: "ABCDEFGHIJ123456",
+          version: 1,
+          designStatus: "active" as const
+        }])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_artifact({ product_id: "P-123abc", artifact_id: "ABCDEFGHIJ123456" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.current_version).toBe(1);
+    expect(payload.bundle_url).toContain("/versions/1/bundle/");
+    expect(payload.preview_url).toContain("/versions/1/preview/2x.png");
+    expect(store.artifacts.readArtifactVersion).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", 1);
+  });
+
+  it("get_product_artifact returns ARTIFACT_NOT_FOUND when no versions exist", async () => {
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [])
       }
     });
     const tools = createFormaTools(store);
@@ -1060,6 +1167,42 @@ describe("artifact tools (C-03)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("get_product_artifact builds density URLs for raster assets", async () => {
+    const manifest = {
+      ...fakeManifest(),
+      forma: {
+        requirementId: "R-12345678",
+        pageId: "checkout",
+        variant: "default",
+        assets: [
+          { path: "assets/logo@1x.png", density: [1, 2, 3], role: "image" },
+          { path: "assets/icon.svg", density: [1], role: "icon" }
+        ]
+      }
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_artifact({ product_id: "P-123abc", artifact_id: "ABCDEFGHIJ123456" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    // Raster asset: @1x → @2x/@3x replacement
+    const raster = payload.assets.find((a: { path: string }) => a.path === "assets/logo@1x.png");
+    expect(raster.urls["1x"]).toContain("assets/logo%401x.png");
+    expect(raster.urls["2x"]).toContain("assets/logo%402x.png");
+    expect(raster.urls["3x"]).toContain("assets/logo%403x.png");
+    // SVG asset: single density, path unchanged
+    const svg = payload.assets.find((a: { path: string }) => a.path === "assets/icon.svg");
+    expect(svg.urls["1x"]).toContain("assets/icon.svg");
   });
 
   // ─── export_artifact ──────────────────────────────────────────────────────

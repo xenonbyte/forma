@@ -6,10 +6,15 @@ import {
 import { join } from "node:path";
 import {
   FormaError,
+  artifactBundleUrl,
+  artifactPreviewUrl,
+  assetDensityPath,
   buildDesignContext,
   getArtifactDir,
   getFormaPaths,
   languages,
+  normalizeFormaExtension,
+  normalizeKind,
   platforms,
   type ArtifactManifest,
   type FormaStore,
@@ -165,7 +170,7 @@ const saveRequirementSchema = z.object({
 }).strict();
 const listProductArtifactsSchema = z.object({
   product_id: z.string().min(1),
-  kind: z.enum(["html", "design-system", "markdown-document", "svg", "image", "preview-only"]).optional(),
+  kind: z.enum(["html", "design-system", "design-page", "component-library", "markdown-document", "svg", "image", "preview-only"]).optional(),
   include_superseded: z.boolean().optional()
 }).strict();
 
@@ -547,10 +552,6 @@ function tool<Name extends FormaToolName, Input>(
 
 // ─── Artifact tool implementations ───────────────────────────────────────────
 
-function artifactPreviewUrl(productId: string, artifactId: string): string {
-  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/2x`;
-}
-
 async function listProductArtifacts(
   store: FormaStore,
   input: z.infer<typeof listProductArtifactsSchema>
@@ -563,22 +564,51 @@ async function listProductArtifacts(
     Object.values(pointers).map((r) => r.latestArtifactId).filter(Boolean)
   );
 
+  // Build a map of artifactId → version from design pointers for current-version lookup
+  const designPointers = await store.products.listDesignPointers(product_id);
+  const pointerVersionByArtifactId = new Map<string, number>();
+  for (const ptr of designPointers) {
+    pointerVersionByArtifactId.set(ptr.artifactId, ptr.version);
+  }
+
   const entries = await store.artifacts.listArtifacts(product_id);
   const artifacts = [];
 
   for (const { artifactId } of entries) {
+    // Get versioned manifest
+    const versions = await store.artifacts.listArtifactVersions(product_id, artifactId);
+
     let manifest: ArtifactManifest;
-    try {
-      ({ manifest } = await store.artifacts.readArtifact(product_id, artifactId));
-    } catch {
+    let currentVersion: number;
+
+    if (versions.length > 0) {
+      // Use pointer version if available, else highest version
+      currentVersion = pointerVersionByArtifactId.get(artifactId) ?? Math.max(...versions);
+      try {
+        ({ manifest } = await store.artifacts.readArtifactVersion(product_id, artifactId, currentVersion));
+      } catch {
+        continue;
+      }
+    } else {
+      // Fall back to unversioned manifest (legacy artifacts)
+      try {
+        ({ manifest } = await store.artifacts.readArtifact(product_id, artifactId));
+      } catch {
+        continue;
+      }
+      currentVersion = 1;
+    }
+
+    const normalizedKind = normalizeKind(manifest.kind);
+
+    // Apply kind filter after normalization (filter checks both old and new kind names)
+    if (kind !== undefined && normalizedKind !== kind && manifest.kind !== kind) {
       continue;
     }
 
-    if (kind !== undefined && manifest.kind !== kind) {
-      continue;
-    }
+    const formaExt = manifest.forma ? normalizeFormaExtension(manifest.forma) : undefined;
 
-    const hasRequirementId = manifest.requirementId !== undefined;
+    const hasRequirementId = manifest.requirementId !== undefined || formaExt?.requirementId !== undefined;
     const isCurrentPointer = currentPointerIds.has(artifactId);
     const superseded = hasRequirementId && !isCurrentPointer;
 
@@ -588,12 +618,16 @@ async function listProductArtifacts(
 
     artifacts.push({
       id: artifactId,
-      kind: manifest.kind,
+      kind: normalizedKind,
       title: manifest.title,
-      preview_url: artifactPreviewUrl(product_id, artifactId),
+      requirement_id: formaExt?.requirementId ?? manifest.requirementId,
+      page_id: formaExt?.pageId,
+      variant: formaExt?.variant,
+      versions,
+      current_version: currentVersion,
+      preview_url: artifactPreviewUrl(product_id, artifactId, currentVersion, '2x'),
       updated_at: manifest.updatedAt,
       source_skill_id: manifest.sourceSkillId,
-      requirement_id: manifest.requirementId,
       superseded
     });
   }
@@ -606,11 +640,59 @@ async function getProductArtifact(
   input: z.infer<typeof getProductArtifactSchema>
 ) {
   const { product_id, artifact_id } = input;
-  const { manifest } = await store.artifacts.readArtifact(product_id, artifact_id);
+
+  // Determine available versions
+  const versions = await store.artifacts.listArtifactVersions(product_id, artifact_id);
+  if (versions.length === 0) {
+    throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found or has no versions", {
+      artifact_id,
+      product_id
+    });
+  }
+
+  // Determine current version from design pointer (if any) or max version
+  const designPointers = await store.products.listDesignPointers(product_id);
+  const pointer = designPointers.find((p) => p.artifactId === artifact_id);
+  const currentVersion = pointer?.version ?? Math.max(...versions);
+
+  // Read versioned manifest
+  const { manifest } = await store.artifacts.readArtifactVersion(product_id, artifact_id, currentVersion);
+
+  // Normalize kind and forma extension
+  manifest.kind = normalizeKind(manifest.kind);
+  if (manifest.forma) {
+    manifest.forma = normalizeFormaExtension(manifest.forma);
+  }
+
+  // Build bundle URL using manifest entry
+  const bundle_url = artifactBundleUrl(product_id, artifact_id, currentVersion, manifest.entry);
+
+  // Build preview URL
+  const preview_url = artifactPreviewUrl(product_id, artifact_id, currentVersion, '2x');
+
+  // Build per-asset density URL map
+  const assets = (manifest.forma?.assets ?? []).map((entry) => {
+    const urls: Record<string, string> = {};
+    for (const d of entry.density) {
+      const densityPath = assetDensityPath(entry.path, d);
+      urls[`${d}x`] = artifactBundleUrl(product_id, artifact_id, currentVersion, densityPath);
+    }
+    return {
+      path: entry.path,
+      role: entry.role,
+      density: entry.density,
+      ...(entry.degraded !== undefined ? { degraded: entry.degraded } : {}),
+      urls
+    };
+  });
+
   return {
     manifest,
-    supportingFiles: manifest.supportingFiles ?? [],
-    preview_url: artifactPreviewUrl(product_id, artifact_id)
+    bundle_url,
+    assets,
+    preview_url,
+    versions,
+    current_version: currentVersion
   };
 }
 
