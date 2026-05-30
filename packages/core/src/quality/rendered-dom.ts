@@ -13,7 +13,11 @@ export interface RenderedTextNode {
   fontFamily: string;
   /** computed color as rgba (0–255, alpha 0–1) */
   color: [number, number, number, number];
-  /** effective (ancestor-resolved, opaque) background color as rgba */
+  /**
+   * effective (ancestor-resolved, opaque) background color as rgba. Always opaque
+   * (alpha=1): extractSnapshotInPage composites translucent ancestor layers down
+   * to a solid color, and lintCraft relies on this — it ignores the alpha channel.
+   */
   backgroundColor: [number, number, number, number];
   /** trimmed direct text content, truncated */
   text: string;

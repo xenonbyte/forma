@@ -32,6 +32,12 @@ function rgbKey(c: Rgb): string {
 /**
  * Deterministic craft lint over a rendered-DOM snapshot. Pure: no browser, no IO.
  * Returns one ArtifactCraftCheck per rule. Brand-agnostic; thresholds via options.
+ *
+ * Invariant: each node's `backgroundColor` is treated as opaque — only its RGB
+ * channels are used and the alpha is ignored. `extractSnapshotInPage` guarantees
+ * this by resolving ancestor backgrounds to an opaque color (alpha=1). A caller
+ * that hand-builds a snapshot with a translucent `backgroundColor` must composite
+ * it to opaque first, or contrast/palette results will be off.
  */
 export function lintCraft(snapshot: RenderedDomSnapshot, options: LintOptions = {}): ArtifactCraftCheck[] {
   const opts = { ...DEFAULTS, ...options };
