@@ -17,6 +17,11 @@ export interface BackfillReport { migrated: number; skipped: number; recovered: 
  * 已是 v{n} 布局的（含 forma）视为已迁移，跳过。
  * 崩溃恢复：先写 v1 临时目录并原子 rename；若重跑时发现 v1 已存在但 flat manifest 仍在，
  * 校验 v1 manifest、补指针、清理 flat 遗留后标记 recovered。
+ *
+ * ⚠️ 顺序约束（必读）：本函数会**删除旧 flat `artifacts/{id}/manifest.json`**。在 server/MCP 的
+ * listArtifacts/readArtifact/export 读取面**改为 version-aware（P4.8/P4.10）之前不要运行**，否则已迁移的
+ * artifact 会从旧读取面消失并 404。本函数为**手动一次性脚本**、不被任何启动路径自动调用——
+ * 必须在读取面升级后再显式触发。
  */
 export async function backfillDesignArtifacts(options: BackfillOptions): Promise<BackfillReport> {
   const report: BackfillReport = { migrated: 0, skipped: 0, recovered: 0, notes: [] };
