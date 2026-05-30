@@ -62,27 +62,15 @@ const v6ToolNames = [
   "session_get_editor_state"
 ] as const;
 
-const forbiddenPathFields = [
-  "filePath",
-  "file_path",
-  "canvas_path",
-  "staging_path",
-  "outputDir",
-  "output_dir",
-  "path",
-  "pen_path",
-  "preview_path",
-  "history_path"
+// Session tools removed in P4.9 C
+const removedSessionToolNames = [
+  "session_get_guidelines",
+  "session_get_variables",
+  "session_batch_get",
+  "session_snapshot_layout",
+  "session_get_screenshot",
+  "session_export_nodes"
 ] as const;
-
-const wrapperToolInputs = {
-  session_get_guidelines: { session_id: "S-1234567890abcdef", category: "guide", name: "Design System" },
-  session_get_variables: { session_id: "S-1234567890abcdef" },
-  session_batch_get: { session_id: "S-1234567890abcdef", nodeIds: ["frame-1"], resolveInstances: false },
-  session_snapshot_layout: { session_id: "S-1234567890abcdef", parentId: "frame-1", problemsOnly: false, maxDepth: 8 },
-  session_get_screenshot: { session_id: "S-1234567890abcdef", nodeId: "frame-1" },
-  session_export_nodes: { session_id: "S-1234567890abcdef", nodeIds: ["frame-1"], format: "png", scale: 2 }
-} satisfies Partial<Record<FormaToolName, Record<string, unknown>>>;
 
 function textPayload(result: { content: Array<{ text: string }> }) {
   return JSON.parse(result.content[0]!.text);
@@ -201,8 +189,9 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       setCurrentProduct: vi.fn(async () => ({ current_product: "P-123abc" }))
     },
     styles: {
-      getStyle: vi.fn(async () => ({ metadata: { name: "linear" }, designMd: "# Linear" })),
-      listStyles: vi.fn(async () => [{ name: "linear" }])
+      getStyle: vi.fn(async () => ({ kind: "brand" as const, metadata: { name: "linear" }, designMd: "# Linear", tokensCss: ":root{}", componentsHtml: "<div/>" })),
+      listStyles: vi.fn(async () => [{ name: "linear" }]),
+      listSystemStyles: vi.fn(async () => [])
     },
     ...overrides
   };
@@ -210,7 +199,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
 }
 
 describe("MCP forma tools", () => {
-  it("does not register removed legacy page-level design tools", () => {
+  it("does not register removed legacy page-level design tools or session tools", () => {
     const tools = createFormaTools(fakeStore());
     const server = { registerTool: vi.fn() };
 
@@ -226,6 +215,11 @@ describe("MCP forma tools", () => {
       expect(formaToolNames).not.toContain(removedToolName);
       expect(Object.keys(tools)).not.toContain(removedToolName);
       expect(server.registerTool.mock.calls.map((call) => call[0])).not.toContain(removedToolName);
+    }
+    // Session tools must be removed (P4.9 C)
+    for (const sessionToolName of removedSessionToolNames) {
+      expect(formaToolNames).not.toContain(sessionToolName);
+      expect(Object.keys(tools)).not.toContain(sessionToolName);
     }
     expect(formaToolNames).not.toContain("submit_requirement");
     expect(formaToolNames).not.toContain("update_requirement");
@@ -243,20 +237,14 @@ describe("MCP forma tools", () => {
       "generate_requirement_design",
       "generate_components",
       "change_artifact_style",
-      "get_design_context",
-      "session_get_guidelines",
-      "session_get_variables",
-      "session_batch_get",
-      "session_snapshot_layout",
-      "session_get_screenshot",
-      "session_export_nodes"
+      "get_design_context"
     ]));
     expect(formaToolNames).not.toContain("change_style");
     expect(formaToolNames).not.toContain("refine_requirement_design");
     expect(formaToolNames).not.toContain("update_page_copy");
   });
 
-  it("help output excludes removed legacy page-level design tools", async () => {
+  it("help output excludes removed legacy page-level design tools and session tools", async () => {
     const tools = createFormaTools(fakeStore());
 
     const result = await tools.help({});
@@ -268,7 +256,9 @@ describe("MCP forma tools", () => {
         guidance: expect.arrayContaining([
           expect.stringContaining("save_requirement"),
           expect.stringContaining("get_product_rules"),
-          expect.stringContaining("get_page_copy")
+          expect.stringContaining("get_page_copy"),
+          expect.stringContaining("get_product_artifact"),
+          expect.stringContaining("export_artifact")
         ]),
         workflows: {
           develop_frontend: [
@@ -280,6 +270,9 @@ describe("MCP forma tools", () => {
     });
     for (const removedToolName of removedLegacyToolNames) {
       expect(JSON.stringify(payload)).not.toContain(removedToolName);
+    }
+    for (const sessionToolName of removedSessionToolNames) {
+      expect(JSON.stringify(payload.tools)).not.toContain(sessionToolName);
     }
   });
 
@@ -295,47 +288,6 @@ describe("MCP forma tools", () => {
     }
 
     expect(failures).toEqual([]);
-  });
-
-  it("v6 session wrapper schemas reject caller path fields", () => {
-    for (const [toolName, validInput] of Object.entries(wrapperToolInputs) as Array<[FormaToolName, Record<string, unknown>]>) {
-      expectSchemaSuccess(toolName, validInput);
-      for (const field of forbiddenPathFields) {
-        expectSchemaFailure(toolName, { ...validInput, [field]: "/tmp/agent-owned" }, "FORBIDDEN_PATH_PARAMETER");
-      }
-    }
-  });
-
-  it("rejects malformed session ids for session-owned tools", () => {
-    const malformedSessionId = "S-1234567890abcdef/../S-fedcba0987654321";
-    const sessionInputs: Array<[FormaToolName, Record<string, unknown>]> = [
-      ["session_get_guidelines", { session_id: malformedSessionId, category: "guide", name: "Design System" }],
-      ["session_get_variables", { session_id: malformedSessionId }],
-      ["session_batch_get", { session_id: malformedSessionId, nodeIds: ["frame-1"] }],
-      ["session_snapshot_layout", { session_id: malformedSessionId, parentId: "frame-1" }],
-      ["session_get_screenshot", { session_id: malformedSessionId, nodeId: "frame-1" }],
-      ["session_export_nodes", { session_id: malformedSessionId, nodeIds: ["frame-1"] }]
-    ];
-
-    for (const [toolName, input] of sessionInputs) {
-      expectSchemaFailure(toolName, input);
-    }
-  });
-
-  it("returns stable FORBIDDEN_PATH_PARAMETER errors for v6 path payloads", async () => {
-    const tools = createFormaTools(fakeStore());
-
-    const wrapperResult = await tools.session_export_nodes({
-      session_id: "S-1234567890abcdef",
-      nodeIds: ["frame-1"],
-      output_dir: "/tmp/out"
-    });
-
-    expect(wrapperResult.isError).toBe(true);
-    expect(textPayload(wrapperResult)).toMatchObject({
-      error_code: "FORBIDDEN_PATH_PARAMETER",
-      details: { parameter: "output_dir" }
-    });
   });
 
   it("returns JSON text on success", async () => {
@@ -1084,12 +1036,15 @@ describe("artifact tools (C-03)", () => {
     });
   });
 
-  it("list_product_artifacts kind filter accepts new kinds (design-page, component-library)", () => {
+  it("list_product_artifacts kind filter accepts new kinds (design-page, component-library) and rejects design-system", () => {
     // Schema-level test — these kinds must be valid enum values
     const parsed = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "design-page" });
     expect(parsed.success).toBe(true);
     const parsed2 = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "component-library" });
     expect(parsed2.success).toBe(true);
+    // design-system is removed from user-facing enum
+    const parsed3 = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "design-system" });
+    expect(parsed3.success).toBe(false);
   });
 
   // ─── get_product_artifact ─────────────────────────────────────────────────
@@ -1225,25 +1180,33 @@ describe("artifact tools (C-03)", () => {
     }
   });
 
-  it("export_artifact zip includes the manifest entry file even when supportingFiles omits it", async () => {
+  it("export_artifact zip includes the manifest entry file even when supportingFiles omits it (versioned)", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-"));
-    const artifactDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456");
-    await mkdir(join(artifactDir, "assets"), { recursive: true });
-    await writeFile(join(artifactDir, "index.html"), "<main>Hello</main>", "utf8");
-    await writeFile(join(artifactDir, "assets", "app.css"), "main { color: black; }", "utf8");
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    // Create versioned dir structure: od-project/artifacts/{id}/v1/
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(join(versionDir, "assets"), { recursive: true });
+    await writeFile(join(versionDir, "index.html"), "<main>Hello</main>", "utf8");
+    await writeFile(join(versionDir, "assets", "app.css"), "main { color: black; }", "utf8");
     const manifest = { ...fakeManifest(), supportingFiles: ["assets/app.css"] };
     const store = fakeStore({
       home,
       artifacts: {
         ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
       }
     });
     const tools = createFormaTools(store);
 
     const result = await tools.export_artifact({
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
+      product_id: productId,
+      artifact_id: artifactId,
       format: "zip"
     });
 
@@ -1260,9 +1223,12 @@ describe("artifact tools (C-03)", () => {
     { artifactKind: "svg" as const, entry: "icon.svg", requestedFormat: "html" as const }
   ])("export_artifact rejects $requestedFormat export for $artifactKind artifacts", async ({ artifactKind, entry, requestedFormat }) => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-format-"));
-    const artifactDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456");
-    await mkdir(artifactDir, { recursive: true });
-    await writeFile(join(artifactDir, entry), "<main>entry</main>", "utf8");
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    // Create versioned dir
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, entry), "<main>entry</main>", "utf8");
     const manifest = {
       ...fakeManifest(),
       kind: artifactKind,
@@ -1274,14 +1240,19 @@ describe("artifact tools (C-03)", () => {
       home,
       artifacts: {
         ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
       }
     });
     const tools = createFormaTools(store);
 
     const result = await tools.export_artifact({
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
+      product_id: productId,
+      artifact_id: artifactId,
       format: requestedFormat
     });
 
@@ -1289,10 +1260,11 @@ describe("artifact tools (C-03)", () => {
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
   });
 
-  it("export_artifact returns ARTIFACT_NOT_FOUND when artifact is missing", async () => {
+  it("export_artifact returns ARTIFACT_NOT_FOUND when artifact has no versions and readArtifact fails", async () => {
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => []),
         readArtifact: vi.fn(async () => {
           throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
         })
@@ -1607,104 +1579,87 @@ describe("C-04 retained tools", () => {
     });
   });
 
-  // ─── get_style ────────────────────────────────────────────────────────────
+  // ─── get_style (D2: name-based) ───────────────────────────────────────────
 
-  it("get_style returns tokens from design-system artifact metadata", async () => {
-    const manifest = {
-      ...fakeManifest(),
-      kind: "design-system" as const,
-      metadata: { tokens: { primary: "#5E6AD2", "font-body": "Inter" } }
+  it("get_style schema accepts name (not product_id)", () => {
+    expectSchemaSuccess("get_style", { name: "linear" });
+    expectSchemaFailure("get_style", { product_id: "P-123abc" });
+    expectSchemaFailure("get_style", {});
+    expectSchemaFailure("get_style", { name: "" });
+  });
+
+  it("get_style returns BrandStyleContent for a known brand style", async () => {
+    const brandStyleContent = {
+      kind: "brand" as const,
+      metadata: { name: "linear", description: "Linear brand", design_md_path: "styles/linear/DESIGN.md", tokens_css_path: "styles/linear/tokens.css", components_html_path: "styles/linear/components.html" },
+      designMd: "# Linear Design",
+      tokensCss: ":root { --color-primary: #5E6AD2; }",
+      componentsHtml: "<button class='btn'>Button</button>"
     };
     const store = fakeStore({
-      artifacts: {
-        ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      styles: {
+        getStyle: vi.fn(async () => brandStyleContent),
+        listStyles: vi.fn(async () => [{ name: "linear", description: "Linear brand" }]),
+        listSystemStyles: vi.fn(async () => [])
       }
     });
     const tools = createFormaTools(store);
 
-    const result = await tools.get_style({ product_id: "P-123abc" });
+    const result = await tools.get_style({ name: "linear" });
 
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({
-      tokens: { primary: "#5E6AD2", "font-body": "Inter" }
+      kind: "brand",
+      metadata: { name: "linear" },
+      designMd: "# Linear Design",
+      tokensCss: ":root { --color-primary: #5E6AD2; }",
+      componentsHtml: "<button class='btn'>Button</button>"
     });
+    expect(store.styles.listStyles).toHaveBeenCalled();
+    expect(store.styles.getStyle).toHaveBeenCalledWith("linear");
   });
 
-  it("get_style returns STYLE_NOT_FOUND when product has no designSystemArtifactId", async () => {
+  it("get_style returns SystemStyleMetadata for a known system style", async () => {
+    const systemStyle = { name: "material", description: "Material Design", mode: "design-system" as const };
     const store = fakeStore({
-      products: {
-        ...fakeStore().products,
-        getProduct: vi.fn(async () => ({
-          id: "P-123abc",
-          name: "App",
-          description: "Demo",
-          requirements: {}
-        }))
+      styles: {
+        getStyle: vi.fn(async () => { throw new Error("should not be called"); }),
+        listStyles: vi.fn(async () => []),
+        listSystemStyles: vi.fn(async () => [systemStyle])
       }
     });
     const tools = createFormaTools(store);
 
-    const result = await tools.get_style({ product_id: "P-123abc" });
+    const result = await tools.get_style({ name: "material" });
 
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "STYLE_NOT_FOUND" });
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ name: "material", mode: "design-system" });
+    expect(store.styles.listSystemStyles).toHaveBeenCalled();
   });
 
-  // ─── session_* fallback ───────────────────────────────────────────────────
-
-  it("session_get_guidelines without v6 override throws FORMA_DESKTOP_CONFIG_UNSUPPORTED", async () => {
-    const store = fakeStore();
+  it("get_style returns INVALID_INPUT when style name is not found", async () => {
+    const store = fakeStore({
+      styles: {
+        getStyle: vi.fn(async () => { throw new Error("should not be called"); }),
+        listStyles: vi.fn(async () => []),
+        listSystemStyles: vi.fn(async () => [])
+      }
+    });
     const tools = createFormaTools(store);
 
-    const result = await tools.session_get_guidelines({
-      session_id: "S-1234567890abcdef",
-      category: "guide",
-      name: "Design System"
-    });
+    const result = await tools.get_style({ name: "nonexistent" });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
-      error_code: "FORMA_DESKTOP_CONFIG_UNSUPPORTED",
-      details: { tool: "session_get_guidelines" }
+      error_code: "INVALID_INPUT",
+      details: { style: "nonexistent" }
     });
-  });
-
-  it("session_export_nodes without v6 override throws FORMA_DESKTOP_CONFIG_UNSUPPORTED", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const result = await tools.session_export_nodes({
-      session_id: "S-1234567890abcdef",
-      nodeIds: ["frame-1"],
-      format: "png"
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "FORMA_DESKTOP_CONFIG_UNSUPPORTED" });
-  });
-
-  it("session_get_guidelines with v6 override delegates to the override", async () => {
-    const v6Guidelines = { guidelines: [{ name: "Design System", content: "Use our tokens." }] };
-    const sessionGetGuidelines = vi.fn(async () => v6Guidelines);
-    const store = Object.assign(fakeStore(), { v6: { sessionGetGuidelines } });
-    const tools = createFormaTools(store);
-
-    const result = await tools.session_get_guidelines({
-      session_id: "S-1234567890abcdef",
-      category: "guide",
-      name: "Design System"
-    });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toEqual(v6Guidelines);
-    expect(sessionGetGuidelines).toHaveBeenCalled();
   });
 
   // ─── get_baseline_page ────────────────────────────────────────────────────
 
   describe("get_baseline_page", () => {
-    it("returns page from design-system artifact metadata", async () => {
+    it("returns page from baseline artifact metadata", async () => {
       const store = fakeStore({
         products: {
           ...fakeStore().products,
