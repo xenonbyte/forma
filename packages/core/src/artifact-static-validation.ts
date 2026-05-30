@@ -16,10 +16,11 @@ export type StaticValidationResult =
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Returns true when the value starts with http:// or https:// */
+/** Returns true when the value starts with http://, https://, or // (protocol-relative) */
 function isRemoteUrl(value: string): boolean {
   const trimmed = value.trim();
-  return /^https?:\/\//i.test(trimmed);
+  // Protocol-relative: exactly "//" at start (not a single "/" which is a local absolute path)
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('//');
 }
 
 /** Returns true when the value starts with data: */
@@ -44,8 +45,8 @@ function scanCssText(cssText: string, source: string): string[] {
   const violations: string[] = [];
 
   // Match url(...) with optional quotes, capturing the inner URL
-  // We look for both remote (https?://) and data: variants
-  const urlPattern = /url\s*\(\s*(['"]?)\s*((?:https?:|data:)[^)'"]+)\1\s*\)/gi;
+  // We look for remote (https?:// or //), and data: variants
+  const urlPattern = /url\s*\(\s*(['"]?)\s*((?:https?:|data:|\/\/)[^)'"]+)\1\s*\)/gi;
   let m: RegExpExecArray | null;
   while ((m = urlPattern.exec(cssText)) !== null) {
     const inner = m[2].trim();

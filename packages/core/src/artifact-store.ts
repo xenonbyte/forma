@@ -238,10 +238,27 @@ class ArtifactStoreImpl implements ArtifactStore {
       if (entry.startsWith('.tmp-')) continue;
 
       try {
+        // (a) Try flat root manifest.json first (legacy path)
         const manifestPath = getArtifactManifestPath(this.productsRoot, productId, entry);
-        const manifestJson = await readFile(manifestPath, 'utf8');
-        const etag = computeEtag(manifestJson);
-        results.push({ artifactId: entry, etag });
+        try {
+          const manifestJson = await readFile(manifestPath, 'utf8');
+          const etag = computeEtag(manifestJson);
+          results.push({ artifactId: entry, etag });
+          continue;
+        } catch {
+          // Not a flat artifact — fall through to check versioned
+        }
+
+        // (b) Check for versioned sub-dirs (vN/)
+        const versions = await this.listArtifactVersions(productId, entry);
+        if (versions.length > 0) {
+          const maxVersion = Math.max(...versions);
+          const versionManifestPath = getArtifactVersionManifestPath(this.productsRoot, productId, entry, maxVersion);
+          const versionManifestJson = await readFile(versionManifestPath, 'utf8');
+          const etag = computeEtag(versionManifestJson);
+          results.push({ artifactId: entry, etag });
+        }
+        // If neither flat nor versioned manifest found, skip this entry
       } catch {
         // Skip artifacts with missing or unreadable manifests
       }

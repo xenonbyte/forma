@@ -471,6 +471,8 @@ async function listProductArtifacts(
   const pointerVersionByArtifactId = new Map<string, number>();
   for (const ptr of designPointers) {
     pointerVersionByArtifactId.set(ptr.artifactId, ptr.version);
+    // Bug #3: also add design pointer artifact IDs to the current-pointer set
+    currentPointerIds.add(ptr.artifactId);
   }
 
   const entries = await store.artifacts.listArtifacts(product_id);
@@ -545,20 +547,29 @@ async function getProductArtifact(
 
   // Determine available versions
   const versions = await store.artifacts.listArtifactVersions(product_id, artifact_id);
-  if (versions.length === 0) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found or has no versions", {
-      artifact_id,
-      product_id
-    });
-  }
 
   // Determine current version from design pointer (if any) or max version
   const designPointers = await store.products.listDesignPointers(product_id);
   const pointer = designPointers.find((p) => p.artifactId === artifact_id);
-  const currentVersion = pointer?.version ?? Math.max(...versions);
 
-  // Read versioned manifest
-  const { manifest } = await store.artifacts.readArtifactVersion(product_id, artifact_id, currentVersion);
+  let manifest: ArtifactManifest;
+  let currentVersion: number | undefined;
+
+  if (versions.length > 0) {
+    currentVersion = pointer?.version ?? Math.max(...versions);
+    ({ manifest } = await store.artifacts.readArtifactVersion(product_id, artifact_id, currentVersion));
+  } else {
+    // Bug #4: fall back to flat (legacy) artifact when no versioned dirs exist
+    try {
+      ({ manifest } = await store.artifacts.readArtifact(product_id, artifact_id));
+    } catch {
+      throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found or has no versions", {
+        artifact_id,
+        product_id
+      });
+    }
+    currentVersion = undefined;
+  }
 
   // Normalize kind and forma extension
   manifest.kind = normalizeKind(manifest.kind);
@@ -566,18 +577,22 @@ async function getProductArtifact(
     manifest.forma = normalizeFormaExtension(manifest.forma);
   }
 
-  // Build bundle URL using manifest entry
-  const bundle_url = artifactBundleUrl(product_id, artifact_id, currentVersion, manifest.entry);
-
-  // Build preview URL
-  const preview_url = artifactPreviewUrl(product_id, artifact_id, currentVersion, '2x');
+  // Build bundle URL and preview URL (versioned only; null for legacy flat artifacts)
+  const bundle_url = currentVersion !== undefined
+    ? artifactBundleUrl(product_id, artifact_id, currentVersion, manifest.entry)
+    : null;
+  const preview_url = currentVersion !== undefined
+    ? artifactPreviewUrl(product_id, artifact_id, currentVersion, '2x')
+    : null;
 
   // Build per-asset density URL map
   const assets = (manifest.forma?.assets ?? []).map((entry) => {
     const urls: Record<string, string> = {};
-    for (const d of entry.density) {
-      const densityPath = assetDensityPath(entry.path, d);
-      urls[`${d}x`] = artifactBundleUrl(product_id, artifact_id, currentVersion, densityPath);
+    if (currentVersion !== undefined) {
+      for (const d of entry.density) {
+        const densityPath = assetDensityPath(entry.path, d);
+        urls[`${d}x`] = artifactBundleUrl(product_id, artifact_id, currentVersion!, densityPath);
+      }
     }
     return {
       path: entry.path,
@@ -594,7 +609,7 @@ async function getProductArtifact(
     assets,
     preview_url,
     versions,
-    current_version: currentVersion
+    current_version: currentVersion ?? null
   };
 }
 

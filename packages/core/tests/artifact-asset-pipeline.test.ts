@@ -220,6 +220,74 @@ describe('Case 5: remote url() in inline <style>', () => {
   });
 });
 
+// ─── Bug #5: tiny raster (1×1) — every referenced file must be in files ──────
+
+describe('Bug #5: tiny raster srcset invariant (1×1 PNG)', () => {
+  it('every url in src and srcset of a 1×1 PNG is a key in result.files', async () => {
+    const tiny1x1 = await sharp({
+      create: { width: 1, height: 1, channels: 3, background: '#888888' },
+    })
+      .png()
+      .toBuffer();
+    const tinyBase64 = tiny1x1.toString('base64');
+
+    const html = `<img src="data:image/png;base64,${tinyBase64}" alt="tiny">`;
+    const result = await localizeArtifactAssets({ html });
+
+    // Parse out all referenced file paths from the rewritten HTML
+    const imgMatch = result.html.match(/<img([^>]*)>/);
+    const attrs = imgMatch ? imgMatch[1] : '';
+
+    // Extract src
+    const srcMatch = attrs.match(/src="([^"]+)"/);
+    if (srcMatch) {
+      const src = srcMatch[1];
+      expect(result.files.has(src), `src="${src}" not in files`).toBe(true);
+    }
+
+    // Extract srcset candidates
+    const srcsetMatch = attrs.match(/srcset="([^"]+)"/);
+    if (srcsetMatch) {
+      const srcset = srcsetMatch[1];
+      const candidates = srcset.split(',').map((part: string) => part.trim().split(/\s+/)[0]).filter(Boolean);
+      for (const url of candidates) {
+        expect(result.files.has(url), `srcset candidate "${url}" not in files`).toBe(true);
+      }
+    }
+  });
+});
+
+// ─── Bug #6: protocol-relative URLs ──────────────────────────────────────────
+
+describe('Bug #6: protocol-relative URL rejection', () => {
+  it('<img src="//cdn.example.com/x.png"> → throws ARTIFACT_REMOTE_RESOURCE', async () => {
+    const html = `<img src="//cdn.example.com/x.png" alt="remote">`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+
+  it('url(//cdn.example.com/x.png) in inline <style> → throws ARTIFACT_REMOTE_RESOURCE', async () => {
+    const html = `<style>body { background: url(//cdn.example.com/x.png); }</style>`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+
+  it('local absolute path /foo/bar.png is NOT rejected', async () => {
+    const html = `<img src="/abs/path/image.png" alt="local">`;
+    // Should not throw — just not a data: URL so no rewrite
+    await expect(localizeArtifactAssets({ html })).resolves.toBeDefined();
+  });
+
+  it('relative path assets/x.png is NOT rejected', async () => {
+    const html = `<img src="assets/x.png" alt="local">`;
+    await expect(localizeArtifactAssets({ html })).resolves.toBeDefined();
+  });
+});
+
 // ─── dedup: same data: used twice gets same hash ─────────────────────────────
 
 describe('Deduplication', () => {

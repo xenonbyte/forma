@@ -426,6 +426,54 @@ describe('ArtifactStore', () => {
       expect(item2?.etag).toBe(r2.etag);
     });
 
+    it('Bug #2: lists versioned-only artifacts (no flat manifest) via writeArtifactVersion', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+      const aid = 'VrsnedOnlyABC123';
+      // Write only a versioned artifact (no flat manifest.json)
+      await store.writeArtifactVersion({
+        productId,
+        artifactId: aid,
+        version: 1,
+        manifest: makeManifest({ id: 'VrsnedOnlyABC123', kind: 'design-page', forma: { requirementId: 'R-1234abcd', pageId: 'home', variant: 'default' } }),
+        files: new Map([['index.html', Buffer.from('<h1>versioned</h1>')]]),
+      });
+
+      const list = await store.listArtifacts(productId);
+      const ids = list.map((a) => a.artifactId);
+      expect(ids).toContain(aid);
+      const item = list.find((a) => a.artifactId === aid);
+      expect(typeof item?.etag).toBe('string');
+      expect(item!.etag.length).toBe(64);
+    });
+
+    it('Bug #2: lists both flat and versioned artifacts together', async () => {
+      const lock = getProductMutationLock(testRoot);
+      const store = createArtifactStore(productsRoot, lock);
+
+      // Flat artifact
+      const { artifactId: flatId } = await store.writeArtifact({
+        productId,
+        manifest: makeManifest({ title: 'Flat' }),
+        files: new Map([['index.html', Buffer.from('<h1>flat</h1>')]]),
+      });
+
+      // Versioned-only artifact
+      const vAid = 'VrsnedMixABCD123';
+      await store.writeArtifactVersion({
+        productId,
+        artifactId: vAid,
+        version: 1,
+        manifest: makeManifest({ id: vAid, kind: 'design-page', forma: { requirementId: 'R-1234abcd', pageId: 'about', variant: 'default' } }),
+        files: new Map([['index.html', Buffer.from('<h1>v1</h1>')]]),
+      });
+
+      const list = await store.listArtifacts(productId);
+      const ids = list.map((a) => a.artifactId);
+      expect(ids).toContain(flatId);
+      expect(ids).toContain(vAid);
+    });
+
     it('skips invalid artifact directory names instead of aborting the listing', async () => {
       const lock = getProductMutationLock(testRoot);
       const store = createArtifactStore(productsRoot, lock);

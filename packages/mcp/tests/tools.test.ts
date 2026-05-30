@@ -1036,6 +1036,61 @@ describe("artifact tools (C-03)", () => {
     });
   });
 
+  it("Bug #3: list_product_artifacts (default) includes artifact only in designPointers (not superseded)", async () => {
+    // Artifact has a requirementId so hasRequirementId=true.
+    // It is NOT in product.requirements[*].latestArtifactId (legacy pointer).
+    // It IS in designPointers — so it must NOT be filtered as superseded.
+    const manifest = {
+      ...fakeManifest(),
+      id: "DESIGNPTRART12345",
+      kind: "design-page" as const,
+      forma: {
+        requirementId: "R-12345678",
+        pageId: "home",
+        variant: "default"
+      }
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "DESIGNPTRART12345", etag: "sha256:abc" }]),
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        // Legacy requirements do NOT reference DESIGNPTRART12345
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          requirements: {}
+        })),
+        // Only design pointer references the artifact
+        listDesignPointers: vi.fn(async () => [{
+          requirementId: "R-12345678",
+          pageId: "home",
+          variant: "default",
+          artifactId: "DESIGNPTRART12345",
+          version: 1,
+          designStatus: "active" as const
+        }])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    // include_superseded defaults to false — artifact should still appear
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts).toHaveLength(1);
+    expect(payload.artifacts[0]).toMatchObject({
+      id: "DESIGNPTRART12345",
+      superseded: false
+    });
+  });
+
   it("list_product_artifacts kind filter accepts new kinds (design-page, component-library) and rejects design-system", () => {
     // Schema-level test — these kinds must be valid enum values
     const parsed = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "design-page" });
@@ -1109,11 +1164,14 @@ describe("artifact tools (C-03)", () => {
     expect(store.artifacts.readArtifactVersion).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", 1);
   });
 
-  it("get_product_artifact returns ARTIFACT_NOT_FOUND when no versions exist", async () => {
+  it("get_product_artifact returns ARTIFACT_NOT_FOUND when no versions exist and no flat artifact", async () => {
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
-        listArtifactVersions: vi.fn(async () => [])
+        listArtifactVersions: vi.fn(async () => []),
+        readArtifact: vi.fn(async () => {
+          throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
+        })
       }
     });
     const tools = createFormaTools(store);
@@ -1122,6 +1180,32 @@ describe("artifact tools (C-03)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("Bug #4: get_product_artifact falls back to flat artifact when no versions exist", async () => {
+    const manifest = fakeManifest();
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        // No versioned dirs
+        listArtifactVersions: vi.fn(async () => []),
+        // Flat artifact is readable
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_artifact({ product_id: "P-123abc", artifact_id: "ABCDEFGHIJ123456" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.manifest).toMatchObject({ kind: "design-page", title: "Test Page" });
+    expect(payload.versions).toEqual([]);
+    // current_version is null for flat artifacts
+    expect(payload.current_version).toBeNull();
+    // bundle_url and preview_url are null for flat artifacts (no version)
+    expect(payload.bundle_url).toBeNull();
+    expect(payload.preview_url).toBeNull();
   });
 
   it("get_product_artifact builds density URLs for raster assets", async () => {

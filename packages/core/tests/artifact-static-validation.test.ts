@@ -239,6 +239,37 @@ describe("validateStaticArtifact", () => {
     assertOk(validateStaticArtifact(input));
   });
 
+  // ── Bug #6: protocol-relative URL detection ─────────────────────────────────
+  it("Bug #6: <img src='//cdn/x.png'> → ok:false (protocol-relative remote img)", () => {
+    const input: StaticValidationInput = {
+      html: `<html><body><img src="//cdn.example.com/x.png" /></body></html>`,
+    };
+    const violations = assertNotOk(validateStaticArtifact(input));
+    expect(violations.some((v) => v.toLowerCase().includes("remote") || v.includes("//cdn"))).toBe(true);
+  });
+
+  it("Bug #6: CSS url(//cdn/x.png) in style block → ok:false (protocol-relative)", () => {
+    const input: StaticValidationInput = {
+      html: `<html><head><style>body { background: url(//cdn.example.com/x.png); }</style></head></html>`,
+    };
+    const violations = assertNotOk(validateStaticArtifact(input));
+    expect(violations.length).toBeGreaterThan(0);
+  });
+
+  it("Bug #6: local absolute path /abs/path.png is NOT flagged as remote", () => {
+    const input: StaticValidationInput = {
+      html: `<html><body><img src="/abs/path/image.png" /></body></html>`,
+    };
+    assertOk(validateStaticArtifact(input));
+  });
+
+  it("Bug #6: relative path assets/x.png is NOT flagged as remote", () => {
+    const input: StaticValidationInput = {
+      html: `<html><body><img src="assets/x.png" /></body></html>`,
+    };
+    assertOk(validateStaticArtifact(input));
+  });
+
   // ── Multiple violations collected ────────────────────────────────────────────
   it("HTML with <script> AND onclick → both violations collected (>= 2)", () => {
     const input: StaticValidationInput = {

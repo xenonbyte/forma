@@ -116,10 +116,14 @@ function mimeToExt(mime: string): string {
   return MIME_TO_EXT[mime] ?? mime.split('/')[1]?.replace(/[^a-z0-9]/g, '') ?? 'bin';
 }
 
-/** Throw ARTIFACT_REMOTE_RESOURCE for http(s): URLs */
+/** Throw ARTIFACT_REMOTE_RESOURCE for http(s): and protocol-relative (//...) URLs */
 function rejectRemote(url: string): void {
   const trimmed = url.trim();
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('//')
+  ) {
     throw new FormaError(
       'ARTIFACT_REMOTE_RESOURCE',
       `Remote resource references are not allowed: ${trimmed}`,
@@ -161,11 +165,12 @@ async function downsampleRaster(
     tiers.push({ label: '2x', density: 2, buffer: master });
   }
 
-  // @1x: only if w1x > 0
+  // @1x: always emit (never upscale — reuse master if w1x rounds to 0 or equals masterWidth)
   if (w1x > 0 && w1x < masterWidth) {
     const buf = await sharp(master).resize({ width: w1x }).toBuffer();
     tiers.push({ label: '1x', density: 1, buffer: buf });
-  } else if (w1x === masterWidth && masterWidth > 0) {
+  } else {
+    // w1x === 0 (tiny image) or w1x === masterWidth: reuse master bytes as @1x
     tiers.push({ label: '1x', density: 1, buffer: master });
   }
 
