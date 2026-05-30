@@ -256,6 +256,28 @@ describe("validateStaticArtifact", () => {
     expect(violations.length).toBeGreaterThan(0);
   });
 
+  it("Bug #6: bare @import '//cdn/x.css' (protocol-relative, no url()) → ok:false", () => {
+    const input: StaticValidationInput = {
+      html: `<html><head><style>@import "//cdn.example.com/theme.css";</style></head></html>`,
+    };
+    const violations = assertNotOk(validateStaticArtifact(input));
+    expect(violations.some((v) => v.includes("@import"))).toBe(true);
+  });
+
+  it("Bug #6: bare @import 'data:text/css,...' → ok:false (residual data:)", () => {
+    const input: StaticValidationInput = {
+      html: `<html><head><style>@import "data:text/css,body{color:red}";</style></head></html>`,
+    };
+    assertNotOk(validateStaticArtifact(input));
+  });
+
+  it("Bug #6: bare local @import 'theme.css' is NOT flagged", () => {
+    const input: StaticValidationInput = {
+      html: `<html><head><style>@import "theme.css";</style></head></html>`,
+    };
+    assertOk(validateStaticArtifact(input));
+  });
+
   it("Bug #6: local absolute path /abs/path.png is NOT flagged as remote", () => {
     const input: StaticValidationInput = {
       html: `<html><body><img src="/abs/path/image.png" /></body></html>`,

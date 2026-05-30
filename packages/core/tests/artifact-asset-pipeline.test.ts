@@ -276,6 +276,19 @@ describe('Bug #6: protocol-relative URL rejection', () => {
     );
   });
 
+  it('bare @import "//cdn/x.css" (protocol-relative, no url()) → throws ARTIFACT_REMOTE_RESOURCE', async () => {
+    const html = `<style>@import "//cdn.example.com/theme.css";</style>`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+
+  it('bare local @import "theme.css" is NOT rejected', async () => {
+    const html = `<style>@import "theme.css";</style>`;
+    await expect(localizeArtifactAssets({ html })).resolves.toBeDefined();
+  });
+
   it('local absolute path /foo/bar.png is NOT rejected', async () => {
     const html = `<img src="/abs/path/image.png" alt="local">`;
     // Should not throw — just not a data: URL so no rewrite

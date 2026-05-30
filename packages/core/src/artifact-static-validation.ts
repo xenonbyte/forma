@@ -57,11 +57,16 @@ function scanCssText(cssText: string, source: string): string[] {
     }
   }
 
-  // @import "https://..."; or @import url(https://...);
-  // The url() form is already caught above; cover the bare-string @import form.
-  const importPattern = /@import\s+(['"])(https?:\/\/[^'"]+)\1/gi;
+  // @import "..."; (bare-string form; the url() form is already caught above).
+  // Flag remote (http(s) AND protocol-relative //) and residual data: targets.
+  const importPattern = /@import\s+(['"])([^'"]+)\1/gi;
   while ((m = importPattern.exec(cssText)) !== null) {
-    violations.push(`Remote @import in ${source}: ${m[2]}`);
+    const target = m[2].trim();
+    if (isRemoteUrl(target)) {
+      violations.push(`Remote @import in ${source}: ${target}`);
+    } else if (isDataUrl(target)) {
+      violations.push(`Residual data: @import in ${source}: ${target.slice(0, 64)}`);
+    }
   }
 
   return violations;

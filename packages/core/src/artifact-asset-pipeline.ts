@@ -193,10 +193,11 @@ async function localizeCssText(css: string, ctx: Context): Promise<string> {
   // Process @import url(...) and url(...) patterns
   // Match both single/double quoted and unquoted urls
   const URL_PATTERN = /url\(\s*(['"]?)([^)'"]+)\1\s*\)/g;
-  // Also match bare @import "..." / @import '...'
-  const IMPORT_PATTERN = /@import\s+(['"])(https?:[^'"]+)\1/g;
+  // Also match bare @import "..." / @import '...' (any target; rejectRemote handles
+  // http(s) AND protocol-relative //). Local bare imports pass through unchanged.
+  const IMPORT_PATTERN = /@import\s+(['"])([^'"]+)\1/g;
 
-  // Check @import bare strings first (reject remote)
+  // Check @import bare strings first (reject remote, incl. protocol-relative //)
   let importMatch: RegExpExecArray | null;
   while ((importMatch = IMPORT_PATTERN.exec(css)) !== null) {
     rejectRemote(importMatch[2]);
