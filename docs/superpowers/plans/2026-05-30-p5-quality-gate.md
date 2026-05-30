@@ -14,7 +14,7 @@
 3. **单次浏览器加载**：抽取复用 `renderArtifactPreview` 的 1x 页面（加 `extractDom` 开关返回快照），**不**为 lint 另启浏览器。
 4. **lint 纯函数 + 可复用**：`lintCraft` 与 `extractSnapshotInPage` 都导出；P9 desktop 外壳渲成 DOM 后调同一对函数即可 dogfood（本阶段不接 P9，只导出 + 单测证明 DOM 无关）。
 5. **品牌无关规则集**：本阶段四条机械规则均**不依赖品牌 token**（对比度、distinct 字号数、distinct 颜色数、distinct 字体族数），通过 `LintOptions` 暴露阈值，便于将来接品牌 token（如 `--accent ≤ N`）扩展。
-6. **预览失败 → 不写 quality**：preview 渲染失败（无快照）时**省略** `manifest.forma.quality`（不可见地编一个假 check 反而误导）；preview 成功但 lint 抛错时，记一条 `{ id: 'craft-lint', passed: false, detail: 'lint failed: …' }` 使其可观测。
+6. **预览失败 → 不写 quality**：preview 渲染/截图失败（无可用预览）时**省略** `manifest.forma.quality`（不可见地编一个假 check 反而误导）；preview 成功但 DOM 快照抽取或 lint 抛错时，预览仍保持 `ready`，并记一条 `{ id: 'craft-lint', passed: false, detail: 'snapshot extraction failed: …' }` 或 `{ id: 'craft-lint', passed: false, detail: 'lint failed: …' }` 使其可观测。
 7. **命名**：字段 `manifest.forma.quality.craftChecks`（camelCase，P1 既有）；check 结构 `ArtifactCraftCheck = { id, passed, detail? }`（P1 既有，勿改）。
 
 ---
@@ -26,7 +26,7 @@
 | 文件 | 职责 |
 |---|---|
 | `packages/core/src/quality/contrast.ts` | 纯 WCAG 对比度数学：`relativeLuminance`、`contrastRatio`、`compositeOver`。无依赖。 |
-| `packages/core/src/quality/rendered-dom.ts` | `RenderedDomSnapshot` / `RenderedTextNode` 类型 + `extractSnapshotInPage`（在浏览器上下文运行的**自包含**函数，供 `page.evaluate`）。 |
+| `packages/core/src/quality/rendered-dom.ts` | `RenderedDomSnapshot` / `RenderedTextNode` 类型 + `extractSnapshotInPage`（在浏览器上下文运行的**自包含**函数，供 `page.evaluate`；祖先背景按 alpha root-to-leaf 合成到白色画布）。 |
 | `packages/core/src/quality/craft-lint.ts` | 纯 `lintCraft(snapshot, options?) → ArtifactCraftCheck[]`，四条规则；`LintOptions` 阈值。依赖 `./contrast.js`、`../artifact-manifest.js`（仅类型）。 |
 | `packages/core/src/quality/self-review-checklist.ts` | `SelfReviewItem` 类型 + `SELF_REVIEW_CHECKLIST` 常量（craft 可核对项，供 P6 下发）。 |
 | `packages/core/src/quality/index.ts` | 桶文件，re-export 上述公开 API。 |
@@ -34,7 +34,7 @@
 修改：
 | 文件 | 改动 |
 |---|---|
-| `packages/core/src/preview-renderer.ts` | `RenderPreviewInput` 加 `extractDom?: boolean`；`RenderPreviewResult` 加 `snapshot?: RenderedDomSnapshot`；在 1x 页 `page.evaluate(extractSnapshotInPage)`。 |
+| `packages/core/src/preview-renderer.ts` | `RenderPreviewInput` 加 `extractDom?: boolean`；`RenderPreviewResult` 加 `snapshot?: RenderedDomSnapshot` / `snapshotError?: string`；在 1x 页 `page.evaluate(extractSnapshotInPage)`，抽取失败不让 preview 失败。 |
 | `packages/core/src/design-save.ts` | 渲染时传 `extractDom: true`；preview 成功后 `lintCraft(snapshot)`，把结果写入 `manifest.forma.quality.craftChecks`。 |
 | `packages/core/src/index.ts` | 新增 `export * from "./quality/index.js";`。 |
 
@@ -45,7 +45,7 @@
 - `packages/core/tests/quality-rendered-dom.test.ts`（puppeteer，需 `dangerouslyDisableSandbox`）
 - 扩 `packages/core/tests/design-save.test.ts`（断言 craftChecks 落盘）
 
-**注意（环境）：** 跑到 puppeteer 的测试（P5.2、P5.6）在本机需 `dangerouslyDisableSandbox: true`。`grep` 在本 shell 偶发不可用，用 `node -e` / Read 代替。core 改动后，mcp/server typecheck 走 core 的 `dist/`，故 **core 改完先 `pnpm --filter @xenonbyte/forma-core build` 再 typecheck**。
+**注意（环境）：** 跑到 puppeteer 的测试（P5.2、P5.6）在本机需 `dangerouslyDisableSandbox: true`。`grep` 在本 shell 偶发不可用，用 `rg` 或 `node -e` / Read 代替。core 改动后，mcp/server typecheck 走 core 的 `dist/`，故 **core 改完先 `pnpm --filter @xenonbyte/forma-core build` 再 typecheck**。
 
 ---
 
@@ -173,6 +173,7 @@ git commit -m "feat(p5): WCAG contrast math helpers"
 ```ts
 import { describe, expect, it } from 'vitest';
 import { renderArtifactPreview } from '../src/preview-renderer.js';
+import { contrastRatio } from '../src/quality/contrast.js';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -219,6 +220,35 @@ describe('extractDom via renderArtifactPreview', () => {
     try {
       const result = await renderArtifactPreview({ bundleDir, outDir });
       expect(result.snapshot).toBeUndefined();
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it('composites translucent ancestor backgrounds before snapshotting contrast inputs', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap3-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <section style="background:rgba(0,0,0,0.5)">
+           <p style="color:#ffffff;font-size:16px;font-family:Inter">Overlay copy</p>
+         </section>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const copy = result.snapshot!.textNodes.find((n) => n.text.includes('Overlay copy'));
+      expect(copy).toBeDefined();
+      expect(copy!.backgroundColor.slice(0, 3)).toEqual([128, 128, 128]);
+      const ratio = contrastRatio(
+        [copy!.color[0], copy!.color[1], copy!.color[2]],
+        [copy!.backgroundColor[0], copy!.backgroundColor[1], copy!.backgroundColor[2]],
+      );
+      expect(ratio).toBeLessThan(4.5);
     } finally {
       await rm(bundleDir, { recursive: true, force: true });
     }
@@ -283,14 +313,32 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return [r, g, b, Number.isFinite(a) ? a : 1];
   }
 
+  function compositeOver(fg: [number, number, number, number], bg: [number, number, number, number]): [number, number, number, number] {
+    const a = Math.max(0, Math.min(1, fg[3]));
+    const bgA = Math.max(0, Math.min(1, bg[3]));
+    const outA = a + bgA * (1 - a);
+    if (outA <= 0) return [0, 0, 0, 0];
+    return [
+      Math.round((fg[0] * a + bg[0] * bgA * (1 - a)) / outA),
+      Math.round((fg[1] * a + bg[1] * bgA * (1 - a)) / outA),
+      Math.round((fg[2] * a + bg[2] * bgA * (1 - a)) / outA),
+      outA,
+    ];
+  }
+
   function effectiveBackground(el: Element): [number, number, number, number] {
+    const layers: Array<[number, number, number, number]> = [];
     let node: Element | null = el;
     while (node) {
       const bg = parseRgb(getComputedStyle(node).backgroundColor);
-      if (bg[3] > 0) return [bg[0], bg[1], bg[2], 1];
+      if (bg[3] > 0) layers.push(bg);
       node = node.parentElement;
     }
-    return [255, 255, 255, 1];
+    let resolved: [number, number, number, number] = [255, 255, 255, 1];
+    for (const layer of layers.reverse()) {
+      resolved = compositeOver(layer, resolved);
+    }
+    return [resolved[0], resolved[1], resolved[2], 1];
   }
 
   function hasDirectText(el: Element): boolean {
@@ -352,32 +400,39 @@ export interface RenderPreviewInput {
 export interface RenderPreviewResult {
   files: { '1x': string; '2x': string };
   snapshot?: RenderedDomSnapshot;
+  /** Non-blocking DOM extraction failure; preview files may still be ready. */
+  snapshotError?: string;
 }
 ```
 
-在 1x 截图后、`page.close()` 前抽取快照。把循环体里的截图段改为：
+在 1x 截图后、`page.close()` 前抽取快照；抽取失败只记录在结果上，不能让 preview 失败。把循环体里的截图段改为：
 ```ts
         const buf = await page.screenshot({ type: 'png' });
         const file = join(input.outDir, `${label}.png`);
         await writeFile(file, buf);
         files[label] = file;
         if (label === '1x' && input.extractDom) {
-          snapshot = await page.evaluate(extractSnapshotInPage);
+          try {
+            snapshot = await page.evaluate(extractSnapshotInPage);
+          } catch (err) {
+            snapshotError = err instanceof Error ? err.message : String(err);
+          }
         }
 ```
 并在函数内（`const files...` 附近）声明：
 ```ts
     let snapshot: RenderedDomSnapshot | undefined;
+    let snapshotError: string | undefined;
 ```
 把 `return { files };` 改为：
 ```ts
-    return { files, ...(snapshot ? { snapshot } : {}) };
+    return { files, ...(snapshot ? { snapshot } : {}), ...(snapshotError ? { snapshotError } : {}) };
 ```
 
 - [ ] **Step 5: 跑测试确认通过**
 
 Run（带 sandbox 关闭）: `npx vitest run packages/core/tests/quality-rendered-dom.test.ts`
-Expected: PASS（2 tests）。`result.snapshot.textNodes` 含 16 与 32 字号、Title 近黑、背景白、family 含 `inter`。
+Expected: PASS（3 tests）。`result.snapshot.textNodes` 含 16 与 32 字号、Title 近黑、背景白、family 含 `inter`；半透明父背景用例解析为 `[128,128,128]` 且白字对比度低于 4.5。
 
 - [ ] **Step 6: 提交**
 
@@ -599,7 +654,7 @@ function fontFamilyCheck(nodes: RenderedTextNode[], max: number): ArtifactCraftC
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `npx vitest run packages/core/tests/quality-craft-lint.test.ts`
-Expected: PASS（10 tests）。
+Expected: PASS（9 tests）。
 
 - [ ] **Step 5: 提交**
 
@@ -779,7 +834,7 @@ git commit -m "feat(p5): export quality module from core"
 - Modify: `packages/core/src/design-save.ts`
 - Test: `packages/core/tests/design-save.test.ts`
 
-**当前 save 渲染段（参考）：** `design-save.ts` Step 3 在 temp bundle 上调 `renderArtifactPreview({ bundleDir: tempDir, outDir: previewOutDir })`，成功置 `previewStatus='ready'`、读 1x/2x PNG。本任务在该调用加 `extractDom: true`，把返回的 `snapshot` 经 `lintCraft` 转成 craftChecks，并在 Step 6 构建 `formaExtension` 时写入 `quality`。
+**当前 save 渲染段（参考）：** `design-save.ts` Step 3 在 temp bundle 上调 `renderArtifactPreview({ bundleDir: tempDir, outDir: previewOutDir })`，成功置 `previewStatus='ready'`、读 1x/2x PNG。本任务在该调用加 `extractDom: true`，把返回的 `snapshot` 经 `lintCraft` 转成 craftChecks，并在 Step 6 构建 `formaExtension` 时写入 `quality`。若 `renderResult.snapshotError` 存在，preview 仍为 ready，但写入一条可观测的 failed `craft-lint` check。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -787,6 +842,10 @@ git commit -m "feat(p5): export quality module from core"
 ```ts
   it('persists deterministic craft checks into manifest.forma.quality.craftChecks', async () => {
     const input = await makeCleanInput({
+      html: `<!doctype html><html><body style="margin:0;background:#ffffff">
+        <h1 style="color:#111111;font-size:32px;font-family:Inter">Quality Title</h1>
+        <p style="color:#222222;font-size:16px;font-family:Inter">Readable body text</p>
+      </body></html>`,
       forma: { requirementId: 'req-q1', pageId: 'page-q1', variant: 'default' },
     });
     const deps = makeDeps();
@@ -803,13 +862,15 @@ git commit -m "feat(p5): export quality module from core"
     expect(Array.isArray(checks)).toBe(true);
     const ids = checks.map((c: { id: string }) => c.id).sort();
     expect(ids).toEqual(['color-palette', 'contrast-aa', 'font-families', 'type-scale']);
+    const contrast = checks.find((c: { id: string }) => c.id === 'contrast-aa');
+    expect(contrast?.detail).toMatch(/\d+ text node/);
     for (const c of checks) {
       expect(typeof c.id).toBe('string');
       expect(typeof c.passed).toBe('boolean');
     }
   }, 90000);
 ```
-> `makeCleanInput` 的固定 HTML（`<img>` + 近黑/白）渲染后必有可判文本节点；四条 check 均应落盘。
+> 此用例显式覆盖 HTML 为两个可判文本节点，避免 image-only fixture 只验证空快照落盘；四条 check 均应落盘。
 
 - [ ] **Step 2: 跑测试确认失败**
 
@@ -852,7 +913,9 @@ import type { ArtifactCraftCheck } from './artifact-manifest.js';
       preview1xBuf = await readFile(join(previewOutDir, '1x.png'));
       preview2xBuf = await readFile(join(previewOutDir, '2x.png'));
       previewStatus = 'ready';
-      if (renderResult.snapshot) {
+      if (renderResult.snapshotError) {
+        craftChecks = [{ id: 'craft-lint', passed: false, detail: `snapshot extraction failed: ${renderResult.snapshotError}` }];
+      } else if (renderResult.snapshot) {
         try {
           craftChecks = lintCraft(renderResult.snapshot);
         } catch (err) {
@@ -933,16 +996,24 @@ Expected: 所有包（core/mcp/server/web/cli/agent + od-*）Done，0 错误。
 - [ ] **Step 3: 全量测试**
 
 Run（带 sandbox 关闭，因含 puppeteer 用例）: `pnpm test`
-Expected: 全绿；新增约 21 个 quality 测试 + 1 个 design-save 用例通过，既有用例不回归。
+Expected: 全绿；新增 21 个 quality 测试（contrast 7 + rendered-dom 3 + craft-lint 9 + self-review 2）+ 1 个 design-save 用例通过，既有用例不回归。
 
 - [ ] **Step 4: 自检 manifest 未改 schema**
 
-确认未改动 `packages/core/src/artifact-manifest.ts`（`quality.craftChecks` 字段 P1 已存在、`validateFormaExtension` 已校验为数组）。`grep -n "quality" packages/core/src/artifact-manifest.ts` 应显示既有定义，无新增。
+确认未改动 `packages/core/src/artifact-manifest.ts`（`quality.craftChecks` 字段 P1 已存在、`validateFormaExtension` 已校验为数组）。使用 `node -e` 避免依赖本 shell 中偶发不可用的 `grep`：
+
+```bash
+node -e "const fs=require('node:fs'); fs.readFileSync('packages/core/src/artifact-manifest.ts','utf8').split('\n').forEach((line,i)=>{ if (line.includes('quality') || line.includes('craftChecks')) console.log((i+1)+':'+line); });"
+```
+
+Expected: 只显示既有 `quality.craftChecks` 定义/校验相关行，无 schema 新增。
 
 - [ ] **Step 5: 提交（如有验证期顺带修复）**
 
 ```bash
-git add -A
+git status --short
+# Stage only P5-owned files that actually changed during verification; do not use `git add -A`.
+git add packages/core/src/quality packages/core/src/preview-renderer.ts packages/core/src/design-save.ts packages/core/src/index.ts packages/core/tests/quality-contrast.test.ts packages/core/tests/quality-craft-lint.test.ts packages/core/tests/quality-self-review-checklist.test.ts packages/core/tests/quality-rendered-dom.test.ts packages/core/tests/design-save.test.ts
 git commit -m "chore(p5): integration verification — quality gate green across packages"
 ```
 > 若 Step 2/3 全绿且无改动，则跳过本提交。
