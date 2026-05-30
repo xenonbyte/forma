@@ -115,11 +115,19 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     });
   }
 
-  function hasDirectText(el: Element): boolean {
+  /**
+   * Concatenated DIRECT text of an element (its own text nodes only, not
+   * descendants). Each element is captured with its own computed style, so a
+   * parent must not absorb a styled child's text (e.g. the "world" in
+   * `<p>Hello <strong>world</strong></p>` belongs to <strong>, not <p>) — that
+   * would judge the child's pixels against the wrong style and double-count it.
+   */
+  function directText(el: Element): string {
+    let out = '';
     for (const child of Array.from(el.childNodes)) {
-      if (child.nodeType === 3 && (child.textContent ?? '').trim().length > 0) return true;
+      if (child.nodeType === 3) out += child.textContent ?? '';
     }
-    return false;
+    return out;
   }
 
   /**
@@ -160,8 +168,9 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
       continue;
     }
 
-    if (!hasDirectText(el)) continue;
-    pushNode(el, cs, parseRgb(cs.color), el.textContent ?? '');
+    const own = directText(el);
+    if (own.trim().length === 0) continue;
+    pushNode(el, cs, parseRgb(cs.color), own);
   }
 
   return {

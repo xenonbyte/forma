@@ -107,6 +107,35 @@ describe('extractDom via renderArtifactPreview', () => {
     }
   }, 60000);
 
+  it('captures only direct text per element (does not re-absorb a styled child\'s text)', async () => {
+    const bundleDir = join(tmpdir(), `forma-snap6-${randomBytes(6).toString('hex')}`);
+    const outDir = join(bundleDir, 'preview');
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, 'index.html'),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <p style="color:#111111;font-size:16px;font-family:Inter">Hello <strong style="color:#222222">world</strong></p>
+       </body></html>`,
+      'utf8',
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const nodes = result.snapshot!.textNodes;
+      const p = nodes.find((n) => n.tag === 'p');
+      const strong = nodes.find((n) => n.tag === 'strong');
+      expect(p).toBeDefined();
+      expect(strong).toBeDefined();
+      // the <p> entry holds only its own direct text, NOT the child's "world"
+      expect(p!.text).toBe('Hello');
+      expect(strong!.text).toBe('world');
+      // "world" appears exactly once across the snapshot (no double count)
+      expect(nodes.filter((n) => n.text.includes('world'))).toHaveLength(1);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it('captures rendered text from form controls (submit value, placeholder)', async () => {
     const bundleDir = join(tmpdir(), `forma-snap5-${randomBytes(6).toString('hex')}`);
     const outDir = join(bundleDir, 'preview');
