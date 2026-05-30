@@ -65,7 +65,9 @@ export interface FormaRoutesStore {
   home: string;
   artifacts: {
     readArtifact(productId: string, artifactId: string): Promise<{ manifest: ArtifactManifest; etag: string }>;
+    readArtifactVersion(productId: string, artifactId: string, version: number): Promise<{ manifest: ArtifactManifest; etag: string }>;
     listArtifacts(productId: string): Promise<Array<{ artifactId: string }>>;
+    listArtifactVersions(productId: string, artifactId: string): Promise<number[]>;
   };
   copy: {
     getTranslations(productId: string, requirementId: string): Promise<Array<{ page_id: string; entries?: unknown[]; [key: string]: unknown }>>;
@@ -76,6 +78,7 @@ export interface FormaRoutesStore {
     getProduct(productId: string): Promise<{ id: string; designSystemArtifactId?: string; requirements?: Record<string, { latestArtifactId?: string }>; [key: string]: unknown }>;
     initProductConfig(productId: string, config: unknown): Promise<unknown>;
     listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
+    listDesignPointers(productId: string): Promise<Array<{ artifactId: string; version: number }>>;
   };
   requirements: {
     archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
@@ -335,27 +338,32 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   app.get<{ Params: { pid: string }; Querystring: { kind?: string; include_superseded?: string } }>(
     "/api/products/:pid/artifacts",
     async (request) => {
-      const product = await store.products.getProduct(request.params.pid);
-      const pointers = (product.requirements ?? {}) as Record<string, { latestArtifactId?: string }>;
-      const currentPointerIds = new Set(Object.values(pointers).map(r => r.latestArtifactId).filter((id): id is string => Boolean(id)));
+      const pid = request.params.pid;
+      const { currentPointerIds, pointerVersions } = await loadArtifactPointers(store, pid);
       const includeSuperseded = request.query.include_superseded === "true";
       const kindFilter = request.query.kind;
 
-      const entries = await store.artifacts.listArtifacts(request.params.pid);
+      const entries = await store.artifacts.listArtifacts(pid);
       const artifacts = [];
       for (const { artifactId } of entries) {
-        const { manifest } = await store.artifacts.readArtifact(request.params.pid, artifactId);
+        let manifest: ArtifactManifest;
+        try {
+          ({ manifest } = await resolveCurrentArtifact(store, pid, artifactId, pointerVersions));
+        } catch {
+          continue; // unreadable artifact — skip rather than fail the whole listing
+        }
         if (kindFilter && manifest.kind !== kindFilter) continue;
-        const superseded = manifest.requirementId !== undefined && !currentPointerIds.has(artifactId);
+        const requirementId = manifest.requirementId ?? manifest.forma?.requirementId;
+        const superseded = requirementId !== undefined && !currentPointerIds.has(artifactId);
         if (!includeSuperseded && superseded) continue;
         artifacts.push({
           id: artifactId,
           kind: manifest.kind,
           title: manifest.title,
-          preview_url: artifactPreviewUrl(request.params.pid, artifactId, "2x"),
+          preview_url: artifactPreviewUrl(pid, artifactId, "2x"),
           updated_at: manifest.updatedAt,
           source_skill_id: manifest.sourceSkillId,
-          requirement_id: manifest.requirementId,
+          requirement_id: requirementId,
           superseded
         });
       }
@@ -367,30 +375,32 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   app.get<{ Params: { pid: string; aid: string } }>(
     "/api/products/:pid/artifacts/:aid",
     async (request, reply) => {
-      const { manifest, etag } = await store.artifacts.readArtifact(request.params.pid, request.params.aid);
+      const { pid, aid } = request.params;
+      const { pointerVersions } = await loadArtifactPointers(store, pid);
+      const { manifest, etag } = await resolveCurrentArtifact(store, pid, aid, pointerVersions);
       reply.header("ETag", etag);
       reply.header("Cache-Control", "private, max-age=300");
       return {
         manifest,
         supportingFiles: manifest.supportingFiles ?? [],
-        preview_url: artifactPreviewUrl(request.params.pid, request.params.aid, "2x")
+        preview_url: artifactPreviewUrl(pid, aid, "2x")
       };
     }
   );
 
-  // SPEC-IF-HTTP-003: preview PNG
+  // SPEC-IF-HTTP-003: preview PNG. Falls back to the artifact's current version
+  // when no flat (legacy) preview exists, so versioned artifacts are previewable.
   app.get<{ Params: { pid: string; aid: string; res: string } }>(
     "/api/products/:pid/artifacts/:aid/preview/:res",
     async (request, reply) => {
-      const { res } = request.params;
+      const { pid, aid, res } = request.params;
       if (res !== "1x" && res !== "2x") {
         reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview resolution not found", details: {} });
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
-      const artifactDir = getArtifactDir(productsDir, request.params.pid, request.params.aid);
-      const previewPath = join(artifactDir, "preview", `${res}.png`);
-      if (!(await fileExists(previewPath))) {
+      const previewPath = await resolveCurrentPreviewPath(store, productsDir, pid, aid, res);
+      if (!previewPath || !(await fileExists(previewPath))) {
         reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview not found", details: {} });
         return;
       }
@@ -713,6 +723,75 @@ function timestampForRequirement(requirement: RequirementRecord): number {
 
 function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
+}
+
+/**
+ * Collect the artifact ids that are "current" (referenced by a requirement pointer
+ * or a design pointer) plus the current version for each design-pointer artifact.
+ */
+async function loadArtifactPointers(
+  store: FormaRoutesStore,
+  productId: string
+): Promise<{ currentPointerIds: Set<string>; pointerVersions: Map<string, number> }> {
+  const product = await store.products.getProduct(productId);
+  const requirementPointers = (product.requirements ?? {}) as Record<string, { latestArtifactId?: string }>;
+  const currentPointerIds = new Set(
+    Object.values(requirementPointers).map((r) => r.latestArtifactId).filter((id): id is string => Boolean(id))
+  );
+  const pointerVersions = new Map<string, number>();
+  for (const pointer of await store.products.listDesignPointers(productId)) {
+    pointerVersions.set(pointer.artifactId, pointer.version);
+    currentPointerIds.add(pointer.artifactId);
+  }
+  return { currentPointerIds, pointerVersions };
+}
+
+/**
+ * Read an artifact's current manifest: the design-pointer version (or highest
+ * version) for versioned artifacts, falling back to the flat (legacy) manifest.
+ */
+async function resolveCurrentArtifact(
+  store: FormaRoutesStore,
+  productId: string,
+  artifactId: string,
+  pointerVersions: Map<string, number>
+): Promise<{ manifest: ArtifactManifest; etag: string; version?: number }> {
+  const versions = await store.artifacts.listArtifactVersions(productId, artifactId);
+  if (versions.length > 0) {
+    const version = pointerVersions.get(artifactId) ?? Math.max(...versions);
+    const { manifest, etag } = await store.artifacts.readArtifactVersion(productId, artifactId, version);
+    return { manifest, etag, version };
+  }
+  const { manifest, etag } = await store.artifacts.readArtifact(productId, artifactId);
+  return { manifest, etag };
+}
+
+/**
+ * Resolve the on-disk preview PNG path for an artifact: the flat (legacy) preview
+ * if present, otherwise the current version's preview.
+ */
+async function resolveCurrentPreviewPath(
+  store: FormaRoutesStore,
+  productsDir: string,
+  productId: string,
+  artifactId: string,
+  res: "1x" | "2x"
+): Promise<string | undefined> {
+  const flatPreviewPath = join(getArtifactDir(productsDir, productId, artifactId), "preview", `${res}.png`);
+  if (await fileExists(flatPreviewPath)) {
+    return flatPreviewPath;
+  }
+  const versions = await store.artifacts.listArtifactVersions(productId, artifactId);
+  if (versions.length === 0) {
+    return undefined;
+  }
+  const pointer = (await store.products.listDesignPointers(productId)).find((p) => p.artifactId === artifactId);
+  const version = pointer?.version ?? Math.max(...versions);
+  try {
+    return getArtifactVersionPreviewPath(productsDir, productId, artifactId, version, res);
+  } catch {
+    return undefined;
+  }
 }
 
 function stringValue(value: unknown): string | undefined {

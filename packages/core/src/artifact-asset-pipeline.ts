@@ -141,8 +141,13 @@ interface DensityTier {
 }
 
 /**
- * Produces up to 3 density tiers for a raster image.
- * Never upscales — if masterWidth < 3, emits only achievable tiers and sets degraded=true.
+ * Produces 3 density tiers (@1x/@2x/@3x) for a raster image. The master is
+ * treated as the @3x tier and is never upscaled.
+ *
+ * `degraded` is set true whenever a tier cannot be genuinely downsampled because
+ * the rounded target width collapses to the master width (tiny masters). In that
+ * case the tier reuses the master bytes, so the density metadata is not honest —
+ * consumers should treat the extra tiers as duplicates.
  */
 async function downsampleRaster(
   master: Buffer,
@@ -152,32 +157,34 @@ async function downsampleRaster(
   const w2x = Math.round((masterWidth * 2) / 3);
 
   const tiers: DensityTier[] = [];
+  let degraded = false;
 
   // @3x = master as-is
   tiers.push({ label: '3x', density: 3, buffer: master });
 
-  // @2x: only if w2x < masterWidth (always true when masterWidth > 1) and w2x > 0
+  // @2x: genuine downsample only when strictly smaller than master; otherwise the
+  // width collapsed (tiny master) — reuse master bytes and mark degraded.
   if (w2x > 0 && w2x < masterWidth) {
     const buf = await sharp(master).resize({ width: w2x }).toBuffer();
     tiers.push({ label: '2x', density: 2, buffer: buf });
-  } else if (w2x === masterWidth && masterWidth > 0) {
-    // same size, just reference master
+  } else {
     tiers.push({ label: '2x', density: 2, buffer: master });
+    degraded = true;
   }
 
-  // @1x: always emit (never upscale — reuse master if w1x rounds to 0 or equals masterWidth)
+  // @1x: always emit. Genuine downsample only when strictly smaller than master;
+  // otherwise reuse master bytes (never upscale) and mark degraded.
   if (w1x > 0 && w1x < masterWidth) {
     const buf = await sharp(master).resize({ width: w1x }).toBuffer();
     tiers.push({ label: '1x', density: 1, buffer: buf });
   } else {
-    // w1x === 0 (tiny image) or w1x === masterWidth: reuse master bytes as @1x
     tiers.push({ label: '1x', density: 1, buffer: master });
+    degraded = true;
   }
 
-  // Sort ascending by density so we can assess degraded
+  // Sort ascending by density
   tiers.sort((a, b) => a.density - b.density);
 
-  const degraded = tiers.length < 3;
   return { tiers, degraded };
 }
 
@@ -363,13 +370,44 @@ async function buildSrcset(
 
 // ─── Srcset attribute parsing ─────────────────────────────────────────────────
 
-/** Extract individual URLs from a srcset attribute value */
-function parseSrcsetUrls(srcset: string): string[] {
-  // srcset = "url 2x, url2 1x" or just "url"
-  return srcset
-    .split(',')
-    .map((part) => part.trim().split(/\s+/)[0])
-    .filter(Boolean);
+/**
+ * Parse a srcset attribute into candidates. Follows the WHATWG rule that a URL
+ * is a run of non-whitespace characters, so a comma inside a data: URL
+ * (e.g. `data:image/png;base64,AAAA`) is part of the URL and not a candidate
+ * separator. A naive `split(',')` corrupts such URLs.
+ */
+function parseSrcsetCandidates(srcset: string): Array<{ url: string; descriptor: string }> {
+  const candidates: Array<{ url: string; descriptor: string }> = [];
+  const n = srcset.length;
+  let i = 0;
+  while (i < n) {
+    // Skip leading whitespace and stray commas between candidates
+    while (i < n && (/\s/.test(srcset[i]) || srcset[i] === ',')) i++;
+    if (i >= n) break;
+
+    // URL = run of non-whitespace characters
+    const urlStart = i;
+    while (i < n && !/\s/.test(srcset[i])) i++;
+    let url = srcset.slice(urlStart, i);
+    let descriptor = '';
+
+    if (url.endsWith(',')) {
+      // Trailing comma(s) terminate the candidate with no descriptor
+      url = url.replace(/,+$/, '');
+    } else {
+      // Skip whitespace, then collect the descriptor up to the next comma
+      while (i < n && /\s/.test(srcset[i])) i++;
+      const descStart = i;
+      while (i < n && srcset[i] !== ',') i++;
+      descriptor = srcset.slice(descStart, i).trim();
+      if (i < n && srcset[i] === ',') i++; // consume the separator
+    }
+
+    if (url.length > 0) {
+      candidates.push({ url, descriptor });
+    }
+  }
+  return candidates;
 }
 
 // ─── Main localization walk ───────────────────────────────────────────────────
@@ -409,29 +447,23 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
     // srcset attribute
     const srcset = el.getAttribute('srcset');
     if (srcset) {
-      const urls = parseSrcsetUrls(srcset);
+      const candidates = parseSrcsetCandidates(srcset);
       const newParts: string[] = [];
       let changed = false;
-      const parts = srcset.split(',');
-      for (const part of parts) {
-        const trimmed = part.trim();
-        const spaceIdx = trimmed.lastIndexOf(' ');
-        const urlPart = spaceIdx > 0 ? trimmed.slice(0, spaceIdx) : trimmed;
-        const descriptor = spaceIdx > 0 ? trimmed.slice(spaceIdx) : '';
-        rejectRemote(urlPart);
-        const parsed = parseDataUrl(urlPart);
+      for (const { url, descriptor } of candidates) {
+        rejectRemote(url);
+        const parsed = parseDataUrl(url);
         if (parsed) {
           const path = await localizeDataUrl(parsed, ctx);
-          newParts.push(`${path}${descriptor}`);
+          newParts.push(descriptor ? `${path} ${descriptor}` : path);
           changed = true;
         } else {
-          newParts.push(trimmed);
+          newParts.push(descriptor ? `${url} ${descriptor}` : url);
         }
       }
       if (changed) {
         el.setAttribute('srcset', newParts.join(', '));
       }
-      void urls; // suppressed unused warning
     }
 
     // poster attribute

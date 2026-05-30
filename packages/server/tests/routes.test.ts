@@ -50,7 +50,26 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
         } satisfies ArtifactManifest,
         etag: `"${createHash("sha256").update(artifactId).digest("hex")}"`
       })),
-      listArtifacts: vi.fn(async () => [{ artifactId: "A-abcdef1234567890" }])
+      readArtifactVersion: vi.fn(async (_productId: string, artifactId: string, version: number) => ({
+        manifest: {
+          version: 1,
+          id: artifactId,
+          kind: "design-page",
+          renderer: "html",
+          title: "Checkout Design",
+          entry: "index.html",
+          status: "complete",
+          exports: ["index.html"],
+          sourceSkillId: "design-skill-1",
+          supportingFiles: ["index.html"],
+          createdAt: "2026-05-17T00:00:00.000Z",
+          updatedAt: "2026-05-17T00:00:00.000Z",
+          forma: { requirementId: "R-12345678", pageId: "checkout-page", variant: "default" }
+        } satisfies ArtifactManifest,
+        etag: `"${createHash("sha256").update(`${artifactId}-v${version}`).digest("hex")}"`
+      })),
+      listArtifacts: vi.fn(async () => [{ artifactId: "A-abcdef1234567890" }]),
+      listArtifactVersions: vi.fn(async () => [])
     },
     copy: {
       getTranslations: vi.fn(async () => [])
@@ -71,7 +90,8 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
         requirements: { "R-12345678": { latestArtifactId: "A-abcdef1234567890" } }
       })),
       initProductConfig: vi.fn(async (_productId, config) => ({ id: "P-123abc", name: "App", description: "Demo", ...config })),
-      listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }])
+      listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
+      listDesignPointers: vi.fn(async () => [])
     },
     requirements: {
       archiveRequirement: vi.fn(async () => ({ id: "R-12345678", status: "archived" })),
@@ -1089,6 +1109,68 @@ describe("artifact routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  // Review #1: server read routes must handle versioned-only artifacts (no flat manifest)
+  function versionedOnlyStore(home?: string): FormaServerStore {
+    const base = fakeStore(home ? { home } : {});
+    return fakeStore({
+      ...(home ? { home } : {}),
+      artifacts: {
+        ...base.artifacts,
+        readArtifact: vi.fn(async () => {
+          throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found", { artifact_id: "A-abcdef1234567890" });
+        }),
+        listArtifactVersions: vi.fn(async () => [1])
+      },
+      products: {
+        ...base.products,
+        listDesignPointers: vi.fn(async () => [{ artifactId: "A-abcdef1234567890", version: 1 }])
+      }
+    });
+  }
+
+  it("GET /api/products/:pid/artifacts lists a versioned-only artifact without crashing", async () => {
+    const app = await appWith(versionedOnlyStore());
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0]).toMatchObject({
+      id: "A-abcdef1234567890",
+      kind: "design-page",
+      requirement_id: "R-12345678",
+      superseded: false
+    });
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid returns the current version manifest for a versioned-only artifact", async () => {
+    const app = await appWith(versionedOnlyStore());
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890" });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.manifest.kind).toBe("design-page");
+    expect(body.manifest.forma.requirementId).toBe("R-12345678");
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/preview/:res falls back to the current version preview", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-preview-fallback-"));
+    const previewDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1", "preview");
+    await mkdir(previewDir, { recursive: true });
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await writeFile(join(previewDir, "2x.png"), pngBytes);
+
+    const app = await appWith(versionedOnlyStore(home));
+
+    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.rawPayload).toEqual(pngBytes);
   });
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* serves index.html from versioned bundle", async () => {

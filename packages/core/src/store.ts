@@ -2,6 +2,7 @@ import { cleanupArtifactTmpDirs, hasArtifactTmpDirs } from "./artifact-tmp-clean
 import { createArtifactStore, type ArtifactStore } from "./artifact-store.js";
 import { CopyService } from "./copy.js";
 import { saveDesignArtifact } from "./design-save.js";
+import { FormaError } from "./errors.js";
 import {
   deleteProductLocked,
   recoverPendingProductDeletesLocked,
@@ -167,6 +168,25 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     requirementId: string,
     input: GenerateRequirementDesignInput
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
+    // Validate the requirement belongs to this product and the page exists before
+    // writing an artifact / design pointer — otherwise a typo page_id or a
+    // foreign requirement_id would persist a pointer to a nonexistent page.
+    const requirement = await requirements.getRequirement({ requirement_id: requirementId });
+    if (requirement.product_id !== productId) {
+      throw new FormaError("REQUIREMENT_PRODUCT_MISMATCH", "Requirement does not belong to product", {
+        product_id: productId,
+        requirement_id: requirementId,
+        requirement_product_id: requirement.product_id
+      });
+    }
+    if (!requirement.pages.some((page) => page.page_id === input.pageId)) {
+      throw new FormaError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
+        product_id: productId,
+        requirement_id: requirementId,
+        page_id: input.pageId
+      });
+    }
+
     const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
       kind: 'design-page',
@@ -230,12 +250,21 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     sourceManifest: import("./artifact-manifest.js").ArtifactManifest,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
 
-    // Determine kind: map legacy kinds to new ones
+    // Determine kind: only design-page / component-library (and their legacy
+    // aliases html / design-system) support style changes. Reject other kinds
+    // (markdown-document, svg, image, preview-only) so unrelated artifact kinds
+    // never get a component-library version mixed into their history.
     let kind: 'design-page' | 'component-library';
     if (sourceManifest.kind === 'design-page' || sourceManifest.kind === 'html') {
       kind = 'design-page';
-    } else {
+    } else if (sourceManifest.kind === 'component-library' || sourceManifest.kind === 'design-system') {
       kind = 'component-library';
+    } else {
+      throw new FormaError(
+        'ARTIFACT_INVALID_INPUT',
+        `Cannot change style of a ${sourceManifest.kind} artifact`,
+        { artifactId, kind: sourceManifest.kind },
+      );
     }
 
     const sourceForma = sourceManifest.forma ?? {};

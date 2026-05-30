@@ -31,7 +31,12 @@ export interface WriteArtifactInput {
 export interface WriteArtifactVersionInput {
   productId: string;
   artifactId: string;
-  version: number;
+  /**
+   * Explicit version to write. Omit to allocate the next version (max existing + 1,
+   * or 1 when none exist) atomically inside the write lock — this avoids a
+   * read-then-write race where two concurrent saves pick the same version.
+   */
+  version?: number;
   manifest: ArtifactManifest;
   files: Map<string, Buffer>;
 }
@@ -41,7 +46,7 @@ export interface ArtifactStore {
   readArtifact(productId: string, artifactId: string): Promise<{ manifest: ArtifactManifest; etag: string }>;
   listArtifacts(productId: string): Promise<Array<{ artifactId: string; etag: string }>>;
   deleteArtifact(productId: string, artifactId: string): Promise<void>;
-  writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ etag: string }>;
+  writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ version: number; etag: string }>;
   readArtifactVersion(productId: string, artifactId: string, version: number): Promise<{ manifest: ArtifactManifest; etag: string }>;
   listArtifactVersions(productId: string, artifactId: string): Promise<number[]>;
 }
@@ -281,9 +286,12 @@ class ArtifactStoreImpl implements ArtifactStore {
     await rm(artifactDir, { recursive: true, force: true });
   }
 
-  async writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ etag: string }> {
-    const { productId, artifactId, version, manifest, files } = input;
+  async writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ version: number; etag: string }> {
+    const { productId, artifactId, manifest, files } = input;
     return this.lock.run({ operation: 'write_artifact_version', product_id: productId }, async () => {
+      // Allocate the version inside the lock so concurrent saves to the same
+      // artifact cannot pick the same number (read-then-write race).
+      const version = input.version ?? (await this.nextArtifactVersion(productId, artifactId));
       const versionDir = getArtifactVersionDir(this.productsRoot, productId, artifactId, version);
       const normalized = normalizeAndValidateManifest(manifest, artifactId);
 
@@ -309,12 +317,18 @@ class ArtifactStoreImpl implements ArtifactStore {
           await rm(tmpDir, { recursive: true, force: true });
           throw new FormaError('ARTIFACT_WRITE_FAIL', `Failed to write artifact version: ${artifactId} v${version}`, { artifactId, productId, version, cause: String(err) });
         }
-        return { etag };
+        return { version, etag };
       } catch (err) {
         await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
         throw err;
       }
     });
+  }
+
+  /** Next version number for an artifact: max existing + 1, or 1 when none exist. Caller must hold the write lock. */
+  private async nextArtifactVersion(productId: string, artifactId: string): Promise<number> {
+    const versions = await this.listArtifactVersions(productId, artifactId);
+    return versions.length > 0 ? Math.max(...versions) + 1 : 1;
   }
 
   async readArtifactVersion(productId: string, artifactId: string, version: number): Promise<{ manifest: ArtifactManifest; etag: string }> {

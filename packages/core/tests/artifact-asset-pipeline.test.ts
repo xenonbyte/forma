@@ -301,6 +301,78 @@ describe('Bug #6: protocol-relative URL rejection', () => {
   });
 });
 
+// ─── Review #6: collapsed density tiers are marked degraded ──────────────────
+
+describe('Review #6: tiny raster marks degraded when density tiers collapse', () => {
+  it('1×1 PNG → degraded=true (all tiers reuse the master pixel)', async () => {
+    const tiny = await sharp({
+      create: { width: 1, height: 1, channels: 3, background: '#777777' },
+    })
+      .png()
+      .toBuffer();
+    const html = `<img src="data:image/png;base64,${tiny.toString('base64')}" alt="tiny">`;
+    const result = await localizeArtifactAssets({ html });
+
+    expect(result.assets).toHaveLength(1);
+    expect(result.assets[0].degraded).toBe(true);
+  });
+
+  it('9×9 PNG → degraded is falsy (genuine @1x/@2x/@3x downsamples)', async () => {
+    const html = `<img src="data:image/png;base64,${pngBase64}" alt="big">`;
+    const result = await localizeArtifactAssets({ html });
+    expect(result.assets[0].degraded).toBeFalsy();
+  });
+});
+
+// ─── Review #2: data: URLs in srcset attribute are not corrupted by commas ────
+
+describe('Review #2: data: URL inside srcset attribute', () => {
+  it('localizes both data: candidates without splitting on the data-URL comma', async () => {
+    const png1 = await sharp({ create: { width: 9, height: 9, channels: 3, background: '#abcdef' } })
+      .png()
+      .toBuffer();
+    const png2 = await sharp({ create: { width: 9, height: 9, channels: 3, background: '#123456' } })
+      .png()
+      .toBuffer();
+    const html =
+      `<img src="assets/placeholder.png" ` +
+      `srcset="data:image/png;base64,${png1.toString('base64')} 1x, ` +
+      `data:image/png;base64,${png2.toString('base64')} 2x">`;
+
+    const result = await localizeArtifactAssets({ html });
+
+    const m = result.html.match(/srcset="([^"]+)"/);
+    expect(m).toBeTruthy();
+    const srcsetVal = m![1];
+    // No residual data: URL survived localization
+    expect(srcsetVal).not.toContain('data:');
+
+    // Two distinct candidates, each pointing at a file that exists
+    const candidates = srcsetVal.split(',').map((p: string) => p.trim().split(/\s+/)[0]).filter(Boolean);
+    expect(candidates).toHaveLength(2);
+    for (const url of candidates) {
+      expect(result.files.has(url), `srcset candidate "${url}" not in files`).toBe(true);
+    }
+  });
+
+  it('single data: URL in srcset with no descriptor is localized', async () => {
+    const html = `<img srcset="data:image/png;base64,${pngBase64}">`;
+    const result = await localizeArtifactAssets({ html });
+    const m = result.html.match(/srcset="([^"]+)"/);
+    expect(m).toBeTruthy();
+    expect(m![1]).not.toContain('data:');
+    const url = m![1].trim().split(/\s+/)[0];
+    expect(result.files.has(url)).toBe(true);
+  });
+
+  it('remote URL inside srcset still throws ARTIFACT_REMOTE_RESOURCE', async () => {
+    const html = `<img srcset="//cdn.example.com/a.png 1x, assets/b.png 2x">`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) => e instanceof FormaError && e.code === 'ARTIFACT_REMOTE_RESOURCE',
+    );
+  });
+});
+
 // ─── dedup: same data: used twice gets same hash ─────────────────────────────
 
 describe('Deduplication', () => {

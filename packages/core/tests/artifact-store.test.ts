@@ -604,6 +604,46 @@ describe('A3 versioned artifact read/write', () => {
     await expect(store.readArtifactVersion(productId, 'ZZCdEfGhIjKlMnOp', 9)).rejects.toThrow();
   });
 
+  it('Review #3: allocates the next version when version is omitted', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'CcCdEfGhIjKlMnOp';
+    const base = {
+      productId,
+      artifactId: aid,
+      manifest: makeManifest({ id: aid, kind: 'design-page', forma: { variant: 'default' } }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    };
+
+    const first = await store.writeArtifactVersion(base);
+    const second = await store.writeArtifactVersion(base);
+    expect(first.version).toBe(1);
+    expect(second.version).toBe(2);
+    expect(await store.listArtifactVersions(productId, aid)).toEqual([1, 2]);
+  });
+
+  it('Review #3: concurrent version-omitted writes do not collide on the same version', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'EeCdEfGhIjKlMnOp';
+    const make = () => ({
+      productId,
+      artifactId: aid,
+      manifest: makeManifest({ id: aid, kind: 'design-page', forma: { variant: 'default' } }),
+      files: new Map([['index.html', Buffer.from('x')]]),
+    });
+
+    const results = await Promise.all([
+      store.writeArtifactVersion(make()),
+      store.writeArtifactVersion(make()),
+      store.writeArtifactVersion(make()),
+    ]);
+
+    const versions = results.map((r) => r.version).sort((a, b) => a - b);
+    expect(versions).toEqual([1, 2, 3]);
+    expect(await store.listArtifactVersions(productId, aid)).toEqual([1, 2, 3]);
+  });
+
 });
 
 describe('A4 assets write-path consistency', () => {

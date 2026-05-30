@@ -162,20 +162,9 @@ export async function saveDesignArtifact(
   const finalPreview1x = preview1xBuf;
   const finalPreview2x = preview2xBuf;
 
-  // ── Step 4: Determine version (read-only, no lock) ────────────────────────────
-  let artifactId: string;
-  let version: number;
-
-  if (input.artifactId) {
-    artifactId = input.artifactId;
-    const existingVersions = await artifacts.listArtifactVersions(productId, artifactId);
-    version = existingVersions.length > 0
-      ? Math.max(...existingVersions) + 1
-      : 1;
-  } else {
-    artifactId = generateArtifactId();
-    version = 1;
-  }
+  // ── Step 4: Determine artifact id (version is allocated atomically by the store)
+  // An existing artifactId appends a new version; otherwise this is a fresh v1.
+  const artifactId = input.artifactId ?? generateArtifactId();
 
   // ── Step 5: Build final file set ──────────────────────────────────────────────
   const finalFiles = new Map<string, Buffer>();
@@ -218,11 +207,10 @@ export async function saveDesignArtifact(
     forma: formaExtension,
   };
 
-  // ── Step 7: writeArtifactVersion (has its own internal lock) ──────────────────
-  await artifacts.writeArtifactVersion({
+  // ── Step 7: writeArtifactVersion (has its own internal lock; allocates version)
+  const { version } = await artifacts.writeArtifactVersion({
     productId,
     artifactId,
-    version,
     manifest,
     files: finalFiles,
   });
