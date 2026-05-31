@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@xenonbyte/forma-core": "workspace:*",
+    "@xenonbyte/forma-viewer": "workspace:*",
     "leafer-ui": "^1.9.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
