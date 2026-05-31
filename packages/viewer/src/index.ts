@@ -17,3 +17,5 @@ export { isDesignTile } from "./model.js";
 export { layoutTiles, TILE_GAP } from "./layout.js";
 export { buildViewerModel } from "./normalize.js";
 export type { NormalizeArtifactInput, BuildViewerModelInput } from "./normalize.js";
+export { DesignTile } from "./tiles/DesignTile.js";
+export type { DesignTileProps } from "./tiles/DesignTile.js";
