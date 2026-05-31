@@ -19,7 +19,7 @@
 - viewer 公开 API(P7 已落、main 上):`buildViewerModel({ entry, artifacts })`、`<Viewer model resolver />`、类型 `NormalizeArtifactInput`/`ResourceRef`/`ResourceResolver`/`ViewerModel`/`ArtifactKind`(`"design-page"|"component-library"`)。动手前 `grep -n "export" packages/viewer/src/index.ts` 复核签名未变。
 - server 版本化路由(P4 已落):`GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/*`(bundle/asset)、`GET …/versions/:v/preview/:res`(`res` ∈ `1x.png`/`2x.png`)。
 - craft lint API(P5 已落,P9 dogfood 用):`packages/core/src/quality/` 的 `lintCraft(snapshot, options) → ArtifactCraftCheck[]`、`extractSnapshotInPage() → RenderedDomSnapshot`。动手前复核签名。
-- 纪律:串行执行,一个 task 落盘 + 测试绿 + 提交后再下一个;浏览器测试**后台运行 + 写日志文件**(勿管道接 `tail`,会缓冲到结束看不到进度;进程长时间 0% CPU = 卡死);源文件严禁混入 markdown 围栏(落盘后 grep 扫描);只 `git add` 指定文件;全量 `pnpm test` 不回退。
+- 纪律:串行执行,一个 task 落盘 + 测试绿 + 提交后再下一个;**仅 P8.4→P8.5 是显式原子连续任务**,P8.4 不单独提交,到 P8.5 一起 typecheck/test/commit,避免 web API 类型先改导致中间提交不可编译;浏览器测试**后台运行 + 写日志文件**(勿管道接 `tail`,会缓冲到结束看不到进度;进程长时间 0% CPU = 卡死);源文件严禁混入 markdown 围栏(落盘后 grep 扫描);只 `git add` 指定文件;全量 `pnpm test` 不回退。
 
 ---
 
@@ -46,7 +46,7 @@
 
 **P9(desktop · 详见下方 Phase P9 段)**
 - `packages/desktop/package.json`(React 19)、`packages/viewer/package.json`(peer `^19`)
-- `packages/desktop/src/preload/index.ts` + `main/index.ts`(第 8 只读方法 `formaServerBaseUrl` + IPC)
+- `packages/desktop/src/preload/index.ts` + `main/index.ts`(新增只读方法 `formaServerBaseUrl`/`listStyles`/`getStyle` + IPC)
 - `packages/desktop/src/renderer/{AppShell,Sidebar,TopBar,WorkspacePane,ConnectionGate,StyleDetail,viewer/{mapArtifacts,resolver}}.tsx` + hash 路由 + `clean` tokens.css
 - `vitest.config.ts`(根:新增 desktop-shell-dogfood browser project)+ `packages/desktop/src/renderer/*.dogfood.browser.test.tsx`
 
@@ -54,21 +54,21 @@
 
 ## Phase P0 — 扩展 artifact 读取面(共享前置)
 
-> P8、P9 的 viewer 映射都需要每个 design-page artifact 的 `page_id`/`variant`/`current_version`。现列表 `GET /api/products/:pid/artifacts` 不带这三者(只有 `id/kind/title/preview_url/updated_at/source_skill_id/requirement_id/superseded`)。数据在 `manifest.forma.{pageId,variant}` + 指针 `pointerVersions`(当前版本号)里。本阶段把它们补进列表响应,并让 `kind` 归一(`html→design-page`、`design-system→component-library`)。
+> P8、P9 的 viewer 映射都需要每个 **versioned** design-page artifact 的 `page_id`/`variant`/`current_version`。现列表 `GET /api/products/:pid/artifacts` 不带这三者(只有 `id/kind/title/preview_url/updated_at/source_skill_id/requirement_id/superseded`)。数据在 `manifest.forma.{pageId,variant}` + 指针 `pointerVersions`(当前版本号)里。本阶段把它们补进列表响应,并让 `kind` 归一(`html→design-page`、`design-system→component-library`)。**legacy flat artifact 没有真实 `/versions/:v/...` 路由时不得伪造 `current_version`;viewer 映射会按缺 `current_version` 丢弃它。**
 
-### Task P0.1: `resolveCurrentArtifact` 返回 version + 列表响应扩展
+### Task P0.1: `resolveCurrentArtifact` 返回可选 version + 列表响应扩展
 
 **Files:**
-- Modify: `packages/server/src/routes.ts`(`resolveCurrentArtifact` 返回 `version`;列表项加字段)
+- Modify: `packages/server/src/routes.ts`(`resolveCurrentArtifact` 返回可选 `version`;列表项加字段)
 - Modify: `packages/web/src/api.ts`(`ArtifactSummary` 类型)
 - Test: `packages/server/tests/artifact-routes.test.ts`(现有列表测试;若无则新建)
 
-- [ ] **Step 1: 写失败测试** — 在 server 列表测试里加断言:design-page artifact 的列表项含 `page_id`、`variant`(缺省 `"default"`)、`current_version`(数字),且 `kind` 为归一值 `"design-page"`。
+- [ ] **Step 1: 写失败测试** — 在 server 列表测试里加断言:versioned design-page artifact 的列表项含 `page_id`、`variant`(缺省 `"default"`)、`current_version`(数字),且 `kind` 为归一值 `"design-page"`。若测试 fixture 同时覆盖 legacy flat artifact,再断言 flat 项**不含** `current_version`(避免暴露不可用的 `/versions/:v/...` URL)。
 
 ```ts
 // packages/server/tests/artifact-routes.test.ts(在现有 "list artifacts" describe 内加)
-it("exposes page_id, variant and current_version for design-page artifacts", async () => {
-  // 复用本文件既有的 fixture：一个已保存 design-page artifact 的 product。
+it("exposes page_id, variant and current_version for versioned design-page artifacts", async () => {
+  // 复用本文件既有的 fixture：一个已保存 versioned design-page artifact 的 product。
   // (沿用现有 beforeEach/helper；下面只示意断言形状。)
   const res = await app.inject({ method: "GET", url: `/api/products/${pid}/artifacts` });
   expect(res.statusCode).toBe(200);
@@ -90,30 +90,27 @@ it("exposes page_id, variant and current_version for design-page artifacts", asy
 Run: `npx vitest run packages/server/tests/artifact-routes.test.ts`
 Expected: FAIL — 列表项无 `page_id`/`variant`/`current_version`。
 
-- [ ] **Step 3: 让 `resolveCurrentArtifact` 返回 version**
+- [ ] **Step 3: 让 `resolveCurrentArtifact` 返回可选 version**
 
-`packages/server/src/routes.ts` 现有(约 755–765 行):
+`packages/server/src/routes.ts` 现有(约 755–765 行)已可能有 flat legacy fallback:
 ```ts
 async function resolveCurrentArtifact(
   store: FormaRoutesStore,
   pid: string,
   artifactId: string,
   pointerVersions: Map<string, number>
-): Promise<{ manifest: ArtifactManifest; etag: string }> {
-  // …
-  const version = pointerVersions.get(artifactId) ?? Math.max(...versions);
-  // …（读取该 version 的 manifest，算 etag）
-  return { manifest, etag };
+): Promise<{ manifest: ArtifactManifest; etag: string; version?: number }> {
+  const versions = await store.artifacts.listArtifactVersions(pid, artifactId);
+  if (versions.length > 0) {
+    const version = pointerVersions.get(artifactId) ?? Math.max(...versions);
+    const { manifest, etag } = await store.artifacts.readArtifactVersion(pid, artifactId, version);
+    return { manifest, etag, version };
+  }
+  const { manifest, etag } = await store.artifacts.readArtifact(pid, artifactId);
+  return { manifest, etag }; // legacy flat artifact: no current_version
 }
 ```
-改为额外返回 `version`(签名 + return 同步加 `version`):
-```ts
-): Promise<{ manifest: ArtifactManifest; etag: string; version: number }> {
-  // …不变…
-  return { manifest, etag, version };
-}
-```
-（`getArtifact` 路由处的解构 `const { manifest, etag } = await resolveCurrentArtifact(...)` 不需改——多返回一个字段不影响。）
+如果当前代码仍是 `Promise<{ manifest; etag }>` 或 version 是 required,改为上面的 `version?: number`。`getArtifact` 路由处的解构 `const { manifest, etag } = await resolveCurrentArtifact(...)` 不需改——多返回一个可选字段不影响。
 
 - [ ] **Step 4: 列表路由补字段 + kind 归一**
 
@@ -121,7 +118,7 @@ async function resolveCurrentArtifact(
 ```ts
 for (const { artifactId } of entries) {
   let manifest: ArtifactManifest;
-  let version: number;
+  let version: number | undefined;
   try {
     ({ manifest, version } = await resolveCurrentArtifact(store, pid, artifactId, pointerVersions));
   } catch {
@@ -142,7 +139,7 @@ for (const { artifactId } of entries) {
     requirement_id: requirementId,
     page_id: forma?.pageId,                       // design-page 才有
     variant: forma?.variant,                      // normalizeFormaExtension 已补 default
-    current_version: version,
+    ...(typeof version === "number" ? { current_version: version } : {}),
     superseded
   });
 }
@@ -176,7 +173,7 @@ export interface ArtifactSummary {
   superseded: boolean;
 }
 ```
-（desktop `forma.d.ts` 的 `FormaArtifact` 同步在 P9 Task 中做——见 P9 段;此处只动 web。）
+（desktop `forma.d.ts` 的 `FormaArtifact` 同步在 P9 Task 中做——见 P9 段;此处只动 web。P8/P9 映射测试必须保留“缺 `current_version` 的 design-page 被丢弃”断言,确保 legacy flat artifact 不会生成无效 versioned URL。）
 
 - [ ] **Step 7: typecheck + 全量不回退 + Commit**
 
@@ -419,10 +416,18 @@ function fakeClient(): FormaApiClient {
     getRequirement: async () => ({
       id: "r1", title: "需求", product_id: "p1", status: "active", created_at: "", updated_at: "",
       navigation: [], document_md: "",
-      pages: [{ baseline_page: "login", design_status: "done", name: "登录页", page_id: "login" }]
+      pages: [
+        { baseline_page: "login", design_status: "done", name: "登录页", page_id: "login" },
+        { baseline_page: "settings", design_status: "done", name: "设置页", page_id: "settings" }
+      ]
     }),
     listProductArtifacts: async () => ({
-      artifacts: [{ id: "a", kind: "design-page", title: "登录页", updated_at: "", superseded: false, page_id: "login", variant: "default", current_version: 1 }]
+      artifacts: [
+        { id: "a", kind: "design-page", title: "登录页", updated_at: "", superseded: false, requirement_id: "r1", page_id: "login", variant: "default", current_version: 1 },
+        { id: "d", kind: "design-page", title: "登录页 宽屏", updated_at: "", superseded: false, requirement_id: "r1", page_id: "login", variant: "wide", current_version: 2 },
+        { id: "b", kind: "design-page", title: "设置页", updated_at: "", superseded: false, requirement_id: "r1", page_id: "settings", variant: "default", current_version: 1 },
+        { id: "c", kind: "design-page", title: "别的需求", updated_at: "", superseded: false, requirement_id: "r2", page_id: "login", variant: "default", current_version: 1 }
+      ]
     })
   } as unknown as FormaApiClient;
 }
@@ -434,14 +439,15 @@ describe("ViewerPage", () => {
     expect(viewerSpy).toHaveBeenCalled();
     const model = viewerSpy.mock.calls[0][0].model as { __model: { entry: string; artifacts: Array<{ artifactId: string }> } };
     expect(model.__model.entry).toBe("requirement");
-    expect(model.__model.artifacts.map((a) => a.artifactId)).toEqual(["a"]);
+    expect(model.__model.artifacts.map((a) => a.artifactId)).toEqual(["a", "d", "b"]);
   });
 
   it("filters to a single page for the page entry", async () => {
     render(<ViewerPage client={fakeClient()} params={{ productId: "p1", reqId: "r1", pageId: "login" }} entry="page" />);
     await waitFor(() => expect(screen.getByTestId("viewer")).toBeTruthy());
-    const model = viewerSpy.mock.calls.at(-1)![0].model as { __model: { entry: string } };
+    const model = viewerSpy.mock.calls.at(-1)![0].model as { __model: { entry: string; artifacts: Array<{ artifactId: string }> } };
     expect(model.__model.entry).toBe("page");
+    expect(model.__model.artifacts.map((a) => a.artifactId)).toEqual(["a", "d"]);
   });
 });
 ```
@@ -563,7 +569,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-### Task P8.4: web 风格/配置类型对齐 core(3 文件格式 + brand/system + 系统风格路由)
+### Task P8.4: web 风格/配置类型对齐 core(3 文件格式 + brand/system + 系统风格路由;与 P8.5 原子提交)
 
 > **背景(执行期已核实)**:core 早已切到新格式,web 落后未同步——core `StyleMetadata = {name,description,category?,upstream?,design_md_path,tokens_css_path,components_html_path}`(strict,**无 `variables`**);`getStyle → BrandStyleContent {kind:'brand', metadata, designMd, tokensCss, componentsHtml}`;`listSystemStyles → SystemStyleMetadata {name,description,mode:'design-system',category?,upstream?}`;产品 config 已是 `brand_style`(必填)+`system_style`(可选)(server `/api/products/:id/config` 路由 + `product.ts` schema)。web `api.ts` 的 `StyleMetadata`(含 `variables`)/`StyleVariables`/`StyleDetailPayload`/`ProductConfigInput{style}` 都是旧的。system styles 还**无 HTTP 路由**。本 task 先补类型 + 路由(P8.5 再改组件)。
 
@@ -628,15 +634,9 @@ export interface ProductConfigInput {
 - 加 `listSystemStyles(): Promise<SystemStyleMetadata[]>` → `apiArray<SystemStyleMetadata>("/api/system-styles", requestOptions(fetcher))`。
 - `configureProduct` 入参类型已是 `ProductConfigInput`，无需改实现（body 透传新字段）。
 
-- [ ] **Step 3: 跑测试** — `npx vitest run packages/web/src/api.test.ts packages/server/tests`(对应改/加的断言绿);`pnpm --filter @xenonbyte/forma-web typecheck` 此刻**会因 P8.5 未改的组件报错**——P8.4 只改 api.ts + server;**typecheck 的 web 部分留到 P8.5 末尾整体转绿**(本 task 提交前只验 server typecheck + 改动测试)。
+- [ ] **Step 3: 跑测试** — `npx vitest run packages/web/src/api.test.ts packages/server/tests`(对应改/加的断言绿);`pnpm --filter @xenonbyte/forma-server typecheck` 绿。`pnpm --filter @xenonbyte/forma-web typecheck` 此刻**预计会因 P8.5 未改的组件报错**——这是 P8.4→P8.5 的原子迁移窗口,不能在这里提交或交接。
 
-- [ ] **Step 4: Commit**（server 路由 + web 类型/client;web 组件 P8.5 再动)
-```bash
-git add packages/server/src/routes.ts packages/web/src/api.ts packages/web/src/api.test.ts packages/server/tests
-git commit -m "feat(p8): sync web style/config types to core (3-file brand + system styles route)
-
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
-```
+- [ ] **Step 4: 不提交,立即进入 P8.5** — P8.4 的改动必须随 P8.5 一起落到同一个绿色提交;若中断,先记录 CONTINUITY,不要留下一个 web typecheck 已知失败的提交。
 
 ### Task P8.5: web 风格组件适配三文件格式 + ProductNew 双风格
 
@@ -678,10 +678,10 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 - [ ] **Step 5: 全量转绿** — `pnpm --filter @xenonbyte/forma-web typecheck`(P8.4+P8.5 后 web 整体 typecheck 应 0 错);`pnpm test` 全绿不回退;`grep -rn "variables\|StyleVariables\|StyleDetailPayload" packages/web/src` 应无残留(除非有意保留的本地解析)。
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Commit(P8.4 + P8.5 一起提交)**
 ```bash
-git add packages/web/src/pages/StyleDetail.tsx packages/web/src/pages/StyleLibrary.tsx packages/web/src/pages/ProductNew.tsx packages/web/src/components/StylePickerDialog.tsx packages/web/src/components/StyleCard.tsx packages/web/src/components/StylePreviewPanel.tsx packages/web/src/components/TokenCard.tsx packages/web/src/**/*.test.tsx
-git commit -m "feat(p8): adapt web style UI to 3-file format + dual brand/system style in ProductNew
+git add packages/server/src/routes.ts packages/web/src/api.ts packages/web/src/api.test.ts packages/server/tests packages/web/src/pages/StyleDetail.tsx packages/web/src/pages/StyleLibrary.tsx packages/web/src/pages/ProductNew.tsx packages/web/src/components/StylePickerDialog.tsx packages/web/src/components/StyleCard.tsx packages/web/src/components/StylePreviewPanel.tsx packages/web/src/components/TokenCard.tsx packages/web/src/**/*.test.tsx
+git commit -m "feat(p8): adapt web style/config UI to 3-file brand + dual style
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -711,22 +711,69 @@ git commit -m "feat(p9): bump desktop to React 19; narrow viewer peer to ^19
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
-### Task P9.2: preload bridge 第 8 只读方法 `formaServerBaseUrl` + IPC + DTO 拓宽
+### Task P9.2: preload bridge 只读方法 `formaServerBaseUrl`/`listStyles`/`getStyle` + IPC + DTO 拓宽
 
 **Files:** `packages/desktop/src/preload/index.ts`、`packages/desktop/src/main/index.ts`、`packages/desktop/src/renderer/forma.d.ts`、对应 `*.test.ts`(`api-surface.test.ts`/`index.test.ts`)
 
-- [ ] **Step 1: 写失败测试** — 在 `preload/api-surface.test.ts` 的 `ALLOWED_METHODS` 与 `preload/index.test.ts` 的 `EXPECTED_API_KEYS` 加 `'formaServerBaseUrl'`(8 个);在 `main/index.test.ts` 加:`registerFormaIpcHandlers` 注册了 `forma:serverBaseUrl` 且调用 `client.serverBaseUrl()`。先跑确认失败。
+- [ ] **Step 1: 写失败测试** — 在 `preload/api-surface.test.ts` 的 `ALLOWED_METHODS` 与 `preload/index.test.ts` 的 `EXPECTED_API_KEYS` 加 `'formaServerBaseUrl'`、`'listStyles'`、`'getStyle'`(10 个只读方法);在 `main/index.test.ts` 加:`registerFormaIpcHandlers` 注册 `forma:serverBaseUrl`/`forma:listStyles`/`forma:getStyle`,分别调用 `client.serverBaseUrl()`、`client.listStyles()`、`client.getStyle(name)` 且 `getStyle` 用 `requireIpcString(name, "name")` 校验。再加 `createFormaHttpClient` 测试:main process 通过 `fetchFn` 请求 `/api/styles` 与 `/api/styles/:name`。同时在 renderer/DTO 类型测试(或现有 `forma.d.ts` 相关测试)覆盖 `FormaRequirement.pages` shape 与 `FormaBrandStyleContent`,确保 `getRequirement` 可返回页面数组供 P9.4/P9.5 使用,且 desktop style 详情不需要 renderer 直接 HTTP fetch。先跑确认失败。
 
 - [ ] **Step 2: preload** — `packages/desktop/src/preload/index.ts` 的 `readonlyApi` 加:
 ```ts
   formaServerBaseUrl: () => ipcRenderer.invoke('forma:serverBaseUrl'),
+  listStyles: () => ipcRenderer.invoke('forma:listStyles'),
+  getStyle: (name: string) => ipcRenderer.invoke('forma:getStyle', name),
 ```
-（注释"exactly these seven"改为"eight readonly methods"。）
+（注释"exactly these seven"改为"exactly these ten readonly methods"。这些方法仍为纯只读,只把已有 server `/api/styles` 与 `/api/styles/:name` 读接口通过主进程转发给 renderer。）
 
-- [ ] **Step 3: main** — `FormaDesktopClient` 接口加 `serverBaseUrl(): string;`;`createFormaHttpClient` 返回对象加 `serverBaseUrl: () => baseUrl,`;`registerFormaIpcHandlers` 加 `ipcMain.handle('forma:serverBaseUrl', () => client.serverBaseUrl());`。
-
-- [ ] **Step 4: forma.d.ts** — `FormaDesktopAPI` 加 `formaServerBaseUrl(): Promise<string>;`;`FormaArtifact` 拓宽(承载 viewer 映射所需,来自 P0 已扩展的 server 列表):
+- [ ] **Step 3: main** — `FormaDesktopClient` 接口加 `serverBaseUrl(): string; listStyles(): Promise<unknown>; getStyle(name: string): Promise<unknown>;`;`createFormaHttpClient` 返回对象加:
 ```ts
+serverBaseUrl: () => baseUrl,
+listStyles: () => getJson('/api/styles'),
+getStyle: (name) => getJson(`/api/styles/${encodeURIComponent(name)}`),
+```
+`registerFormaIpcHandlers` 加:
+```ts
+ipcMain.handle('forma:serverBaseUrl', () => client.serverBaseUrl());
+ipcMain.handle('forma:listStyles', () => client.listStyles());
+ipcMain.handle('forma:getStyle', (_event, name) => client.getStyle(requireIpcString(name, 'name')));
+```
+主进程 `fetch` 不受 renderer `loadFile`/file origin 的 same-origin 限制;renderer 只拿 IPC 返回的 plain JSON,不要在 desktop renderer 里直接请求 `/api/styles`。
+
+- [ ] **Step 4: forma.d.ts** — `FormaDesktopAPI` 加 `formaServerBaseUrl(): Promise<string>; listStyles(): Promise<FormaStyleMetadata[]>; getStyle(name: string): Promise<FormaBrandStyleContent>;`;`FormaArtifact` 拓宽(承载 viewer 映射所需,来自 P0 已扩展的 server 列表);`FormaRequirement` 拓宽 `pages`(承载 viewer 映射与 Sidebar 页面导航所需,来自 `getRequirement` 的完整 DTO);新增 style DTO:
+```ts
+interface FormaStyleMetadata {
+  name: string;
+  description: string;
+  category?: string;
+  upstream?: string;
+  design_md_path?: string;
+  tokens_css_path?: string;
+  components_html_path?: string;
+}
+
+interface FormaBrandStyleContent {
+  kind: 'brand';
+  metadata: FormaStyleMetadata;
+  designMd: string;
+  tokensCss: string;
+  componentsHtml: string;
+}
+
+interface FormaRequirementPage {
+  page_id: string;
+  name: string;
+  baseline_page?: string;
+  design_status?: string;
+}
+
+interface FormaRequirement {
+  id: string;
+  title: string;
+  status: string;
+  ui_affected: boolean;
+  pages?: FormaRequirementPage[];
+}
+
 interface FormaArtifact {
   id: string;
   kind: string;
@@ -739,12 +786,12 @@ interface FormaArtifact {
   current_version?: number;
 }
 ```
-（`listArtifacts` 返回类型已是 `{ artifacts: FormaArtifact[] }`,字段透传 P0 扩展后的 server 列表。）
+（`listArtifacts` 返回类型已是 `{ artifacts: FormaArtifact[] }`,字段透传 P0 扩展后的 server 列表。`listRequirements` 仍可作为需求摘要列表;P9.5 的 Sidebar 页面导航必须在选中产品/需求后调用 `getRequirement(productId, reqId)` 取得完整 `pages`。）
 
 - [ ] **Step 5** 跑测试绿(preload/main);`pnpm --filter @xenonbyte/forma-desktop typecheck`;Commit:
 ```bash
 git add packages/desktop/src/preload/index.ts packages/desktop/src/main/index.ts packages/desktop/src/renderer/forma.d.ts packages/desktop/src/preload/*.test.ts packages/desktop/src/main/index.test.ts
-git commit -m "feat(p9): expose formaServerBaseUrl readonly bridge method + widen artifact DTO
+git commit -m "feat(p9): expose desktop readonly bridge methods for viewer and styles
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -780,7 +827,7 @@ export function createDesktopResourceResolver(baseUrl: string, productId: string
 
 **Files:** Create `packages/desktop/src/renderer/viewer/mapArtifacts.ts`、Test `…/mapArtifacts.test.ts`
 
-- [ ] 与 P8.1 同构(纯函数 + 平台默认尺寸),输入用 desktop `FormaArtifact[]` + requirement pages(`getRequirement` 返回的 pages:`{page_id,name}`)+ platform。**只取 design-page 且 page_id/variant/current_version 齐全**;`page_id`/`variant`/`current_version` 必须来自 P0 扩展的列表 DTO,**不得从 URL/标题推断**(spec)。按需求入口过滤 `requirement_id===reqId`,按页面入口加 `&& page_id===pageId`。测试断言映射形状与过滤;实现照 P8.1 的 `mapArtifactsToViewerInputs` 适配 desktop 类型。Commit `feat(p9): desktop artifact->viewer input mapping`。
+- [ ] 与 P8.1 同构(纯函数 + 平台默认尺寸),输入用 desktop `FormaArtifact[]` + requirement pages(`getRequirement` 返回的 pages:`{page_id,name}`)+ platform。**只取 design-page 且 page_id/variant/current_version 齐全**;`page_id`/`variant`/`current_version` 必须来自 P0 扩展的列表 DTO,**不得从 URL/标题推断**(spec)。按需求入口过滤 `requirement_id===reqId`,按页面入口加 `&& page_id===pageId`;同页多个 variant/artifact 必须全部保留。测试断言映射形状与过滤:同 requirement 的两个 page、同 page 两个 variant、跨 requirement 干扰项、缺 current_version 的 legacy flat 项被丢弃。实现照 P8.1 的 `mapArtifactsToViewerInputs` 适配 desktop 类型。Commit `feat(p9): desktop artifact->viewer input mapping`。
 
 ### Task P9.5: IA 外壳(统一工作区)+ hash 路由 + clean tokens.css
 
@@ -792,32 +839,44 @@ export function createDesktopResourceResolver(baseUrl: string, productId: string
 
 - [ ] **Step 2 `ConnectionGate.tsx`** — props `{ children }`;挂载时 `window.forma.formaServerStatus()`;`false`→渲染全屏遮罩(中文文案 + 重试按钮再调一次);`true`→渲染 `children`(AppShell)。测试:mock `window.forma`,断言断连渲染遮罩(`[data-gate="disconnected"]`)、连通渲染 children。
 
-- [ ] **Step 3 `Sidebar.tsx`** — props `{ products, activeProductId, requirements, pages, styles, nav, onSelect }`;渲染:产品切换(下拉)、导航分区"需求 / 页面 / 风格"列表(各项 `<button data-nav-…>` → `onSelect`)、底部连接状态点。测试:渲染分区与项、点击回调。
+- [ ] **Step 3 `Sidebar.tsx`** — props `{ products, activeProductId, requirements, pages, brandStyles, nav, onSelect }`;渲染:产品切换(下拉)、导航分区"需求 / 页面 / 品牌风格"列表(各项 `<button data-nav-…>` → `onSelect`)、底部连接状态点。`pages` 来自当前选中 requirement 的 `getRequirement(...).pages`,不是 `listRequirements` summary。测试:渲染分区与项、点击回调。**注意**:desktop 风格导航只列 brand styles;system styles 是 catalog stub(无 DESIGN.md/tokens/components 三文件),不进入 StyleDetail。
 
 - [ ] **Step 4 `TopBar.tsx`** — props `{ productName, crumb }`;面包屑 + 产品名。测试:渲染文案。
 
 - [ ] **Step 5 `WorkspacePane.tsx`** — props `{ selection, productId, baseUrl }`;按 selection:
   - `{type:"requirement", reqId}` → 加载 `getRequirement`+`listArtifacts`→ `mapArtifactsToViewerInputs`(entry `requirement`)→ `<Viewer model resolver={createDesktopResourceResolver(baseUrl, productId)} />`。
   - `{type:"page", reqId, pageId}` → 同上,entry `page`,加 page 过滤。
-  - `{type:"style", name}` → `<StyleDetail name>`。
-  测试(happy-dom,mock window.forma + `vi.mock("@xenonbyte/forma-viewer")` 替身):断言传给 Viewer 的 model.entry / artifacts 过滤正确(与 web ViewerPage 测试同法)。
+  - `{type:"style", name}` → `<StyleDetail name={selection.name} />`(StyleDetail 通过 `window.forma.getStyle(name)` 取三文件内容,不做 renderer HTTP fetch)。
+  测试(happy-dom,mock window.forma + `vi.mock("@xenonbyte/forma-viewer")` 替身):断言传给 Viewer 的 model.entry / artifacts 过滤正确(与 web ViewerPage 测试同法),并断言 style selection 只把 `name` 传给 `StyleDetail`;`baseUrl` 仅用于 viewer resolver,不用于 style 读取。
 
-- [ ] **Step 6 `StyleDetail.tsx`(desktop)** — props `{ name }`;`window.forma` 暂无 getStyle(只读 7+1 方法不含风格)——**经本地 server HTTP** 取:`fetch(`${baseUrl}/api/styles/${name}`)` 得 `BrandStyleContent`,渲染 DESIGN.md + tokens + components.html iframe(sandbox 无脚本),与 web StyleDetail 同。测试:mock fetch 返回三文件,断言渲染。
+- [ ] **Step 6 `StyleDetail.tsx`(desktop)** — props `{ name: string }`;仅用于 **brand style** 详情。调用 `window.forma.getStyle(name)` 得 `BrandStyleContent`,渲染 DESIGN.md + tokens + components.html iframe(sandbox 无脚本),与 web StyleDetail 同。测试:mock `window.forma.getStyle` 返回三文件,断言以 style name 调用 IPC 方法且内容渲染;同时断言组件不调用 `fetch`。另加测试/断言确保 system style catalog stub 不会被路由到 StyleDetail。
 
-- [ ] **Step 7 `router.ts` + `AppShell.tsx`** — hash 路由(`#/products/:pid/requirements/:reqId`、`…/pages/:pageId`、`#/styles/:name`),解析 hash→selection;`AppShell` 组合 Sidebar + TopBar + WorkspacePane,持有 selection 状态 + 启动加载(`listProducts`,选首个产品后 `listRequirements`/`listArtifacts`/system+brand styles 列表)+ `formaServerBaseUrl()` 取一次 baseUrl 传给 WorkspacePane。`main.tsx` 渲 `<ConnectionGate><AppShell/></ConnectionGate>` + import `theme.css`。测试:路由解析纯函数;AppShell 装配(mock window.forma)。
+- [ ] **Step 7 `router.ts` + `AppShell.tsx`** — hash 路由(`#/products/:pid/requirements/:reqId`、`…/pages/:pageId`、`#/styles/:name`),解析 hash→selection;`AppShell` 组合 Sidebar + TopBar + WorkspacePane,持有 selection 状态 + 启动加载(`listProducts`,选首个产品后 `listRequirements`/`listArtifacts`)+ `formaServerBaseUrl()` 取一次 baseUrl 传给 WorkspacePane(仅供 viewer resolver)。选中/默认 requirement 后调用 `getRequirement(productId, reqId)` 取得完整 `pages` 供 Sidebar 页面导航与 WorkspacePane viewer 映射;切换 requirement 时刷新 pages。品牌风格导航列表通过 `window.forma.listStyles()` 取得 brand style metadata 作为 Sidebar 的 `brandStyles`;style 详情通过 `window.forma.getStyle(name)` 读取。**不要在 renderer 直接 `fetch('/api/styles')` 或 `fetch('/api/styles/:name')`**,也不要依赖 P8.4 的 `/api/system-styles`;system styles 保留给 web ProductNew/config 与生成上下文,desktop 本期不展示 catalog stub 详情。测试 mock `window.forma.listStyles`/`getStyle`,并断言不请求 `/api/system-styles`、不为 style list/detail 使用 global `fetch`;mock `getRequirement` 返回 `pages` 并断言 Sidebar 页面导航使用这些 pages,而不是假设 `listRequirements` summary 含 pages。`main.tsx` 渲 `<ConnectionGate><AppShell/></ConnectionGate>` + import `theme.css`。测试:路由解析纯函数;AppShell 装配(mock window.forma)。
 
 - [ ] **Step 8** 删旧屏(SessionGate/ProductsHome/ProductView/ArtifactDetail + 测试);`pnpm --filter @xenonbyte/forma-desktop typecheck` + `test` 绿;`pnpm desktop:dev` 可起(人工/CI smoke 视情况)。Commit `feat(p9): unified-workspace desktop shell (sidebar IA, clean tokens, read-only) + viewer integration`。
 
 ### Task P9.6: dogfood — 根 vitest4 browser project + 6 屏 craft lint
 
-**Files:** Modify `vitest.config.ts`(根:加 `desktop-shell` browser project);Create `packages/desktop/src/renderer/*.dogfood.browser.test.tsx`(6 屏)
+**Files:** Modify `vitest.config.ts`(根:加 `desktop-shell` browser project + browser-safe quality alias)、Modify `packages/core/package.json`(可发布的 quality 子路径 export)、Create `packages/desktop/src/renderer/*.dogfood.browser.test.tsx`(6 屏)
 
-- [ ] **Step 1: 根 vitest.config.ts 加 project** — 在现有 `projects` 数组(unit + viewer)后加第三个 `desktop-shell` browser project,复用 viewer project 的 playwright/chromium + `optimizeDeps.include`(react/react-dom/jsx runtime + @xyflow/react);`include: ["packages/desktop/src/renderer/**/*.dogfood.browser.test.tsx"]`;`resolve.alias` 同 workspaceAliases。（desktop 自身 vitest 3 单测项目不变。）
+- [ ] **Step 0: 暴露 browser-safe quality 入口** — 不要让 dogfood 浏览器测试从 `@xenonbyte/forma-core` 根入口导入,因为 root alias 指向 `packages/core/src/index.ts`,会 re-export `preview-renderer`/`artifact-store` 等 Node-only 依赖。先在 `packages/core/package.json` 的 `exports` 增:
+```json
+"./quality": {
+  "types": "./dist/quality/index.d.ts",
+  "import": "./dist/quality/index.js"
+}
+```
+并在根 `vitest.config.ts` 的 alias 里加**更具体的**:
+```ts
+"@xenonbyte/forma-core/quality": new URL("./packages/core/src/quality/index.ts", import.meta.url).pathname
+```
+保持该 alias 不经过 `packages/core/src/index.ts`。若执行期发现 object alias 顺序影响匹配,把 quality 子路径 alias 放在 root `@xenonbyte/forma-core` alias 之前或改为数组 alias 确保精确优先。
+
+- [ ] **Step 1: 根 vitest.config.ts 加 project** — 在现有 `projects` 数组(unit + viewer)后加第三个 `desktop-shell` browser project,复用 viewer project 的 playwright/chromium + `optimizeDeps.include`(react/react-dom/jsx runtime + @xyflow/react);`include: ["packages/desktop/src/renderer/**/*.dogfood.browser.test.tsx"]`;`resolve.alias` 同 workspaceAliases(包含 `@xenonbyte/forma-core/quality` 子路径 alias)。（desktop 自身 vitest 3 单测项目不变。）
 
 - [ ] **Step 2: 6 屏 dogfood 测试** — 每个测试在真实 chromium 渲染一屏(mock `window.forma` 注入假数据;viewer 屏可让 `<Viewer>` 真实渲染或对 RF mock——dogfood 关注**外壳 chrome** 的文本,viewer tile 是 iframe、不进 `extractSnapshotInPage` 的 textNodes),然后:
 ```tsx
-import { extractSnapshotInPage } from "@xenonbyte/forma-core";
-import { lintCraft } from "@xenonbyte/forma-core";
+import { extractSnapshotInPage, lintCraft } from "@xenonbyte/forma-core/quality";
 // …createRoot 渲染该屏到 document.body,await 布局…
 const snapshot = extractSnapshotInPage();      // 读真实 document
 const checks = lintCraft(snapshot);            // 4 条规则
@@ -825,10 +884,10 @@ for (const c of checks) expect(c.passed).toBe(true);
 ```
 覆盖 spec 的 6 屏:需求设计画布、需求标注画布、页面设计画布、页面标注画布、风格详情、断连遮罩。**外壳文本(sidebar/topbar/gate/风格详情)须过 contrast≥4.5 / 字号取 type scale / 调色板克制 / 字体族 ≤3**——这正是消费 clean tokens.css 的目的。
 
-> 执行期:`extractSnapshotInPage`/`lintCraft` 须从 `@xenonbyte/forma-core` 导出可达(`grep -n "extractSnapshotInPage\|lintCraft" packages/core/src/index.ts`;未导出则在 core index 补 `export`,作为本 task 第 0 步,单独提交)。`ArtifactCraftCheck` 的"通过"字段名以 `artifact-manifest.ts` 实际为准(`grep -n "interface ArtifactCraftCheck" packages/core/src/artifact-manifest.ts` 核对 `passed`/`pass`/`ok`)。
+> 执行期:`extractSnapshotInPage`/`lintCraft` 须从 `packages/core/src/quality/index.ts` 导出可达(`grep -n "extractSnapshotInPage\|lintCraft" packages/core/src/quality/index.ts packages/core/src/quality/*.ts`)。不要改回 `@xenonbyte/forma-core` 根入口;若需要对外发布,只补 `@xenonbyte/forma-core/quality` 子路径 export。`ArtifactCraftCheck` 的"通过"字段名以 `artifact-manifest.ts` 实际为准(`grep -n "interface ArtifactCraftCheck" packages/core/src/artifact-manifest.ts` 核对 `passed`/`pass`/`ok`)。
 
 - [ ] **Step 3: 验证** — 后台运行 + 写日志(勿管道 tail):`npx vitest run --project desktop-shell > /tmp/p9-dogfood.log 2>&1`,读日志确认 6 屏 lint 全过、无 flaky reload;`pnpm test` 全量(unit + viewer + desktop-shell 三 project)全绿不回退。
-- [ ] **Step 4: Commit** `test(p9): dogfood craft-lint for desktop shell screens (root vitest browser project)`。
+- [ ] **Step 4: Commit** `test(p9): dogfood craft-lint for desktop shell screens (browser-safe quality import)`。
 
 > **P9 验收**:两入口经共享 `<Viewer>` 可用、设计/标注画布可切换;外壳统一工作区 + 侧边栏、消费 clean tokens.css、无裸样式;6 屏渲染后过同一套 craft lint(CI 可执行);纯只读;中文;`pnpm desktop:dev` 可跑;`pnpm test`/`typecheck`/`build` 全绿;desktop React 19、viewer peer ^19、P7 React-18-未测 nit 结清。
 
