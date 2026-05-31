@@ -92,6 +92,15 @@ describe("fm-refine-components template", () => {
       expect(lc).toContain("self-review");
     }
   });
+
+  it("loads the existing component library before refining it", async () => {
+    const t = await loadCommand("fm-refine-components");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expectOrder(lc, "list_product_artifacts", "export_artifact");
+      expectOrder(lc, "export_artifact", "generate_components");
+    }
+  });
 });
 
 describe("fm-change-style template", () => {
@@ -130,6 +139,43 @@ describe("fm-change-style template", () => {
       expect(lc).toContain("get_product_artifact");
       expect(lc).toContain("craftchecks");
       expect(lc).toContain("self-review");
+    }
+  });
+
+  it("loads the current artifact HTML before saving a restyled version", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expectOrder(lc, "get_product_artifact", "export_artifact");
+      expectOrder(lc, "export_artifact", "change_artifact_style");
+    }
+  });
+});
+
+describe("fm-rollback-design template", () => {
+  it("lists rollback candidates across the product before choosing a target", async () => {
+    const t = await loadCommand("fm-rollback-design");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("include_superseded");
+      expect(lc).toContain("kind: \"design-page\"");
+      expect(lc).not.toContain("get_requirement");
+      expect(lc).not.toContain("only present artifacts for that requirement");
+      expectOrder(lc, "list_product_artifacts", "rollback_requirement_design");
+    }
+  });
+
+  it("uses the selected artifact requirement_id for rollback", async () => {
+    const t = await loadCommand("fm-rollback-design");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("artifact_id, requirement_id, page_id");
+      expect(lc).toContain("selected artifact");
+      expect(lc).toContain("selected artifact's `requirement_id`");
+      const selectedRequirement = lc.indexOf("selected artifact's `requirement_id`");
+      const rollback = lc.lastIndexOf("rollback_requirement_design");
+      expect(selectedRequirement, "selected artifact requirement_id must appear").toBeGreaterThanOrEqual(0);
+      expect(rollback, "rollback_requirement_design must appear").toBeGreaterThan(selectedRequirement);
     }
   });
 });

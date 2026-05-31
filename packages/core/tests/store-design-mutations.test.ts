@@ -111,6 +111,33 @@ describe('Review #4: generateRequirementDesign validates requirement + page', ()
 
     expect(await store.artifacts.listArtifacts(other.id)).toEqual([]);
   });
+
+  it('appends repeated page generations to the current artifact so rollback can target prior versions', async () => {
+    const store = await createTestStore();
+    const { product, requirementId, pageId } = await seedProductWithPage(store);
+
+    const first = await store.generateRequirementDesign(product.id, requirementId, {
+      html: '<!doctype html><html><body><h1>First</h1></body></html>',
+      title: 'First design',
+      pageId,
+      brandStyle: 'ant',
+    });
+    const second = await store.generateRequirementDesign(product.id, requirementId, {
+      html: '<!doctype html><html><body><h1>Second</h1></body></html>',
+      title: 'Second design',
+      pageId,
+      brandStyle: 'ant',
+    });
+
+    expect(second.artifact_id).toBe(first.artifact_id);
+    expect(first.version).toBe(1);
+    expect(second.version).toBe(2);
+    await expect(store.artifacts.listArtifactVersions(product.id, first.artifact_id)).resolves.toEqual([1, 2]);
+    await expect(store.products.getDesignPointer(product.id, requirementId, pageId, 'default')).resolves.toMatchObject({
+      artifactId: first.artifact_id,
+      version: 2,
+    });
+  });
 });
 
 describe('Review #5: changeArtifactStyle rejects unsupported source kinds', () => {

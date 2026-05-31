@@ -187,15 +187,18 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
       });
     }
 
+    const variant = input.variant ?? "default";
+    const existingPointer = await products.getDesignPointer(productId, requirementId, input.pageId, variant);
     const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
       kind: 'design-page',
       html: input.html,
       title: input.title,
+      artifactId: existingPointer?.artifactId,
       forma: {
         requirementId,
         pageId: input.pageId,
-        variant: input.variant,
+        variant,
         brandStyle: input.brandStyle,
         systemStyle: input.systemStyle,
         platform: input.platform,
