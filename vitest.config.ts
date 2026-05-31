@@ -4,6 +4,12 @@ import { configDefaults, defineConfig } from "vitest/config";
 const workspaceAliases = {
   "@xenonbyte/forma-agent": new URL("./packages/agent/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-cli": new URL("./packages/cli/src/index.ts", import.meta.url).pathname,
+  // Browser-safe quality subpath. MUST precede the "@xenonbyte/forma-core" root
+  // alias: Vite/rollup object-alias matches in insertion order with the first hit
+  // winning, and the bare "@xenonbyte/forma-core" find prefix-matches
+  // "@xenonbyte/forma-core/quality". Listing it first keeps the /quality import on
+  // src/quality/index.ts (no fs/path/node imports), not the Node-only root index.
+  "@xenonbyte/forma-core/quality": new URL("./packages/core/src/quality/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-core": new URL("./packages/core/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-server": new URL("./packages/server/src/index.ts", import.meta.url).pathname,
@@ -55,6 +61,36 @@ export default defineConfig({
           name: "viewer",
           globals: true,
           include: ["packages/viewer/src/**/*.browser.test.tsx"],
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            headless: true,
+            instances: [{ browser: "chromium" }]
+          }
+        }
+      },
+      {
+        // P9.6 dogfood: render the desktop shell screens in real chromium and
+        // assert each passes the same lintCraft rules Forma applies to generated
+        // artifacts. Mirrors the viewer project's playwright/chromium setup and
+        // optimizeDeps (pre-bundle React JSX runtime + @xyflow/react) to avoid a
+        // mid-run Vite reload. resolve.alias includes the browser-safe
+        // @xenonbyte/forma-core/quality subpath (above the core root alias).
+        resolve: { alias: workspaceAliases },
+        optimizeDeps: {
+          include: [
+            "react",
+            "react-dom",
+            "react-dom/client",
+            "react/jsx-runtime",
+            "react/jsx-dev-runtime",
+            "@xyflow/react"
+          ]
+        },
+        test: {
+          name: "desktop-shell",
+          globals: true,
+          include: ["packages/desktop/src/renderer/**/*.dogfood.browser.test.tsx"],
           browser: {
             enabled: true,
             provider: playwright(),

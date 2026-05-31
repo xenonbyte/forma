@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./quality": {
+      "types": "./dist/quality/index.d.ts",
+      "import": "./dist/quality/index.js"
     }
   },
   "files": [
