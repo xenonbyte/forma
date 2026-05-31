@@ -73,7 +73,16 @@ function installForma() {
     listStyles,
     getStyle,
   } as unknown as Window['forma'];
-  return { listProducts, getRequirement, listRequirements, listStyles, getStyle, formaServerBaseUrl };
+  return {
+    listProducts,
+    getProduct,
+    getRequirement,
+    listArtifacts,
+    listRequirements,
+    listStyles,
+    getStyle,
+    formaServerBaseUrl,
+  };
 }
 
 beforeEach(() => {
@@ -198,6 +207,79 @@ describe('AppShell', () => {
     expect(container.querySelector('.sidebar__item--active')?.getAttribute('data-nav-requirement')).toBe('r2');
   });
 
+  it('clears stale pages while switching requirements in the same product', async () => {
+    const { listRequirements, getRequirement } = installForma();
+    const r2Requirement = deferred<{
+      id: string;
+      title: string;
+      status: string;
+      ui_affected: boolean;
+      pages: Array<{ page_id: string; name: string }>;
+    }>();
+    listRequirements.mockResolvedValue({
+      requirements: [
+        { id: 'r1', title: '登录需求', status: 'active', ui_affected: true },
+        { id: 'r2', title: '结算需求', status: 'active', ui_affected: true },
+      ],
+    });
+    getRequirement.mockImplementation(async (_productId: string, requirementId: string) => {
+      if (requirementId === 'r2') return r2Requirement.promise;
+      return {
+        id: 'r1',
+        title: '登录需求',
+        status: 'active',
+        ui_affected: true,
+        pages: [
+          { page_id: 'login', name: '登录页' },
+          { page_id: 'home', name: '首页' },
+        ],
+      };
+    });
+
+    const { container } = render(<AppShell />);
+    await flush();
+    await flush();
+
+    expect(container.querySelector('[data-nav-page="login"]')).not.toBeNull();
+
+    await act(async () => {
+      required(container.querySelector<HTMLButtonElement>('[data-nav-requirement="r2"]'), 'r2 requirement').click();
+    });
+
+    expect(container.querySelector('[data-nav-page="login"]')).toBeNull();
+    expect(container.querySelector('[data-nav-page="home"]')).toBeNull();
+    expect(container.textContent).toContain('选择需求以查看页面');
+
+    await act(async () => {
+      r2Requirement.resolve({
+        id: 'r2',
+        title: '结算需求',
+        status: 'active',
+        ui_affected: true,
+        pages: [{ page_id: 'checkout', name: '结算页' }],
+      });
+      await r2Requirement.promise;
+    });
+    await flush();
+
+    expect(container.querySelector('[data-nav-page="checkout"]')).not.toBeNull();
+  });
+
+  it('downgrades an expired page hash to the requirement when the page is missing', async () => {
+    installForma();
+    window.location.hash = '#/products/p1/requirements/r1/pages/missing';
+
+    const { container } = render(<AppShell />);
+    await flush();
+    await flush();
+
+    const activeItem = container.querySelector('.sidebar__item--active');
+    expect(activeItem).not.toBeNull();
+    expect(activeItem!.getAttribute('data-nav-requirement')).toBe('r1');
+    expect(activeItem!.getAttribute('data-nav-page')).toBeNull();
+    expect(window.location.hash).toBe('#/products/p1/requirements/r1');
+  });
+
   it('clears stale requirements while switching products and keeps them empty when loading fails', async () => {
     const { listProducts, listRequirements } = installForma();
     const p2Requirements = deferred<{ requirements: Array<{ id: string; title: string; status: string; ui_affected: boolean }> }>();
@@ -246,6 +328,21 @@ describe('AppShell', () => {
 
     // Should render the empty workspace prompt without crashing
     expect(container.querySelector('.workspace__empty')).not.toBeNull();
+  });
+
+  it('ignores a retained product hash when the product list is empty', async () => {
+    const { listProducts, getProduct, getRequirement, listArtifacts } = installForma();
+    listProducts.mockResolvedValue({ products: [] });
+    window.location.hash = '#/products/deleted/requirements/r1/pages/login';
+
+    const { container } = render(<AppShell />);
+    await flush();
+    await flush();
+
+    expect(container.querySelector('.workspace__empty')).not.toBeNull();
+    expect(getProduct).not.toHaveBeenCalled();
+    expect(getRequirement).not.toHaveBeenCalled();
+    expect(listArtifacts).not.toHaveBeenCalled();
   });
 
   it('sets connected to false when a startup IPC call rejects', async () => {

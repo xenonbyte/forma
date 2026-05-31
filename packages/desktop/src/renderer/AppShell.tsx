@@ -23,6 +23,11 @@ interface PageRow {
   name: string;
 }
 
+interface PageState {
+  reqId: string | null;
+  pages: PageRow[];
+}
+
 interface BrandStyleRow {
   name: string;
   description: string;
@@ -52,11 +57,13 @@ export function AppShell() {
   const [products, setProducts] = useState<ProductRow[]>([]);
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<RequirementRow[]>([]);
-  const [pages, setPages] = useState<PageRow[]>([]);
+  const [pageState, setPageState] = useState<PageState>({ reqId: null, pages: [] });
   const [brandStyles, setBrandStyles] = useState<BrandStyleRow[]>([]);
   const [baseUrl, setBaseUrl] = useState<string>('');
   const [connected, setConnected] = useState<boolean>(true);
   const [nav, setNav] = useState<WorkspaceSelection>({ type: 'none' });
+  const activeReqId = nav.type === 'requirement' || nav.type === 'page' ? nav.reqId : null;
+  const pages = pageState.reqId === activeReqId ? pageState.pages : [];
 
   // --- Startup: products, baseUrl, brand styles, default selection --------
   useEffect(() => {
@@ -80,12 +87,12 @@ export function AppShell() {
 
         const hashSel = parseHash(window.location.hash);
         const fromHash = toWorkspaceSelection(hashSel);
+        const hashProductExists =
+          (hashSel.type === 'requirement' || hashSel.type === 'page') && ps.some((p) => p.id === hashSel.productId);
         const productId =
-          fromHash.productId && ps.some((p) => p.id === fromHash.productId)
-            ? fromHash.productId
-            : (ps[0]?.id ?? null);
+          hashProductExists ? hashSel.productId : (ps[0]?.id ?? null);
         setActiveProductId(productId);
-        if (hashSel.type !== 'none') {
+        if (hashSel.type === 'style' || hashProductExists) {
           setNav(fromHash.nav);
         }
       } catch {
@@ -133,12 +140,12 @@ export function AppShell() {
     const forma = window.forma;
     if (!forma || !activeProductId) {
       setRequirements([]);
-      setPages([]);
+      setPageState({ reqId: null, pages: [] });
       return;
     }
     let cancelled = false;
     setRequirements([]);
-    setPages([]);
+    setPageState({ reqId: null, pages: [] });
     void (async () => {
       try {
         const { requirements: rs } = await forma.listRequirements(activeProductId);
@@ -158,7 +165,7 @@ export function AppShell() {
       } catch {
         if (!cancelled) {
           setRequirements([]);
-          setPages([]);
+          setPageState({ reqId: null, pages: [] });
           setConnected(false);
         }
       }
@@ -169,21 +176,28 @@ export function AppShell() {
   }, [activeProductId]);
 
   // --- Per-requirement: full pages from getRequirement --------------------
-  const activeReqId = nav.type === 'requirement' || nav.type === 'page' ? nav.reqId : null;
   useEffect(() => {
     const forma = window.forma;
     if (!forma || !activeProductId || !activeReqId) {
-      setPages([]);
+      setPageState({ reqId: null, pages: [] });
       return;
     }
     let cancelled = false;
+    setPageState({ reqId: activeReqId, pages: [] });
     void (async () => {
       try {
         const requirement = await forma.getRequirement(activeProductId, activeReqId);
         if (cancelled) return;
-        setPages((requirement.pages ?? []).map((p) => ({ page_id: p.page_id, name: p.name })));
+        const nextPages = (requirement.pages ?? []).map((p) => ({ page_id: p.page_id, name: p.name }));
+        setPageState({ reqId: activeReqId, pages: nextPages });
+        setNav((current) => {
+          if (current.type !== 'page' || current.reqId !== activeReqId) return current;
+          return nextPages.some((p) => p.page_id === current.pageId)
+            ? current
+            : { type: 'requirement', reqId: activeReqId };
+        });
       } catch {
-        if (!cancelled) setPages([]);
+        if (!cancelled) setPageState({ reqId: activeReqId, pages: [] });
       }
     })();
     return () => {
@@ -215,7 +229,7 @@ export function AppShell() {
     setActiveProductId(productId);
     setNav({ type: 'none' });
     setRequirements([]);
-    setPages([]);
+    setPageState({ reqId: null, pages: [] });
   }, []);
 
   const activeProduct = products.find((p) => p.id === activeProductId) ?? null;
