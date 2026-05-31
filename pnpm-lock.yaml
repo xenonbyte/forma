@@ -303,6 +303,9 @@ importers:
       '@xenonbyte/forma-core':
         specifier: workspace:*
         version: link:../core
+      '@xenonbyte/forma-viewer':
+        specifier: workspace:*
+        version: link:../viewer
       leafer-ui:
         specifier: ^1.9.0
         version: 1.12.4
