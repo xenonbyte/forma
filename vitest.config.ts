@@ -6,7 +6,8 @@ const workspaceAliases = {
   "@xenonbyte/forma-core": new URL("./packages/core/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-server": new URL("./packages/server/src/index.ts", import.meta.url).pathname,
-  "@xenonbyte/forma-web": new URL("./packages/web/src/App.tsx", import.meta.url).pathname
+  "@xenonbyte/forma-web": new URL("./packages/web/src/App.tsx", import.meta.url).pathname,
+  "@xenonbyte/forma-viewer": new URL("./packages/viewer/src/index.ts", import.meta.url).pathname
 };
 
 export default defineConfig({
