@@ -1,8 +1,47 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Viewer, buildViewerModel } from "@xenonbyte/forma-viewer";
 import type { NormalizeArtifactInput, ResourceResolver } from "@xenonbyte/forma-viewer";
+
+const flowMocks = vi.hoisted(() => ({
+  setCenter: vi.fn()
+}));
+
+vi.mock("@xyflow/react", async () => {
+  const React = await import("react");
+  return {
+    Background: () => React.createElement("div", { "data-testid": "background" }),
+    ReactFlowProvider: ({ children }: { children: React.ReactNode }) => React.createElement(React.Fragment, null, children),
+    useReactFlow: () => ({ setCenter: flowMocks.setCenter }),
+    ReactFlow: ({
+      children,
+      nodeTypes,
+      nodes
+    }: {
+      children?: React.ReactNode;
+      nodeTypes?: Record<string, React.ComponentType<{ data: unknown }>>;
+      nodes?: Array<{ id: string; type?: string; data: unknown }>;
+    }) =>
+      React.createElement(
+        "div",
+        { className: "react-flow" },
+        React.createElement(
+          "div",
+          { className: "react-flow__viewport" },
+          (nodes ?? []).map((node) => {
+            const NodeComponent = nodeTypes?.[node.type ?? ""];
+            return React.createElement(
+              "div",
+              { key: node.id, className: "react-flow__node", "data-id": node.id },
+              NodeComponent ? React.createElement(NodeComponent, { data: node.data }) : null
+            );
+          })
+        ),
+        children
+      )
+  };
+});
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const roots: Root[] = [];
@@ -21,6 +60,9 @@ function render(ui: React.ReactElement): HTMLElement {
 afterEach(() => {
   for (const root of roots.splice(0)) act(() => root.unmount());
   for (const container of containers.splice(0)) container.remove();
+});
+beforeEach(() => {
+  flowMocks.setCenter.mockClear();
 });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -50,5 +92,19 @@ describe("Viewer", () => {
     await act(async () => { toggle.click(); await sleep(50); });
     expect(container.querySelector("img")).not.toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("re-centers when the same design list row is clicked repeatedly", async () => {
+    const model = buildViewerModel({ entry: "requirement", artifacts });
+    const container = render(<Viewer model={model} resolver={resolver} />);
+    await act(async () => { await sleep(50); });
+
+    const row = container.querySelector<HTMLElement>('[data-tile-id="b:1:default"]')!;
+    await act(async () => { row.click(); await sleep(50); });
+    expect(flowMocks.setCenter).toHaveBeenCalledTimes(1);
+
+    await act(async () => { row.click(); await sleep(50); });
+    expect(flowMocks.setCenter).toHaveBeenCalledTimes(2);
+    expect(flowMocks.setCenter.mock.calls[1]).toEqual(flowMocks.setCenter.mock.calls[0]);
   });
 });

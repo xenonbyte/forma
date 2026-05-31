@@ -12,12 +12,18 @@ export interface ViewerProps {
 /** 顶层只读查看器:左 设计稿列表 / 中 画布 / 右 标注 slot + 画布模式切换。 */
 export function Viewer({ model, resolver }: ViewerProps): React.ReactElement {
   const [mode, setMode] = useState<CanvasMode>("design");
-  const [locateTileId, setLocateTileId] = useState<string | null>(null);
+  const [locateRequest, setLocateRequest] = useState<{ tileId: string | null; requestId: number }>({
+    tileId: null,
+    requestId: 0
+  });
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "220px 1fr 280px", height: "100%", width: "100%" }}>
       <div style={{ borderRight: "1px solid #eee", minWidth: 0 }}>
-        <DesignList model={model} onLocate={setLocateTileId} />
+        <DesignList
+          model={model}
+          onLocate={(tileId) => setLocateRequest((request) => ({ tileId, requestId: request.requestId + 1 }))}
+        />
       </div>
       <div style={{ position: "relative", minWidth: 0 }}>
         <div style={{ position: "absolute", top: 8, right: 8, zIndex: 10, display: "flex", gap: 4 }}>
@@ -38,7 +44,13 @@ export function Viewer({ model, resolver }: ViewerProps): React.ReactElement {
             标注
           </button>
         </div>
-        <Canvas model={model} mode={mode} resolver={resolver} locateTileId={locateTileId} />
+        <Canvas
+          model={model}
+          mode={mode}
+          resolver={resolver}
+          locateTileId={locateRequest.tileId}
+          locateRequestId={locateRequest.requestId}
+        />
       </div>
       <div style={{ borderLeft: "1px solid #eee", minWidth: 0 }}>
         <AnnotationSlot />

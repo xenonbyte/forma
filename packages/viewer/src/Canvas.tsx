@@ -20,6 +20,8 @@ export interface CanvasProps {
   resolver: ResourceResolver;
   /** 外部要求定位到的 tile id;变化时居中到该 tile。 */
   locateTileId?: string | null;
+  /** 定位请求序号;同一 tile 重复定位时递增以强制重新居中。 */
+  locateRequestId?: number;
 }
 
 /** 自定义节点 data 载荷。 */
@@ -45,7 +47,7 @@ function TileNodeComponent({ data }: NodeProps<TileNode>): React.ReactElement {
 // 仅做类型层断言消除跨版本 @types 摩擦。
 const nodeTypes = { tile: TileNodeComponent } as NodeTypes;
 
-function CanvasInner({ model, mode, resolver, locateTileId }: CanvasProps): React.ReactElement {
+function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: CanvasProps): React.ReactElement {
   const rf = useReactFlow();
   const nodes = useMemo<TileNode[]>(
     () =>
@@ -69,7 +71,7 @@ function CanvasInner({ model, mode, resolver, locateTileId }: CanvasProps): Reac
     if (!tile) return;
     // 居中到 tile 中心。setCenter(x, y, { zoom?, duration? }) 已按 @xyflow/react v12 核实。
     rf.setCenter(tile.x + tile.width / 2, tile.y + tile.height / 2, { zoom: 1, duration: 300 });
-  }, [locateTileId, model.tiles, rf]);
+  }, [locateRequestId, locateTileId, model.tiles, rf]);
 
   // 只渲视口内 tile;不要默认 fitView,否则全图缩进视口会破坏离屏卸载验收。
   return (
