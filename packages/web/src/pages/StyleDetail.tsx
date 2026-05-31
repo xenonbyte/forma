@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { apiClient, formatApiError, type ApiErrorInfo, type FormaApiClient, type StyleDetailPayload } from "../api.js";
+import { apiClient, formatApiError, type ApiErrorInfo, type BrandStyleContent, type FormaApiClient } from "../api.js";
 import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
-import { StylePreviewPanel } from "../components/StylePreviewPanel.js";
-import { TokenCard } from "../components/TokenCard.js";
 import { useT } from "../LocaleContext.js";
 
 export interface StyleDetailProps {
@@ -14,7 +12,7 @@ export interface StyleDetailProps {
 type StyleDetailState =
   | { status: "error"; error: ApiErrorInfo }
   | { status: "loading" }
-  | { status: "ready"; style: StyleDetailPayload };
+  | { status: "ready"; style: BrandStyleContent };
 
 export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
   const tx = useT();
@@ -59,36 +57,33 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
     );
   }
 
-  const variables = Object.entries(state.style.metadata.variables ?? {});
-
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className="space-y-5">
-        <div className="flex justify-start">
-          <a className={secondaryLinkClasses} href="/styles">
-            {tx("action.backToStyles")}
-          </a>
-        </div>
-
-        <StylePreviewPanel designMd={state.style.designMd} metadata={state.style.metadata} previewType="web" />
-
-        <WorkSurface title={tx("style.detail.designMd")}>
-          <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
-            {state.style.designMd || tx("style.detail.designMdEmpty")}
-          </pre>
-        </WorkSurface>
+    <div className="space-y-5">
+      <div className="flex justify-start">
+        <a className={secondaryLinkClasses} href="/styles">
+          {tx("action.backToStyles")}
+        </a>
       </div>
 
-      <WorkSurface title={tx("style.detail.variables")}>
-        {variables.length === 0 ? (
-          <p className="text-sm text-zinc-500">{tx("style.detail.emptyVariables")}</p>
-        ) : (
-          <div className="divide-y divide-zinc-200">
-            {variables.map(([key, value]) => (
-              <TokenCard key={key} name={key} value={value} />
-            ))}
-          </div>
-        )}
+      <WorkSurface title={tx("style.detail.designMd")}>
+        <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
+          {state.style.designMd || tx("style.detail.designMdEmpty")}
+        </pre>
+      </WorkSurface>
+
+      <WorkSurface title="Tokens">
+        <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
+          {state.style.tokensCss}
+        </pre>
+      </WorkSurface>
+
+      <WorkSurface title="Components">
+        <iframe
+          sandbox="allow-same-origin"
+          srcDoc={state.style.componentsHtml}
+          style={{ border: "none", height: 480, width: "100%" }}
+          title="components"
+        />
       </WorkSurface>
     </div>
   );

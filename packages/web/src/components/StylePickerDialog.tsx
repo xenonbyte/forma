@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { formatApiError, type ApiErrorInfo, type Platform, type StyleDetailPayload, type StyleMetadata } from "../api.js";
+import { formatApiError, type ApiErrorInfo, type BrandStyleContent, type Platform, type StyleMetadata } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StylePreviewPanel, type StylePreviewType } from "./StylePreviewPanel.js";
 
 export interface StylePickerDialogProps {
   disabledReason?: string;
-  getStyle(name: string): Promise<StyleDetailPayload>;
+  getStyle(name: string): Promise<BrandStyleContent>;
   onConfirm(styleName: string): void;
   platform: Platform | "";
   selectedStyleName: string;
@@ -15,7 +15,7 @@ export interface StylePickerDialogProps {
 
 type DetailState =
   | { name: string; status: "idle" }
-  | { detail: StyleDetailPayload; name: string; status: "ready" }
+  | { detail: BrandStyleContent; name: string; status: "ready" }
   | { error: ApiErrorInfo; name: string; status: "error" }
   | { name: string; status: "loading" };
 
@@ -35,8 +35,8 @@ export function StylePickerDialog({
   const [detailState, setDetailState] = useState<DetailState>({ name: "", status: "idle" });
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const detailCache = useRef(new Map<string, StyleDetailPayload>());
-  const detailRequests = useRef(new Map<string, Promise<StyleDetailPayload>>());
+  const detailCache = useRef(new Map<string, BrandStyleContent>());
+  const detailRequests = useRef(new Map<string, Promise<BrandStyleContent>>());
   const dialogRef = useRef<HTMLElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -282,9 +282,7 @@ function StyleCandidateButton({
   onClick(): void;
   style: StyleMetadata;
 }) {
-  const preview = stylePreviewTokens(style.variables);
-  const variableEntries = Object.entries(style.variables ?? {});
-  const variableLabel = `${variableEntries.length} ${variableEntries.length === 1 ? "variable" : "variables"}`;
+  const category = style.category;
 
   return (
     <button
@@ -302,15 +300,9 @@ function StyleCandidateButton({
           <h3 className="truncate text-sm font-semibold tracking-normal text-zinc-950">{style.name}</h3>
           <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600">{style.description}</p>
         </div>
-        <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500">{variableLabel}</span>
-      </div>
-
-      <div className="mt-4" data-primary={preview.primary} data-style-preview-strip="true">
-        <div className="grid h-8 grid-cols-3 overflow-hidden border border-zinc-200 shadow-inner" style={{ borderRadius: preview.radius }}>
-          <span aria-hidden="true" style={{ backgroundColor: preview.background }} />
-          <span aria-hidden="true" style={{ backgroundColor: preview.primary }} />
-          <span aria-hidden="true" style={{ backgroundColor: preview.textColor }} />
-        </div>
+        {category ? (
+          <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500">{category}</span>
+        ) : null}
       </div>
     </button>
   );
@@ -323,24 +315,6 @@ function filterStyles(styles: StyleMetadata[], query: string): StyleMetadata[] {
   }
 
   return styles.filter((style) => `${style.name} ${style.description}`.toLowerCase().includes(normalizedQuery));
-}
-
-function stylePreviewTokens(variables: Partial<StyleMetadata["variables"]>) {
-  return {
-    background: tokenValue(variables.background, "#ffffff"),
-    primary: tokenValue(variables.primary ?? variables["text-primary"], "#71717a"),
-    textColor: tokenValue(variables["text-primary"], "#111827"),
-    radius: cssLength(tokenValue(variables["border-radius"], "8px"))
-  };
-}
-
-function tokenValue(value: string | undefined, fallback: string): string {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : fallback;
-}
-
-function cssLength(value: string): string {
-  return /^-?\d+(?:\.\d+)?$/.test(value) && value !== "0" ? `${value}px` : value;
 }
 
 function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null): void {

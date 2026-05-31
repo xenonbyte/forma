@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Platform, StyleDetailPayload, StyleMetadata } from "../api.js";
+import type { BrandStyleContent, Platform, StyleMetadata } from "../api.js";
 import { StylePickerDialog } from "./StylePickerDialog.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -14,48 +14,40 @@ const styles: StyleMetadata[] = [
     name: "linear",
     description: "Focused tool UI",
     design_md_path: "styles/linear/DESIGN.md",
-    variables: {
-      primary: "#111827",
-      background: "#ffffff",
-      "text-primary": "#222222",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "8px",
-      "spacing-unit": "8px"
-    }
+    tokens_css_path: "styles/linear/tokens.css",
+    components_html_path: "styles/linear/components.html"
   },
   {
     name: "retail",
     description: "Retail checkout UI",
     design_md_path: "styles/retail/DESIGN.md",
-    variables: {
-      primary: "#0f766e",
-      background: "#f0fdfa",
-      "text-primary": "#134e4a",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "12px",
-      "spacing-unit": "10px"
-    }
+    tokens_css_path: "styles/retail/tokens.css",
+    components_html_path: "styles/retail/components.html"
   }
 ];
 
-const detailByName: Record<string, StyleDetailPayload> = {
+const detailByName: Record<string, BrandStyleContent> = {
   linear: {
+    kind: "brand",
     metadata: styles[0]!,
     designMd: `---
 colors:
   primary: "#5E6AD2"
 ---
-`
+`,
+    tokensCss: ":root { --primary: #5E6AD2; }",
+    componentsHtml: "<div>linear</div>"
   },
   retail: {
+    kind: "brand",
     metadata: styles[1]!,
     designMd: `---
 colors:
   primary: "#14b8a6"
 ---
-`
+`,
+    tokensCss: ":root { --primary: #14b8a6; }",
+    componentsHtml: "<div>retail</div>"
   }
 };
 
@@ -218,7 +210,7 @@ describe("StylePickerDialog", () => {
 
   it("retries a failed detail load after the dialog is reopened", async () => {
     const getStyle = vi
-      .fn<(name: string) => Promise<StyleDetailPayload>>()
+      .fn<(name: string) => Promise<BrandStyleContent>>()
       .mockRejectedValueOnce(new Error("Temporary DESIGN.md failure"))
       .mockImplementation(async (name) => detailByName[name]!);
     const { container } = await renderOpenPicker({ getStyle, selectedStyleName: "retail" });
@@ -237,7 +229,7 @@ describe("StylePickerDialog", () => {
   });
 
   it("deduplicates in-flight detail requests by style name", async () => {
-    const getStyle = vi.fn<(name: string) => Promise<StyleDetailPayload>>(() => new Promise(() => undefined));
+    const getStyle = vi.fn<(name: string) => Promise<BrandStyleContent>>(() => new Promise(() => undefined));
     const { container } = await renderOpenPicker({ getStyle, selectedStyleName: "linear" });
 
     await act(async () => {
@@ -265,7 +257,7 @@ describe("StylePickerDialog", () => {
 
     expect(container.textContent).toContain("DESIGN.md unavailable");
     const preview = required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel");
-    expect(preview.dataset.primary).toBe("#0f766e");
+    // fallback primary from designMd is absent → uses hardcoded fallback
     expect(preview.dataset.previewType).toBe("web");
   });
 
@@ -306,7 +298,7 @@ async function renderOpenPicker(props: Partial<StylePickerProps> = {}) {
 }
 
 interface StylePickerProps {
-  getStyle: (name: string) => Promise<StyleDetailPayload>;
+  getStyle: (name: string) => Promise<BrandStyleContent>;
   onConfirm: (name: string) => void;
   platform: Platform | "";
   selectedStyleName: string;

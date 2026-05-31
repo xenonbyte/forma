@@ -35,7 +35,7 @@ interface NavPreviewTokens {
   source: string;
 }
 
-const fallbackVariables = {
+const fallbackTokens = {
   primary: "#3b82f6",
   background: "#ffffff",
   "text-primary": "#111827",
@@ -48,9 +48,9 @@ const fallbackVariables = {
 export function StylePreviewPanel({ designMd, metadata, previewType }: StylePreviewPanelProps) {
   const tx = useT();
   const parsed = parseDesignMd(designMd ?? "");
-  const tokens = resolvePreviewTokens(parsed, metadata);
-  const button = resolveButtonTokens(parsed, metadata, tokens);
-  const nav = resolveNavTokens(parsed, metadata, tokens);
+  const tokens = resolvePreviewTokens(parsed);
+  const button = resolveButtonTokens(parsed, tokens);
+  const nav = resolveNavTokens(parsed, tokens);
   const palette = paletteEntries(parsed, tokens);
   const previewLabel = tx(`platform.${previewType}`);
 
@@ -142,78 +142,63 @@ export function StylePreviewPanel({ designMd, metadata, previewType }: StylePrev
   );
 }
 
-function resolvePreviewTokens(parsed: ParsedDesignMd, metadata: StyleMetadata): ResolvedPreviewTokens {
-  const metadataVariables = metadata.variables;
-  const metadataPrimary = metadataValue(metadataVariables?.primary, fallbackVariables.primary);
-  const metadataBackground = metadataValue(metadataVariables?.background, fallbackVariables.background);
-  const metadataTextColor = metadataValue(metadataVariables?.["text-primary"], fallbackVariables["text-primary"]);
-  const metadataHeadingFont = metadataValue(metadataVariables?.["font-heading"], fallbackVariables["font-heading"]);
-  const metadataBodyFont = metadataValue(metadataVariables?.["font-body"], metadataHeadingFont);
-  const metadataRadius = metadataValue(metadataVariables?.["border-radius"], fallbackVariables["border-radius"]);
-  const metadataSpacing = metadataValue(metadataVariables?.["spacing-unit"], fallbackVariables["spacing-unit"]);
-
-  const primary = resolveWithFallback(pick(parsed.colors, ["primary"]), parsed, metadata, metadataPrimary);
+function resolvePreviewTokens(parsed: ParsedDesignMd): ResolvedPreviewTokens {
+  const primary = resolveWithFallback(pick(parsed.colors, ["primary"]), parsed, fallbackTokens.primary);
   const background = resolveWithFallback(
     pick(parsed.colors, ["background", "canvas", "surface"]),
     parsed,
-    metadata,
-    metadataBackground
+    fallbackTokens.background
   );
   const textColor = resolveWithFallback(
     pick(parsed.colors, ["text-primary", "text", "foreground", "ink"]),
     parsed,
-    metadata,
-    metadataTextColor
+    fallbackTokens["text-primary"]
   );
   const headingFont = resolveWithFallback(
     pick(parsed.typography, ["font-heading", "heading", "heading-lg", "display", "hero-display"]) ?? pickByName(parsed.typography, ["heading", "display"]),
     parsed,
-    metadata,
-    metadataHeadingFont
+    fallbackTokens["font-heading"]
   );
   const bodyFont = resolveWithFallback(
     pick(parsed.typography, ["font-body", "body", "body-md", "body-lg"]) ?? pickByName(parsed.typography, ["body"]),
     parsed,
-    metadata,
-    metadataBodyFont
+    fallbackTokens["font-body"]
   );
   const radius = cssLength(
     resolveWithFallback(
       pick(parsed.rounded, ["border-radius", "radius", "lg", "md"]) ?? firstValue(parsed.rounded),
       parsed,
-      metadata,
-      metadataRadius
+      fallbackTokens["border-radius"]
     )
   );
   const spacing = cssLength(
     resolveWithFallback(
       pick(parsed.spacing, ["spacing-unit", "unit", "md", "sm", "base"]) ?? firstValue(parsed.spacing),
       parsed,
-      metadata,
-      metadataSpacing
+      fallbackTokens["spacing-unit"]
     )
   );
 
   return { background, bodyFont, headingFont, primary, radius, spacing, textColor };
 }
 
-function resolveButtonTokens(parsed: ParsedDesignMd, metadata: StyleMetadata, tokens: ResolvedPreviewTokens): ComponentPreviewTokens {
+function resolveButtonTokens(parsed: ParsedDesignMd, tokens: ResolvedPreviewTokens): ComponentPreviewTokens {
   const key = componentKey(parsed.components, "button-primary") ?? componentKey(parsed.components, "button");
   const component = key ? parsed.components[key] : undefined;
   return {
-    background: resolveWithFallback(pick(component, ["backgroundColor", "background", "background-color", "bg"]), parsed, metadata, tokens.primary),
-    color: resolveWithFallback(pick(component, ["textColor", "color", "text", "text-color"]), parsed, metadata, tokens.background),
-    radius: cssLength(resolveWithFallback(pick(component, ["rounded", "border-radius", "radius"]), parsed, metadata, tokens.radius)),
+    background: resolveWithFallback(pick(component, ["backgroundColor", "background", "background-color", "bg"]), parsed, tokens.primary),
+    color: resolveWithFallback(pick(component, ["textColor", "color", "text", "text-color"]), parsed, tokens.background),
+    radius: cssLength(resolveWithFallback(pick(component, ["rounded", "border-radius", "radius"]), parsed, tokens.radius)),
     source: key ?? "fallback"
   };
 }
 
-function resolveNavTokens(parsed: ParsedDesignMd, metadata: StyleMetadata, tokens: ResolvedPreviewTokens): NavPreviewTokens {
+function resolveNavTokens(parsed: ParsedDesignMd, tokens: ResolvedPreviewTokens): NavPreviewTokens {
   const key = componentKey(parsed.components, "nav");
   const component = key ? parsed.components[key] : undefined;
   return {
-    background: resolveWithFallback(pick(component, ["backgroundColor", "background", "background-color", "bg"]), parsed, metadata, tokens.background),
-    color: resolveWithFallback(pick(component, ["textColor", "color", "text", "text-color"]), parsed, metadata, tokens.textColor),
+    background: resolveWithFallback(pick(component, ["backgroundColor", "background", "background-color", "bg"]), parsed, tokens.background),
+    color: resolveWithFallback(pick(component, ["textColor", "color", "text", "text-color"]), parsed, tokens.textColor),
     source: key ?? "fallback"
   };
 }
@@ -221,7 +206,7 @@ function resolveNavTokens(parsed: ParsedDesignMd, metadata: StyleMetadata, token
 function paletteEntries(parsed: ParsedDesignMd, tokens: ResolvedPreviewTokens): Array<{ key: string; value: string }> {
   const parsedEntries = Object.entries(parsed.colors)
     .slice(0, 6)
-    .map(([key, value]) => ({ key, value: resolveWithFallback(value, parsed, undefined, value) }));
+    .map(([key, value]) => ({ key, value: resolveWithFallback(value, parsed, value) }));
 
   if (parsedEntries.length > 0) {
     return parsedEntries;
@@ -258,23 +243,18 @@ function firstValue(record: Record<string, string>): string | undefined {
   return Object.values(record).find((value) => value.trim().length > 0);
 }
 
-function metadataValue(value: string | undefined, fallback: string): string {
-  const trimmed = value?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : fallback;
-}
-
 function componentKey(components: Record<string, Record<string, string>>, fragment: string): string | undefined {
   const normalizedFragment = fragment.toLowerCase();
   return Object.keys(components).find((key) => key.toLowerCase().includes(normalizedFragment));
 }
 
-function resolveWithFallback(value: string | undefined, parsed: ParsedDesignMd, metadata: StyleMetadata | undefined, fallback: string): string {
+function resolveWithFallback(value: string | undefined, parsed: ParsedDesignMd, fallback: string): string {
   const trimmed = value?.trim();
   if (!trimmed) {
     return fallback;
   }
 
-  const resolved = resolveTokenValue(trimmed, parsed, metadata, new Set());
+  const resolved = resolveTokenValue(trimmed, parsed, new Set());
   if (resolved) {
     return resolved;
   }
@@ -282,7 +262,7 @@ function resolveWithFallback(value: string | undefined, parsed: ParsedDesignMd, 
   return isTokenReference(trimmed) ? fallback : trimmed;
 }
 
-function resolveTokenValue(value: string, parsed: ParsedDesignMd, metadata: StyleMetadata | undefined, seen: Set<string>): string | undefined {
+function resolveTokenValue(value: string, parsed: ParsedDesignMd, seen: Set<string>): string | undefined {
   const token = tokenName(value);
   if (!token) {
     return value;
@@ -292,52 +272,35 @@ function resolveTokenValue(value: string, parsed: ParsedDesignMd, metadata: Styl
   }
   seen.add(token);
 
-  const raw = rawTokenValue(token, parsed, metadata);
+  const raw = rawTokenValue(token, parsed);
   if (!raw) {
     return undefined;
   }
 
-  return resolveTokenValue(raw, parsed, metadata, seen);
+  return resolveTokenValue(raw, parsed, seen);
 }
 
-function rawTokenValue(token: string, parsed: ParsedDesignMd, metadata: StyleMetadata | undefined): string | undefined {
+function rawTokenValue(token: string, parsed: ParsedDesignMd): string | undefined {
   if (token.startsWith("colors.")) {
     const key = token.slice("colors.".length);
-    return parsed.colors[key] ?? metadataColorValue(metadata, key);
+    return parsed.colors[key];
   }
   if (token.startsWith("typography.")) {
     const key = token.slice("typography.".length);
-    return parsed.typography[key] ?? metadataTypographyValue(metadata, key);
+    return parsed.typography[key];
   }
   if (token.startsWith("rounded.")) {
     const key = token.slice("rounded.".length);
-    return parsed.rounded[key] ?? (key === "border-radius" ? metadata?.variables?.["border-radius"] : undefined);
+    return parsed.rounded[key];
   }
   if (token.startsWith("spacing.")) {
     const key = token.slice("spacing.".length);
-    return parsed.spacing[key] ?? (key === "spacing-unit" ? metadata?.variables?.["spacing-unit"] : undefined);
+    return parsed.spacing[key];
   }
   if (token.startsWith("components.")) {
     return componentTokenValue(token.slice("components.".length), parsed.components);
   }
 
-  return undefined;
-}
-
-function metadataColorValue(metadata: StyleMetadata | undefined, key: string): string | undefined {
-  if (key === "primary" || key === "background" || key === "text-primary") {
-    return metadata?.variables?.[key];
-  }
-  return undefined;
-}
-
-function metadataTypographyValue(metadata: StyleMetadata | undefined, key: string): string | undefined {
-  if (key === "font-heading" || key === "heading") {
-    return metadata?.variables?.["font-heading"];
-  }
-  if (key === "font-body" || key === "body" || key === "body-md") {
-    return metadata?.variables?.["font-body"];
-  }
   return undefined;
 }
 

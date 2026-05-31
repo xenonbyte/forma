@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { StyleCard } from "./StyleCard.js";
 
 describe("StyleCard", () => {
-  it("renders style metadata, compact preview strip, variables, and detail link", () => {
+  it("renders style metadata with name, description, and detail link", () => {
     const html = renderToStaticMarkup(
       <StyleCard
         href="/styles/linear"
@@ -12,15 +12,9 @@ describe("StyleCard", () => {
           name: "linear",
           description: "Focused tool UI",
           design_md_path: "styles/linear/DESIGN.md",
-          variables: {
-            primary: "#111827",
-            background: "#ffffff",
-            "text-primary": "#222222",
-            "font-heading": "Acme Display",
-            "font-body": "Acme Text",
-            "border-radius": "14px",
-            "spacing-unit": "8px"
-          }
+          tokens_css_path: "styles/linear/tokens.css",
+          components_html_path: "styles/linear/components.html",
+          category: "productivity"
         }}
       />
     );
@@ -28,41 +22,44 @@ describe("StyleCard", () => {
     expect(html).toContain('href="/styles/linear"');
     expect(html).toContain("linear");
     expect(html).toContain("Focused tool UI");
-    expect(html).toContain("#111827");
-    expect(html).toContain("7 variables");
-    expect(html).toContain('data-style-preview-strip="true"');
-    expect(html).toContain('data-background="#ffffff"');
-    expect(html).toContain('data-primary="#111827"');
-    expect(html).toContain('data-text-color="#222222"');
-    expect(html).toContain('data-heading-font="Acme Display"');
-    expect(html).toContain('data-body-font="Acme Text"');
-    expect(html).toContain('data-radius="14px"');
-    expect(html).toContain('data-spacing="8px"');
+    expect(html).toContain("productivity");
   });
 
-  it("uses radius and spacing fallbacks in the preview strip", () => {
+  it("renders without category badge when category is absent", () => {
     const html = renderToStaticMarkup(
       <StyleCard
         href="/styles/sparse"
         style={{
           name: "sparse",
-          description: "Sparse variables",
+          description: "Sparse style",
           design_md_path: "styles/sparse/DESIGN.md",
-          variables: {
-            primary: "#5E6AD2",
-            background: "#fafafa",
-            "text-primary": "#111827",
-            "font-heading": "Inter",
-            "font-body": "Inter",
-            "border-radius": "",
-            "spacing-unit": ""
-          }
+          tokens_css_path: "styles/sparse/tokens.css",
+          components_html_path: "styles/sparse/components.html"
         }}
       />
     );
 
-    expect(html).toContain('data-style-preview-strip="true"');
-    expect(html).toContain('data-radius="8px"');
-    expect(html).toContain('data-spacing="8px"');
+    expect(html).toContain("sparse");
+    expect(html).toContain("Sparse style");
+    // derives category from path
+    expect(html).toContain("tokens.css");
+  });
+
+  it("shows upstream when present", () => {
+    const html = renderToStaticMarkup(
+      <StyleCard
+        href="/styles/material"
+        style={{
+          name: "material",
+          description: "Material style",
+          design_md_path: "styles/material/DESIGN.md",
+          tokens_css_path: "styles/material/tokens.css",
+          components_html_path: "styles/material/components.html",
+          upstream: "google/material-design"
+        }}
+      />
+    );
+
+    expect(html).toContain("google/material-design");
   });
 });

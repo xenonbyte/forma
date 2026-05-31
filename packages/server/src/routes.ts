@@ -92,6 +92,7 @@ export interface FormaRoutesStore {
   styles: {
     getStyle(name: string): Promise<BrandStyleContent>;
     listStyles(): Promise<unknown>;
+    listSystemStyles(): Promise<unknown>;
   };
 }
 
@@ -503,6 +504,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
   app.get("/api/styles", async () => store.styles.listStyles());
 
   app.get<{ Params: { name: string } }>("/api/styles/:name", async (request) => store.styles.getStyle(request.params.name));
+
+  app.get("/api/system-styles", async () => store.styles.listSystemStyles());
 }
 
 // ─── Private helpers ───────────────────────────────────────────────────────────

@@ -5,8 +5,7 @@ import {
   formatApiError,
   type ApiErrorInfo,
   type FormaApiClient,
-  type StyleMetadata,
-  type StyleVariables
+  type StyleMetadata
 } from "../api.js";
 import { StatePanel } from "../components/Layout.js";
 import { StyleCard } from "../components/StyleCard.js";
@@ -17,22 +16,10 @@ export interface StyleLibraryProps {
 
 type StyleLibraryState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { status: "ready"; styles: StyleMetadata[] };
 type CategoryFilter = "all" | string;
-type VariableFilter = "all" | "complete" | "missing";
 type ViewMode = "grid" | "list";
-
-const requiredVariables: Array<keyof StyleVariables> = [
-  "primary",
-  "background",
-  "text-primary",
-  "font-heading",
-  "font-body",
-  "border-radius",
-  "spacing-unit"
-];
 
 export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
   const [category, setCategory] = useState<CategoryFilter>("all");
-  const [filter, setFilter] = useState<VariableFilter>("all");
   const [query, setQuery] = useState("");
   const [state, setState] = useState<StyleLibraryState>({ status: "loading" });
   const [view, setView] = useState<ViewMode>("grid");
@@ -59,8 +46,8 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
 
   const categories = useMemo(() => (state.status === "ready" ? getStyleCategories(state.styles) : ["all"]), [state]);
   const filteredStyles = useMemo(
-    () => (state.status === "ready" ? filterStylesByControls(state.styles, { category, query, variableFilter: filter }) : []),
-    [category, filter, query, state]
+    () => (state.status === "ready" ? filterStylesByControls(state.styles, { category, query }) : []),
+    [category, query, state]
   );
 
   if (state.status === "loading") {
@@ -81,7 +68,7 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_10rem]">
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_12rem_10rem]">
         <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Search
           <input className={inputClasses} onChange={(event) => setQuery(event.target.value)} placeholder="Name or description" value={query} />
@@ -94,14 +81,6 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
                 {item === "all" ? "All categories" : item}
               </option>
             ))}
-          </select>
-        </label>
-        <label className="grid gap-1 text-sm font-medium text-zinc-700">
-          Variables
-          <select className={inputClasses} onChange={(event) => setFilter(event.target.value as VariableFilter)} value={filter}>
-            <option value="all">All styles</option>
-            <option value="complete">Complete</option>
-            <option value="missing">Missing</option>
           </select>
         </label>
         <div className="grid gap-1 text-sm font-medium text-zinc-700">
@@ -123,7 +102,7 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
         </StatePanel>
       ) : filteredStyles.length === 0 ? (
         <StatePanel state="empty" title="No styles match">
-          Adjust search or variable filter.
+          Adjust search or category filter.
         </StatePanel>
       ) : (
         <div className={view === "grid" ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3" : "grid gap-3"}>
@@ -142,29 +121,21 @@ export function getStyleCategories(styles: StyleMetadata[]): string[] {
 
 export function filterStylesByControls(
   styles: StyleMetadata[],
-  controls: { category: string; query: string; variableFilter: string }
+  controls: { category: string; query: string }
 ): StyleMetadata[] {
   const normalizedQuery = controls.query.trim().toLowerCase();
   return styles.filter((style) => {
     const matchesQuery =
       normalizedQuery.length === 0 || style.name.toLowerCase().includes(normalizedQuery) || style.description.toLowerCase().includes(normalizedQuery);
-    const complete = hasCompleteVariables(style);
-    const matchesFilter =
-      controls.variableFilter === "all" ||
-      (controls.variableFilter === "complete" && complete) ||
-      (controls.variableFilter === "missing" && !complete);
     const matchesCategory = controls.category === "all" || styleCategory(style) === controls.category;
-    return matchesQuery && matchesFilter && matchesCategory;
+    return matchesQuery && matchesCategory;
   });
 }
 
 function styleCategory(style: StyleMetadata): string {
+  if (style.category) return style.category;
   const [, category] = style.design_md_path.split("/");
   return category || style.name.split(/\s+/)[0]?.toLowerCase() || style.name.toLowerCase();
-}
-
-function hasCompleteVariables(style: StyleMetadata): boolean {
-  return requiredVariables.every((key) => typeof style.variables?.[key] === "string" && style.variables[key].length > 0);
 }
 
 function modeButtonClasses(active: boolean): string {

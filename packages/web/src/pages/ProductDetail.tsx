@@ -201,7 +201,7 @@ export function ProductDetail({ client = apiClient, hash = "", onNavigate, param
         <div className="grid gap-4 text-sm md:grid-cols-6">
           <Fact label={t("product.id")} value={state.product.id} />
           <Fact label={t("product.platform")} value={state.product.platform ?? t("common.notConfigured")} />
-          <Fact label={t("product.style")} value={state.product.style?.name ?? t("common.notConfigured")} />
+          <Fact label={t("product.style")} value={state.product.brand_style ?? t("common.notConfigured")} />
           <Fact label={t("product.languages")} value={languageSummary(state.product.languages, t)} />
           <Fact label={t("product.defaultLanguage")} value={state.product.default_language ?? t("common.notConfigured")} />
           <div>
@@ -460,10 +460,10 @@ function ProductConfigurationForm({
   const [saving, setSaving] = useState(false);
   const [selectedLanguages, setSelectedLanguages] = useState<Language[]>(product.languages ?? []);
   const [submitError, setSubmitError] = useState<ApiErrorInfo | null>(null);
-  const [styleName, setStyleName] = useState(product.style?.name ?? "");
+  const [styleName, setStyleName] = useState(product.brand_style ?? "");
   const [styles, setStyles] = useState<StyleMetadata[]>([]);
   const [stylesLoading, setStylesLoading] = useState(true);
-  const styleOptions = ensureCurrentStyle(styles, product.style);
+  const styleOptions = ensureCurrentStyleByName(styles, product.brand_style);
   const canSubmit =
     platform !== "" && styleName.length > 0 && selectedLanguages.length > 0 && defaultLanguage !== "" && !listError && !stylesLoading && !saving;
 
@@ -510,7 +510,7 @@ function ProductConfigurationForm({
         default_language: defaultLanguage as Language,
         languages: selectedLanguages,
         platform: platform as Platform,
-        style: styleName
+        brand_style: styleName
       });
       onConfigured(configured);
     } catch (error: unknown) {
@@ -644,7 +644,7 @@ function needsProductConfiguration(product: Product): boolean {
 function hasProductConfiguration(product: Product): boolean {
   return Boolean(
     product.platform &&
-      product.style &&
+      product.brand_style &&
       product.languages &&
       product.languages.length > 0 &&
       product.default_language &&
@@ -659,11 +659,12 @@ function languageSummary(languages: Language[] | undefined, t: (key: string) => 
   return languages.join(", ");
 }
 
-function ensureCurrentStyle(styles: StyleMetadata[], currentStyle: StyleMetadata | undefined): StyleMetadata[] {
-  if (!currentStyle || styles.some((style) => style.name === currentStyle.name)) {
+function ensureCurrentStyleByName(styles: StyleMetadata[], currentStyleName: string | undefined): StyleMetadata[] {
+  if (!currentStyleName || styles.some((style) => style.name === currentStyleName)) {
     return styles;
   }
-  return [currentStyle, ...styles];
+  // Current style name not in list — add a minimal placeholder so the select doesn't show blank
+  return [{ name: currentStyleName, description: "", design_md_path: "", tokens_css_path: "", components_html_path: "" }, ...styles];
 }
 
 async function loadBaseline(client: Pick<FormaApiClient, "getBaseline">, productId: string): Promise<BaselineSummaryState> {

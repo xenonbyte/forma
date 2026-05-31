@@ -42,20 +42,7 @@ describe("App routing", () => {
             name: "Admin App",
             description: "Internal admin",
             platform: "web",
-            style: {
-              name: "linear",
-              description: "Focused tool UI",
-              design_md_path: "styles/linear/DESIGN.md",
-              variables: {
-                primary: "#111827",
-                background: "#ffffff",
-                "text-primary": "#111827",
-                "font-heading": "Inter",
-                "font-body": "Inter",
-                "border-radius": "8px",
-                "spacing-unit": "8px"
-              }
-            },
+            brand_style: "linear",
             languages: ["en"],
             default_language: "en",
           });

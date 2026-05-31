@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { ProductNew } from "./ProductNew.js";
 import * as productNew from "./ProductNew.js";
-import { ApiError, type FormaApiClient, type Language, type Product, type StyleDetailPayload, type StyleMetadata } from "../api.js";
+import { ApiError, type BrandStyleContent, type FormaApiClient, type Language, type Product, type StyleMetadata } from "../api.js";
 import { localeStorageKey, setLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -17,48 +17,40 @@ const styles: StyleMetadata[] = [
     name: "linear",
     description: "Focused tool UI",
     design_md_path: "styles/linear/DESIGN.md",
-    variables: {
-      primary: "#111827",
-      background: "#ffffff",
-      "text-primary": "#111827",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "8px",
-      "spacing-unit": "8px"
-    }
+    tokens_css_path: "styles/linear/tokens.css",
+    components_html_path: "styles/linear/components.html"
   },
   {
     name: "retail",
     description: "Retail checkout UI",
     design_md_path: "styles/retail/DESIGN.md",
-    variables: {
-      primary: "#0f766e",
-      background: "#ffffff",
-      "text-primary": "#111827",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "8px",
-      "spacing-unit": "8px"
-    }
+    tokens_css_path: "styles/retail/tokens.css",
+    components_html_path: "styles/retail/components.html"
   }
 ];
 
-const detailByName: Record<string, StyleDetailPayload> = {
+const detailByName: Record<string, BrandStyleContent> = {
   linear: {
+    kind: "brand",
     metadata: styles[0]!,
     designMd: `---
 colors:
   primary: "#5E6AD2"
 ---
-`
+`,
+    tokensCss: ":root { --primary: #5E6AD2; }",
+    componentsHtml: "<div>linear</div>"
   },
   retail: {
+    kind: "brand",
     metadata: styles[1]!,
     designMd: `---
 colors:
   primary: "#14b8a6"
 ---
-`
+`,
+    tokensCss: ":root { --primary: #14b8a6; }",
+    componentsHtml: "<div>retail</div>"
   }
 };
 
@@ -127,7 +119,7 @@ describe("ProductNew", () => {
     await chooseStyle(container, "linear");
 
     expect(trigger.textContent).toContain("Selected style: linear");
-    expect(required(container.querySelector<HTMLInputElement>('input[name="style"]'), "style hidden input").value).toBe("linear");
+    expect(required(container.querySelector<HTMLInputElement>('input[name="brand_style"]'), "brand_style hidden input").value).toBe("linear");
   });
 
   it("updates the style preview type when platform changes without clearing the selected style", async () => {
@@ -154,7 +146,7 @@ describe("ProductNew", () => {
     });
 
     expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("desktop");
-    expect(required(container.querySelector<HTMLInputElement>('input[name="style"]'), "style hidden input").value).toBe("linear");
+    expect(required(container.querySelector<HTMLInputElement>('input[name="brand_style"]'), "brand_style hidden input").value).toBe("linear");
   });
 
   it("requests each style detail once while the picker cache is warm", async () => {
@@ -257,7 +249,7 @@ describe("ProductNew", () => {
     expect(submit.disabled).toBe(false);
   });
 
-  it("creates then configures the product before navigating", async () => {
+  it("creates then configures the product with brand_style before navigating", async () => {
     const navigate = vi.fn();
     const client = createClient();
     const { container, root } = createTestRoot();
@@ -302,7 +294,7 @@ describe("ProductNew", () => {
     });
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
-      style: "linear",
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "zh-CN"
     });
@@ -340,7 +332,7 @@ describe("ProductNew", () => {
     expect(client.configureProduct).toHaveBeenCalledTimes(1);
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
-      style: "linear",
+      brand_style: "linear",
       languages: ["en"],
       default_language: "en"
     });
@@ -379,13 +371,13 @@ describe("ProductNew", () => {
     expect(client.configureProduct).toHaveBeenCalledTimes(2);
     expect(client.configureProduct).toHaveBeenNthCalledWith(1, "P-123abc", {
       platform: "web",
-      style: "linear",
+      brand_style: "linear",
       languages: ["en"],
       default_language: "en"
     });
     expect(client.configureProduct).toHaveBeenNthCalledWith(2, "P-123abc", {
       platform: "web",
-      style: "linear",
+      brand_style: "linear",
       languages: ["en"],
       default_language: "en"
     });
@@ -471,13 +463,15 @@ function createClient() {
     configureProduct: vi.fn(async (_productId, input) => ({
       ...createdProduct,
       platform: input.platform,
-      style: styles.find((style) => style.name === input.style),
+      brand_style: input.brand_style,
+      system_style: input.system_style,
       languages: input.languages,
       default_language: input.default_language
     })),
     getStyle: vi.fn(async (name: string) => detailByName[name] ?? detailByName.linear),
-    listStyles: vi.fn(async () => styles)
-  } satisfies Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles">;
+    listStyles: vi.fn(async () => styles),
+    listSystemStyles: vi.fn(async () => [])
+  } satisfies Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles" | "listSystemStyles">;
 }
 
 function createTestRoot() {

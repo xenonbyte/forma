@@ -221,7 +221,7 @@ describe("apiRequest", () => {
     await expect(
       client.configureProduct("P-123abc", {
         platform: "web",
-        style: "linear",
+        brand_style: "linear",
         languages: ["zh-CN", "en"],
         default_language: "zh-CN"
       })
@@ -262,7 +262,7 @@ describe("apiRequest", () => {
         method: "POST",
         body: {
           platform: "web",
-          style: "linear",
+          brand_style: "linear",
           languages: ["zh-CN", "en"],
           default_language: "zh-CN"
         }
@@ -551,5 +551,44 @@ describe("apiRequest", () => {
     expect(requests[0]).toMatchObject({ input: "/api/products/P-123abc/artifacts", method: undefined });
     expect(requests[1]?.input.toString()).toContain("kind=page_design");
     expect(requests[2]).toMatchObject({ input: "/api/products/P-123abc/artifacts/A-abc123", method: undefined });
+  });
+
+  it("listSystemStyles calls GET /api/system-styles and returns array", async () => {
+    const systemStyles = [{ name: "material", description: "Material Design", mode: "design-system" as const }];
+    const client = createApiClient(async () => jsonResponse(systemStyles));
+
+    await expect(client.listSystemStyles()).resolves.toEqual(systemStyles);
+  });
+
+  it("configureProduct sends brand_style and optional system_style", async () => {
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method
+      });
+      return jsonResponse({ id: "P-123abc", name: "App", description: "Demo" });
+    });
+
+    await client.configureProduct("P-123abc", {
+      platform: "web",
+      brand_style: "linear-app",
+      system_style: "material",
+      languages: ["en"],
+      default_language: "en"
+    });
+
+    expect(requests[0]).toMatchObject({
+      input: "/api/products/P-123abc/config",
+      method: "POST",
+      body: {
+        platform: "web",
+        brand_style: "linear-app",
+        system_style: "material",
+        languages: ["en"],
+        default_language: "en"
+      }
+    });
   });
 });

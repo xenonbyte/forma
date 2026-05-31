@@ -14,15 +14,8 @@ const styles: StyleMetadata[] = [
     name: "linear",
     description: "Focused tool UI",
     design_md_path: "styles/linear/DESIGN.md",
-    variables: {
-      primary: "#111827",
-      background: "#ffffff",
-      "text-primary": "#111827",
-      "font-heading": "Inter",
-      "font-body": "Inter",
-      "border-radius": "8px",
-      "spacing-unit": "8px"
-    }
+    tokens_css_path: "styles/linear/tokens.css",
+    components_html_path: "styles/linear/components.html"
   }
 ];
 

@@ -23,21 +23,31 @@ export const languageOptions: Array<{ label: string; value: Language }> = (Objec
   value
 }));
 
-export interface StyleVariables {
-  primary: string;
-  background: string;
-  "text-primary": string;
-  "font-heading": string;
-  "font-body": string;
-  "border-radius": string;
-  "spacing-unit": string;
-}
-
 export interface StyleMetadata {
   name: string;
   description: string;
+  category?: string;
+  upstream?: string;
   design_md_path: string;
-  variables: StyleVariables;
+  tokens_css_path: string;
+  components_html_path: string;
+}
+
+export interface SystemStyleMetadata {
+  name: string;
+  description: string;
+  mode: "design-system";
+  category?: string;
+  upstream?: string;
+}
+
+/** getStyle 返回的三文件内容(对齐 core BrandStyleContent)。 */
+export interface BrandStyleContent {
+  kind: "brand";
+  metadata: StyleMetadata;
+  designMd: string;
+  tokensCss: string;
+  componentsHtml: string;
 }
 
 export interface ProductIndexEntry {
@@ -50,7 +60,8 @@ export interface Product extends ProductIndexEntry {
   default_language?: Language;
   languages?: Language[];
   platform?: Platform;
-  style?: StyleMetadata;
+  brand_style?: string;
+  system_style?: string;
 }
 
 export interface DeleteProductResult {
@@ -140,7 +151,8 @@ export interface ProductConfigInput {
   default_language: Language;
   languages: Language[];
   platform: Platform;
-  style: string;
+  brand_style: string;
+  system_style?: string;
 }
 
 export interface CreateEmptyRequirementInput {
@@ -213,10 +225,6 @@ export interface ProductBaseline {
   product_id: string;
 }
 
-export interface StyleDetailPayload {
-  designMd: string;
-  metadata: StyleMetadata;
-}
 
 export interface ArtifactSummary {
   id: string;
@@ -343,11 +351,12 @@ export interface FormaApiClient {
   getRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
   getRequirementDesignDiff(productId: string, requirementId: string, input: { from_page_version: number; page_id?: string; to_page_version: number }): Promise<RequirementDesignDiff>;
   getRequirementDesignHistory(productId: string, requirementId: string, pageId?: string): Promise<RequirementDesignHistoryEntry[]>;
-  getStyle(name: string): Promise<StyleDetailPayload>;
+  getStyle(name: string): Promise<BrandStyleContent>;
   listProductArtifacts(productId: string, kind?: string, include_superseded?: boolean): Promise<{ artifacts: ArtifactSummary[] }>;
   listProducts(): Promise<ProductIndexEntry[]>;
   listRequirements(productId: string): Promise<RequirementWithDocument[]>;
   listStyles(): Promise<StyleMetadata[]>;
+  listSystemStyles(): Promise<SystemStyleMetadata[]>;
   planImportMetadataNormalization(productId: string, requirementId: string, sessionId: string, input: { frame_id: string; page_id: string }): Promise<RequirementDesignSessionResult>;
   planRequirementComponentRefresh(productId: string, requirementId: string, sessionId: string, input: { scope?: "all_pages" | { component_keys?: string[]; page_ids?: string[] }; version?: "latest" | number }): Promise<RequirementDesignSessionResult>;
   planRequirementDesignRollback(productId: string, requirementId: string, sessionId: string, input: { canvas_version: number }): Promise<RequirementDesignSessionResult>;
@@ -549,7 +558,7 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       const query = pageId ? `?${new URLSearchParams({ page_id: pageId }).toString()}` : "";
       return apiArray<RequirementDesignHistoryEntry>(`${requirementDesignPath(productId, requirementId)}/history${query}`, requestOptions(fetcher));
     },
-    getStyle: (name) => apiRecord<StyleDetailPayload>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
+    getStyle: (name) => apiRecord<BrandStyleContent>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
     listProductArtifacts: (productId, kind, include_superseded) => {
       const basePath = `/api/products/${encodeURIComponent(productId)}/artifacts`;
       const params = new URLSearchParams();
@@ -562,6 +571,7 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     listRequirements: (productId) =>
       apiArray<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements`, requestOptions(fetcher)),
     listStyles: () => apiArray<StyleMetadata>("/api/styles", requestOptions(fetcher)),
+    listSystemStyles: () => apiArray<SystemStyleMetadata>("/api/system-styles", requestOptions(fetcher)),
     planImportMetadataNormalization: (productId, requirementId, sessionId, input) =>
       apiRecord<RequirementDesignSessionResult>(`${requirementDesignSessionPath(productId, requirementId, sessionId)}/import-metadata-normalization/plan`, {
         ...requestOptions(fetcher),

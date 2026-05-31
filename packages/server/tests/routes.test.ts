@@ -129,7 +129,8 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
         tokensCss: ":root {}",
         componentsHtml: "<div></div>"
       })),
-      listStyles: vi.fn(async () => [{ name: "linear-app", description: "Focused tool UI", design_md_path: "styles/linear-app/DESIGN.md", tokens_css_path: "styles/linear-app/tokens.css", components_html_path: "styles/linear-app/components.html" }])
+      listStyles: vi.fn(async () => [{ name: "linear-app", description: "Focused tool UI", design_md_path: "styles/linear-app/DESIGN.md", tokens_css_path: "styles/linear-app/tokens.css", components_html_path: "styles/linear-app/components.html" }]),
+      listSystemStyles: vi.fn(async () => [{ name: "material", description: "Material Design", mode: "design-system" as const }])
     }
   } satisfies FormaServerStore;
 
@@ -554,7 +555,16 @@ describe("Fastify API routes", () => {
     expect(responses.map((response) => response.statusCode)).toEqual(Array(responses.length).fill(200));
   });
 
+  it("GET /api/system-styles returns 200 with an array", async () => {
+    const store = fakeStore();
+    const app = await appWith(store);
 
+    const response = await app.inject({ method: "GET", url: "/api/system-styles" });
+
+    expect(response.statusCode).toBe(200);
+    expect(Array.isArray(response.json())).toBe(true);
+    expect(store.styles.listSystemStyles).toHaveBeenCalledTimes(1);
+  });
 
   it("waits for pending product delete recovery before buildServer resolves", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();

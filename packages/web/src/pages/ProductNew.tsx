@@ -8,14 +8,15 @@ import {
   type FormaApiClient,
   type Language,
   type Platform,
-  type StyleMetadata
+  type StyleMetadata,
+  type SystemStyleMetadata
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
 import { StylePickerDialog } from "../components/StylePickerDialog.js";
 
 export interface ProductNewProps {
-  client?: Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles">;
+  client?: Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles" | "listSystemStyles">;
   navigate?: (pathname: string) => void;
 }
 
@@ -42,8 +43,10 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
   const [platform, setPlatform] = useState<Platform | "">("");
   const [selectedLanguages, setSelectedLanguages] = useState<Language[]>([]);
   const [styleName, setStyleName] = useState("");
+  const [systemStyleName, setSystemStyleName] = useState("");
   const [styleError, setStyleError] = useState<ApiErrorInfo | null>(null);
   const [styles, setStyles] = useState<StyleMetadata[]>([]);
+  const [systemStyles, setSystemStyles] = useState<SystemStyleMetadata[]>([]);
   const [stylesLoading, setStylesLoading] = useState(true);
   const [name, setName] = useState("");
   const [saving, setSaving] = useState(false);
@@ -63,18 +66,20 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
     setStylesLoading(true);
     setStyleError(null);
 
-    client
-      .listStyles()
-      .then((nextStyles) => {
+    Promise.all([client.listStyles(), client.listSystemStyles()])
+      .then(([nextStyles, nextSystemStyles]) => {
         if (!cancelled) {
           setStyles(nextStyles);
+          setSystemStyles(nextSystemStyles);
           setStylesLoading(false);
         }
       })
       .catch((nextError: unknown) => {
         if (!cancelled) {
           setStyles([]);
+          setSystemStyles([]);
           setStyleName("");
+          setSystemStyleName("");
           setStyleError(formatApiError(nextError));
           setStylesLoading(false);
         }
@@ -107,7 +112,8 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
         default_language: defaultLanguage as Language,
         languages: selectedLanguages,
         platform: platform as Platform,
-        style: styleName
+        brand_style: styleName,
+        ...(systemStyleName ? { system_style: systemStyleName } : {})
       });
       navigate(`/products/${productId}`);
     } catch (nextError: unknown) {
@@ -162,7 +168,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
             </label>
             <div className="grid gap-1 text-sm font-medium text-zinc-700">
               <span>{t("product.style")}</span>
-              <input name="style" type="hidden" value={styleName} />
+              <input name="brand_style" type="hidden" value={styleName} />
               <StylePickerDialog
                 disabledReason={stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined}
                 getStyle={client.getStyle}
@@ -173,6 +179,26 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
               />
             </div>
           </div>
+
+          {systemStyles.length > 0 ? (
+            <label className="grid gap-1 text-sm font-medium text-zinc-700">
+              {t("product.systemStyle")}
+              <select
+                className={inputClasses}
+                name="system_style"
+                onChange={(event) => setSystemStyleName(event.target.value)}
+                value={systemStyleName}
+              >
+                <option value="">{t("product.noSystemStyle")}</option>
+                {systemStyles.map((ss) => (
+                  <option key={ss.name} value={ss.name}>
+                    {ss.name}
+                    {ss.description ? ` — ${ss.description}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
           <fieldset className="grid gap-2">
             <legend className="text-sm font-medium text-zinc-700">{t("product.languages")}</legend>

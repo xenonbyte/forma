@@ -418,7 +418,7 @@ function getConfigStatus(product: Product | undefined): ConfigStatus {
 function isListConfigurationComplete(product: Product): boolean {
   return Boolean(
     product.platform &&
-      product.style &&
+      product.brand_style &&
       product.languages &&
       product.languages.length > 0 &&
       product.default_language &&

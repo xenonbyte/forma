@@ -8,15 +8,8 @@ const metadata: StyleMetadata = {
   name: "linear",
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
-  variables: {
-    primary: "#111827",
-    background: "#ffffff",
-    "text-primary": "#222222",
-    "font-heading": "Inter",
-    "font-body": "Inter",
-    "border-radius": "8px",
-    "spacing-unit": "8px"
-  }
+  tokens_css_path: "styles/linear/tokens.css",
+  components_html_path: "styles/linear/components.html"
 };
 
 describe("StylePreviewPanel", () => {
@@ -30,7 +23,7 @@ describe("StylePreviewPanel", () => {
     }
   });
 
-  it("prefers structured DESIGN.md tokens over metadata and resolves references in component styles", () => {
+  it("prefers structured DESIGN.md tokens over fallbacks and resolves references in component styles", () => {
     const html = renderToStaticMarkup(
       <StylePreviewPanel
         designMd={`---
@@ -79,12 +72,12 @@ components:
     expect(html).toContain('data-nav-background="#f8fafc"');
   });
 
-  it("falls back to the seven metadata variables when DESIGN.md values are absent", () => {
+  it("uses hardcoded fallback tokens when DESIGN.md values are absent", () => {
     const html = renderToStaticMarkup(<StylePreviewPanel designMd="" metadata={metadata} previewType="desktop" />);
 
     expect(html).toContain('data-background="#ffffff"');
-    expect(html).toContain('data-primary="#111827"');
-    expect(html).toContain('data-text-color="#222222"');
+    expect(html).toContain('data-primary="#3b82f6"');
+    expect(html).toContain('data-text-color="#111827"');
     expect(html).toContain('data-heading-font="Inter"');
     expect(html).toContain('data-body-font="Inter"');
     expect(html).toContain('data-radius="8px"');

@@ -18,15 +18,8 @@ const style: StyleMetadata = {
   name: "linear",
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
-  variables: {
-    primary: "#111827",
-    background: "#ffffff",
-    "text-primary": "#111827",
-    "font-heading": "Inter",
-    "font-body": "Inter",
-    "border-radius": "8px",
-    "spacing-unit": "8px"
-  }
+  tokens_css_path: "styles/linear/tokens.css",
+  components_html_path: "styles/linear/components.html"
 };
 
 const configuredProduct: Product = {
@@ -34,7 +27,7 @@ const configuredProduct: Product = {
   name: "Checkout App",
   description: "Mobile checkout workbench",
   platform: "web",
-  style,
+  brand_style: style.name,
   languages: ["en"],
   default_language: "en",
 };
@@ -263,7 +256,7 @@ describe("ProductDetail", () => {
 
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
-      style: "linear",
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "zh-CN"
     });
@@ -299,7 +292,7 @@ describe("ProductDetail", () => {
     expect(client.configureProduct).toHaveBeenCalledTimes(2);
     expect(client.configureProduct).toHaveBeenNthCalledWith(2, "P-123abc", {
       platform: "web",
-      style: "linear",
+      brand_style: "linear",
       languages: ["en", "zh-CN"],
       default_language: "zh-CN"
     });
@@ -371,7 +364,7 @@ function createClient({ product, requirements }: { product: Product; requirement
     configureProduct: vi.fn(async (_productId, input) => ({
       ...product,
       platform: input.platform,
-      style,
+      brand_style: input.brand_style,
       languages: input.languages,
       default_language: input.default_language
     })),
