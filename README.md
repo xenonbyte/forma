@@ -83,9 +83,16 @@ forma serve
 
 Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, and review multilingual copy.
 
+Design artifacts open in the shared `@xenonbyte/forma-viewer` canvas (design / annotation modes toggle in-canvas) via two hash routes:
+
+- by requirement: `#/products/:productId/requirements/:reqId/viewer`
+- by page: `#/products/:productId/requirements/:reqId/pages/:pageId/viewer`
+
+Product configuration uses a brand style (required) plus an optional system style; the style library renders the three-file brand format (`DESIGN.md` + `tokens.css` + a sandboxed `components.html` preview).
+
 ## Desktop App
 
-The `@xenonbyte/forma-desktop` package ships a read-only Electron renderer for browsing products, requirements, and design artifacts. Mutation flows stay in the Web admin and agent skills; the desktop app exposes only seven readonly methods via `window.forma`.
+The `@xenonbyte/forma-desktop` package ships a read-only Electron renderer with a unified-workspace shell: a sidebar (products / requirements / pages / brand styles) drives a workspace pane that renders the shared `@xenonbyte/forma-viewer` design–annotation canvas or a brand-style detail. The shell is styled with the `clean` brand tokens. Mutation flows stay in the Web admin and agent skills; the desktop app exposes only ten readonly methods via `window.forma`.
 
 Run the desktop app in development mode against a running Forma server:
 
@@ -97,14 +104,14 @@ node bin/forma.js serve
 pnpm desktop:dev
 ```
 
-The renderer reads `FORMA_SERVER_URL` (or `FORMA_SERVER_HOST` + `FORMA_SERVER_PORT`) to locate the server. Defaults to `http://127.0.0.1:3000`. Until the server is reachable, the renderer shows a placeholder page and retries every 5 seconds for up to 5 attempts.
+The renderer reads `FORMA_SERVER_URL` (or `FORMA_SERVER_HOST` + `FORMA_SERVER_PORT`) to locate the server. Defaults to `http://127.0.0.1:3000`. On launch a `ConnectionGate` checks `formaServerStatus()`; while the server is unreachable it shows a full-screen overlay with a manual retry button, and renders the workspace once connected. Inside the workspace the viewer resolves bundle/preview resources over HTTP against the local server (base URL obtained via the `formaServerBaseUrl` IPC), so no resource fetch is initiated cross-origin from the renderer.
 
 Requirements:
 - Electron 41+ (installed automatically via the package's devDependencies)
 - Node.js 22+ and pnpm 10.33+ for the workspace
 
 Security model:
-- `window.forma` exposes only `listProducts`, `getProduct`, `listArtifacts`, `getArtifact`, `listRequirements`, `getRequirement`, and `formaServerStatus`.
+- `window.forma` exposes only the ten readonly methods `listProducts`, `getProduct`, `listArtifacts`, `getArtifact`, `listRequirements`, `getRequirement`, `formaServerStatus`, `formaServerBaseUrl`, `listStyles`, and `getStyle`. The three style/base-URL methods are forwarded by the main process (Node `fetch` against the server's existing `GET /api/styles`, `GET /api/styles/:name` read routes); the renderer never fetches `/api/...` cross-origin.
 - All HTTP mutations against the local server are rejected from the desktop renderer's origin; only the Web admin origin is whitelisted.
 - The `forma-asset://` protocol handler validates paths and rejects traversal attempts.
 
@@ -154,3 +161,5 @@ node bin/forma.js status
 node scripts/copy-assets.ts --check
 pnpm pack:publish
 ```
+
+`pnpm test` runs three Vitest projects: Node unit tests plus two real-Chromium browser projects — the `@xenonbyte/forma-viewer` component tests and the desktop-shell craft-lint dogfood. A fresh checkout needs Chromium once: `pnpm exec playwright install chromium`. Desktop renderer unit tests live in their own Vitest config: `pnpm --filter @xenonbyte/forma-desktop test`.
