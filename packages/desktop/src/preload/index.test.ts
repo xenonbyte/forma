@@ -8,6 +8,9 @@ const EXPECTED_API_KEYS = [
   'listRequirements',
   'getRequirement',
   'formaServerStatus',
+  'formaServerBaseUrl',
+  'listStyles',
+  'getStyle',
 ] as const;
 
 describe('preload readonlyApi', () => {

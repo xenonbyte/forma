@@ -9,6 +9,9 @@ const ALLOWED_METHODS = new Set([
   'listRequirements',
   'getRequirement',
   'formaServerStatus',
+  'formaServerBaseUrl',
+  'listStyles',
+  'getStyle',
 ]);
 
 describe('preload readonly API surface (SPEC-IF-DESKTOP-001)', () => {

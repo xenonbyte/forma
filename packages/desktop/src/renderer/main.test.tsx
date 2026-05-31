@@ -51,6 +51,9 @@ describe('App artifact route', () => {
       getArtifact,
       listRequirements: vi.fn().mockResolvedValue({ requirements: [] }),
       getRequirement: vi.fn(),
+      formaServerBaseUrl: vi.fn().mockResolvedValue('http://127.0.0.1:3000'),
+      listStyles: vi.fn().mockResolvedValue([]),
+      getStyle: vi.fn(),
     };
 
     const { container } = render(<App />);

@@ -5,7 +5,7 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 
-// SPEC-IF-DESKTOP-001: exactly these seven readonly methods, nothing else.
+// SPEC-IF-DESKTOP-001: exactly these ten readonly methods, nothing else.
 export const readonlyApi = {
   listProducts: () => ipcRenderer.invoke('forma:listProducts'),
   getProduct: (id: string) => ipcRenderer.invoke('forma:getProduct', id),
@@ -16,6 +16,9 @@ export const readonlyApi = {
   getRequirement: (productId: string, requirementId: string) =>
     ipcRenderer.invoke('forma:getRequirement', productId, requirementId),
   formaServerStatus: () => ipcRenderer.invoke('forma:serverStatus'),
+  formaServerBaseUrl: () => ipcRenderer.invoke('forma:serverBaseUrl'),
+  listStyles: () => ipcRenderer.invoke('forma:listStyles'),
+  getStyle: (name: string) => ipcRenderer.invoke('forma:getStyle', name),
 };
 
 export type FormaDesktopAPI = typeof readonlyApi;

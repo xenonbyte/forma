@@ -12,6 +12,9 @@ export interface FormaDesktopClient {
   listRequirements(productId: string): Promise<unknown>;
   getRequirement(productId: string, requirementId: string): Promise<unknown>;
   serverStatus(): Promise<boolean>;
+  serverBaseUrl(): string;
+  listStyles(): Promise<unknown>;
+  getStyle(name: string): Promise<unknown>;
 }
 
 export interface IpcMainLike {
@@ -46,6 +49,9 @@ export function registerFormaIpcHandlers(
     client.getRequirement(requireIpcString(productId, 'productId'), requireIpcString(requirementId, 'requirementId'))
   );
   ipcMain.handle('forma:serverStatus', () => client.serverStatus());
+  ipcMain.handle('forma:serverBaseUrl', () => client.serverBaseUrl());
+  ipcMain.handle('forma:listStyles', () => client.listStyles());
+  ipcMain.handle('forma:getStyle', (_event, name) => client.getStyle(requireIpcString(name, 'name')));
 }
 
 export function createFormaHttpClient(options: {
@@ -87,6 +93,9 @@ export function createFormaHttpClient(options: {
         return false;
       }
     },
+    serverBaseUrl: () => baseUrl,
+    listStyles: () => getJson('/api/styles'),
+    getStyle: (name) => getJson(`/api/styles/${encodeURIComponent(name)}`),
   };
 }
 

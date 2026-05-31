@@ -101,6 +101,44 @@ describe('createFormaHttpClient', () => {
       preview_url: 'http://127.0.0.1:3000/api/products/P-123/artifacts/A-123/preview/2x',
     });
   });
+
+  it('listStyles calls GET /api/styles and returns parsed JSON', async () => {
+    const { createFormaHttpClient } = await import('./index.js');
+    const stylesList = [{ name: 'brand-a', description: 'Brand A', category: 'brand' }];
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const path = input.toString();
+      expect(path).toBe('http://127.0.0.1:3000/api/styles');
+      return new Response(JSON.stringify(stylesList), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const client = createFormaHttpClient({ baseUrl: 'http://127.0.0.1:3000', fetchFn: fetchFn as typeof fetch });
+    await expect(client.listStyles()).resolves.toEqual(stylesList);
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:3000/api/styles');
+  });
+
+  it('getStyle calls GET /api/styles/:name with encoded name and returns parsed JSON', async () => {
+    const { createFormaHttpClient } = await import('./index.js');
+    const styleContent = { kind: 'brand', metadata: { name: 'brand/special', description: 'Special' }, designMd: '# Design', tokensCss: ':root {}', componentsHtml: '' };
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const path = input.toString();
+      expect(path).toBe('http://127.0.0.1:3000/api/styles/brand%2Fspecial');
+      return new Response(JSON.stringify(styleContent), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+    const client = createFormaHttpClient({ baseUrl: 'http://127.0.0.1:3000', fetchFn: fetchFn as typeof fetch });
+    await expect(client.getStyle('brand/special')).resolves.toEqual(styleContent);
+    expect(fetchFn).toHaveBeenCalledWith('http://127.0.0.1:3000/api/styles/brand%2Fspecial');
+  });
+
+  it('serverBaseUrl returns the configured base URL', async () => {
+    const { createFormaHttpClient } = await import('./index.js');
+    const client = createFormaHttpClient({ baseUrl: 'http://127.0.0.1:4567', fetchFn: vi.fn() as unknown as typeof fetch });
+    expect(client.serverBaseUrl()).toBe('http://127.0.0.1:4567');
+  });
 });
 
 describe('registerFormaIpcHandlers', () => {
@@ -115,6 +153,9 @@ describe('registerFormaIpcHandlers', () => {
       listRequirements: vi.fn(async (productId: string) => ({ requirements: [], productId })),
       getRequirement: vi.fn(async (productId: string, requirementId: string) => ({ id: requirementId, productId })),
       serverStatus: vi.fn(async () => true),
+      serverBaseUrl: vi.fn(() => 'http://127.0.0.1:3000'),
+      listStyles: vi.fn(async () => []),
+      getStyle: vi.fn(async (name: string) => ({ kind: 'brand', metadata: { name } })),
     };
 
     registerFormaIpcHandlers({
@@ -127,14 +168,104 @@ describe('registerFormaIpcHandlers', () => {
       'forma:getArtifact',
       'forma:getProduct',
       'forma:getRequirement',
+      'forma:getStyle',
       'forma:listArtifacts',
       'forma:listProducts',
       'forma:listRequirements',
+      'forma:listStyles',
+      'forma:serverBaseUrl',
       'forma:serverStatus',
     ]);
     await expect(handlers.get('forma:getArtifact')?.({}, 'P-123abc', 'AbCdEfGhIjKlMnOp')).resolves.toMatchObject({
       manifest: { id: 'AbCdEfGhIjKlMnOp' },
     });
     expect(client.getArtifact).toHaveBeenCalledWith('P-123abc', 'AbCdEfGhIjKlMnOp');
+  });
+
+  it('forma:serverBaseUrl returns the base URL string', async () => {
+    const { registerFormaIpcHandlers } = await import('./index.js');
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    const client = {
+      listProducts: vi.fn(),
+      getProduct: vi.fn(),
+      listArtifacts: vi.fn(),
+      getArtifact: vi.fn(),
+      listRequirements: vi.fn(),
+      getRequirement: vi.fn(),
+      serverStatus: vi.fn(),
+      serverBaseUrl: vi.fn(() => 'http://127.0.0.1:3000'),
+      listStyles: vi.fn(),
+      getStyle: vi.fn(),
+    };
+    registerFormaIpcHandlers({ handle(ch, l) { handlers.set(ch, l); } }, client);
+
+    const result = handlers.get('forma:serverBaseUrl')?.({});
+    expect(result).toBe('http://127.0.0.1:3000');
+    expect(client.serverBaseUrl).toHaveBeenCalledOnce();
+  });
+
+  it('forma:listStyles proxies to client.listStyles()', async () => {
+    const { registerFormaIpcHandlers } = await import('./index.js');
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    const stylesList = [{ name: 'brand-a', description: 'Brand A' }];
+    const client = {
+      listProducts: vi.fn(),
+      getProduct: vi.fn(),
+      listArtifacts: vi.fn(),
+      getArtifact: vi.fn(),
+      listRequirements: vi.fn(),
+      getRequirement: vi.fn(),
+      serverStatus: vi.fn(),
+      serverBaseUrl: vi.fn(),
+      listStyles: vi.fn(async () => stylesList),
+      getStyle: vi.fn(),
+    };
+    registerFormaIpcHandlers({ handle(ch, l) { handlers.set(ch, l); } }, client);
+
+    await expect(handlers.get('forma:listStyles')?.({} )).resolves.toEqual(stylesList);
+    expect(client.listStyles).toHaveBeenCalledOnce();
+  });
+
+  it('forma:getStyle validates name with requireIpcString and proxies to client.getStyle(name)', async () => {
+    const { registerFormaIpcHandlers } = await import('./index.js');
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    const styleContent = { kind: 'brand', metadata: { name: 'brand-a', description: 'Brand A' }, designMd: '', tokensCss: '', componentsHtml: '' };
+    const client = {
+      listProducts: vi.fn(),
+      getProduct: vi.fn(),
+      listArtifacts: vi.fn(),
+      getArtifact: vi.fn(),
+      listRequirements: vi.fn(),
+      getRequirement: vi.fn(),
+      serverStatus: vi.fn(),
+      serverBaseUrl: vi.fn(),
+      listStyles: vi.fn(),
+      getStyle: vi.fn(async () => styleContent),
+    };
+    registerFormaIpcHandlers({ handle(ch, l) { handlers.set(ch, l); } }, client);
+
+    await expect(handlers.get('forma:getStyle')?.({}, 'brand-a')).resolves.toEqual(styleContent);
+    expect(client.getStyle).toHaveBeenCalledWith('brand-a');
+  });
+
+  it('forma:getStyle throws for missing or empty name', async () => {
+    const { registerFormaIpcHandlers } = await import('./index.js');
+    const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+    const client = {
+      listProducts: vi.fn(),
+      getProduct: vi.fn(),
+      listArtifacts: vi.fn(),
+      getArtifact: vi.fn(),
+      listRequirements: vi.fn(),
+      getRequirement: vi.fn(),
+      serverStatus: vi.fn(),
+      serverBaseUrl: vi.fn(),
+      listStyles: vi.fn(),
+      getStyle: vi.fn(),
+    };
+    registerFormaIpcHandlers({ handle(ch, l) { handlers.set(ch, l); } }, client);
+
+    expect(() => handlers.get('forma:getStyle')?.({}, '')).toThrow('FORMA_DESKTOP_INVALID_IPC_ARGUMENT');
+    expect(() => handlers.get('forma:getStyle')?.({}, undefined)).toThrow('FORMA_DESKTOP_INVALID_IPC_ARGUMENT');
   });
 });
