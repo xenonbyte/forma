@@ -14,3 +14,4 @@ export type {
   ResourceResolver
 } from "./model.js";
 export { isDesignTile } from "./model.js";
+export { layoutTiles, TILE_GAP } from "./layout.js";
