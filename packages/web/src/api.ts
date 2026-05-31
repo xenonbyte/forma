@@ -220,12 +220,19 @@ export interface StyleDetailPayload {
 
 export interface ArtifactSummary {
   id: string;
+  /** 归一 kind:"design-page" | "component-library"。 */
   kind: string;
   title: string;
   preview_url?: string;
   updated_at: string;
   source_skill_id?: string;
   requirement_id?: string;
+  /** design-page only — 分组键。 */
+  page_id?: string;
+  /** design-page only — 变体,缺省 "default"。 */
+  variant?: string;
+  /** 当前版本指针的版本号;legacy flat artifact 无此字段。 */
+  current_version?: number;
   superseded: boolean;
 }
 

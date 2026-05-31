@@ -12,6 +12,7 @@ import {
   getFormaPaths,
   isSameOrChildPath,
   normalizeKind,
+  normalizeFormaExtension,
   type ArtifactManifest,
   type BrandStyleContent,
   type Language,
@@ -348,8 +349,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       const artifacts = [];
       for (const { artifactId } of entries) {
         let manifest: ArtifactManifest;
+        let version: number | undefined;
         try {
-          ({ manifest } = await resolveCurrentArtifact(store, pid, artifactId, pointerVersions));
+          ({ manifest, version } = await resolveCurrentArtifact(store, pid, artifactId, pointerVersions));
         } catch {
           continue; // unreadable artifact — skip rather than fail the whole listing
         }
@@ -358,14 +360,18 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         const requirementId = manifest.requirementId ?? manifest.forma?.requirementId;
         const superseded = requirementId !== undefined && !currentPointerIds.has(artifactId);
         if (!includeSuperseded && superseded) continue;
+        const forma = manifest.forma ? normalizeFormaExtension(manifest.forma) : undefined;
         artifacts.push({
           id: artifactId,
-          kind: manifest.kind,
+          kind: normalizeKind(manifest.kind),
           title: manifest.title,
           preview_url: artifactPreviewUrl(pid, artifactId, "2x"),
           updated_at: manifest.updatedAt,
           source_skill_id: manifest.sourceSkillId,
           requirement_id: requirementId,
+          page_id: forma?.pageId,
+          variant: forma?.variant,
+          ...(typeof version === "number" ? { current_version: version } : {}),
           superseded
         });
       }

@@ -1036,7 +1036,7 @@ describe("artifact routes", () => {
     expect(body.artifacts).toHaveLength(1);
     expect(body.artifacts[0]).toMatchObject({
       id: "A-abcdef1234567890",
-      kind: "html",
+      kind: "design-page",
       title: "Checkout Design",
       updated_at: "2026-05-17T00:00:00.000Z",
       preview_url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x"
@@ -1298,6 +1298,34 @@ describe("artifact routes", () => {
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+  });
+
+  it("exposes page_id, variant and current_version for versioned design-page artifacts", async () => {
+    const app = await appWith(versionedOnlyStore());
+
+    const res = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts" });
+    expect(res.statusCode).toBe(200);
+    const { artifacts } = res.json() as {
+      artifacts: Array<{ id: string; kind: string; page_id?: string; variant?: string; current_version?: number }>;
+    };
+    const dp = artifacts.find((a) => a.kind === "design-page");
+    expect(dp).toBeDefined();
+    expect(typeof dp!.page_id).toBe("string");
+    expect(dp!.variant).toBe("default");
+    expect(typeof dp!.current_version).toBe("number");
+  });
+
+  it("flat (legacy) artifacts do NOT expose current_version", async () => {
+    // fakeStore's default listArtifactVersions returns [] (flat artifact)
+    const app = await appWith(fakeStore());
+
+    const res = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts" });
+    expect(res.statusCode).toBe(200);
+    const { artifacts } = res.json() as {
+      artifacts: Array<{ id: string; kind: string; current_version?: number }>;
+    };
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0].current_version).toBeUndefined();
   });
 });
 
