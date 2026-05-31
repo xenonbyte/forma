@@ -26,3 +26,5 @@ export type { CanvasProps } from "./Canvas.js";
 export { DesignList } from "./DesignList.js";
 export type { DesignListProps } from "./DesignList.js";
 export { AnnotationSlot } from "./AnnotationSlot.js";
+export { Viewer } from "./Viewer.js";
+export type { ViewerProps } from "./Viewer.js";

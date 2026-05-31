@@ -1,5 +1,13 @@
-import { useMemo } from "react";
-import { ReactFlow, ReactFlowProvider, Background, type Node, type NodeProps, type NodeTypes } from "@xyflow/react";
+import { useEffect, useMemo } from "react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  useReactFlow,
+  type Node,
+  type NodeProps,
+  type NodeTypes
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import type { CanvasMode, PositionedTile, ResourceResolver, ViewerModel } from "./model.js";
@@ -10,6 +18,8 @@ export interface CanvasProps {
   model: ViewerModel;
   mode: CanvasMode;
   resolver: ResourceResolver;
+  /** 外部要求定位到的 tile id;变化时居中到该 tile。 */
+  locateTileId?: string | null;
 }
 
 /** 自定义节点 data 载荷。 */
@@ -18,7 +28,6 @@ interface TileNodeData extends Record<string, unknown> {
   mode: CanvasMode;
   resolver: ResourceResolver;
 }
-
 type TileNode = Node<TileNodeData, "tile">;
 
 /** React Flow 自定义节点:按模式选渲染器。 */
@@ -36,7 +45,8 @@ function TileNodeComponent({ data }: NodeProps<TileNode>): React.ReactElement {
 // 仅做类型层断言消除跨版本 @types 摩擦。
 const nodeTypes = { tile: TileNodeComponent } as NodeTypes;
 
-export function Canvas({ model, mode, resolver }: CanvasProps): React.ReactElement {
+function CanvasInner({ model, mode, resolver, locateTileId }: CanvasProps): React.ReactElement {
+  const rf = useReactFlow();
   const nodes = useMemo<TileNode[]>(
     () =>
       model.tiles.map((tile) => ({
@@ -44,7 +54,6 @@ export function Canvas({ model, mode, resolver }: CanvasProps): React.ReactEleme
         type: "tile",
         position: { x: tile.x, y: tile.y },
         data: { tile, mode, resolver },
-        // 给 React Flow 显式尺寸,利于视口虚拟化量测
         width: tile.width,
         height: tile.height,
         draggable: false,
@@ -54,22 +63,36 @@ export function Canvas({ model, mode, resolver }: CanvasProps): React.ReactEleme
     [model.tiles, mode, resolver]
   );
 
+  useEffect(() => {
+    if (!locateTileId) return;
+    const tile = model.tiles.find((t) => t.id === locateTileId);
+    if (!tile) return;
+    // 居中到 tile 中心。setCenter(x, y, { zoom?, duration? }) 已按 @xyflow/react v12 核实。
+    rf.setCenter(tile.x + tile.width / 2, tile.y + tile.height / 2, { zoom: 1, duration: 300 });
+  }, [locateTileId, model.tiles, rf]);
+
   // 只渲视口内 tile;不要默认 fitView,否则全图缩进视口会破坏离屏卸载验收。
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={[]}
+      nodeTypes={nodeTypes}
+      onlyRenderVisibleElements
+      nodesDraggable={false}
+      nodesConnectable={false}
+      elementsSelectable
+      proOptions={{ hideAttribution: false }}
+    >
+      <Background />
+    </ReactFlow>
+  );
+}
+
+export function Canvas(props: CanvasProps): React.ReactElement {
   return (
     <ReactFlowProvider>
       <div style={{ width: "100%", height: "100%" }}>
-        <ReactFlow
-          nodes={nodes}
-          edges={[]}
-          nodeTypes={nodeTypes}
-          onlyRenderVisibleElements
-          nodesDraggable={false}
-          nodesConnectable={false}
-          elementsSelectable
-          proOptions={{ hideAttribution: false }}
-        >
-          <Background />
-        </ReactFlow>
+        <CanvasInner {...props} />
       </div>
     </ReactFlowProvider>
   );
