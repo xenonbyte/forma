@@ -41,11 +41,7 @@ function TileNodeComponent({ data }: NodeProps<TileNode>): React.ReactElement {
   );
 }
 
-// monorepo 内 @types/react 18(desktop)与 19(viewer)并存,@xyflow/react 不声明
-// @types/react peer,其 NodeTypes 经类型解析落到 @types/react@18 的 ReactNode(无 bigint),
-// 与 viewer 的 19 不兼容。运行时只有单份 react@19、@xyflow 12 完整支持 React 19,故此处
-// 仅做类型层断言消除跨版本 @types 摩擦。
-const nodeTypes = { tile: TileNodeComponent } as NodeTypes;
+const nodeTypes: NodeTypes = { tile: TileNodeComponent };
 
 function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: CanvasProps): React.ReactElement {
   const rf = useReactFlow();
