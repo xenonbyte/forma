@@ -28,6 +28,7 @@
     "@types/node": "^24.0.0",
     "@vitest/browser": "4.1.6",
     "@vitest/browser-playwright": "4.1.6",
+    "@xyflow/react": "12.10.2",
     "happy-dom": "^20.9.0",
     "js-yaml": "^4.1.1",
     "playwright": "1.60.0",

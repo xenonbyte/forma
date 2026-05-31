@@ -21,3 +21,5 @@ export { DesignTile } from "./tiles/DesignTile.js";
 export type { DesignTileProps } from "./tiles/DesignTile.js";
 export { AnnotationTile } from "./tiles/AnnotationTile.js";
 export type { AnnotationTileProps } from "./tiles/AnnotationTile.js";
+export { Canvas } from "./Canvas.js";
+export type { CanvasProps } from "./Canvas.js";

@@ -42,7 +42,14 @@ export default defineConfig({
         // 并 reload,触发 "Vite unexpectedly reloaded a test" flaky 警告。
         // include 在工作区根解析,故 root devDeps 需含 react/react-dom(见 root package.json)。
         optimizeDeps: {
-          include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"]
+          include: [
+            "react",
+            "react-dom",
+            "react-dom/client",
+            "react/jsx-runtime",
+            "react/jsx-dev-runtime",
+            "@xyflow/react"
+          ]
         },
         test: {
           name: "viewer",
