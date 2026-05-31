@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@xenonbyte/forma-viewer": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
