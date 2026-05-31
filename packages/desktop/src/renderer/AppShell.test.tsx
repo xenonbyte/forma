@@ -319,6 +319,39 @@ describe('AppShell', () => {
     expect(container.textContent).toContain('暂无需求');
   });
 
+  it('clears a stale requirement hash after switching to a product with no requirements', async () => {
+    const { listProducts, listRequirements } = installForma();
+    listProducts.mockResolvedValue({
+      products: [
+        { id: 'p1', name: '产品一', description: '', platform: 'web' },
+        { id: 'p2', name: '产品二', description: '', platform: 'web' },
+      ],
+    });
+    listRequirements.mockImplementation(async (productId: string) => ({
+      requirements:
+        productId === 'p2'
+          ? []
+          : [{ id: 'r1', title: '第一产品需求', status: 'active', ui_affected: true }],
+    }));
+    window.location.hash = '#/products/p1/requirements/r1';
+
+    const { container } = render(<AppShell />);
+    await flush();
+    await flush();
+
+    expect(window.location.hash).toBe('#/products/p1/requirements/r1');
+
+    await act(async () => {
+      setSelectValue(required(container.querySelector<HTMLSelectElement>('[data-product-switcher]'), 'product switcher'), 'p2');
+    });
+    await flush();
+    await flush();
+
+    expect(container.querySelector('[data-nav-requirement="r1"]')).toBeNull();
+    expect(container.textContent).toContain('暂无需求');
+    expect(window.location.hash).toBe('#/');
+  });
+
   it('renders empty state when listProducts returns an empty list', async () => {
     const { listProducts } = installForma();
     listProducts.mockResolvedValue({ products: [] });

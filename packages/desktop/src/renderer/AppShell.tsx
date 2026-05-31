@@ -61,6 +61,7 @@ export function AppShell() {
   const [brandStyles, setBrandStyles] = useState<BrandStyleRow[]>([]);
   const [baseUrl, setBaseUrl] = useState<string>('');
   const [connected, setConnected] = useState<boolean>(true);
+  const [startupReady, setStartupReady] = useState<boolean>(false);
   const [nav, setNav] = useState<WorkspaceSelection>({ type: 'none' });
   const activeReqId = nav.type === 'requirement' || nav.type === 'page' ? nav.reqId : null;
   const pages = pageState.reqId === activeReqId ? pageState.pages : [];
@@ -70,6 +71,7 @@ export function AppShell() {
     const forma = window.forma;
     if (!forma) {
       setConnected(false);
+      setStartupReady(true);
       return;
     }
     let cancelled = false;
@@ -95,8 +97,12 @@ export function AppShell() {
         if (hashSel.type === 'style' || hashProductExists) {
           setNav(fromHash.nav);
         }
+        setStartupReady(true);
       } catch {
-        if (!cancelled) setConnected(false);
+        if (!cancelled) {
+          setConnected(false);
+          setStartupReady(true);
+        }
       }
     })();
     return () => {
@@ -207,9 +213,11 @@ export function AppShell() {
 
   // --- Keep the location hash in sync with the current selection ----------
   useEffect(() => {
-    if (nav.type === 'none') return;
+    if (!startupReady) return;
     let sel: Selection;
-    if (nav.type === 'style') {
+    if (nav.type === 'none') {
+      sel = { type: 'none' };
+    } else if (nav.type === 'style') {
       sel = { type: 'style', name: nav.name };
     } else if (activeProductId) {
       sel =
@@ -220,10 +228,11 @@ export function AppShell() {
       return;
     }
     const next = buildHash(sel);
-    if (window.location.hash !== next) {
+    const current = window.location.hash || buildHash({ type: 'none' });
+    if (current !== next) {
       window.location.hash = next;
     }
-  }, [nav, activeProductId]);
+  }, [nav, activeProductId, startupReady]);
 
   const handleSelectProduct = useCallback((productId: string) => {
     setActiveProductId(productId);
