@@ -101,4 +101,22 @@ describe("ViewerPage", () => {
     expect(model.__model.entry).toBe("page");
     expect(model.__model.artifacts.map((a) => a.artifactId)).toEqual(["a", "d"]);
   });
+
+  it("contains the absolute viewer within a sized route surface", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ViewerPage client={fakeClient()} params={{ productId: "p1", reqId: "r1" }} entry="requirement" />);
+      await flushPromises();
+    });
+
+    const surface = container.firstElementChild as HTMLElement | null;
+    expect(surface).not.toBeNull();
+    expect(surface?.style.position).toBe("relative");
+    expect(surface?.style.height).not.toBe("");
+
+    const viewerFrame = surface?.firstElementChild as HTMLElement | null;
+    expect(viewerFrame?.style.position).toBe("absolute");
+    expect(viewerFrame?.style.inset).toMatch(/^0(px)?$/);
+  });
 });

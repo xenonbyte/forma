@@ -37,7 +37,7 @@ describe("DesignView", () => {
       await flushPromises();
     });
 
-    expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc");
+    expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc", "html");
     expect(container.textContent).toContain("No designs yet");
   });
 
@@ -46,7 +46,8 @@ describe("DesignView", () => {
       { id: "A-111", kind: "html", requirement_id: "R-12345678", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" },
       { id: "A-222", kind: "html", requirement_id: "R-12345678", title: "Checkout Page", updated_at: "2026-05-28T00:00:00Z" },
       { id: "A-333", kind: "html", requirement_id: "R-87654321", title: "Profile Page", updated_at: "2026-05-28T00:00:00Z" },
-      { id: "A-444", kind: "design-system", title: "Design System", updated_at: "2026-05-28T00:00:00Z" }
+      { id: "A-444", kind: "design-system", requirement_id: "R-12345678", title: "Design System", updated_at: "2026-05-28T00:00:00Z" },
+      { id: "A-555", kind: "component-library", requirement_id: "R-12345678", title: "Component Library", updated_at: "2026-05-28T00:00:00Z" }
     ];
     const client: DesignViewClientDep = {
       listProductArtifacts: vi.fn(async () => ({ artifacts }))
@@ -58,6 +59,7 @@ describe("DesignView", () => {
       await flushPromises();
     });
 
+    expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc", "html");
     const images = container.querySelectorAll("img");
     expect(images.length).toBe(2);
     const srcs = Array.from(images).map((img) => img.getAttribute("src") ?? "");

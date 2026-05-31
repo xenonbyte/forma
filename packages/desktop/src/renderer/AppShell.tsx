@@ -97,11 +97,48 @@ export function AppShell() {
     };
   }, []);
 
+  // --- Runtime deep links: keep Back/Forward and hash edits in state -------
+  useEffect(() => {
+    if (products.length === 0) return;
+
+    const handleHashChange = () => {
+      const hashSel = parseHash(window.location.hash);
+      const fromHash = toWorkspaceSelection(hashSel);
+
+      if (hashSel.type === 'requirement' || hashSel.type === 'page') {
+        if (!products.some((p) => p.id === hashSel.productId)) return;
+        setActiveProductId(hashSel.productId);
+        setNav(fromHash.nav);
+        return;
+      }
+
+      if (hashSel.type === 'style') {
+        setActiveProductId((current) => current ?? (products[0]?.id ?? null));
+        setNav(fromHash.nav);
+        return;
+      }
+
+      setActiveProductId((current) => current ?? (products[0]?.id ?? null));
+      setNav({ type: 'none' });
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+    };
+  }, [products]);
+
   // --- Per-product: requirements; default a requirement if none chosen ----
   useEffect(() => {
     const forma = window.forma;
-    if (!forma || !activeProductId) return;
+    if (!forma || !activeProductId) {
+      setRequirements([]);
+      setPages([]);
+      return;
+    }
     let cancelled = false;
+    setRequirements([]);
+    setPages([]);
     void (async () => {
       try {
         const { requirements: rs } = await forma.listRequirements(activeProductId);
@@ -119,7 +156,11 @@ export function AppShell() {
           return rs[0] ? { type: 'requirement', reqId: rs[0].id } : { type: 'none' };
         });
       } catch {
-        if (!cancelled) setConnected(false);
+        if (!cancelled) {
+          setRequirements([]);
+          setPages([]);
+          setConnected(false);
+        }
       }
     })();
     return () => {
@@ -173,6 +214,7 @@ export function AppShell() {
   const handleSelectProduct = useCallback((productId: string) => {
     setActiveProductId(productId);
     setNav({ type: 'none' });
+    setRequirements([]);
     setPages([]);
   }, []);
 

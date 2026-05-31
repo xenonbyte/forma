@@ -42,7 +42,7 @@ export function DesignView({ client, params }: DesignViewProps) {
     setState({ status: "loading" });
 
     client
-      .listProductArtifacts(productId)
+      .listProductArtifacts(productId, "html")
       .then(({ artifacts }) => {
         if (!cancelled) {
           setState({ status: "ready", artifacts: filterDesignArtifacts(artifacts, requirementId) });
@@ -183,9 +183,11 @@ function artifactPreviewUrl(productId: string, artifactId: string, resolution: "
 
 function filterDesignArtifacts(artifacts: ArtifactSummary[], requirementId: string): ArtifactSummary[] {
   return artifacts.filter((artifact) => {
-    if (artifact.kind === "design-system") {
+    if (nonDesignGridKinds.has(artifact.kind)) {
       return false;
     }
     return requirementId ? artifact.requirement_id === requirementId : true;
   });
 }
+
+const nonDesignGridKinds = new Set(["design-system", "component-library"]);

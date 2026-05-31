@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Viewer, buildViewerModel } from "@xenonbyte/forma-viewer";
 import type { ViewerEntry } from "@xenonbyte/forma-viewer";
 import type { FormaApiClient } from "../api.js";
@@ -52,8 +52,22 @@ export function ViewerPage({ client, params, entry }: ViewerPageProps): React.Re
   if (state.status === "error") return <div role="alert">加载失败:{state.message}</div>;
 
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
-      <Viewer model={state.model} resolver={createWebResourceResolver(productId)} />
+    <div style={viewerSurfaceStyle}>
+      <div style={viewerFrameStyle}>
+        <Viewer model={state.model} resolver={createWebResourceResolver(productId)} />
+      </div>
     </div>
   );
 }
+
+const viewerSurfaceStyle = {
+  position: "relative",
+  height: "calc(100vh - 9rem)",
+  minHeight: "32rem",
+  overflow: "hidden"
+} satisfies CSSProperties;
+
+const viewerFrameStyle = {
+  position: "absolute",
+  inset: 0
+} satisfies CSSProperties;

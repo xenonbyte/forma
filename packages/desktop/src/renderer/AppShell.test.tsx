@@ -160,6 +160,83 @@ describe('AppShell', () => {
     window.location.hash = '';
   });
 
+  it('syncs workspace selection when the location hash changes after startup', async () => {
+    const { listProducts, listRequirements } = installForma();
+    listProducts.mockResolvedValue({
+      products: [
+        { id: 'p1', name: '产品一', description: '', platform: 'web' },
+        { id: 'p2', name: '产品二', description: '', platform: 'web' },
+      ],
+    });
+    listRequirements.mockImplementation(async (productId: string) => ({
+      requirements:
+        productId === 'p2'
+          ? [{ id: 'r2', title: '第二产品需求', status: 'active', ui_affected: true }]
+          : [{ id: 'r1', title: '第一产品需求', status: 'active', ui_affected: true }],
+    }));
+
+    const { container } = render(<AppShell />);
+    await flush();
+    await flush();
+
+    expect(required(container.querySelector<HTMLSelectElement>('[data-product-switcher]'), 'product switcher').value).toBe(
+      'p1'
+    );
+
+    await act(async () => {
+      window.location.hash = '#/products/p2/requirements/r2';
+      window.dispatchEvent(new Event('hashchange'));
+    });
+    await flush();
+    await flush();
+
+    expect(required(container.querySelector<HTMLSelectElement>('[data-product-switcher]'), 'product switcher').value).toBe(
+      'p2'
+    );
+    expect(container.querySelector('[data-nav-requirement="r1"]')).toBeNull();
+    expect(container.querySelector('[data-nav-requirement="r2"]')).not.toBeNull();
+    expect(container.querySelector('.sidebar__item--active')?.getAttribute('data-nav-requirement')).toBe('r2');
+  });
+
+  it('clears stale requirements while switching products and keeps them empty when loading fails', async () => {
+    const { listProducts, listRequirements } = installForma();
+    const p2Requirements = deferred<{ requirements: Array<{ id: string; title: string; status: string; ui_affected: boolean }> }>();
+    listProducts.mockResolvedValue({
+      products: [
+        { id: 'p1', name: '产品一', description: '', platform: 'web' },
+        { id: 'p2', name: '产品二', description: '', platform: 'web' },
+      ],
+    });
+    listRequirements.mockImplementation((productId: string) => {
+      if (productId === 'p2') return p2Requirements.promise;
+      return Promise.resolve({
+        requirements: [{ id: 'r1', title: '第一产品需求', status: 'active', ui_affected: true }],
+      });
+    });
+
+    const { container } = render(<AppShell />);
+    await flush();
+    await flush();
+
+    expect(container.querySelector('[data-nav-requirement="r1"]')).not.toBeNull();
+
+    await act(async () => {
+      setSelectValue(required(container.querySelector<HTMLSelectElement>('[data-product-switcher]'), 'product switcher'), 'p2');
+    });
+
+    expect(container.querySelector('[data-nav-requirement="r1"]')).toBeNull();
+    expect(container.textContent).toContain('暂无需求');
+
+    await act(async () => {
+      p2Requirements.reject(new Error('load failed'));
+      await p2Requirements.promise.catch(() => undefined);
+    });
+    await flush();
+
+    expect(container.querySelector('[data-nav-requirement="r1"]')).toBeNull();
+    expect(container.textContent).toContain('暂无需求');
+  });
+
   it('renders empty state when listProducts returns an empty list', async () => {
     const { listProducts } = installForma();
     listProducts.mockResolvedValue({ products: [] });
@@ -182,3 +259,26 @@ describe('AppShell', () => {
     expect(dot).not.toBeNull();
   });
 });
+
+function required<T extends Element>(element: T | null, label: string): T {
+  if (!element) {
+    throw new Error(`Missing ${label}`);
+  }
+  return element;
+}
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
+  setter?.call(select, value);
+  select.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}

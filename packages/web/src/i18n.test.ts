@@ -136,6 +136,8 @@ describe("i18n", () => {
       "product.dangerZone",
       "product.dangerZoneHelp",
       "product.emptyIllustration",
+      "product.noSystemStyle",
+      "product.systemStyle",
       "requirement.emptyIllustration"
     ];
 
