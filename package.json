@@ -26,8 +26,13 @@
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.0.0",
+    "@vitest/browser": "4.1.6",
+    "@vitest/browser-playwright": "4.1.6",
     "happy-dom": "^20.9.0",
     "js-yaml": "^4.1.1",
+    "playwright": "1.60.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vitest": "^4.0.7"
