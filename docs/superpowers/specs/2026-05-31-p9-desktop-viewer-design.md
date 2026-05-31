@@ -25,8 +25,8 @@
 - **`Sidebar.tsx`**:产品切换(下拉/列表)+ 导航分区(需求 / 页面 / 风格)+ 底部连接状态指示。
 - **`TopBar.tsx`**:面包屑 + 当前产品名。
 - **`WorkspacePane.tsx`**:按当前选择渲染:
-  - 选某需求 → `<Viewer model resolver />`,model 由该需求全部 artifact 规范化(entry `requirement`)。
-  - 选某页面 → `<Viewer model resolver />`,model 仅该 page 的 variant(entry `page`)。
+  - 选某需求 → `<Viewer model resolver />`,model 由该需求全部 artifact 规范化(entry `requirement`);共享 Viewer 内置"设计/标注"模式切换,需求入口两种画布均可用。
+  - 选某页面 → `<Viewer model resolver />`,model 仅该需求下该 page 的 variant(entry `page`);共享 Viewer 内置"设计/标注"模式切换,页面入口两种画布均可用。
   - 选风格 → `StyleDetail`(DESIGN.md 文本 + tokens 预览 + `components.html` iframe)。
 - **`ConnectionGate.tsx`**:`formaServerStatus()` 不可达时全屏遮罩(取代现 SessionGate 的全屏门);可达则进入 AppShell。
 - **`StyleDetail.tsx`**:只读风格详情(复用 web 的展示约定:DESIGN.md + tokens + components.html iframe sandbox 无脚本)。
@@ -52,8 +52,8 @@
 
 ## 接 viewer 数据映射
 
-- `window.forma.listArtifacts(productId)` / `getRequirement(...)` 返回的 artifact 列表 → 映射为 `NormalizeArtifactInput[]`:`{ artifactId←id, kind, pageId←page_id, pageName, variant, title, version←current_version, width, height }`。
-- 两入口:**按需求** = 过滤 `requirement_id === reqId`;**按页面** = 过滤 `page_id === pageId`。
+- `window.forma.listArtifacts(productId)` 提供/补齐 artifact 行;`getRequirement(productId, reqId)` 提供该需求 pages 与 pageName/归属校验 → 映射为 `NormalizeArtifactInput[]`:`{ artifactId←id, kind, pageId←page_id, pageName, variant, title, version←current_version, width, height }`。若现有 desktop/server 读面缺 `page_id`/`variant`/`current_version`,P9 必须扩展只读 DTO 或逐条 `getArtifact` hydrate 后再规范化,不得从 URL 或标题推断。
+- 两入口:**按需求** = 过滤 `requirement_id === reqId`;**按页面** = 过滤 `requirement_id === reqId && page_id === pageId`(`page_id` 不是产品级全局唯一假设)。
 - `width/height` 按 D7(platform 默认尺寸)。
 - 调 `buildViewerModel({ entry, artifacts })` 得 model,连同 resolver 注入 `<Viewer>`。
 
@@ -61,6 +61,7 @@
 
 - 目的:外壳渲染产物过**与 artifact 同一套** P5 craft lint(机械规则:对比度 ≥4.5、字号取 type scale、`--accent` 可见使用 ≤N、token 遵循),CI 可执行、非人眼。
 - 机制:新增**根级 vitest 4 browser project**(复用 P7 playwright/chromium + optimizeDeps 模式),测试文件渲染每个 shell 屏(mock `window.forma` 注入假数据)→ 调 `extractSnapshotInPage()` 取渲染后 DOM 快照 → `lintCraft(snapshot)` 断言无违规。
+- dogfood/browser 覆盖至少包含:需求入口设计画布、需求入口标注画布、页面入口设计画布、页面入口标注画布、风格详情、断连遮罩。标注画布本期只验证 PNG tile + 右侧占位 slot,不要求标注内容。
 - desktop renderer 组件升 React 19 后与根 browser project(React 19 + chromium)一致,可被其渲染;desktop 自身 `vitest run`(vitest 3 / node 单测)**不动**。
 - 测试文件落点(实现期定):`packages/desktop/src/renderer/*.dogfood.browser.test.tsx`,由根 vitest 的新 project include。
 
@@ -82,7 +83,7 @@
 
 ## 验收
 
-- 两视图(按需求 / 按页面)经共享 `<Viewer>` 可用,viewer 复用自包、未重写。
+- 两入口(按需求 / 按页面)经共享 `<Viewer>` 可用,且每个入口的设计画布(HTML tile)与标注画布(PNG tile + 右侧占位 slot)均可切换;viewer 复用自包、未重写。
 - 外壳 IA 重构为统一工作区 + 侧边栏,消费 `clean` brand tokens.css,**无内联裸样式**。
 - 外壳每屏渲染成 DOM 后**跑同一套 craft lint 通过**(CI 可执行)。
 - 仍纯只读;中文文案;`pnpm desktop:dev` 可跑;`pnpm test`/`typecheck`/`build` 全绿不回退。
