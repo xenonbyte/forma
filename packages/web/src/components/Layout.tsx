@@ -146,7 +146,7 @@ export function StatePanel({ action, children, state, title }: StatePanelProps) 
 
 export function WorkSurface({ children, title }: { children: ReactNode; title: string }) {
   return (
-    <section className="rounded-lg border border-zinc-200 bg-white shadow-sm">
+    <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
       <div className="border-b border-zinc-200 px-4 py-3">
         <h2 className="text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
       </div>
