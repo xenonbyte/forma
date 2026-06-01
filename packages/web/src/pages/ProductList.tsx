@@ -12,7 +12,7 @@ import {
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog.js";
-import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
+import { StatePanel } from "../components/Layout.js";
 import { SkeletonList } from "../components/Skeleton.js";
 import { StatusBadge, type ConfigStatus } from "../components/StatusBadge.js";
 import type { ProductDeleteNavigationState } from "./ProductDetail.js";
@@ -94,7 +94,7 @@ export function ProductList({ client = apiClient, navigationState }: ProductList
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>} state="error" title={t("product.indexUnavailable")}>
+      <StatePanel state="error" title={t("product.indexUnavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -154,7 +154,7 @@ export function ProductListContent({ client, initialDeleteNotice = null, product
     return (
       <div className="space-y-5">
         {notice ? <ProductDeleteNotice notice={notice} t={t} /> : null}
-        <StatePanel action={<PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>} state="empty" title={t("product.noProducts")}>
+        <StatePanel state="empty" title={t("product.noProducts")}>
           <div className="flex items-center gap-3">
             <EmptyProductsIllustration label={t("product.emptyIllustration")} />
             <p>{t("product.noProductsHelp")}</p>
@@ -187,10 +187,6 @@ export function ProductListContent({ client, initialDeleteNotice = null, product
   return (
     <div className="space-y-5">
       {notice ? <ProductDeleteNotice notice={notice} t={t} /> : null}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm leading-6 text-zinc-600">{items.length} {t("product.loaded")}</p>
-        <PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>
-      </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {items.map((product) => (
@@ -274,12 +270,9 @@ function ProductCard({
             <p className="mt-3 text-xs leading-5 text-red-700">{requirementSummary.error.error_code} - {t("requirement.requestFailed")}</p>
           ) : null}
 
-          <div className="mt-auto grid gap-2 pt-4 sm:grid-cols-3">
+          <div className="mt-auto grid gap-2 pt-4 sm:grid-cols-2">
             <a className={secondaryLinkClasses} href={`/products/${product.id}`}>
-              {t("action.open")}
-            </a>
-            <a className={secondaryLinkClasses} href={latest ? `/products/${product.id}/baseline` : `/products/${product.id}#new-requirement`}>
-              {latest ? t("action.baseline") : t("action.createRequirement")}
+              {t("action.view")}
             </a>
             <button className={dangerLinkClasses} data-product-delete={product.id} onClick={onDelete} type="button">
               {t("action.delete")}

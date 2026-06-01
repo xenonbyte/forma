@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { apiClient, formatApiError, type ApiErrorInfo, type BrandStyleContent, type FormaApiClient } from "../api.js";
-import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
+import { StatePanel } from "../components/Layout.js";
 import { useT } from "../LocaleContext.js";
 
 export interface StyleDetailProps {
@@ -13,10 +13,12 @@ type StyleDetailState =
   | { status: "error"; error: ApiErrorInfo }
   | { status: "loading" }
   | { status: "ready"; style: BrandStyleContent };
+type StyleDetailTab = "components" | "design" | "tokens";
 
 export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
   const tx = useT();
   const styleName = params.name ?? "";
+  const [activeTab, setActiveTab] = useState<StyleDetailTab>("components");
   const [state, setState] = useState<StyleDetailState>({ status: "loading" });
 
   useEffect(() => {
@@ -51,43 +53,65 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href="/styles">{tx("nav.styles")}</PrimaryActionLink>} state="error" title={tx("style.detail.unavailableTitle")}>
+      <StatePanel state="error" title={tx("style.detail.unavailableTitle")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
   }
 
   return (
-    <div className="space-y-5">
-      <div className="flex justify-start">
-        <a className={secondaryLinkClasses} href="/styles">
-          {tx("action.backToStyles")}
-        </a>
+    <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-semibold tracking-normal text-zinc-950">{state.style.metadata.name}</h2>
+        </div>
+        <div className="inline-flex shrink-0 rounded-md border border-zinc-200 bg-zinc-50 p-1" role="tablist" aria-label={tx("style.detail.contentTabs")}>
+          {(["components", "tokens", "design"] as StyleDetailTab[]).map((tab) => (
+            <button
+              aria-selected={activeTab === tab}
+              className={`rounded px-3 py-1.5 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
+                activeTab === tab ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-600 hover:bg-white/70 hover:text-zinc-950"
+              }`}
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              role="tab"
+              type="button"
+            >
+              {styleTabLabel(tab, tx)}
+            </button>
+          ))}
+        </div>
       </div>
-
-      <WorkSurface title={tx("style.detail.designMd")}>
-        <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
-          {state.style.designMd || tx("style.detail.designMdEmpty")}
-        </pre>
-      </WorkSurface>
-
-      <WorkSurface title="Tokens">
-        <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
-          {state.style.tokensCss}
-        </pre>
-      </WorkSurface>
-
-      <WorkSurface title="Components">
-        <iframe
-          sandbox="allow-same-origin"
-          srcDoc={state.style.componentsHtml}
-          style={{ border: "none", height: 480, width: "100%" }}
-          title="components"
-        />
-      </WorkSurface>
-    </div>
+      <div className="p-4">
+        {activeTab === "components" ? (
+          <iframe
+            sandbox="allow-same-origin"
+            srcDoc={state.style.componentsHtml}
+            style={{ border: "none", height: 520, width: "100%" }}
+            title="components"
+          />
+        ) : null}
+        {activeTab === "tokens" ? (
+          <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
+            {state.style.tokensCss}
+          </pre>
+        ) : null}
+        {activeTab === "design" ? (
+          <pre className="max-h-[42rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
+            {state.style.designMd || tx("style.detail.designMdEmpty")}
+          </pre>
+        ) : null}
+      </div>
+    </section>
   );
 }
 
-const secondaryLinkClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+function styleTabLabel(tab: StyleDetailTab, t: (key: string) => string): string {
+  if (tab === "components") {
+    return t("style.detail.components");
+  }
+  if (tab === "tokens") {
+    return t("style.detail.tokens");
+  }
+  return t("style.detail.designMd");
+}

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { formatApiError, type ApiErrorInfo } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
+import { StatePanel } from "../components/Layout.js";
 
 // Local types — NOT imported from api.ts (api.ts will be updated in D1-05)
 export interface ArtifactSummary {
@@ -59,10 +59,6 @@ export function DesignView({ client, params }: DesignViewProps) {
     };
   }, [client, productId, requirementId]);
 
-  const backHref = requirementId
-    ? `/products/${productId}/requirements/${requirementId}`
-    : `/products/${productId}/requirements`;
-
   if (state.status === "loading") {
     return (
       <StatePanel state="loading" title={t("design.view")}>
@@ -74,9 +70,6 @@ export function DesignView({ client, params }: DesignViewProps) {
   if (state.status === "error") {
     return (
       <StatePanel
-        action={
-          <PrimaryActionLink href={backHref}>{t("requirement.records")}</PrimaryActionLink>
-        }
         state="error"
         title={t("design.canvasUnavailable")}
       >
@@ -101,9 +94,6 @@ export function DesignView({ client, params }: DesignViewProps) {
             </h2>
           ) : null}
         </div>
-        <a className={secondaryLinkClasses} href={backHref}>
-          {t("requirement.records")}
-        </a>
       </div>
 
       {/* Empty state */}
@@ -173,9 +163,6 @@ export function DesignView({ client, params }: DesignViewProps) {
     </div>
   );
 }
-
-const secondaryLinkClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
 function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;

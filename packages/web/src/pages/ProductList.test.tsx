@@ -127,6 +127,13 @@ describe("ProductListContent", () => {
     expect(html).toContain("2 requirements");
     expect(html).toContain("Active");
     expect(html).toContain('href="/products/P-123abc"');
+    expect(html).toContain("View");
+    expect(html).not.toContain("Open");
+    expect(html).not.toContain("Baseline");
+    expect(html).not.toContain('href="/products/P-123abc/baseline"');
+    expect(html).not.toContain('href="/products/new"');
+    expect(html).not.toContain("products loaded");
+    expect(html).not.toContain("Requirement summaries are isolated per product.");
     expect(html).toContain('data-product-status-stripe="not_loaded"');
     expect(html).toContain('data-product-inline-badge="requirements"');
     expect(html).toContain('data-product-inline-badge="latest-status"');
@@ -137,12 +144,12 @@ describe("ProductListContent", () => {
     const html = renderToStaticMarkup(<ProductListContent products={[]} requirementSummaries={{}} />);
 
     expect(html).toContain("No products");
-    expect(html).toContain('href="/products/new"');
+    expect(html).not.toContain('href="/products/new"');
     expect(html).toContain('data-empty-illustration="products"');
     expect(html).toContain('aria-label="Product empty state"');
   });
 
-  it("renders a requirement creation entry when a product has no latest requirement", () => {
+  it("does not render product-card baseline or requirement creation entries", () => {
     const html = renderToStaticMarkup(
       <ProductListContent
         products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
@@ -154,8 +161,9 @@ describe("ProductListContent", () => {
       />
     );
 
-    expect(html).toContain("Create requirement");
-    expect(html).toContain('href="/products/P-123abc#new-requirement"');
+    expect(html).toContain("View");
+    expect(html).not.toContain("Create requirement");
+    expect(html).not.toContain('href="/products/P-123abc#new-requirement"');
   });
 
   it("marks products with incomplete language configuration as configuration incomplete", () => {

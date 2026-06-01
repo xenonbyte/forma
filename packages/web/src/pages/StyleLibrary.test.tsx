@@ -20,22 +20,25 @@ const styles: StyleMetadata[] = [
   }
 ];
 
-describe("style category helpers", () => {
-  it("derives category options from style design paths", () => {
-    const getStyleCategories = (styleLibrary as { getStyleCategories?: (items: StyleMetadata[]) => string[] }).getStyleCategories;
-
-    expect(getStyleCategories).toBeTypeOf("function");
-    expect(getStyleCategories?.(styles)).toEqual(["all", "linear", "retail"]);
-  });
-
-  it("filters styles by derived category", () => {
+describe("style search helpers", () => {
+  it("filters styles by name", () => {
     const filterStyles = (
       styleLibrary as {
-        filterStylesByControls?: (items: StyleMetadata[], controls: { category: string; query: string }) => StyleMetadata[];
+        filterStylesByControls?: (items: StyleMetadata[], controls: { query: string }) => StyleMetadata[];
       }
     ).filterStylesByControls;
 
     expect(filterStyles).toBeTypeOf("function");
-    expect(filterStyles?.(styles, { category: "retail", query: "" }).map((style) => style.name)).toEqual(["retail mobile"]);
+    expect(filterStyles?.(styles, { query: "retail" }).map((style) => style.name)).toEqual(["retail mobile"]);
+  });
+
+  it("filters styles by description", () => {
+    const filterStyles = (
+      styleLibrary as {
+        filterStylesByControls?: (items: StyleMetadata[], controls: { query: string }) => StyleMetadata[];
+      }
+    ).filterStylesByControls;
+
+    expect(filterStyles?.(styles, { query: "tool" }).map((style) => style.name)).toEqual(["linear"]);
   });
 });

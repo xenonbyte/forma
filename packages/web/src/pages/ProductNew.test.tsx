@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { ProductNew } from "./ProductNew.js";
 import * as productNew from "./ProductNew.js";
-import { ApiError, type BrandStyleContent, type FormaApiClient, type Language, type Product, type StyleMetadata } from "../api.js";
+import { ApiError, type BrandStyleContent, type FormaApiClient, type Language, type Product, type StyleMetadata, type SystemStyleMetadata } from "../api.js";
 import { localeStorageKey, setLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -53,6 +53,21 @@ colors:
     componentsHtml: "<div>retail</div>"
   }
 };
+
+const systemStyles: SystemStyleMetadata[] = [
+  {
+    name: "platform-design",
+    description: "Cross-platform design rules for Web, Mobile, Tablet, and Desktop.",
+    mode: "design-system",
+    category: "design-systems"
+  },
+  {
+    name: "mobile-first",
+    description: "Lightweight rules for mobile-led product flows.",
+    mode: "design-system",
+    category: "design-systems"
+  }
+];
 
 const createdProduct: Product = {
   id: "P-123abc",
@@ -105,14 +120,6 @@ describe("ProductNew", () => {
 
     expect(container.querySelector('select[name="style"]')).toBeNull();
     const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
-    expect(trigger.disabled).toBe(true);
-    expect(trigger.textContent).toContain("Select a platform before choosing a style");
-
-    await act(async () => {
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
-      await flushPromises();
-    });
-
     expect(trigger.disabled).toBe(false);
     expect(trigger.textContent).toContain("Select style");
 
@@ -122,7 +129,7 @@ describe("ProductNew", () => {
     expect(required(container.querySelector<HTMLInputElement>('input[name="brand_style"]'), "brand_style hidden input").value).toBe("linear");
   });
 
-  it("updates the style preview type when platform changes without clearing the selected style", async () => {
+  it("renders the style dialog as a body-level modal with all platform previews", async () => {
     const client = createClient();
     const { container, root } = createTestRoot();
 
@@ -131,25 +138,19 @@ describe("ProductNew", () => {
       await flushPromises();
     });
 
-    await act(async () => {
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
-      await flushPromises();
-    });
-    await chooseStyle(container, "linear");
     await openStylePicker(container);
 
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("web");
-
-    await act(async () => {
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "desktop");
-      await flushPromises();
-    });
-
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("desktop");
-    expect(required(container.querySelector<HTMLInputElement>('input[name="brand_style"]'), "brand_style hidden input").value).toBe("linear");
+    const dialog = required(document.body.querySelector<HTMLElement>('[data-style-picker-dialog="true"]'), "style picker dialog");
+    expect(container.contains(dialog)).toBe(false);
+    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]")).map((mock) => mock.dataset.previewMock).sort()).toEqual([
+      "desktop",
+      "mobile",
+      "tablet",
+      "web"
+    ]);
   });
 
-  it("requests each style detail once while the picker cache is warm", async () => {
+  it("requests style detail and updates the preview from the selected style template", async () => {
     const client = createClient();
     const { container, root } = createTestRoot();
 
@@ -164,25 +165,29 @@ describe("ProductNew", () => {
     });
     await openStylePicker(container);
 
+    const previewBefore = required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "style preview grid");
     expect(client.getStyle).toHaveBeenCalledTimes(1);
     expect(client.getStyle).toHaveBeenCalledWith("linear");
+    expect(previewBefore.dataset.previewTemplateName).toBe("linear");
+    expect(previewBefore.dataset.primary).toBe("#5E6AD2");
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>('[data-style-picker-option="retail"]'), "retail option").click();
+      required(document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="retail"]'), "retail option").click();
       await flushPromises();
     });
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'), "linear option").click();
+      required(document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'), "linear option").click();
       await flushPromises();
     });
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
       await flushPromises();
     });
     await openStylePicker(container);
 
     expect(client.getStyle).toHaveBeenCalledTimes(2);
     expect(client.getStyle).toHaveBeenNthCalledWith(2, "retail");
+    expect(required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "style preview grid").dataset.previewTemplateName).toBe("linear");
   });
 
   it("updates static form text when the persisted locale changes", async () => {
@@ -246,7 +251,56 @@ describe("ProductNew", () => {
       await flushPromises();
     });
 
+    expect(submit.disabled).toBe(true);
+
+    await chooseSystemStyle(container, "platform-design");
+
     expect(submit.disabled).toBe(false);
+  });
+
+  it("uses a design spec picker dialog instead of the old native select", async () => {
+    const client = createClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductNew client={client} navigate={vi.fn()} />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector('select[name="system_style"]')).toBeNull();
+    const trigger = required(container.querySelector<HTMLButtonElement>("[data-system-style-picker-trigger]"), "system style picker trigger");
+    expect(trigger.disabled).toBe(false);
+    expect(trigger.textContent).toContain("Select design spec");
+
+    await openSystemStylePicker(container);
+
+    const dialog = required(document.body.querySelector<HTMLElement>('[data-system-style-picker-dialog="true"]'), "system style picker dialog");
+    expect(container.contains(dialog)).toBe(false);
+    expect(dialog.textContent).toContain("Platform Design");
+    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-spec-preview-mock]")).map((mock) => mock.dataset.specPreviewMock).sort()).toEqual([
+      "desktop",
+      "mobile",
+      "tablet",
+      "web"
+    ]);
+
+    const previewBefore = required(document.body.querySelector<HTMLElement>('[data-system-preview-grid="true"]'), "system style preview grid");
+    const previewBeforeHtml = previewBefore.outerHTML;
+    expect(previewBefore.dataset.previewTemplateName).toBe("platform-design");
+    await act(async () => {
+      required(document.body.querySelector<HTMLButtonElement>('[data-system-style-picker-option="mobile-first"]'), "mobile-first option").click();
+      await flushPromises();
+    });
+    const previewAfter = required(document.body.querySelector<HTMLElement>('[data-system-preview-grid="true"]'), "system style preview grid");
+    expect(previewAfter.dataset.previewTemplateName).toBe("mobile-first");
+    expect(previewAfter.outerHTML).not.toBe(previewBeforeHtml);
+    await act(async () => {
+      required(document.body.querySelector<HTMLButtonElement>("[data-system-style-picker-confirm]"), "system style confirm button").click();
+      await flushPromises();
+    });
+
+    expect(trigger.textContent).toContain("Selected spec: mobile-first");
+    expect(required(container.querySelector<HTMLInputElement>('input[name="system_style"]'), "system_style hidden input").value).toBe("mobile-first");
   });
 
   it("creates then configures the product with brand_style before navigating", async () => {
@@ -270,6 +324,7 @@ describe("ProductNew", () => {
     });
 
     await chooseStyle(container, "linear");
+    await chooseSystemStyle(container, "platform-design");
 
     await act(async () => {
       required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
@@ -295,6 +350,7 @@ describe("ProductNew", () => {
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
       brand_style: "linear",
+      system_style: "platform-design",
       languages: ["en", "zh-CN"],
       default_language: "zh-CN"
     });
@@ -333,6 +389,7 @@ describe("ProductNew", () => {
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
       brand_style: "linear",
+      system_style: "platform-design",
       languages: ["en"],
       default_language: "en"
     });
@@ -372,12 +429,14 @@ describe("ProductNew", () => {
     expect(client.configureProduct).toHaveBeenNthCalledWith(1, "P-123abc", {
       platform: "web",
       brand_style: "linear",
+      system_style: "platform-design",
       languages: ["en"],
       default_language: "en"
     });
     expect(client.configureProduct).toHaveBeenNthCalledWith(2, "P-123abc", {
       platform: "web",
       brand_style: "linear",
+      system_style: "platform-design",
       languages: ["en"],
       default_language: "en"
     });
@@ -470,7 +529,7 @@ function createClient() {
     })),
     getStyle: vi.fn(async (name: string) => detailByName[name] ?? detailByName.linear),
     listStyles: vi.fn(async () => styles),
-    listSystemStyles: vi.fn(async () => [])
+    listSystemStyles: vi.fn(async () => systemStyles)
   } satisfies Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles" | "listSystemStyles">;
 }
 
@@ -495,6 +554,7 @@ async function fillValidProductForm(container: HTMLElement) {
   });
 
   await chooseStyle(container, "linear");
+  await chooseSystemStyle(container, "platform-design");
 
   await act(async () => {
     required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
@@ -505,11 +565,11 @@ async function fillValidProductForm(container: HTMLElement) {
 async function chooseStyle(container: HTMLElement, name: string) {
   await openStylePicker(container);
   await act(async () => {
-    required(container.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} style option`).click();
+    required(document.body.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} style option`).click();
     await flushPromises();
   });
   await act(async () => {
-    required(container.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "style confirm button").click();
+    required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "style confirm button").click();
     await flushPromises();
   });
 }
@@ -517,6 +577,25 @@ async function chooseStyle(container: HTMLElement, name: string) {
 async function openStylePicker(container: HTMLElement) {
   await act(async () => {
     required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger").click();
+    await flushPromises();
+  });
+}
+
+async function chooseSystemStyle(container: HTMLElement, name: string) {
+  await openSystemStylePicker(container);
+  await act(async () => {
+    required(document.body.querySelector<HTMLButtonElement>(`[data-system-style-picker-option="${name}"]`), `${name} system style option`).click();
+    await flushPromises();
+  });
+  await act(async () => {
+    required(document.body.querySelector<HTMLButtonElement>("[data-system-style-picker-confirm]"), "system style confirm button").click();
+    await flushPromises();
+  });
+}
+
+async function openSystemStylePicker(container: HTMLElement) {
+  await act(async () => {
+    required(container.querySelector<HTMLButtonElement>("[data-system-style-picker-trigger]"), "system style picker trigger").click();
     await flushPromises();
   });
 }

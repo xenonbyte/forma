@@ -14,6 +14,7 @@ import {
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
 import { StylePickerDialog } from "../components/StylePickerDialog.js";
+import { SystemStylePickerDialog } from "../components/SystemStylePickerDialog.js";
 
 export interface ProductNewProps {
   client?: Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles" | "listSystemStyles">;
@@ -55,6 +56,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
     description.trim().length > 0 &&
     platform !== "" &&
     styleName.length > 0 &&
+    (systemStyles.length === 0 || systemStyleName.length > 0) &&
     selectedLanguages.length > 0 &&
     defaultLanguage !== "" &&
     !styleError &&
@@ -173,32 +175,22 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
                 disabledReason={stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined}
                 getStyle={client.getStyle}
                 onConfirm={setStyleName}
-                platform={platform}
                 selectedStyleName={styleName}
                 styles={styles}
               />
             </div>
           </div>
 
-          {systemStyles.length > 0 ? (
-            <label className="grid gap-1 text-sm font-medium text-zinc-700">
-              {t("product.systemStyle")}
-              <select
-                className={inputClasses}
-                name="system_style"
-                onChange={(event) => setSystemStyleName(event.target.value)}
-                value={systemStyleName}
-              >
-                <option value="">{t("product.noSystemStyle")}</option>
-                {systemStyles.map((ss) => (
-                  <option key={ss.name} value={ss.name}>
-                    {ss.name}
-                    {ss.description ? ` — ${ss.description}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
+          <div className="grid gap-1 text-sm font-medium text-zinc-700">
+            {t("product.systemStyle")}
+            <input name="system_style" type="hidden" value={systemStyleName} />
+            <SystemStylePickerDialog
+              disabledReason={stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined}
+              onConfirm={setSystemStyleName}
+              selectedStyleName={systemStyleName}
+              styles={systemStyles}
+            />
+          </div>
 
           <fieldset className="grid gap-2">
             <legend className="text-sm font-medium text-zinc-700">{t("product.languages")}</legend>

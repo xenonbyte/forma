@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe("StylePickerDialog", () => {
-  it("does not open while no platform is selected", async () => {
+  it("opens without a selected platform because the preview shows every platform", async () => {
     const onConfirm = vi.fn();
     const getStyle = vi.fn(async (name: string) => detailByName[name]!);
     const { container, root } = createTestRoot();
@@ -78,56 +78,53 @@ describe("StylePickerDialog", () => {
     });
 
     const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
-    expect(trigger.disabled).toBe(true);
+    expect(trigger.disabled).toBe(false);
 
     await act(async () => {
       trigger.click();
       await flushMicrotasks();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
-    expect(getStyle).not.toHaveBeenCalled();
+    const dialog = required(document.body.querySelector<HTMLElement>('[data-style-picker-dialog="true"]'), "style picker dialog");
+    expect(container.contains(dialog)).toBe(false);
+    expect(getStyle).toHaveBeenCalledWith("linear");
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it("filters candidate styles through search", async () => {
+  it("renders compact candidate cards without the old search field", async () => {
     const { container } = await renderOpenPicker();
 
-    await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>("[data-style-picker-search]"), "style search"), "retail");
-      await flushMicrotasks();
-    });
-
-    const options = Array.from(container.querySelectorAll<HTMLElement>("[data-style-picker-option]"));
-    expect(options).toHaveLength(1);
-    expect(options[0]?.textContent).toContain("retail");
-    expect(container.textContent).not.toContain("Focused tool UI");
+    expect(document.body.querySelector("[data-style-picker-search]")).toBeNull();
+    const options = Array.from(document.body.querySelectorAll<HTMLElement>("[data-style-picker-option]"));
+    expect(options).toHaveLength(2);
+    expect(options[0]?.textContent).toContain("Linear");
+    expect(options[1]?.textContent).toContain("Retail");
   });
 
-  it("moves the candidate to the visible search result before confirming", async () => {
+  it("confirms the active candidate without mutating the committed value before confirm", async () => {
     const onConfirm = vi.fn();
     const { container } = await renderOpenPicker({ onConfirm, selectedStyleName: "linear" });
 
+    expect(required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid").dataset.previewTemplateName).toBe("linear");
+    expect(onConfirm).not.toHaveBeenCalled();
+
     await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>("[data-style-picker-search]"), "style search"), "retail");
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "confirm button").click();
       await flushMicrotasks();
     });
 
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.primary).toBe("#14b8a6");
-
-    await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "confirm button").click();
-      await flushMicrotasks();
-    });
-
-    expect(onConfirm).toHaveBeenCalledWith("retail");
+    expect(onConfirm).toHaveBeenCalledWith("linear");
   });
 
-  it("changes only the candidate preview on style click and commits on confirm", async () => {
+  it("changes the active candidate and renders the preview from that candidate template data", async () => {
     const onConfirm = vi.fn();
-    const { container } = await renderOpenPicker({ onConfirm, selectedStyleName: "linear" });
+    const getStyle = vi.fn(async (name: string) => detailByName[name]!);
+    const { container } = await renderOpenPicker({ getStyle, onConfirm, selectedStyleName: "linear" });
 
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.primary).toBe("#5E6AD2");
+    const previewBefore = required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid");
+    expect(previewBefore.dataset.previewTemplateName).toBe("linear");
+    expect(previewBefore.dataset.primary).toBe("#5E6AD2");
+    expect(optionButton(container, "linear").getAttribute("aria-selected")).toBe("true");
 
     await act(async () => {
       optionButton(container, "retail").click();
@@ -135,16 +132,21 @@ describe("StylePickerDialog", () => {
     });
 
     expect(onConfirm).not.toHaveBeenCalled();
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.primary).toBe("#14b8a6");
+    expect(getStyle).toHaveBeenCalledWith("retail");
+    expect(optionButton(container, "linear").getAttribute("aria-selected")).toBe("false");
+    expect(optionButton(container, "retail").getAttribute("aria-selected")).toBe("true");
+    const previewAfter = required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid");
+    expect(previewAfter.dataset.previewTemplateName).toBe("retail");
+    expect(previewAfter.dataset.primary).toBe("#14b8a6");
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "confirm button").click();
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "confirm button").click();
       await flushMicrotasks();
     });
 
     expect(onConfirm).toHaveBeenCalledTimes(1);
     expect(onConfirm).toHaveBeenCalledWith("retail");
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
   });
 
   it("closes with cancel, close button, and Escape without submitting", async () => {
@@ -157,17 +159,17 @@ describe("StylePickerDialog", () => {
       await flushMicrotasks();
     });
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
       await flushMicrotasks();
     });
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
     await openPicker(container);
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-close]"), "close button").click();
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-close]"), "close button").click();
       await flushMicrotasks();
     });
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
 
     await openPicker(container);
     await act(async () => {
@@ -175,7 +177,7 @@ describe("StylePickerDialog", () => {
       await flushMicrotasks();
     });
 
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull();
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
@@ -200,7 +202,7 @@ describe("StylePickerDialog", () => {
     expect(getStyle).toHaveBeenNthCalledWith(2, "retail");
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
       await flushMicrotasks();
     });
     await openPicker(container);
@@ -208,82 +210,39 @@ describe("StylePickerDialog", () => {
     expect(getStyle).toHaveBeenCalledTimes(2);
   });
 
-  it("retries a failed detail load after the dialog is reopened", async () => {
-    const getStyle = vi
-      .fn<(name: string) => Promise<BrandStyleContent>>()
-      .mockRejectedValueOnce(new Error("Temporary DESIGN.md failure"))
-      .mockImplementation(async (name) => detailByName[name]!);
-    const { container } = await renderOpenPicker({ getStyle, selectedStyleName: "retail" });
-
-    expect(container.textContent).toContain("Temporary DESIGN.md failure");
-
-    await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
-      await flushMicrotasks();
-    });
-    await openPicker(container);
-
-    expect(getStyle).toHaveBeenCalledTimes(2);
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.primary).toBe("#14b8a6");
-    expect(container.textContent).not.toContain("Temporary DESIGN.md failure");
-  });
-
-  it("deduplicates in-flight detail requests by style name", async () => {
-    const getStyle = vi.fn<(name: string) => Promise<BrandStyleContent>>(() => new Promise(() => undefined));
-    const { container } = await renderOpenPicker({ getStyle, selectedStyleName: "linear" });
-
-    await act(async () => {
-      optionButton(container, "retail").click();
-      await flushMicrotasks();
-    });
-    await act(async () => {
-      optionButton(container, "linear").click();
-      await flushMicrotasks();
-    });
-
-    expect(getStyle).toHaveBeenCalledTimes(2);
-    expect(getStyle).toHaveBeenNthCalledWith(1, "linear");
-    expect(getStyle).toHaveBeenNthCalledWith(2, "retail");
-  });
-
-  it("shows a detail-load warning while keeping the metadata fallback preview visible", async () => {
-    const getStyle = vi.fn(async (name: string) => {
-      if (name === "retail") {
-        throw new Error("DESIGN.md unavailable");
-      }
-      return detailByName[name]!;
-    });
-    const { container } = await renderOpenPicker({ getStyle, selectedStyleName: "retail" });
-
-    expect(container.textContent).toContain("DESIGN.md unavailable");
-    const preview = required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel");
-    // fallback primary from designMd is absent → uses hardcoded fallback
-    expect(preview.dataset.previewType).toBe("web");
-  });
-
-  it("uses the selected platform as the fixed preview type", async () => {
+  it("renders all four platform previews regardless of selected platform", async () => {
     const { container } = await renderOpenPicker({ platform: "tablet" });
 
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("tablet");
+    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]")).map((mock) => mock.dataset.previewMock).sort()).toEqual([
+      "desktop",
+      "mobile",
+      "tablet",
+      "web"
+    ]);
 
     await act(async () => {
       optionButton(container, "retail").click();
       await flushMicrotasks();
     });
 
-    expect(required(container.querySelector<HTMLElement>('[data-style-preview-panel="true"]'), "preview panel").dataset.previewType).toBe("tablet");
+    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]")).map((mock) => mock.dataset.previewMock).sort()).toEqual([
+      "desktop",
+      "mobile",
+      "tablet",
+      "web"
+    ]);
   });
 
-  it("focuses the search input on open and restores focus to the trigger on close", async () => {
+  it("focuses the first option on open and restores focus to the trigger on close", async () => {
     const { container } = await renderPicker({ platform: "web" });
     const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
 
     await openPicker(container);
 
-    expect(document.activeElement).toBe(required(container.querySelector<HTMLInputElement>("[data-style-picker-search]"), "style search"));
+    expect(document.activeElement).toBe(required(document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'), "first style option"));
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
+      required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
       await flushMicrotasks();
     });
 
@@ -332,8 +291,8 @@ async function openPicker(container: HTMLElement) {
   });
 }
 
-function optionButton(container: HTMLElement, name: string): HTMLButtonElement {
-  return required(container.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} option`);
+function optionButton(_container: HTMLElement, name: string): HTMLButtonElement {
+  return required(document.body.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} option`);
 }
 
 function createTestRoot() {
@@ -350,13 +309,6 @@ function required<T extends Element>(element: T | null, label: string): T {
     throw new Error(`Missing ${label}`);
   }
   return element;
-}
-
-function setInputValue(input: HTMLInputElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
-  setter?.call(input, value);
-  input.dispatchEvent(new Event("input", { bubbles: true }));
-  input.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
 async function flushMicrotasks() {

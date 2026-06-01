@@ -45,4 +45,13 @@ describe("matchRoute", () => {
     expect(window.location.pathname).toBe("/products");
     expect(window.history.state).toEqual(deleteState);
   });
+
+  it("matches the settings route", () => {
+    const match = matchRoute("/settings");
+
+    expect(match.found).toBe(true);
+    expect(match.route.path).toBe("/settings");
+    expect(match.route.navGroup).toBe("settings");
+    expect(match.pathname).toBe("/settings");
+  });
 });

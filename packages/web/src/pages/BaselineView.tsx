@@ -10,7 +10,7 @@ import {
   type ProductBaseline
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
+import { StatePanel, WorkSurface } from "../components/Layout.js";
 import { NavigationGraph } from "../components/NavigationGraph.js";
 
 export interface BaselineViewProps {
@@ -64,7 +64,7 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>{t("action.product")}</PrimaryActionLink>} state="error" title={t("baseline.unavailable")}>
+      <StatePanel state="error" title={t("baseline.unavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -72,7 +72,7 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 
   if (state.baseline.pages.length === 0 && state.baseline.navigation.length === 0) {
     return (
-      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>{t("action.product")}</PrimaryActionLink>} state="empty" title={t("baseline.emptyBaseline")}>
+      <StatePanel state="empty" title={t("baseline.emptyBaseline")}>
         {t("baseline.emptyGenerated")}
       </StatePanel>
     );
@@ -124,12 +124,6 @@ export function BaselineContent({
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-start">
-        <a className={secondaryLinkClasses} href={`/products/${productId}`}>
-          {t("action.backToProduct")}
-        </a>
-      </div>
-
       <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1 shadow-sm" role="tablist" aria-label={t("baseline.view")}>
         {(["list", "graph"] as BaselineTab[]).map((tab) => (
           <button
@@ -308,8 +302,6 @@ function uniqueValues(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
-const secondaryLinkClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 const pillLinkClasses =
   "inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono text-xs font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 const pageActionLinkClasses =

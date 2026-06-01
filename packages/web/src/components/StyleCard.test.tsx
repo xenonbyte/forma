@@ -22,26 +22,26 @@ describe("StyleCard", () => {
     expect(html).toContain('href="/styles/linear"');
     expect(html).toContain("linear");
     expect(html).toContain("Focused tool UI");
-    expect(html).toContain("productivity");
+    expect(html).not.toContain("productivity");
   });
 
-  it("renders without category badge when category is absent", () => {
+  it("does not derive a category badge from the style path", () => {
     const html = renderToStaticMarkup(
       <StyleCard
-        href="/styles/sparse"
+        href="/styles/plain"
         style={{
-          name: "sparse",
+          name: "plain",
           description: "Sparse style",
-          design_md_path: "styles/sparse/DESIGN.md",
-          tokens_css_path: "styles/sparse/tokens.css",
-          components_html_path: "styles/sparse/components.html"
+          design_md_path: "styles/custom/DESIGN.md",
+          tokens_css_path: "styles/custom/tokens.css",
+          components_html_path: "styles/custom/components.html"
         }}
       />
     );
 
-    expect(html).toContain("sparse");
+    expect(html).toContain("plain");
     expect(html).toContain("Sparse style");
-    // derives category from path
+    expect(html).not.toContain(">custom<");
     expect(html).toContain("tokens.css");
   });
 
@@ -61,5 +61,35 @@ describe("StyleCard", () => {
     );
 
     expect(html).toContain("google/material-design");
+  });
+
+  it("renders visual tokens as card preview styles and color bars", () => {
+    const html = renderToStaticMarkup(
+      <StyleCard
+        href="/styles/agentic"
+        style={{
+          name: "agentic",
+          description: "Agentic style",
+          design_md_path: "styles/agentic/DESIGN.md",
+          tokens_css_path: "styles/agentic/tokens.css",
+          components_html_path: "styles/agentic/components.html"
+        }}
+        visualTokens={{
+          backgroundColor: "#111827",
+          fontFamily: "Acme Sans",
+          primaryColor: "#3b82f6",
+          secondaryColor: "#f97316",
+          textColor: "#ffffff"
+        }}
+      />
+    );
+
+    expect(html).toContain("background-color:#111827");
+    expect(html).toContain("font-family:Acme Sans");
+    expect(html).toContain("color:#ffffff");
+    expect(html).toContain('data-style-primary-color="true"');
+    expect(html).toContain('background-color:#3b82f6');
+    expect(html).toContain('data-style-secondary-color="true"');
+    expect(html).toContain('background-color:#f97316');
   });
 });

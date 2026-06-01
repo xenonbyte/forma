@@ -34,6 +34,7 @@ export interface ProductDetailProps {
     | "listStyles"
   >;
   hash?: string;
+  onBreadcrumbLabel?: (key: string, label: string) => void;
   onNavigate?: (path: string, state?: ProductDeleteNavigationState) => void;
   params: Record<string, string>;
 }
@@ -58,7 +59,7 @@ type ProductDetailState =
   | { status: "loading" }
   | { baselineState: BaselineSummaryState; product: Product; requirementState: RequirementListState; status: "ready" };
 
-export function ProductDetail({ client = apiClient, hash = "", onNavigate, params }: ProductDetailProps) {
+export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel, onNavigate, params }: ProductDetailProps) {
   const t = useT();
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
@@ -104,6 +105,12 @@ export function ProductDetail({ client = apiClient, hash = "", onNavigate, param
     }, 0);
     return () => window.clearTimeout(timeout);
   }, [hash, state.status]);
+
+  useEffect(() => {
+    if (state.status === "ready") {
+      onBreadcrumbLabel?.(`product:${productId}`, state.product.name || productId);
+    }
+  }, [onBreadcrumbLabel, productId, state]);
 
   const canCreateRequirement = title.trim().length > 0 && !creating;
 
@@ -181,7 +188,7 @@ export function ProductDetail({ client = apiClient, hash = "", onNavigate, param
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href="/products">{t("action.products")}</PrimaryActionLink>} state="error" title={t("product.unavailable")}>
+      <StatePanel state="error" title={t("product.unavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );

@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { formatApiError, type ApiErrorInfo, type BrandStyleContent, type Platform, type StyleMetadata } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { StylePreviewPanel, type StylePreviewType } from "./StylePreviewPanel.js";
+import { PlatformTemplatePreview } from "./PlatformTemplatePreview.js";
 
 export interface StylePickerDialogProps {
   disabledReason?: string;
   getStyle(name: string): Promise<BrandStyleContent>;
   onConfirm(styleName: string): void;
-  platform: Platform | "";
+  platform?: Platform | "";
   selectedStyleName: string;
   styles: StyleMetadata[];
 }
+
+const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
 type DetailState =
   | { name: string; status: "idle" }
@@ -19,14 +22,10 @@ type DetailState =
   | { error: ApiErrorInfo; name: string; status: "error" }
   | { name: string; status: "loading" };
 
-const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
-const inputClasses = `rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-950 shadow-sm transition placeholder:text-zinc-400 ${focusClasses}`;
-
 export function StylePickerDialog({
   disabledReason,
   getStyle,
   onConfirm,
-  platform,
   selectedStyleName,
   styles
 }: StylePickerDialogProps) {
@@ -34,25 +33,20 @@ export function StylePickerDialog({
   const [candidateStyleName, setCandidateStyleName] = useState("");
   const [detailState, setDetailState] = useState<DetailState>({ name: "", status: "idle" });
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const detailCache = useRef(new Map<string, BrandStyleContent>());
   const detailRequests = useRef(new Map<string, Promise<BrandStyleContent>>());
   const dialogRef = useRef<HTMLElement>(null);
-  const searchInputRef = useRef<HTMLInputElement>(null);
+  const firstOptionRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(false);
 
-  const disabled = platform === "" || disabledReason !== undefined;
+  const disabled = disabledReason !== undefined;
   const selectedStyle = styles.find((style) => style.name === selectedStyleName);
   const candidateStyle = styles.find((style) => style.name === candidateStyleName);
-  const filteredStyles = useMemo(() => filterStyles(styles, query), [query, styles]);
-  const previewType: StylePreviewType = platform === "" ? "web" : platform;
-  const previewMetadata = detailState.status === "ready" ? detailState.detail.metadata : candidateStyle;
-  const previewDesignMd = detailState.status === "ready" ? detailState.detail.designMd : undefined;
+  const previewMetadata = candidateStyle;
+  const previewDesignMd = detailState.status === "ready" && detailState.name === candidateStyleName ? detailState.detail.designMd : undefined;
   const summary = disabled
-    ? platform === ""
-      ? tx("stylePicker.platformRequired")
-      : (disabledReason ?? tx("stylePicker.selectStyle"))
+    ? (disabledReason ?? tx("stylePicker.selectStyle"))
     : selectedStyleName.length > 0
       ? tx("stylePicker.selectedSummary").replace("{styleName}", selectedStyleName)
       : tx("stylePicker.selectStyle");
@@ -62,17 +56,6 @@ export function StylePickerDialog({
       setOpen(false);
     }
   }, [disabled, open]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    const candidateVisible = filteredStyles.some((style) => style.name === candidateStyleName);
-    if (!candidateVisible) {
-      setCandidateStyleName(filteredStyles[0]?.name ?? "");
-    }
-  }, [candidateStyleName, filteredStyles, open]);
 
   useEffect(() => {
     if (!open || candidateStyleName.length === 0) {
@@ -123,7 +106,7 @@ export function StylePickerDialog({
   useEffect(() => {
     if (open) {
       wasOpen.current = true;
-      searchInputRef.current?.focus();
+      firstOptionRef.current?.focus();
       return;
     }
 
@@ -165,57 +148,51 @@ export function StylePickerDialog({
         type="button"
       >
         <span className="min-w-0 truncate font-medium text-zinc-950 group-disabled:text-zinc-400">{summary}</span>
-        <span className="shrink-0 text-xs font-medium text-zinc-500">{platform === "" ? "" : tx(`platform.${platform}`)}</span>
+        <span className="shrink-0 text-xs font-medium text-zinc-500">{tx("stylePicker.open")}</span>
       </button>
 
-      {open ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/35 p-4">
+      {open ? renderDialog() : null}
+    </>
+  );
+
+  function renderDialog(): ReactNode {
+    const dialog = (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
           <section
             aria-labelledby="style-picker-title"
             aria-modal="true"
-            className="grid max-h-[90vh] w-full max-w-5xl grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-xl"
+            className="grid max-h-[calc(100vh-3rem)] w-full max-w-[1360px] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl"
+            data-style-picker-dialog="true"
             ref={dialogRef}
             role="dialog"
           >
-            <header className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-4">
+            <header className="flex items-center justify-between gap-4 border-b border-zinc-200 px-7 py-4">
               <div className="min-w-0">
-                <h2 className="truncate text-base font-semibold tracking-normal text-zinc-950" id="style-picker-title">
+                <h2 className="truncate text-[24px] font-semibold tracking-normal text-zinc-900" id="style-picker-title">
                   {tx("stylePicker.title")}
                 </h2>
-                <p className="mt-1 text-sm text-zinc-500">{tx(`platform.${previewType}`)}</p>
               </div>
               <button
                 aria-label={tx("action.close")}
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-lg leading-none text-zinc-600 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 ${focusClasses}`}
+                className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-xl leading-none text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 ${focusClasses}`}
                 data-style-picker-close=""
                 onClick={() => setOpen(false)}
                 type="button"
               >
-                X
+                ✕
               </button>
             </header>
 
-            <div className="grid min-h-0 gap-4 overflow-auto p-5 lg:grid-cols-[minmax(16rem,0.75fr)_minmax(0,1.25fr)]">
-              <div className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-3">
-                <label className="grid gap-1 text-sm font-medium text-zinc-700">
-                  {tx("stylePicker.searchLabel")}
-                  <input
-                    className={inputClasses}
-                    data-style-picker-search=""
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder={tx("stylePicker.searchPlaceholder")}
-                    ref={searchInputRef}
-                    value={query}
-                  />
-                </label>
-
-                <div aria-label={tx("stylePicker.candidateList")} className="min-h-0 space-y-2 overflow-auto pr-1" role="listbox">
-                  {filteredStyles.length > 0 ? (
-                    filteredStyles.map((style) => (
+            <div className="grid min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
+              <aside className="min-h-0 border-r border-zinc-200 bg-zinc-50 p-5">
+                <div aria-label={tx("stylePicker.candidateList")} className="grid max-h-full content-start gap-3 overflow-y-auto overflow-x-hidden pr-1" role="listbox">
+                  {styles.length > 0 ? (
+                    styles.map((style, index) => (
                       <StyleCandidateButton
                         active={style.name === candidateStyleName}
                         key={style.name}
                         onClick={() => setCandidateStyleName(style.name)}
+                        ref={index === 0 ? firstOptionRef : undefined}
                         style={style}
                       />
                     ))
@@ -223,20 +200,19 @@ export function StylePickerDialog({
                     <p className="rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-500">{tx("stylePicker.noResults")}</p>
                   )}
                 </div>
-              </div>
+              </aside>
 
-              <div className="min-w-0 space-y-3">
-                {detailState.status === "loading" ? <p className="text-sm text-zinc-500">{tx("stylePicker.loadingDetail")}</p> : null}
-                {previewMetadata ? <StylePreviewPanel designMd={previewDesignMd} metadata={previewMetadata} previewType={previewType} /> : null}
-                {detailState.status === "error" ? (
-                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <section className="min-w-0 overflow-hidden p-6">
+                {previewMetadata ? <PlatformTemplatePreview designMd={previewDesignMd} kind="style" metadata={previewMetadata} /> : null}
+                {detailState.status === "error" && detailState.name === candidateStyleName ? (
+                  <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                     {tx("stylePicker.detailUnavailable")}: {detailState.error.error_code} - {detailState.error.message}
                   </p>
                 ) : null}
-              </div>
+              </section>
             </div>
 
-            <footer className="flex justify-end gap-2 border-t border-zinc-200 px-5 py-4">
+            <footer className="flex justify-end gap-3 border-t border-zinc-200 px-7 py-4">
               <button className={secondaryButtonClasses} data-style-picker-cancel="" onClick={() => setOpen(false)} type="button">
                 {tx("action.cancel")}
               </button>
@@ -257,9 +233,10 @@ export function StylePickerDialog({
             </footer>
           </section>
         </div>
-      ) : null}
-    </>
-  );
+    );
+
+    return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
+  }
 
   function openDialog() {
     if (disabled) {
@@ -268,53 +245,104 @@ export function StylePickerDialog({
 
     const nextCandidate = selectedStyle?.name ?? styles[0]?.name ?? "";
     setCandidateStyleName(nextCandidate);
-    setQuery("");
     setOpen(true);
   }
 }
 
-function StyleCandidateButton({
-  active,
-  onClick,
-  style
-}: {
+interface StyleCandidateButtonProps {
   active: boolean;
   onClick(): void;
   style: StyleMetadata;
-}) {
+}
+
+const StyleCandidateButton = forwardRef<HTMLButtonElement, StyleCandidateButtonProps>(function StyleCandidateButton({
+  active,
+  onClick,
+  style
+}, ref) {
+  const tx = useT();
   const category = style.category;
 
   return (
     <button
       aria-selected={active}
-      className={`block w-full rounded-lg border bg-white p-4 text-left shadow-sm transition hover:border-amber-200 hover:bg-amber-50/40 active:scale-[0.99] ${focusClasses} ${
-        active ? "border-amber-300 ring-1 ring-amber-200" : "border-zinc-200"
+      className={`group w-full rounded-2xl border p-4 text-left transition active:scale-[0.99] ${focusClasses} ${
+        active ? "border-amber-300 bg-amber-50" : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
       }`}
       data-style-picker-option={style.name}
       onClick={onClick}
+      ref={ref}
       role="option"
       type="button"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold tracking-normal text-zinc-950">{style.name}</h3>
-          <p className="mt-1 line-clamp-2 text-sm leading-6 text-zinc-600">{style.description}</p>
-        </div>
-        {category ? (
-          <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-500">{category}</span>
+      <span className="flex items-start justify-between gap-3">
+        <span className="flex min-w-0 gap-3">
+          <span className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-100 bg-zinc-100 text-amber-500">
+            <StyleIcon name={style.name} />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-base font-semibold tracking-normal text-zinc-900">{formatDisplayName(style.name)}</span>
+            <span className="mt-1 block break-words text-sm leading-5 text-zinc-500">{style.description}</span>
+          </span>
+        </span>
+        {active ? (
+          <span className="shrink-0 rounded-full bg-amber-500 px-2 py-1 text-xs font-semibold text-zinc-950">{tx("action.selected")}</span>
         ) : null}
-      </div>
+      </span>
+      {category ? <span className="sr-only">{category}</span> : null}
     </button>
+  );
+});
+
+function StyleIcon({ name }: { name: string }) {
+  if (name.includes("air") || name.includes("table")) {
+    return (
+      <svg aria-hidden="true" className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M6.5 5.5a4 4 0 0 1 7.5 1.9 4.4 4.4 0 0 1 6 4.1v7h-5.5v-7.1a2.3 2.3 0 0 0-4.6 0v7.1H4.5v-6.1a3.2 3.2 0 0 1 3.2-3.2h1.7A3.9 3.9 0 0 1 6.5 5.5Z" />
+      </svg>
+    );
+  }
+  if (name.includes("minimal") || name.includes("clean")) {
+    return <span className="h-6 w-6 rounded-full bg-zinc-500" />;
+  }
+  if (name.includes("enterprise") || name.includes("dashboard")) {
+    return (
+      <svg aria-hidden="true" className="h-6 w-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M4 20V9h6v11H4Zm5-13V4h6v16h-4V7H9Zm7 13V12h4v8h-4Z" />
+      </svg>
+    );
+  }
+  if (name.includes("editorial")) {
+    return (
+      <svg aria-hidden="true" className="h-6 w-6 text-violet-500" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M5 5.5A4.5 4.5 0 0 1 9.5 1H11v19H9.5A4.5 4.5 0 0 0 5 24V5.5Zm8-4.5h1.5A4.5 4.5 0 0 1 19 5.5V24a4.5 4.5 0 0 0-4.5-4.5H13V1Z" />
+      </svg>
+    );
+  }
+  if (name.includes("elegant")) {
+    return <span className="h-6 w-6 rotate-45 rounded-sm bg-emerald-500" />;
+  }
+  if (name.includes("vibrant") || name.includes("color")) {
+    return (
+      <svg aria-hidden="true" className="h-6 w-6 text-rose-500" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M5 5h6v6H5V5Zm8 0h6v6h-6V5ZM5 13h6v6H5v-6Zm8 4a4 4 0 1 1 8 0 4 4 0 0 1-8 0Z" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg aria-hidden="true" className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 3 21 8l-9 5-9-5 9-5Zm-7 8.2 7 3.9 7-3.9V16l-7 4-7-4v-4.8Z" />
+    </svg>
   );
 }
 
-function filterStyles(styles: StyleMetadata[], query: string): StyleMetadata[] {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return styles;
-  }
-
-  return styles.filter((style) => `${style.name} ${style.description}`.toLowerCase().includes(normalizedQuery));
+function formatDisplayName(name: string): string {
+  return name
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
 }
 
 function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null): void {
@@ -346,7 +374,7 @@ function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null): void
 }
 
 const primaryButtonClasses =
-  "inline-flex items-center justify-center rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-300";
+  "inline-flex items-center justify-center rounded-xl bg-zinc-950 px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-zinc-800 active:scale-95 disabled:cursor-not-allowed disabled:bg-zinc-300";
 
 const secondaryButtonClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95";
+  "inline-flex items-center justify-center rounded-xl border border-zinc-300 bg-white px-6 py-3 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 active:scale-95";

@@ -9,12 +9,14 @@ import { ProductNew } from "./pages/ProductNew.js";
 import { DesignView } from "./pages/DesignView.js";
 import { ViewerPage } from "./pages/ViewerPage.js";
 import { RequirementDetail } from "./pages/RequirementDetail.js";
+import { Settings } from "./pages/Settings.js";
 import { StyleDetail } from "./pages/StyleDetail.js";
 import { StyleLibrary } from "./pages/StyleLibrary.js";
 
 export interface RoutePageProps {
   hash: string;
   navigationState?: unknown;
+  onBreadcrumbLabel?: (key: string, label: string) => void;
   params: Record<string, string>;
   route: RouteDefinition;
 }
@@ -22,7 +24,7 @@ export interface RoutePageProps {
 export interface RouteDefinition {
   component: (props: RoutePageProps) => ReactNode;
   context: string;
-  navGroup: "products" | "styles";
+  navGroup: "products" | "settings" | "styles";
   path: string;
   title: (params: Record<string, string>) => string;
 }
@@ -113,6 +115,13 @@ export const routeTable: RouteDefinition[] = [
     navGroup: "styles",
     path: "/styles/:name",
     title: ({ name }) => name
+  },
+  {
+    component: SettingsRoute,
+    context: "Settings",
+    navGroup: "settings",
+    path: "/settings",
+    title: () => "Settings"
   }
 ];
 
@@ -229,6 +238,10 @@ function ProductDetailRoute(props: RoutePageProps) {
 
 function StyleLibraryRoute() {
   return <StyleLibrary />;
+}
+
+function SettingsRoute() {
+  return <Settings />;
 }
 
 function NotFoundPage() {

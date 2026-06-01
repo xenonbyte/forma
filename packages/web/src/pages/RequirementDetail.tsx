@@ -8,7 +8,7 @@ import {
   type RequirementWithDocument
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { PrimaryActionLink, StatePanel, WorkSurface } from "../components/Layout.js";
+import { StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge } from "../components/StatusBadge.js";
 import type { ArtifactSummary } from "./DesignView.js";
 
@@ -16,6 +16,7 @@ export interface RequirementDetailProps {
   client?: Pick<FormaApiClient, "getRequirement"> & {
     listProductArtifacts?: (productId: string, kind?: string) => Promise<{ artifacts: ArtifactSummary[] }>;
   };
+  onBreadcrumbLabel?: (key: string, label: string) => void;
   params: Record<string, string>;
 }
 
@@ -24,7 +25,7 @@ type RequirementState =
   | { status: "loading" }
   | { artifacts: ArtifactSummary[]; requirement: RequirementWithDocument; status: "ready" };
 
-export function RequirementDetail({ client = apiClient, params }: RequirementDetailProps) {
+export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, params }: RequirementDetailProps) {
   const t = useT();
   const productId = params.productId ?? "";
   const requirementId = params.reqId ?? "";
@@ -55,6 +56,12 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
     };
   }, [client, productId, requirementId]);
 
+  useEffect(() => {
+    if (state.status === "ready") {
+      onBreadcrumbLabel?.(`requirement:${requirementId}`, state.requirement.title || requirementId);
+    }
+  }, [onBreadcrumbLabel, requirementId, state]);
+
   if (state.status === "loading") {
     return (
       <StatePanel state="loading" title={t("requirement.records")}>
@@ -65,7 +72,7 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
 
   if (state.status === "error") {
     return (
-      <StatePanel action={<PrimaryActionLink href={`/products/${productId}`}>{t("action.product")}</PrimaryActionLink>} state="error" title={t("requirement.unavailable")}>
+      <StatePanel state="error" title={t("requirement.unavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -92,9 +99,6 @@ export function RequirementDetail({ client = apiClient, params }: RequirementDet
             ) : null}
             <span className="font-mono text-xs text-zinc-500">{requirement.id}</span>
           </div>
-          <a className={secondaryLinkClasses} href={`/products/${productId}`}>
-            {t("action.backToProduct")}
-          </a>
         </div>
 
         {hasDocument ? (

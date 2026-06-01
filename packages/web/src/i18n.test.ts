@@ -18,7 +18,7 @@ describe("i18n", () => {
     setLocale("en", localStorageLike);
     expect(storage.get("forma.locale")).toBe("en");
     expect(getLocale()).toBe("en");
-    expect(t("nav.products")).toBe("Products");
+    expect(t("nav.products")).toBe("Product list");
   });
 
   it("prefers stored locale and falls back to English for unknown navigator languages", () => {
@@ -77,8 +77,18 @@ describe("i18n", () => {
       "action.cancel",
       "action.close",
       "action.confirm",
+      "action.selected",
+      "action.view",
+      "nav.collapseSidebar",
+      "nav.expandSidebar",
+      "nav.products",
+      "nav.settings",
+      "nav.styles",
+      "settings.multilingual",
       "style.detail.designMd",
       "style.detail.designMdEmpty",
+      "style.detail.components",
+      "style.detail.contentTabs",
       "style.detail.emptyVariables",
       "style.detail.loadingBody",
       "style.detail.loadingTitle",
@@ -86,6 +96,8 @@ describe("i18n", () => {
       "style.detail.staticPreview",
       "style.detail.staticPreviewAlt",
       "style.detail.staticPreviewUnavailable",
+      "style.detail.showcase",
+      "style.detail.tokens",
       "style.detail.unavailableTitle",
       "style.detail.variables",
       "style.preview.live",
@@ -107,7 +119,20 @@ describe("i18n", () => {
       "stylePicker.searchPlaceholder",
       "stylePicker.selectStyle",
       "stylePicker.selectedSummary",
-      "stylePicker.title"
+      "stylePicker.stylePreview",
+      "stylePicker.title",
+      "systemStylePicker.specPreview",
+      "templatePreview.accessibility",
+      "templatePreview.components",
+      "templatePreview.crossPlatform",
+      "templatePreview.density",
+      "templatePreview.font",
+      "templatePreview.illustrative",
+      "templatePreview.keyboardSupported",
+      "templatePreview.keyboardUnsupported",
+      "templatePreview.radius",
+      "templatePreview.spacing",
+      "templatePreview.structure"
     ];
 
     for (const locale of ["en", "zh"] satisfies Locale[]) {

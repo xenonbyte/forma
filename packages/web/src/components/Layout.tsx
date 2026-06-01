@@ -1,7 +1,6 @@
-import type { JSX, ReactNode } from "react";
+import { useState, type JSX, type ReactNode } from "react";
 
-import { useLocale, useT } from "../LocaleContext.js";
-import type { Locale } from "../i18n.js";
+import { useT } from "../LocaleContext.js";
 
 export interface NavItem {
   href: string;
@@ -9,9 +8,16 @@ export interface NavItem {
   meta: string;
 }
 
+export interface BreadcrumbItem {
+  href?: string;
+  label: string;
+}
+
 export interface LayoutProps {
+  breadcrumbs?: BreadcrumbItem[];
   children: ReactNode;
   currentPathname: string;
+  headerAction?: ReactNode;
   navItems: NavItem[];
   routeContext: string;
   title: string;
@@ -27,58 +33,72 @@ export interface StatePanelProps {
 const focusClasses =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
-export function Layout({ children, currentPathname, navItems, routeContext, title }: LayoutProps) {
-  const { locale, setLocale } = useLocale();
+export function Layout({ breadcrumbs, children, currentPathname, headerAction, navItems, title }: LayoutProps) {
   const tx = useT();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const headerBreadcrumbs = breadcrumbs && breadcrumbs.length > 0 ? breadcrumbs : [{ label: routeLabel(title, tx) }];
 
   return (
     <div className="min-h-screen bg-[#f7f8fa] text-zinc-950">
       <div className="flex min-h-screen flex-col md:flex-row">
-        <aside className="w-full shrink-0 border-b border-zinc-300 bg-[#f1f3f5] shadow-[inset_-1px_0_0_rgba(24,24,27,0.06)] md:w-64 md:border-b-0 md:border-r">
-          <div className="border-b border-zinc-300 px-4 py-4">
-            <a
-              className={`inline-flex rounded-md text-base font-semibold tracking-normal text-zinc-950 active:scale-95 ${focusClasses}`}
-              href="/products"
+        <aside
+          className={`w-full shrink-0 bg-[#f1f3f5] transition-[width] duration-200 ${
+            sidebarCollapsed ? "md:w-[76px]" : "md:w-56"
+          }`}
+          data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
+        >
+          <div className={`flex min-h-16 items-center py-3 ${sidebarCollapsed ? "px-4 md:justify-center md:px-0" : "justify-between gap-3 px-7"}`}>
+            <div className={`min-w-0 ${sidebarCollapsed ? "md:hidden" : ""}`}>
+              <a
+                className={`inline-flex rounded-md text-[21px] font-bold leading-none tracking-normal text-zinc-950 active:scale-95 ${focusClasses}`}
+                href="/products"
+              >
+                Forma
+              </a>
+            </div>
+            <button
+              aria-expanded={!sidebarCollapsed}
+              aria-label={sidebarCollapsed ? tx("nav.expandSidebar") : tx("nav.collapseSidebar")}
+              className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-transparent text-zinc-700 transition hover:bg-zinc-200/80 hover:text-zinc-950 active:scale-95 ${focusClasses}`}
+              data-sidebar-toggle="true"
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+              title={sidebarCollapsed ? tx("nav.expandSidebar") : tx("nav.collapseSidebar")}
+              type="button"
             >
-              Forma
-            </a>
-            <p className="mt-1 text-xs font-medium text-zinc-500">{tx("app.adminWorkbench")}</p>
+              {sidebarToggleIcon(sidebarCollapsed)}
+            </button>
           </div>
 
-          <nav aria-label="Primary" className="flex gap-1 overflow-x-auto px-3 py-3 md:block md:space-y-1 md:overflow-visible">
+          <nav
+            aria-label="Primary"
+            className={`flex gap-3 overflow-x-auto px-4 py-2 md:grid md:gap-2 md:overflow-visible ${
+              sidebarCollapsed ? "md:justify-center md:justify-items-center md:px-0" : "md:justify-start"
+            }`}
+          >
             {navItems.map((item) => {
               const active = isActiveRoute(currentPathname, item.href);
+              const label = navLabel(item, tx);
               return (
                 <a
+                  aria-label={label}
                   aria-current={active ? "page" : undefined}
-                  className={`relative flex min-w-44 items-start gap-3 rounded-md px-3 py-2.5 text-left transition active:scale-95 md:min-w-0 ${focusClasses} ${
-                    active
-                      ? "bg-white text-zinc-950 shadow-[0_1px_3px_rgba(24,24,27,0.10)] ring-1 ring-zinc-200"
-                      : "text-zinc-600 hover:bg-white/80 hover:text-zinc-950 hover:shadow-sm"
-                  }`}
+                  className={navLinkClasses({ active, collapsed: sidebarCollapsed })}
                   data-active-route={active ? "true" : undefined}
                   href={item.href}
                   key={item.href}
+                  title={label}
                 >
                   {active ? (
                     <span
                       aria-hidden="true"
-                      className="absolute left-1.5 top-3 h-7 w-1 rounded-full bg-amber-500"
+                      className="absolute left-1 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-amber-500 md:block"
                       data-nav-active-accent="true"
                     />
                   ) : null}
-                  <span
-                    aria-hidden="true"
-                    className={`mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md ${
-                      active ? "bg-amber-50 text-amber-700" : "bg-white text-zinc-500 shadow-sm"
-                    }`}
-                  >
+                  <span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
                     {navIcon(item.href)}
                   </span>
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{navLabel(item, tx)}</span>
-                    <span className="mt-0.5 block truncate text-xs text-zinc-500">{navMeta(item, tx)}</span>
-                  </span>
+                  <span className={`min-w-0 truncate text-sm font-medium ${sidebarCollapsed ? "md:hidden" : ""}`}>{label}</span>
                 </a>
               );
             })}
@@ -87,30 +107,11 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="sticky top-0 z-10 border-b border-zinc-200 bg-[#fdfdfd]/95 px-4 py-3 shadow-[0_1px_3px_rgba(24,24,27,0.08)] backdrop-blur md:px-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-normal text-zinc-500">{routeLabel(routeContext, tx)}</p>
-                <h1 className="mt-1 truncate text-xl font-semibold tracking-normal text-zinc-950">{routeLabel(title, tx)}</h1>
+            <div className="flex min-h-10 items-center justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <HeaderBreadcrumbs breadcrumbs={headerBreadcrumbs} />
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-zinc-500">
-                <div className="inline-flex rounded-md border border-zinc-200 bg-white p-0.5" aria-label="Language">
-                  {languageChoices.map((choice) => (
-                    <button
-                      aria-pressed={locale === choice.value}
-                      className={`rounded px-2 py-1 text-xs font-semibold transition active:scale-95 ${focusClasses} ${
-                        locale === choice.value ? "bg-zinc-950 text-white" : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950"
-                      }`}
-                      key={choice.value}
-                      onClick={() => setLocale(choice.value)}
-                      type="button"
-                    >
-                      {choice.label}
-                    </button>
-                  ))}
-                </div>
-                <span className="rounded-md border border-zinc-200 bg-white px-2.5 py-1.5">{tx("app.clientShell")}</span>
-                <span className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-zinc-600">{tx("app.idle")}</span>
-              </div>
+              {headerAction ? <div className="flex shrink-0 items-center justify-end text-xs font-medium text-zinc-500">{headerAction}</div> : null}
             </div>
           </header>
 
@@ -120,11 +121,6 @@ export function Layout({ children, currentPathname, navItems, routeContext, titl
     </div>
   );
 }
-
-const languageChoices: Array<{ label: string; value: Locale }> = [
-  { label: "EN", value: "en" },
-  { label: "中", value: "zh" }
-];
 
 export function StatePanel({ action, children, state, title }: StatePanelProps) {
   const tx = useT();
@@ -166,6 +162,37 @@ export function PrimaryActionLink({ children, href }: { children: ReactNode; hre
   );
 }
 
+function HeaderBreadcrumbs({ breadcrumbs }: { breadcrumbs: BreadcrumbItem[] }) {
+  return (
+    <nav aria-label="Breadcrumb" className="min-w-0">
+      <ol className="flex min-w-0 items-center gap-2 text-xl font-semibold tracking-normal text-zinc-950">
+        {breadcrumbs.map((item, index) => {
+          const current = index === breadcrumbs.length - 1;
+          return (
+            <li className="flex min-w-0 items-center gap-2" key={`${item.href ?? "current"}-${index}`}>
+              {index > 0 ? <span className="shrink-0 text-base font-medium text-zinc-400">/</span> : null}
+              {current || !item.href ? (
+                current ? (
+                  <h1 className="truncate text-xl font-semibold tracking-normal text-zinc-950">{item.label}</h1>
+                ) : (
+                  <span className="truncate text-xl font-semibold tracking-normal text-zinc-700">{item.label}</span>
+                )
+              ) : (
+                <a
+                  className={`truncate rounded-md text-xl font-semibold tracking-normal text-amber-600 transition hover:text-amber-700 active:scale-95 ${focusClasses}`}
+                  href={item.href}
+                >
+                  {item.label}
+                </a>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 function isActiveRoute(currentPathname: string, href: string): boolean {
   return currentPathname === href || currentPathname.startsWith(`${href}/`);
 }
@@ -177,32 +204,68 @@ function navLabel(item: NavItem, t: (key: string) => string): string {
   if (item.href === "/styles") {
     return t("nav.styles");
   }
+  if (item.href === "/settings") {
+    return t("nav.settings");
+  }
   return item.label;
 }
 
-function navMeta(item: NavItem, t: (key: string) => string): string {
-  if (item.href === "/products") {
-    return t("nav.products.meta");
-  }
-  if (item.href === "/styles") {
-    return t("nav.styles.meta");
-  }
-  return item.meta;
-}
-
 function navIcon(href: string): JSX.Element {
+  if (href === "/settings") {
+    return (
+      <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+        <path
+          d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
+        <path
+          d="M12 4.5v2M12 17.5v2M5.5 12h2M16.5 12h2M7.4 7.4l1.4 1.4M15.2 15.2l1.4 1.4M16.6 7.4l-1.4 1.4M8.8 15.2l-1.4 1.4"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeWidth="1.7"
+        />
+      </svg>
+    );
+  }
+
   if (href === "/styles") {
     return (
-      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-        <path d="M5 7.5h14M5 12h14M5 16.5h9" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
-        <path d="M5 4.75h14v14.5H5z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.6" />
+      <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+        <path d="M12 4.75 4.75 8.5 12 12.25l7.25-3.75L12 4.75Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+        <path d="m5.75 12 6.25 3.25L18.25 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        <path d="m5.75 15.35 6.25 3.25 6.25-3.25" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
       </svg>
     );
   }
 
   return (
-    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
-      <path d="M5 5.5h14v5H5zM5 13.5h6v5H5zM14 13.5h5v5h-5z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <path d="M6 6.5h3.5v3.5H6zM6 14h3.5v3.5H6z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+      <path d="M13 7h5M13 15h5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.9" />
+      <path d="M13 10h3M13 18h3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function navLinkClasses({ active, collapsed }: { active: boolean; collapsed: boolean }): string {
+  const activeClasses = collapsed
+    ? "bg-white text-zinc-950 shadow-[0_1px_3px_rgba(24,24,27,0.10)] ring-1 ring-zinc-200 md:bg-transparent md:shadow-none md:ring-0"
+    : "bg-white text-zinc-950 shadow-[0_1px_3px_rgba(24,24,27,0.10)] ring-1 ring-zinc-200";
+  const inactiveClasses = "text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-950";
+  const sizingClasses = collapsed ? "h-10 w-10 justify-center" : "h-11 w-11 justify-center md:w-full md:justify-start md:gap-3 md:px-3";
+
+  return `relative inline-flex shrink-0 items-center rounded-xl text-left transition active:scale-95 ${sizingClasses} ${focusClasses} ${
+    active ? activeClasses : inactiveClasses
+  }`;
+}
+
+function sidebarToggleIcon(collapsed: boolean): JSX.Element {
+  return (
+    <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
+      <rect height="15" rx="4" stroke="currentColor" strokeWidth="1.8" width="16" x="4" y="4.5" />
+      <path d={collapsed ? "M9 5v14" : "M15 5v14"} stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
     </svg>
   );
 }
@@ -213,6 +276,9 @@ function routeLabel(value: string, t: (key: string) => string): string {
   }
   if (value === "Styles") {
     return t("nav.styles");
+  }
+  if (value === "Settings") {
+    return t("nav.settings");
   }
   return value;
 }
