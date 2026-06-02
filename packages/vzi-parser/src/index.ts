@@ -1,9 +1,7 @@
 // NOTE(vendored): sync parse() and JSDOM/lightweight path removed — Forma uses
-// PuppeteerParser exclusively. Use PuppeteerParser.parse() for accurate layout.
-import { HTMLParser as HTMLParserClass, type HTMLParserOptions } from './parser';
-
-// 直接导出，避免 re-export 问题
-export const HTMLParser = HTMLParserClass;
+// the Puppeteer path exclusively. Use parseAsync() or PuppeteerParser directly.
+// HTMLParser is kept for internal use but its parse() method throws; downstream
+// callers should use parseAsync(html) or construct PuppeteerParser directly.
 export type { HTMLParserOptions } from './parser';
 
 // 导出计算样式相关功能
@@ -21,7 +19,7 @@ export {
   type TailwindPreprocessResult,
 } from './tailwind-preprocessor';
 
-// 导出 Puppeteer 解析器
+// 导出 Puppeteer 解析器（推荐入口）
 export {
   PuppeteerParser,
   VIEWPORT_PRESETS,
@@ -71,16 +69,16 @@ export {
 } from './advanced-parsing';
 
 /**
- * Async parse via Puppeteer (accurate) or JSDOM (fallback when usePuppeteer is
- * not set). For Forma use always construct PuppeteerParser directly — it
- * guarantees the Puppeteer path.
+ * Async parse via Puppeteer (accurate, Node.js runtime required).
  *
- * @deprecated Prefer PuppeteerParser directly.
+ * This is the only supported parse entry-point in the Forma fork.
+ * The sync (cheerio) and JSDOM lightweight paths have been removed.
  */
 export async function parseAsync(
   html: string,
-  options?: HTMLParserOptions
+  options?: import('./parser').HTMLParserOptions
 ): Promise<import('@vzi-core/types').IntermediateRepresentation> {
+  const { HTMLParser } = await import('./parser.js');
   const parser = new HTMLParser(options);
   return parser.parseAsync(html);
 }

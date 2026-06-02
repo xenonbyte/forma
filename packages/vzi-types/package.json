@@ -8,7 +8,8 @@
   "scripts": {
     "build": "rm -rf dist && tsup src/index.ts --format cjs,esm --dts --clean",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "ajv": "^8.17.1"
