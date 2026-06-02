@@ -286,6 +286,7 @@ export interface ArchiveIconsResult {
 
 export interface ArchiveVziResult {
   pages: unknown[];
+  totalElements: number;
 }
 
 export interface ArchiveRequirementResult {

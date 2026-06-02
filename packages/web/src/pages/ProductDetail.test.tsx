@@ -331,6 +331,67 @@ describe("ProductDetail", () => {
     });
   });
 
+  it("shows archive asset counts after successful archive", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [activeRequirement] });
+    client.archiveRequirement.mockResolvedValueOnce({
+      requirement: { ...activeRequirement, status: "archived" },
+      icons: { pages: [{ pageId: "home", artifactId: "A-001", count: 3 }, { pageId: "checkout", artifactId: "A-002", count: 2 }], totalIcons: 5 },
+      vzi: { pages: [{ pageId: "home", artifactId: "A-001", elementCount: 8 }, { pageId: "checkout", artifactId: "A-002", elementCount: 4 }], totalElements: 12 }
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    // The active requirement's archive button is enabled (not disabled)
+    const allButtons = Array.from(container.querySelectorAll<HTMLButtonElement>("button[type='button']"));
+    const enabledArchive = allButtons.find((btn) => btn.textContent?.trim() === "Archive" && !btn.disabled);
+    if (!enabledArchive) {
+      throw new Error("Missing archive button");
+    }
+
+    await act(async () => {
+      enabledArchive.click();
+      await flushPromises();
+    });
+
+    expect(client.archiveRequirement).toHaveBeenCalledWith("P-123abc", "R-12345678");
+    // Archive completion summary panel should appear with icon count and UI element count
+    const resultPanel = container.querySelector('[data-archive-result]');
+    expect(resultPanel).not.toBeNull();
+    expect(resultPanel?.textContent).toContain("5");
+    expect(resultPanel?.textContent).toContain("2");
+    expect(resultPanel?.textContent).toContain("12");
+  });
+
+  it("shows archive error message in actionError area without changing requirement status", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [activeRequirement] });
+    client.archiveRequirement.mockRejectedValueOnce(new ApiError("ARCHIVE_FAILED", "Archive generation failed", {}, 500));
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const allButtons2 = Array.from(container.querySelectorAll<HTMLButtonElement>("button[type='button']"));
+    const enabledArchive2 = allButtons2.find((btn) => btn.textContent?.trim() === "Archive" && !btn.disabled);
+    if (!enabledArchive2) {
+      throw new Error("Missing archive button");
+    }
+
+    await act(async () => {
+      enabledArchive2.click();
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("ARCHIVE_FAILED - Archive generation failed");
+    // Requirement should still show active status (not changed to archived)
+    expect(container.textContent).toContain("Active");
+  });
+
   it("shows product deletion errors without navigating", async () => {
     const client = createClient({ product: configuredProduct, requirements: [] });
     client.deleteProduct.mockRejectedValueOnce(new ApiError("DELETE_FAILED", "Deletion denied", {}, 409));
@@ -363,7 +424,7 @@ function createClient({ product, requirements }: { product: Product; requirement
     archiveRequirement: vi.fn(async (_productId, requirementId): Promise<ArchiveRequirementResult> => ({
       requirement: requirements.find((requirement) => requirement.id === requirementId) ?? activeRequirement,
       icons: { pages: [], totalIcons: 0 },
-      vzi: { pages: [] }
+      vzi: { pages: [], totalElements: 0 }
     })),
     configureProduct: vi.fn(async (_productId, input) => ({
       ...product,

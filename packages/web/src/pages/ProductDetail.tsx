@@ -5,6 +5,7 @@ import {
   formatApiError,
   languageOptions,
   type ApiErrorInfo,
+  type ArchiveRequirementResult,
   type DeleteProductResult,
   type FormaApiClient,
   type Language,
@@ -63,6 +64,7 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
   const t = useT();
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
+  const [archiveResult, setArchiveResult] = useState<ArchiveRequirementResult | null>(null);
   const [archiving, setArchiving] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [deleteError, setDeleteError] = useState<ApiErrorInfo | null>(null);
@@ -121,6 +123,7 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
     }
 
     setActionError(null);
+    setArchiveResult(null);
     setCreating(true);
     try {
       await client.createEmptyRequirement(productId, { title: title.trim() });
@@ -135,14 +138,17 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
 
   function handleProductConfigured(product: Product) {
     setActionError(null);
+    setArchiveResult(null);
     setState((current) => (current.status === "ready" ? { ...current, product } : current));
   }
 
   async function handleArchive(requirementId: string) {
     setArchiving(requirementId);
     setActionError(null);
+    setArchiveResult(null);
     try {
-      await client.archiveRequirement(productId, requirementId);
+      const result = await client.archiveRequirement(productId, requirementId);
+      setArchiveResult(result);
       setReloadKey((value) => value + 1);
     } catch (error: unknown) {
       setActionError(formatApiError(error));
@@ -198,6 +204,7 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
     <div className="space-y-5">
       <ProductDetailSummaryPanels
         actionError={actionError}
+        archiveResult={archiveResult}
         baselineState={state.baselineState}
         productId={productId}
         requirementCount={state.requirementState.status === "ready" ? state.requirementState.requirements.length : 0}
@@ -379,12 +386,14 @@ export function focusHashTarget(
 
 export function ProductDetailSummaryPanels({
   actionError,
+  archiveResult,
   baselineState,
   productId,
   requirementCount,
   requirementError
 }: {
   actionError: ApiErrorInfo | null;
+  archiveResult?: ArchiveRequirementResult | null;
   baselineState: BaselineSummaryState;
   productId: string;
   requirementCount: number;
@@ -435,6 +444,16 @@ export function ProductDetailSummaryPanels({
         <StatePanel state="error" title={t("requirement.actionResult")}>
           {actionError.error_code} - {actionError.message}
         </StatePanel>
+      ) : archiveResult ? (
+        <section className={summaryPanelClasses} data-archive-result="">
+          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("product.archiveResult")}</p>
+          <p className="mt-2 text-sm text-zinc-950">
+            {t("product.archiveAssetSummary")
+              .replace("{totalIcons}", String(archiveResult.icons.totalIcons))
+              .replace("{pageCount}", String(archiveResult.icons.pages.length))
+              .replace("{totalElements}", String(archiveResult.vzi.totalElements))}
+          </p>
+        </section>
       ) : (
         <section className={summaryPanelClasses}>
           <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("product.archiveGate")}</p>
