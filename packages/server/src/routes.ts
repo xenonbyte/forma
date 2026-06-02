@@ -14,9 +14,11 @@ import {
   normalizeKind,
   normalizeFormaExtension,
   exportArchiveAssets,
+  FormaError,
   makeExportArchiveAssetsDeps,
   type ArtifactManifest,
   type BrandStyleContent,
+  type DesignPointer,
   type ExportArchiveAssetsResult,
   type Language,
   type Platform,
@@ -89,7 +91,7 @@ export interface FormaRoutesStore {
     getProduct(productId: string): Promise<{ id: string; platform?: string; designSystemArtifactId?: string; requirements?: Record<string, { latestArtifactId?: string }>; [key: string]: unknown }>;
     initProductConfig(productId: string, config: unknown): Promise<unknown>;
     listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
-    listDesignPointers(productId: string): Promise<Array<{ artifactId: string; version: number }>>;
+    listDesignPointers(productId: string): Promise<DesignPointer[]>;
   };
   requirements: {
     archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
@@ -333,7 +335,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
             const product = await store.products.getProduct(productId);
             return product.platform as Platform | undefined;
           },
-          (productId) => store.products.listDesignPointers(productId) as Promise<Array<{ artifactId: string; version: number; requirementId: string; pageId: string; variant: string; designStatus: "pending" | "active" | "expired" }>>,
+          (productId) => resolveArchiveDesignPointers(store, productId),
           async (productId, requirementId) => {
             const current = await getOwnedRequirement(store, productId, requirementId);
             return current.pages.map((page) => page.page_id);
@@ -630,6 +632,57 @@ function requireOnlyFields(input: UnknownRecord, fields: string[]): void {
   if (extraFields.length > 0) {
     throw new RouteInputError("Unexpected request fields", { fields: extraFields });
   }
+}
+
+type ArchiveDesignPointerCandidate = Pick<DesignPointer, "artifactId" | "version"> &
+  Partial<Omit<DesignPointer, "artifactId" | "version">>;
+
+const DESIGN_POINTER_STATUSES = new Set(["pending", "active", "expired"]);
+
+function isCompleteDesignPointer(pointer: ArchiveDesignPointerCandidate): pointer is DesignPointer {
+  return (
+    typeof pointer.requirementId === "string" &&
+    pointer.requirementId.length > 0 &&
+    typeof pointer.pageId === "string" &&
+    pointer.pageId.length > 0 &&
+    typeof pointer.variant === "string" &&
+    pointer.variant.length > 0 &&
+    typeof pointer.designStatus === "string" &&
+    DESIGN_POINTER_STATUSES.has(pointer.designStatus)
+  );
+}
+
+async function resolveArchiveDesignPointers(
+  store: FormaRoutesStore,
+  productId: string
+): Promise<DesignPointer[]> {
+  const pointers = await store.products.listDesignPointers(productId) as ArchiveDesignPointerCandidate[];
+  return Promise.all(pointers.map(async (pointer) => {
+    if (isCompleteDesignPointer(pointer)) {
+      return pointer;
+    }
+
+    const { manifest } = await store.artifacts.readArtifactVersion(productId, pointer.artifactId, pointer.version);
+    const forma = normalizeFormaExtension(manifest.forma ?? {});
+    const requirementId = forma.requirementId ?? manifest.requirementId;
+    const pageId = forma.pageId;
+    if (!requirementId || !pageId) {
+      throw new FormaError("ARTIFACT_INVALID_INPUT", "Design pointer is missing requirement/page metadata", {
+        product_id: productId,
+        artifact_id: pointer.artifactId,
+        version: pointer.version,
+      });
+    }
+
+    return {
+      requirementId,
+      pageId,
+      variant: forma.variant ?? "default",
+      artifactId: pointer.artifactId,
+      version: pointer.version,
+      designStatus: "active",
+    };
+  }));
 }
 
 async function getOwnedRequirement(store: FormaStore, productId: string, requirementId: string) {

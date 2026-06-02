@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { createFormaStore, FormaError, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
-import { access, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { createFormaStore, FormaError, getArtifactVersionDir, getArtifactVziPath, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -930,6 +930,108 @@ describe("Fastify API routes", () => {
     expect(callOrder).toEqual(["lock:start", "exportArchiveAssets", "archiveRequirementLocked", "lock:end"]);
   });
 
+  it("default archive asset generation backfills narrow design pointers from artifact manifests", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-server-archive-pointer-backfill-"));
+    const productId = "P-123abc";
+    const requirementId = "R-12345678";
+    const artifactId = "A-abcdef1234567890";
+    const version = 1;
+    const versionDir = getArtifactVersionDir(join(home, "data", "products"), productId, artifactId, version);
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(
+      join(versionDir, "index.html"),
+      `<!DOCTYPE html><html><body><main style="width:1024px;height:768px">Archive</main></body></html>`,
+      "utf8"
+    );
+
+    const archiveRequirement = vi.fn(async () => ({ id: requirementId, status: "archived" }));
+    const getRequirement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: requirementId,
+        product_id: productId,
+        title: "Checkout",
+        status: "active",
+        pages: [{ page_id: "checkout-page" }],
+        navigation: [],
+        document_md: "# Checkout"
+      })
+      .mockResolvedValueOnce({
+        id: requirementId,
+        product_id: productId,
+        title: "Checkout",
+        status: "archived",
+        pages: [{ page_id: "checkout-page" }],
+        navigation: [],
+        document_md: "# Checkout"
+      })
+      .mockResolvedValueOnce({
+        id: requirementId,
+        product_id: productId,
+        title: "Checkout",
+        status: "archived",
+        pages: [{ page_id: "checkout-page" }],
+        navigation: [],
+        document_md: "# Checkout"
+      });
+    const base = fakeStore({ home });
+    const store = fakeStore({
+      home,
+      exportArchiveAssets: undefined,
+      artifacts: {
+        ...base.artifacts,
+        listArtifactVersions: vi.fn(async () => [version]),
+        readArtifactVersion: vi.fn(async () => ({
+          manifest: {
+            version: 1,
+            id: artifactId,
+            kind: "design-page",
+            renderer: "html",
+            title: "Checkout Design",
+            entry: "index.html",
+            status: "complete",
+            exports: ["index.html"],
+            supportingFiles: ["index.html"],
+            createdAt: "2026-05-17T00:00:00.000Z",
+            updatedAt: "2026-05-17T00:00:00.000Z",
+            forma: { requirementId, pageId: "checkout-page", variant: "default" }
+          } satisfies ArtifactManifest,
+          etag: "etag"
+        })),
+      },
+      products: {
+        ...base.products,
+        getProduct: vi.fn(async () => ({
+          id: productId,
+          name: "App",
+          description: "Demo",
+          platform: "web",
+        })),
+        listDesignPointers: vi.fn(async () => [{ artifactId, version }] as unknown as Awaited<ReturnType<FormaServerStore["products"]["listDesignPointers"]>>)
+      },
+      requirements: {
+        ...base.requirements,
+        archiveRequirement,
+        getRequirement
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({ method: "PUT", url: `/api/products/${productId}/requirements/${requirementId}/archive` });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.icons.pages).toHaveLength(1);
+    expect(body.vzi.pages).toHaveLength(1);
+    expect(body.vzi.pages[0]).toMatchObject({
+      pageId: "checkout-page",
+      artifactId,
+      version,
+    });
+    await expect(readFile(getArtifactVziPath(join(home, "data", "products"), productId, artifactId))).resolves.toBeInstanceOf(Buffer);
+    expect(archiveRequirement).toHaveBeenCalledWith(requirementId);
+  }, 90_000);
+
   it("maps not found and invalid input errors", async () => {
     const store = fakeStore({
       products: {
@@ -1269,7 +1371,14 @@ describe("artifact routes", () => {
       },
       products: {
         ...base.products,
-        listDesignPointers: vi.fn(async () => [{ artifactId: "A-abcdef1234567890", version: 1 }])
+        listDesignPointers: vi.fn(async () => [{
+          requirementId: "R-12345678",
+          pageId: "checkout-page",
+          variant: "default",
+          artifactId: "A-abcdef1234567890",
+          version: 1,
+          designStatus: "active" as const
+        }])
       }
     });
   }

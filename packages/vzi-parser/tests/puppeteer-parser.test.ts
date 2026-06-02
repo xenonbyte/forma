@@ -27,8 +27,14 @@ function createMockPage() {
 
   const installLayout = (nextDom: JSDOM) => {
     const win = nextDom.window;
+    const scrollHeight = parsePositive(win.document.body.getAttribute("data-mock-scroll-height")) ?? viewport.height;
     Object.defineProperty(win, "innerWidth", { configurable: true, value: viewport.width });
     Object.defineProperty(win, "innerHeight", { configurable: true, value: viewport.height });
+    for (const target of [win.document.body, win.document.documentElement]) {
+      Object.defineProperty(target, "scrollHeight", { configurable: true, value: scrollHeight });
+      Object.defineProperty(target, "offsetHeight", { configurable: true, value: scrollHeight });
+      Object.defineProperty(target, "clientHeight", { configurable: true, value: viewport.height });
+    }
     const getComputedStyle = win.getComputedStyle.bind(win);
     Object.defineProperty(win, "getComputedStyle", {
       configurable: true,
@@ -49,6 +55,7 @@ function createMockPage() {
         const height =
           parsePositive(this.getAttribute("height")) ??
           parseStylePx(style.height) ??
+          parseViewportHeight(style.height, viewport.height) ??
           (tagName === "svg" ? 24 : viewport.height);
         return makeRect(width, height);
       },
@@ -152,6 +159,13 @@ function parseStylePx(value: string): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function parseViewportHeight(value: string, viewportHeight: number): number | undefined {
+  const match = value.match(/^(\d+(?:\.\d+)?)vh$/);
+  if (!match) return undefined;
+  const parsed = Number.parseFloat(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? viewportHeight * (parsed / 100) : undefined;
+}
+
 async function parseWithMockPage(html: string, options: ConstructorParameters<typeof PuppeteerParser>[0] = {}) {
   const parser = new PuppeteerParser({
     waitTime: 0,
@@ -195,6 +209,25 @@ describe("PuppeteerParser SVG visibility filtering", () => {
     const svgElements = Object.values(ir.elements).filter((element) => element.svgData !== undefined);
     expect(svgElements).toHaveLength(1);
     expect(svgElements[0].source.name).toBe("Visible");
+  });
+});
+
+describe("PuppeteerParser viewport geometry", () => {
+  it("keeps viewport-unit element bounds tied to the configured viewport on long pages", async () => {
+    const ir = await parseWithMockPage(`<!DOCTYPE html>
+<html>
+  <body data-mock-scroll-height="2400" style="margin:0">
+    <main id="hero" style="height:100vh;width:320px">Hero</main>
+  </body>
+</html>`, {
+      viewportWidth: 390,
+      viewportHeight: 884,
+    });
+
+    const hero = ir.elements.hero;
+    expect(hero?.bounds.height).toBe(884);
+    expect(ir.metadata.viewportHeight).toBe(884);
+    expect(ir.metadata.contentHeight).toBe(2400);
   });
 });
 

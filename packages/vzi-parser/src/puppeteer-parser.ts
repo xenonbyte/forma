@@ -925,19 +925,6 @@ export class PuppeteerParser {
     });
     this.debugLog('buildIrFromCurrentPage', `contentHeight measured: ${contentHeight}`);
 
-    let actualViewportHeight = this.options.viewportHeight;
-    if (contentHeight > this.options.viewportHeight) {
-      actualViewportHeight = contentHeight;
-      await this.page!.setViewport({
-        width: this.options.viewportWidth,
-        height: actualViewportHeight,
-        deviceScaleFactor: 2,
-      });
-      this.debugLog('buildIrFromCurrentPage', `viewport expanded to content height: ${actualViewportHeight}`);
-      await this.waitForPageReady();
-      this.debugLog('buildIrFromCurrentPage', 'waitForPageReady done after viewport expand');
-    }
-
     this.debugLog('buildIrFromCurrentPage', 'extractElements start');
     const { elements, truncatedAtDepth } = await this.extractElements();
     this.debugLog('buildIrFromCurrentPage', `extractElements done: ${elements.length}`);
@@ -951,7 +938,7 @@ export class PuppeteerParser {
       title,
       generatedAt: new Date().toISOString(),
       viewportWidth: this.options.viewportWidth,
-      viewportHeight: actualViewportHeight,
+      viewportHeight: this.options.viewportHeight,
       contentHeight,
     };
 
