@@ -131,7 +131,7 @@ export async function exportRequirementIcons(
   const pages: ExportedPageIcons[] = [];
 
   for (const pointer of pointers) {
-    const { artifactId, version, pageId } = pointer;
+    const { artifactId, version, pageId, variant } = pointer;
 
     // Resolve paths
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
@@ -162,6 +162,7 @@ export async function exportRequirementIcons(
           productId,
           requirementId,
           pageId,
+          variant,
           version: `v${version}`,
           generatedFrom,
         },

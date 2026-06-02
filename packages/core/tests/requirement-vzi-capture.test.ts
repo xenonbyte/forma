@@ -526,6 +526,106 @@ describe('captureRequirementVzi with iconExportResult', () => {
     }
   }, 90_000);
 
+  it('matches icon refs by explicit SVG source order when VZI element ids are integer-like', async () => {
+    const htmlWithIntegerLikeSvgIds = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <main style="width:1024px;height:768px;padding:24px;display:flex;gap:16px">
+    <svg id="10" xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="First">
+      <path d="M2 12 L12 2 L22 12 L12 22 Z" fill="#111111" />
+    </svg>
+    <svg id="2" xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Second">
+      <path d="M4 4 H20 V20 H4 Z" fill="#222222" />
+    </svg>
+  </main>
+</body>
+</html>`;
+
+    const manifest: IconManifest = {
+      schemaVersion: 1,
+      artifactId: ARTIFACT_ID,
+      productId: PRODUCT_ID,
+      requirementId: REQ_ID,
+      pageId: PAGE_ID,
+      version: 'v1',
+      sourceVersion: 'v1',
+      generatedFrom: 'requirement-archive',
+      generatedAt: '2026-06-02T00:00:00.000Z',
+      densities: [1, 2, 3],
+      icons: [
+        {
+          id: 'icon-first',
+          name: 'first',
+          contentHash: 'hash-first',
+          size: { w: 24, h: 24 },
+          usesCurrentColor: false,
+          sourceOrderFirst: 0,
+          sourceOrders: [0],
+          files: {
+            svg: 'icons/first.svg',
+            png: { '1x': 'icons/first@1x.png', '2x': 'icons/first@2x.png', '3x': 'icons/first@3x.png' },
+          },
+        },
+        {
+          id: 'icon-second',
+          name: 'second',
+          contentHash: 'hash-second',
+          size: { w: 24, h: 24 },
+          usesCurrentColor: false,
+          sourceOrderFirst: 1,
+          sourceOrders: [1],
+          files: {
+            svg: 'icons/second.svg',
+            png: { '1x': 'icons/second@1x.png', '2x': 'icons/second@2x.png', '3x': 'icons/second@3x.png' },
+          },
+        },
+      ],
+      instances: [
+        { sourceOrder: 0, iconId: 'icon-first', contentHash: 'hash-first' },
+        { sourceOrder: 1, iconId: 'icon-second', contentHash: 'hash-second' },
+      ],
+    };
+
+    const iconExportResult: ExportRequirementIconsResult = {
+      pages: [
+        {
+          pageId: PAGE_ID,
+          artifactId: ARTIFACT_ID,
+          version: 1,
+          count: 2,
+          manifest,
+        },
+      ],
+      totalIcons: 2,
+    };
+
+    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-integer-svg-ids-'));
+    try {
+      const deps = await makeTestDeps(formaHome, 'desktop');
+      const productsRoot = join(formaHome, 'products');
+
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, htmlWithIntegerLikeSvgIds);
+      const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
+      deps.listDesignPointers = async () => [pointer];
+
+      const result = await captureRequirementVzi(
+        deps,
+        { productId: PRODUCT_ID, requirementId: REQ_ID },
+        iconExportResult,
+      );
+
+      expect(result.pages[0].iconRefsInjected).toBe(2);
+
+      const vziBytes = await readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID));
+      const decoded = new VZIDecoder({ enableErrorRecovery: true }).decode(new Uint8Array(vziBytes));
+
+      expect(decoded.content.elements.get('10')?.metadata?.iconRelativePath).toBe('icons/first.svg');
+      expect(decoded.content.elements.get('2')?.metadata?.iconRelativePath).toBe('icons/second.svg');
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 90_000);
+
   it('does not fail archive capture when CSS-computed hidden SVGs are skipped by icon extraction', async () => {
     const htmlWithHiddenSprite = `<!DOCTYPE html>
 <html lang="en">

@@ -25,6 +25,7 @@ export interface IconExtractionMetadata {
   productId: string;
   requirementId: string;
   pageId: string;
+  variant?: string;
   version: string;
   generatedFrom: IconGeneratedFrom;
 }
@@ -75,6 +76,7 @@ export interface IconManifest {
   productId: string;
   requirementId: string;
   pageId: string;
+  variant?: string;
   version: string;
   sourceVersion: string;
   generatedFrom: IconGeneratedFrom;
@@ -444,6 +446,7 @@ export async function extractIconAssets(
     productId: metadata.productId,
     requirementId: metadata.requirementId,
     pageId: metadata.pageId,
+    ...(metadata.variant ? { variant: metadata.variant } : {}),
     version: metadata.version,
     sourceVersion: metadata.version,
     generatedFrom: metadata.generatedFrom,

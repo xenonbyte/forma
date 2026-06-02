@@ -125,8 +125,8 @@ export function getVZIFileInfo(buffer: Buffer | Uint8Array): {
   let hasSpatialIndex = false;
 
   try {
-    const blockIndexOffset = Number(buf.readBigUInt64LE(30));
-    const blockIndexLength = buf.readUInt32LE(38);
+    const blockIndexOffset = Number(buf.readBigUInt64LE(34));
+    const blockIndexLength = buf.readUInt32LE(42);
 
     if (blockIndexOffset > 0 && blockIndexLength > 0) {
       // 简单检查块索引中是否包含 spatial 类型

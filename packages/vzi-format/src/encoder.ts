@@ -208,10 +208,16 @@ export class VZIEncoder {
   /**
    * 编码空间索引块
    */
-  private encodeSpatialIndex(spatialIndex: { blocks: Map<string, unknown> }): void {
+  private encodeSpatialIndex(spatialIndex: {
+    rootBlockId: string;
+    blocks: Map<string, unknown>;
+    maxDepth: number;
+  }): void {
     if (!spatialIndex || spatialIndex.blocks.size === 0) return;
 
     const indexData = {
+      rootBlockId: spatialIndex.rootBlockId,
+      maxDepth: spatialIndex.maxDepth,
       blocks: Object.fromEntries(spatialIndex.blocks),
     };
     const encoded = encode(indexData);

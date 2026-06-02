@@ -2707,7 +2707,8 @@ async function writeIconsFixture(
   productsRoot: string,
   productId: string,
   artifactId: string,
-  iconRelativePath: string  // e.g. "icons/icon-test.svg"
+  iconRelativePath: string,  // e.g. "icons/icon-test.svg"
+  options: { requirementId?: string; pageId?: string; version?: string; variant?: string } = {}
 ): Promise<void> {
   const iconsDir = getArtifactIconsDir(productsRoot, productId, artifactId);
   await mkdir(iconsDir, { recursive: true });
@@ -2719,10 +2720,11 @@ async function writeIconsFixture(
     schemaVersion: 1,
     artifactId,
     productId,
-    requirementId: "R-testtest",
-    pageId: "page-test",
-    version: "v1",
-    sourceVersion: "v1",
+    requirementId: options.requirementId ?? "R-testtest",
+    pageId: options.pageId ?? "page-test",
+    version: options.version ?? "v1",
+    sourceVersion: options.version ?? "v1",
+    ...(options.variant ? { variant: options.variant } : {}),
     generatedFrom: "requirement-archive",
     generatedAt: "2026-06-02T00:00:00.000Z",
     densities: [1, 2, 3],
@@ -3032,6 +3034,77 @@ describe("design-handoff tools (Task 8)", () => {
       expect(payload.pages[0].vziPath).toContain(ARTIFACT_ID);
       expect(payload.rules).toEqual(rules);
       expect(payload.copy).toEqual(translations);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("pins archived handoff to the generated asset version after the active pointer advances", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-pinned-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID, textContent: "Archived UI" });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
+        requirementId: REQ_ID,
+        pageId: PAGE_ID,
+        variant: "default",
+        version: "v1",
+      });
+
+      const archivedVersionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      const advancedVersionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 2);
+      await mkdir(archivedVersionDir, { recursive: true });
+      await mkdir(advancedVersionDir, { recursive: true });
+      await writeFile(join(archivedVersionDir, "index.html"), "<!DOCTYPE html><html>archived</html>", "utf8");
+      await writeFile(join(advancedVersionDir, "index.html"), "<!DOCTYPE html><html>advanced</html>", "utf8");
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+          getProductRules: vi.fn(async () => []),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 2,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const handoffResult = await tools.get_design_handoff({ requirement_id: REQ_ID });
+      const handoffPayload = textPayload(handoffResult);
+
+      expect(handoffResult.isError).toBeUndefined();
+      expect(handoffPayload.pages).toHaveLength(1);
+      expect(handoffPayload.pages[0]).toMatchObject({
+        pageId: PAGE_ID,
+        variant: "default",
+        artifactId: ARTIFACT_ID,
+        version: 1,
+      });
+      expect(handoffPayload.pages[0].indexHtmlPath).toContain(`${ARTIFACT_ID}/v1/index.html`);
+
+      const pageResult = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const pagePayload = textPayload(pageResult);
+
+      expect(pageResult.isError).toBeUndefined();
+      expect(pagePayload.version).toBe(1);
+      expect(pagePayload.tree.some((el: { textContent?: string }) => el.textContent === "Archived UI")).toBe(true);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

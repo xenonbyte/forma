@@ -668,13 +668,21 @@ export class VZIDecoder {
       }
 
       const indexData = decode(spatialBlock.data) as {
+        rootBlockId?: unknown;
+        maxDepth?: unknown;
         blocks: Record<string, unknown>;
       };
+      const rootBlockId = typeof indexData.rootBlockId === 'string'
+        ? indexData.rootBlockId
+        : Object.keys(indexData.blocks)[0] || '';
+      const maxDepth = typeof indexData.maxDepth === 'number'
+        ? indexData.maxDepth
+        : 10;
 
       return {
-        rootBlockId: Object.keys(indexData.blocks)[0] || '',
+        rootBlockId,
         blocks: new Map(Object.entries(indexData.blocks)) as Map<string, SpatialBlock>,
-        maxDepth: 10,
+        maxDepth,
       };
     } catch (error) {
       if (this.options.enableErrorRecovery) {
