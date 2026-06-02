@@ -13,7 +13,7 @@
  *   6.  No active pointers → both phases return empty arrays.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -23,7 +23,6 @@ import {
 } from '../src/archive-asset-export.js';
 import { getArtifactVersionDir, getArtifactVziPath } from '../src/artifact-paths.js';
 import type { DesignPointer } from '../src/product.js';
-import { FormaError } from '../src/errors.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
@@ -114,7 +113,7 @@ describe('exportArchiveAssets', () => {
       const result = await exportArchiveAssets(deps, {
         productId: PRODUCT_ID,
         requirementId: REQ_ID,
-        generatedFrom: 'archive',
+        generatedFrom: 'requirement-archive',
       });
 
       expect(result.icons.pages).toHaveLength(0);
@@ -141,7 +140,7 @@ describe('exportArchiveAssets', () => {
         const result = await exportArchiveAssets(deps, {
           productId: PRODUCT_ID,
           requirementId: REQ_ID,
-          generatedFrom: 'archive',
+          generatedFrom: 'requirement-archive',
         });
 
         // Icons phase
@@ -180,7 +179,7 @@ describe('exportArchiveAssets', () => {
         exportArchiveAssets(deps, {
           productId: PRODUCT_ID,
           requirementId: REQ_ID,
-          generatedFrom: 'archive',
+          generatedFrom: 'requirement-archive',
         }),
       ).rejects.toThrow();
     } finally {
@@ -210,7 +209,7 @@ describe('exportArchiveAssets', () => {
       const result = await exportArchiveAssets(deps, {
         productId: PRODUCT_ID,
         requirementId: REQ_ID,
-        generatedFrom: 'archive',
+        generatedFrom: 'requirement-archive',
       });
 
       // totalIcons and page count

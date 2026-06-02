@@ -312,17 +312,17 @@ describe('captureRequirementVzi with iconExportResult', () => {
     // We use the DESIGN_PAGE_HTML fixture which has 1 inline <svg>.
     // Build a fake icon manifest with exactly 1 entry to match.
     const singleIconManifest: IconManifest = {
-      generatedAt: new Date().toISOString(),
       artifactId: ARTIFACT_ID,
       productId: PRODUCT_ID,
       requirementId: REQ_ID,
       pageId: PAGE_ID,
+      version: 'v1',
       sourceVersion: 'v1',
-      generatedFrom: 'archive',
+      generatedFrom: 'requirement-archive',
       icons: [
         {
           id: 'icon-settings',
-          size: 48,
+          size: { w: 48, h: 48 },
           usesCurrentColor: false,
           sourceOrderFirst: true,
           files: {
@@ -333,7 +333,7 @@ describe('captureRequirementVzi with iconExportResult', () => {
               '3x': `icons/png/icon-settings@3x.png`,
             },
           },
-        } as IconEntry,
+        },
       ],
     };
 
@@ -402,35 +402,35 @@ describe('captureRequirementVzi icon mismatch', () => {
     async () => {
       // DESIGN_PAGE_HTML has 1 SVG element; we supply 3 icons → mismatch
       const mismatchManifest: IconManifest = {
-        generatedAt: new Date().toISOString(),
         artifactId: ARTIFACT_ID,
         productId: PRODUCT_ID,
         requirementId: REQ_ID,
         pageId: PAGE_ID,
+        version: 'v1',
         sourceVersion: 'v1',
-        generatedFrom: 'archive',
+        generatedFrom: 'requirement-archive',
         icons: [
           {
             id: 'icon-a',
-            size: 24,
+            size: { w: 24, h: 24 },
             usesCurrentColor: false,
             sourceOrderFirst: true,
             files: { svg: 'icons/svg/icon-a.svg', png: { '1x': '', '2x': '', '3x': '' } },
-          } as IconEntry,
+          },
           {
             id: 'icon-b',
-            size: 24,
+            size: { w: 24, h: 24 },
             usesCurrentColor: false,
             sourceOrderFirst: true,
             files: { svg: 'icons/svg/icon-b.svg', png: { '1x': '', '2x': '', '3x': '' } },
-          } as IconEntry,
+          },
           {
             id: 'icon-c',
-            size: 24,
+            size: { w: 24, h: 24 },
             usesCurrentColor: false,
             sourceOrderFirst: true,
             files: { svg: 'icons/svg/icon-c.svg', png: { '1x': '', '2x': '', '3x': '' } },
-          } as IconEntry,
+          },
         ],
       };
 
