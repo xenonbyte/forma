@@ -443,4 +443,49 @@ describe("Case 18: non-rendered or unsupported SVGs are not icon occurrences", (
       },
     ]);
   });
+
+  it("skips CSS-computed hidden SVGs at the archive viewport", async () => {
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    .invisible { visibility: hidden; }
+    @media (min-width: 768px) {
+      .md\\:hidden { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <svg class="invisible" xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Invisible">
+    <path d="M0 0h24v24H0z" />
+  </svg>
+  <svg class="md:hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Desktop Hidden">
+    <path d="M1 1h22v22H1z" />
+  </svg>
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Visible">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+</body>
+</html>`;
+
+    const { manifest } = await extractIconAssets(html, METADATA, {
+      densities: [1],
+      computedVisibility: {
+        viewportWidth: 1024,
+        viewportHeight: 1280,
+        baseUrl: "http://localhost/",
+      },
+    });
+
+    expect(manifest.icons).toHaveLength(1);
+    expect(manifest.icons[0].name).toBe("visible");
+    expect(manifest.icons[0].sourceOrders).toEqual([2]);
+    expect(manifest.instances).toEqual([
+      {
+        sourceOrder: 2,
+        iconId: manifest.icons[0].id,
+        contentHash: manifest.icons[0].contentHash,
+      },
+    ]);
+  });
 });

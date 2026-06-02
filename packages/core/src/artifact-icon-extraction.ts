@@ -6,10 +6,11 @@
  *   - A Map<string, Buffer> of relative file paths under icons/ → content.
  *   - An IconManifest with per-icon metadata including density PNG paths.
  *
- * Pure function — no disk writes. A later task wires this to disk.
+ * No disk writes. A later task wires this to disk.
  */
 
 import { createHash } from "node:crypto";
+import { PuppeteerParser } from "@vzi-core/parser";
 import { parse, type HTMLElement } from "node-html-parser";
 import sharp from "sharp";
 import { FormaError } from "./errors.js";
@@ -31,6 +32,15 @@ export interface IconExtractionMetadata {
 export interface IconExtractionOptions {
   /** Density multipliers. Default [1, 2, 3]. */
   densities?: number[];
+  /**
+   * When set, filters SVG occurrences through the same browser-computed
+   * visibility source used by VZI capture.
+   */
+  computedVisibility?: {
+    viewportWidth: number;
+    viewportHeight: number;
+    baseUrl?: string;
+  };
 }
 
 export interface IconEntry {
@@ -80,6 +90,8 @@ export interface IconExtractionResult {
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
+
+const ICON_SOURCE_ORDER_ATTR = "data-forma-icon-source-order";
 
 /** sha256(payload).slice(0,16) hex — same scheme as artifact-asset-pipeline.ts */
 function contentHash(payload: Buffer): string {
@@ -232,11 +244,84 @@ function isVziRenderableSvgOccurrence(svgEl: HTMLElement, svgText: string): bool
   return hasVziRenderableSvgPrimitive(svgEl);
 }
 
+function assertSafeSvg(index: number, svgText: string): void {
+  const svgViolations: string[] = [];
+  scanSvg(`icon[${index}]`, svgText, svgViolations);
+  if (svgViolations.length > 0) {
+    throw new FormaError(
+      "ARTIFACT_NOT_STATIC",
+      `Unsafe SVG at icon index ${index}: ${svgViolations[0]}`,
+      { index, violations: svgViolations },
+    );
+  }
+}
+
+function parseSourceOrder(value: string | undefined): number | undefined {
+  if (!value || !/^\d+$/.test(value)) {
+    return undefined;
+  }
+  const parsed = Number.parseInt(value, 10);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+async function collectComputedRenderableSvgSourceOrders(
+  html: string,
+  options: NonNullable<IconExtractionOptions["computedVisibility"]>,
+): Promise<Set<number>> {
+  const annotatedRoot = parse(html, { comment: true });
+  const svgElements = annotatedRoot.querySelectorAll("svg");
+  if (svgElements.length === 0) {
+    return new Set();
+  }
+
+  for (let i = 0; i < svgElements.length; i++) {
+    svgElements[i].setAttribute(ICON_SOURCE_ORDER_ATTR, String(i));
+  }
+
+  const parser = new PuppeteerParser({
+    viewportWidth: options.viewportWidth,
+    viewportHeight: options.viewportHeight,
+    baseUrl: options.baseUrl,
+    waitTime: 0,
+    waitForPageReadyMarker: false,
+    waitForFonts: false,
+    waitForIconFonts: false,
+    waitForImages: false,
+    waitForStyleSheets: true,
+    stabilityTime: 0,
+  });
+
+  try {
+    const ir = await parser.parse(annotatedRoot.toString());
+    const sourceOrders = new Set<number>();
+    for (const element of Object.values(ir.elements)) {
+      if (element.svgData === undefined) {
+        continue;
+      }
+      const sourceOrder = parseSourceOrder(
+        element.source?.dataAttributes?.[ICON_SOURCE_ORDER_ATTR],
+      );
+      if (sourceOrder !== undefined) {
+        sourceOrders.add(sourceOrder);
+      }
+    }
+    return sourceOrders;
+  } finally {
+    await parser.dispose().catch((disposeErr) => {
+      console.warn(
+        "[artifact-icon-extraction] PuppeteerParser.dispose() failed after computed visibility filtering:",
+        disposeErr,
+      );
+    });
+  }
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
  * Extracts all inline <svg> elements from `html`, validates each for safety,
- * and returns a set of icon files (SVG + density-tier PNGs) plus an IconManifest.
+ * optionally aligns occurrences with browser-computed VZI visibility, and
+ * returns a set of icon files (SVG + density-tier PNGs) plus an IconManifest.
  *
  * @param html     - Full static HTML string.
  * @param metadata - Source identification attached to the manifest.
@@ -259,18 +344,19 @@ export async function extractIconAssets(
   const svgElements = root.querySelectorAll("svg");
 
   for (let i = 0; i < svgElements.length; i++) {
+    assertSafeSvg(i, svgElements[i].toString());
+  }
+
+  const computedRenderableSourceOrders = options.computedVisibility
+    ? await collectComputedRenderableSvgSourceOrders(html, options.computedVisibility)
+    : undefined;
+
+  for (let i = 0; i < svgElements.length; i++) {
     const el = svgElements[i];
     const svgText = el.toString();
 
-    // 1. Safety validation — collect violations via the shared scanSvg, then throw
-    const svgViolations: string[] = [];
-    scanSvg(`icon[${i}]`, svgText, svgViolations);
-    if (svgViolations.length > 0) {
-      throw new FormaError(
-        "ARTIFACT_NOT_STATIC",
-        `Unsafe SVG at icon index ${i}: ${svgViolations[0]}`,
-        { index: i, violations: svgViolations },
-      );
+    if (computedRenderableSourceOrders && !computedRenderableSourceOrders.has(i)) {
+      continue;
     }
 
     if (!isVziRenderableSvgOccurrence(el, svgText)) {

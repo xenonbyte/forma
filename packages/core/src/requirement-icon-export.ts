@@ -12,7 +12,9 @@
 
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { VIEWPORT_PRESETS } from '@vzi-core/parser';
 import type { DesignPointer } from './product.js';
 import type { IconManifest } from './artifact-icon-extraction.js';
 import { extractIconAssets } from './artifact-icon-extraction.js';
@@ -22,12 +24,15 @@ import {
 } from './artifact-paths.js';
 import { FormaError } from './errors.js';
 import type { IconGeneratedFrom } from './artifact-icon-extraction.js';
+import type { Platform } from './schemas.js';
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
 export interface ExportRequirementIconsDeps {
   /** Absolute path to the products root (contains <productId>/od-project/…). */
   productsRoot: string;
+  /** Returns the platform for the given product when archive/VZI alignment is required. */
+  getProductPlatform?: (productId: string) => Promise<Platform | undefined>;
   /** Returns all design pointers for the given product. */
   listDesignPointers: (productId: string) => Promise<DesignPointer[]>;
   /** Read a file from disk (override in tests for observability). */
@@ -70,6 +75,31 @@ function tmpSiblingDir(iconsDir: string): string {
   return `${iconsDir}.tmp-${suffix}`;
 }
 
+function resolveIconExtractionViewport(platform: Platform | undefined): {
+  viewportWidth: number;
+  viewportHeight: number;
+} {
+  switch (platform) {
+    case 'mobile':
+      return {
+        viewportWidth: VIEWPORT_PRESETS.mobile.width,
+        viewportHeight: VIEWPORT_PRESETS.mobile.height,
+      };
+    case 'tablet':
+      return {
+        viewportWidth: VIEWPORT_PRESETS.tablet.width,
+        viewportHeight: VIEWPORT_PRESETS.tablet.height,
+      };
+    case 'desktop':
+    case 'web':
+    default:
+      return {
+        viewportWidth: VIEWPORT_PRESETS.desktop.width,
+        viewportHeight: VIEWPORT_PRESETS.desktop.height,
+      };
+  }
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -85,8 +115,12 @@ export async function exportRequirementIcons(
   deps: ExportRequirementIconsDeps,
   input: ExportRequirementIconsInput,
 ): Promise<ExportRequirementIconsResult> {
-  const { productsRoot, listDesignPointers } = deps;
+  const { productsRoot, getProductPlatform, listDesignPointers } = deps;
   const { productId, requirementId, generatedFrom } = input;
+  const platform = getProductPlatform ? await getProductPlatform(productId) : undefined;
+  const viewport = getProductPlatform
+    ? resolveIconExtractionViewport(platform)
+    : undefined;
 
   // Filter to active pointers for this requirement
   const allPointers = await listDesignPointers(productId);
@@ -120,15 +154,26 @@ export async function exportRequirementIcons(
 
       const html = htmlBuf.toString('utf8');
 
-      // Extract icons (pure — may throw FormaError)
-      const { files, manifest } = await extractIconAssets(html, {
-        artifactId,
-        productId,
-        requirementId,
-        pageId,
-        version: `v${version}`,
-        generatedFrom,
-      });
+      // Extract icons (no disk writes here — may throw FormaError)
+      const { files, manifest } = await extractIconAssets(
+        html,
+        {
+          artifactId,
+          productId,
+          requirementId,
+          pageId,
+          version: `v${version}`,
+          generatedFrom,
+        },
+        viewport
+          ? {
+              computedVisibility: {
+                ...viewport,
+                baseUrl: pathToFileURL(`${versionDir}/`).toString(),
+              },
+            }
+          : undefined,
+      );
 
       // Write files + icons.json to temp dir
       await deps.mkdir(tmpDir);
@@ -188,9 +233,11 @@ export async function exportRequirementIcons(
 export function makeExportRequirementIconsDeps(
   productsRoot: string,
   listDesignPointersFn: (productId: string) => Promise<DesignPointer[]>,
+  getProductPlatformFn?: (productId: string) => Promise<Platform | undefined>,
 ): ExportRequirementIconsDeps {
   return {
     productsRoot,
+    getProductPlatform: getProductPlatformFn,
     listDesignPointers: listDesignPointersFn,
     readFile: (path) => readFile(path),
     writeFile: async (path, data) => {

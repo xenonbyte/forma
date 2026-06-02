@@ -83,8 +83,8 @@ export interface PuppeteerParserOptions {
   maxDepth?: number;
   /**
    * 是否启用沙箱模式（默认 true）。
-   * true：不传 --disable-web-security，适合受信任输入和公共 API 场景。
-   * false：传 --disable-web-security，允许跨域请求，仅在可信内网环境下使用。
+   * true：保留 Chromium 默认 OS 沙箱和同源策略，适合公共 API 场景。
+   * false：传 --no-sandbox、--disable-setuid-sandbox、--disable-web-security，仅在可信内网环境下使用。
    */
   sandbox?: boolean;
 }
@@ -150,6 +150,26 @@ export function withDocumentBaseUrl(html: string, baseUrl: string): string {
   base.attr('href', href);
   head.prepend(base);
   return $.html();
+}
+
+function chromiumLaunchArgs(sandbox: boolean): string[] {
+  const args = ['--disable-dev-shm-usage'];
+  if (!sandbox) {
+    args.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security');
+  }
+  return args;
+}
+
+function allowNoSandboxFallback(): boolean {
+  if (typeof process === 'undefined' || !process?.env) {
+    return false;
+  }
+  return (
+    process.env.VZI_PARSER_ALLOW_NO_SANDBOX_FALLBACK === '1' ||
+    process.env.VITEST === 'true' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.CI === 'true'
+  );
 }
 
 /**
@@ -261,19 +281,26 @@ export class PuppeteerParser {
   private async initBrowser(): Promise<void> {
     if (!this.browser) {
       this.debugLog('initBrowser', 'launch start');
-      const args = [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-      ];
-      if (!this.options.sandbox) {
-        // 仅在显式关闭沙箱时才允许跨域，不应在公共 API 场景使用
-        args.push('--disable-web-security');
+      const args = chromiumLaunchArgs(this.options.sandbox);
+      try {
+        this.browser = await puppeteer.launch({
+          headless: true,
+          args,
+        });
+      } catch (error) {
+        if (!this.options.sandbox || !allowNoSandboxFallback()) {
+          throw error;
+        }
+
+        console.warn(
+          '[PuppeteerParser] Chromium sandbox launch failed; retrying with no-sandbox fallback in controlled test/CI mode:',
+          error instanceof Error ? error.message : String(error)
+        );
+        this.browser = await puppeteer.launch({
+          headless: true,
+          args: chromiumLaunchArgs(false),
+        });
       }
-      this.browser = await puppeteer.launch({
-        headless: true,
-        args,
-      });
       this.page = await this.browser.newPage();
       this.debugLog('initBrowser', 'newPage created');
 
@@ -1491,13 +1518,21 @@ export class PuppeteerParser {
         }
 
         const elementId = createUniqueElementId(element.id || '');
+        const computedStyle = window.getComputedStyle(element);
+        if (
+          computedStyle.display === 'none' ||
+          computedStyle.visibility === 'hidden' ||
+          computedStyle.visibility === 'collapse'
+        ) {
+          return null;
+        }
+
         const rect = element.getBoundingClientRect();
 
         if (rect.width <= 0 || rect.height <= 0) {
           return null;
         }
 
-        const computedStyle = window.getComputedStyle(element);
         const styles = extractStyles(computedStyle);
         const className = element.getAttribute('class') || '';
         const parentElement = element.parentElement;

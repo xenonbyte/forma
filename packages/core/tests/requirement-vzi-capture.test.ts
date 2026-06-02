@@ -526,12 +526,23 @@ describe('captureRequirementVzi with iconExportResult', () => {
     }
   }, 90_000);
 
-  it('does not fail archive capture when non-rendered SVGs are skipped by icon extraction', async () => {
+  it('does not fail archive capture when CSS-computed hidden SVGs are skipped by icon extraction', async () => {
     const htmlWithHiddenSprite = `<!DOCTYPE html>
 <html lang="en">
+<head>
+  <style>
+    .invisible { visibility: hidden; }
+    @media (min-width: 768px) {
+      .md\\:hidden { display: none; }
+    }
+  </style>
+</head>
 <body>
-  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" width="24" height="24" aria-label="Sprite">
+  <svg class="invisible" xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Invisible">
     <path d="M0 0h24v24H0z" />
+  </svg>
+  <svg class="md:hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Desktop Hidden">
+    <path d="M1 1h22v22H1z" />
   </svg>
   <main style="width:1024px;height:768px;padding:24px">
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Visible Check">

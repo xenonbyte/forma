@@ -1,5 +1,5 @@
 import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, type FormaStore } from "@xenonbyte/forma-core";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -30,6 +30,7 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
         ["icons/icon-0-24x24-abc123.svg", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8")]
       ]),
       manifest: {
+        schemaVersion: 1,
         artifactId: "ABCDEFGHIJ123456",
         productId: "P-123abc",
         requirementId: "manual-export",
@@ -37,7 +38,30 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
         version: "manual",
         sourceVersion: "manual",
         generatedFrom: "manual-export" as const,
-        icons: []
+        generatedAt: "2026-06-02T00:00:00.000Z",
+        densities: [1, 2, 3],
+        icons: [
+          {
+            id: "icon-0-24x24-abc123",
+            name: "icon-0-24x24",
+            contentHash: "abc123",
+            size: { w: 24, h: 24 },
+            usesCurrentColor: false,
+            sourceOrderFirst: 0,
+            sourceOrders: [0],
+            files: {
+              svg: "icons/icon-0-24x24-abc123.svg",
+              png: {}
+            }
+          }
+        ],
+        instances: [
+          {
+            sourceOrder: 0,
+            iconId: "icon-0-24x24-abc123",
+            contentHash: "abc123"
+          }
+        ]
       }
     }))
   };
@@ -1482,6 +1506,10 @@ describe("artifact tools (C-03)", () => {
     expect(payload).toHaveProperty("output_path");
     expect(typeof payload.output_path).toBe("string");
     expect((payload.output_path as string)).toContain("icons");
+    const manifest = JSON.parse(await readFile(join(payload.output_path as string, "icons.json"), "utf8"));
+    const svgPath = manifest.icons[0].files.svg;
+    expect(svgPath).toBe("icons/icon-0-24x24-abc123.svg");
+    await expect(readFile(join(payload.output_path as string, svgPath), "utf8")).resolves.toContain("<svg");
     // archiveRequirement must not have been called
     expect((store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement).not.toHaveBeenCalled();
   });

@@ -806,11 +806,7 @@ async function exportArtifactIcons(
   await mkdir(iconsExportDir, { recursive: true });
 
   for (const [relativePath, buf] of result.files) {
-    // relativePath starts with "icons/…"; strip the prefix since we're writing into iconsExportDir
-    const strippedPath = relativePath.startsWith("icons/")
-      ? relativePath.slice("icons/".length)
-      : relativePath;
-    const destPath = join(iconsExportDir, strippedPath);
+    const destPath = join(iconsExportDir, relativePath);
     const destDir = dirname(destPath);
     await mkdir(destDir, { recursive: true });
     await writeFile(destPath, buf);

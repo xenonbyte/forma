@@ -79,6 +79,7 @@ export interface ExportArchiveAssetsResult {
 function toIconDeps(deps: ExportArchiveAssetsDeps): ExportRequirementIconsDeps {
   return {
     productsRoot: deps.productsRoot,
+    getProductPlatform: deps.getProductPlatform,
     listDesignPointers: deps.listDesignPointers,
     readFile: deps.readFile,
     writeFile: deps.writeFile,
