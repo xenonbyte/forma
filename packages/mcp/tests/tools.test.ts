@@ -2617,11 +2617,34 @@ async function writeVziFixture(
   productsRoot: string,
   productId: string,
   artifactId: string,
-  vziBytes: Uint8Array
+  vziBytes: Uint8Array,
+  options: { writeEmptyIconsManifest?: boolean } = {}
 ): Promise<void> {
   const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
   await mkdir(dirname(vziPath), { recursive: true });
   await writeFile(vziPath, vziBytes);
+
+  if (options.writeEmptyIconsManifest === false) {
+    return;
+  }
+
+  const iconsDir = getArtifactIconsDir(productsRoot, productId, artifactId);
+  await mkdir(iconsDir, { recursive: true });
+  const manifest = {
+    schemaVersion: 1,
+    artifactId,
+    productId,
+    requirementId: "R-testtest",
+    pageId: "page-test",
+    version: "v1",
+    sourceVersion: "v1",
+    generatedFrom: "requirement-archive",
+    generatedAt: "2026-06-02T00:00:00.000Z",
+    densities: [1, 2, 3],
+    icons: [],
+    instances: [],
+  };
+  await writeFile(join(iconsDir, "icons.json"), JSON.stringify(manifest), "utf8");
 }
 
 /**
@@ -2925,6 +2948,8 @@ describe("design-handoff tools (Task 8)", () => {
       expect(payload.pages).toHaveLength(1);
       expect(payload.pages[0]).toMatchObject({
         pageId: PAGE_ID,
+        artifactId: ARTIFACT_ID,
+        version: 1,
         iconCount: 1,
       });
       expect(payload.pages[0].vziPath).toMatch(/page\.vzi$/);
@@ -2934,6 +2959,162 @@ describe("design-handoff tools (Task 8)", () => {
       expect(payload.pages[0].vziPath).toContain(ARTIFACT_ID);
       expect(payload.rules).toEqual(rules);
       expect(payload.copy).toEqual(translations);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_design_handoff returns ARTIFACT_NOT_FOUND when the generated icons manifest is missing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-missing-icons-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes, {
+        writeEmptyIconsManifest: false,
+      });
+
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({
+        error_code: "ARTIFACT_NOT_FOUND",
+        details: {
+          artifactId: ARTIFACT_ID,
+          handoffType: "icons",
+        },
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_design_handoff returns ARTIFACT_NOT_FOUND when the generated VZI file is missing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-missing-vzi-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH);
+
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({
+        error_code: "ARTIFACT_NOT_FOUND",
+        details: {
+          artifactId: ARTIFACT_ID,
+          handoffType: "vzi",
+        },
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_design_handoff returns ARTIFACT_INVALID_INPUT when icons manifest is malformed", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-bad-icons-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const iconsDir = getArtifactIconsDir(productsRoot, PRODUCT_ID, ARTIFACT_ID);
+      await writeFile(join(iconsDir, "icons.json"), JSON.stringify({ schemaVersion: 1 }), "utf8");
+
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({
+        error_code: "ARTIFACT_INVALID_INPUT",
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -3564,6 +3745,58 @@ describe("design-handoff tools (Task 8)", () => {
       const textEl = payload.tree.find((el: { id: string }) => el.id === "el-text");
       expect(rootEl?.assetRef).toBeUndefined();
       expect(textEl?.assetRef).toBeUndefined();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui returns ARTIFACT_NOT_FOUND when a generated icon asset is missing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-missing-assetref-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({
+        title: PAGE_ID,
+        withSvgElement: true,
+        iconRelativePath: ICON_REL_PATH,
+      });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+
+      expect(result.isError).toBe(true);
+      const payload = textPayload(result);
+      expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
+      expect(payload.details).toMatchObject({
+        artifactId: ARTIFACT_ID,
+        handoffType: "icons",
+        relativePath: ICON_REL_PATH,
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }

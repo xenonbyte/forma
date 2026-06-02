@@ -10,7 +10,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { parse } from "node-html-parser";
+import { parse, type HTMLElement } from "node-html-parser";
 import sharp from "sharp";
 import { FormaError } from "./errors.js";
 import { scanSvg } from "./artifact-static-validation.js";
@@ -138,19 +138,22 @@ function parseSvgSize(svgText: string): { w: number; h: number } {
   return { w: 0, h: 0 };
 }
 
-/**
- * Read the `aria-label` attribute from the `<svg>` element itself.
- * Returns undefined if the attribute is absent or blank.
- * No ancestor walking is performed.
- */
-function findAriaLabel(svgText: string): string | undefined {
-  const root = parse(svgText, { comment: false });
-  const svgEl = root.querySelector("svg");
-  if (!svgEl) return undefined;
-
-  // Check aria-label on the svg element itself
-  const label = svgEl.getAttribute("aria-label");
+function readAriaLabel(el: HTMLElement): string | undefined {
+  const label = el.getAttribute("aria-label");
   if (label?.trim()) return label.trim();
+
+  return undefined;
+}
+
+/**
+ * Read accessible label from the SVG itself, then its direct parent.
+ */
+function findAriaLabel(svgEl: HTMLElement): string | undefined {
+  const ownLabel = readAriaLabel(svgEl);
+  if (ownLabel) return ownLabel;
+
+  const parent = svgEl.parentNode;
+  if (parent) return readAriaLabel(parent);
 
   return undefined;
 }
@@ -200,7 +203,7 @@ export async function extractIconAssets(
     const hash = contentHash(svgBuf);
 
     // 2. Determine name
-    const ariaLabel = findAriaLabel(svgText);
+    const ariaLabel = findAriaLabel(el);
     const size = parseSvgSize(svgText);
     const slug = ariaLabel ? slugify(ariaLabel) : "";
     const iconName = slug || `icon-${i}-${size.w}x${size.h}`;

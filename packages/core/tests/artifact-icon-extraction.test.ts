@@ -19,7 +19,8 @@
  *  13.  Fallback name: icon-<index>-<WxH> when no aria-label
  *  14.  parseSvgSize ignores unit-bearing width/height, falls back to viewBox
  *  15.  Empty aria-label slug falls back to icon-<index> name (no leading hyphen)
- *  16.  sharp rasterization failure becomes FormaError(ARTIFACT_INVALID_INPUT)
+ *  16.  Parent aria-label is used when SVG has no own label
+ *  17.  sharp rasterization failure becomes FormaError(ARTIFACT_INVALID_INPUT)
  */
 
 import { describe, expect, it } from "vitest";
@@ -94,6 +95,15 @@ describe("Case 1: deterministic names", () => {
     expect(manifest.icons[0].id).toMatch(/^icon-0-32x32-[0-9a-f]{16}$/);
     const id = manifest.icons[0].id;
     expect(files.has(`icons/${id}.svg`)).toBe(true);
+  });
+
+  it("uses the direct parent aria-label when the SVG has no own label", async () => {
+    const svg = makeSvg(24, 24);
+    const html = wrapInHtml([`<button aria-label="Open Menu">${svg}</button>`]);
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].id).toMatch(/^open-menu-[0-9a-f]{16}$/);
+    expect(files.has(`icons/${manifest.icons[0].id}.svg`)).toBe(true);
   });
 });
 
@@ -394,9 +404,9 @@ describe("Case 15: empty slug falls back to icon-<index> name", () => {
   });
 });
 
-// ─── Case 16: sharp rasterization failure → FormaError ───────────────────────
+// ─── Case 17: sharp rasterization failure → FormaError ───────────────────────
 
-describe("Case 16: sharp rasterization failure becomes FormaError", () => {
+describe("Case 17: sharp rasterization failure becomes FormaError", () => {
   it("rejects with FormaError(ARTIFACT_INVALID_INPUT) for an unrasterizable SVG", async () => {
     // An SVG with no dimensions and no viewBox passes scanSvg safety checks but
     // causes sharp to fail with a "bad dimensions" error at rasterization time.

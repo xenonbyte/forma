@@ -26,7 +26,8 @@
  *   - If the element has no iconRelativePath, assetRef is not added.
  */
 
-import { readFile } from 'node:fs/promises';
+import { constants as fsConstants } from 'node:fs';
+import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   FormaError,
@@ -84,18 +85,56 @@ async function loadVzi(vziPath: string): Promise<VZIContent> {
   return result.content;
 }
 
-/** Read icons.json manifest and return the icon count (0 if file absent). */
+async function assertReadableHandoffFile(
+  path: string,
+  artifactId: string,
+  handoffType: 'icons' | 'vzi'
+): Promise<void> {
+  try {
+    await access(path, fsConstants.R_OK);
+  } catch (cause) {
+    const err = cause as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      throw new FormaError(
+        'ARTIFACT_NOT_FOUND',
+        `Generated ${handoffType} handoff file not found`,
+        { artifactId, handoffType, path }
+      );
+    }
+    throw new FormaError(
+      'ARTIFACT_WRITE_FAIL',
+      `Generated ${handoffType} handoff file is unreadable`,
+      { artifactId, handoffType, path, cause: err.message }
+    );
+  }
+}
+
+/** Read icons.json manifest and return the icon count. */
 async function readIconCount(iconsManifestPath: string, artifactId: string): Promise<number> {
   let raw: string;
   try {
     raw = await readFile(iconsManifestPath, 'utf8');
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return 0;
-    throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
+    const err = e as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      throw new FormaError(
+        'ARTIFACT_NOT_FOUND',
+        'Generated icons manifest not found',
+        { artifactId, handoffType: 'icons', path: iconsManifestPath }
+      );
+    }
+    throw new FormaError(
+      'ARTIFACT_WRITE_FAIL',
+      'Generated icons manifest is unreadable',
+      { artifactId, handoffType: 'icons', path: iconsManifestPath, cause: err.message }
+    );
   }
   try {
     const manifest = JSON.parse(raw) as { icons?: unknown[] };
-    return Array.isArray(manifest.icons) ? manifest.icons.length : 0;
+    if (!Array.isArray(manifest.icons)) {
+      throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
+    }
+    return manifest.icons.length;
   } catch {
     throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
   }
@@ -148,6 +187,7 @@ async function resolvePagePointers(
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
     const indexHtmlPath = join(versionDir, 'index.html');
     const iconsManifestPath = getArtifactIconsManifestPath(productsRoot, productId, artifactId);
+    await assertReadableHandoffFile(vziPath, artifactId, 'vzi');
     const iconCount = await readIconCount(iconsManifestPath, artifactId);
 
     pages.push({ pageId, artifactId, version, vziPath, indexHtmlPath, iconCount });
@@ -187,11 +227,11 @@ async function resolvePagePointer(
  * throws FormaError('ARTIFACT_INVALID_INPUT') — this indicates tampering
  * or a write-path bug and must NOT be silently swallowed.
  */
-function resolveAssetRef(
+async function resolveAssetRef(
   element: { metadata?: Record<string, unknown> } | undefined | null,
   artifactDir: string,
   artifactId: string
-): string | undefined {
+): Promise<string | undefined> {
   if (!element?.metadata) return undefined;
   const rel = element.metadata['iconRelativePath'];
   if (typeof rel !== 'string' || rel.length === 0) return undefined;
@@ -206,6 +246,25 @@ function resolveAssetRef(
       { artifactId }
     );
   }
+
+  try {
+    await access(abs, fsConstants.R_OK);
+  } catch (cause) {
+    const err = cause as NodeJS.ErrnoException;
+    if (err.code === 'ENOENT') {
+      throw new FormaError(
+        'ARTIFACT_NOT_FOUND',
+        'Generated icon asset not found',
+        { artifactId, handoffType: 'icons', relativePath: rel }
+      );
+    }
+    throw new FormaError(
+      'ARTIFACT_WRITE_FAIL',
+      'Generated icon asset is unreadable',
+      { artifactId, handoffType: 'icons', relativePath: rel, cause: err.message }
+    );
+  }
+
   return abs;
 }
 
@@ -217,16 +276,16 @@ function resolveAssetRef(
  * Throws FormaError('ARTIFACT_INVALID_INPUT') if any element's iconRelativePath
  * resolves outside the current artifact dir (propagates from resolveAssetRef).
  */
-function attachAssetRefs(
+async function attachAssetRefs(
   elements: Array<{ id: string; assetRef?: string }>,
   content: VZIContent,
   artifactDir: string,
   artifactId: string
-): void {
+): Promise<void> {
   for (const el of elements) {
     const raw = content.elements.get(el.id);
     if (!raw) continue;
-    const assetRef = resolveAssetRef(
+    const assetRef = await resolveAssetRef(
       raw as { metadata?: Record<string, unknown> },
       artifactDir,
       artifactId
@@ -268,6 +327,8 @@ export async function toolGetDesignHandoff(
     pages: pages.map((p) => ({
       pageId: p.pageId,
       title: p.pageId,
+      artifactId: p.artifactId,
+      version: p.version,
       vziPath: p.vziPath,
       indexHtmlPath: p.indexHtmlPath,
       iconCount: p.iconCount,
@@ -370,7 +431,7 @@ export async function toolGetPageUi(
     source?: unknown;
     assetRef?: string;
   }> = elementList.elements.map((el) => ({ ...el }));
-  attachAssetRefs(elementsWithAssetRef, content, artifactDir, pageInfo.artifactId);
+  await attachAssetRefs(elementsWithAssetRef, content, artifactDir, pageInfo.artifactId);
 
   return {
     viewport: viewport ?? null,
@@ -418,7 +479,7 @@ export async function toolGetUiNode(
   // Resolve assetRef
   const artifactDir = getArtifactDir(productsRoot, productId, pageInfo.artifactId);
   const raw = content.elements.get(node_id);
-  const assetRef = resolveAssetRef(
+  const assetRef = await resolveAssetRef(
     raw as { metadata?: Record<string, unknown> } | undefined,
     artifactDir,
     pageInfo.artifactId
@@ -459,7 +520,7 @@ export async function toolSearchPageUi(
   const artifactDir = getArtifactDir(productsRoot, productId, pageInfo.artifactId);
   const elementsWithAssetRef: Array<(typeof result.elements)[number] & { assetRef?: string }> =
     result.elements.map((el) => ({ ...el }));
-  attachAssetRefs(elementsWithAssetRef, content, artifactDir, pageInfo.artifactId);
+  await attachAssetRefs(elementsWithAssetRef, content, artifactDir, pageInfo.artifactId);
 
   return {
     query: searchQuery,

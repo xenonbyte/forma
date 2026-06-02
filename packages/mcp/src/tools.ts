@@ -323,7 +323,7 @@ const descriptions = {
   save_requirement: "Create or update a requirement through the unified state machine.",
   list_product_artifacts: "List open-design artifacts for a product.",
   get_product_artifact: "Read an open-design artifact manifest, bundle_url, per-asset urls, and versions.",
-  export_artifact: "Export an open-design artifact to html, svg, png, or zip (self-contained bundle).",
+  export_artifact: "Export an open-design artifact to html, svg, png, zip (self-contained bundle), icons, or vzi.",
   rollback_requirement_design: "Roll back a page/variant's design to a previous version (flips the version pointer; older versions are kept).",
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
@@ -331,8 +331,8 @@ const descriptions = {
   get_design_context: "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
   get_design_handoff: "Read the design-handoff entry for an archived requirement: page directory with vziPath, indexHtmlPath, iconCount, rules, and copy. Only available after the requirement is archived.",
   get_page_ui: "Read the full element tree (with tokens, annotations, and resolved asset paths) for one page of an archived requirement. Supports depth/fields/node_id filtering.",
-  get_ui_node: "Read complete detail for a single UI element node: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
-  search_page_ui: "Search a page's UI elements by text content or type."
+  get_ui_node: "Read complete detail for a single UI element node from an archived requirement: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
+  search_page_ui: "Search an archived requirement page's UI elements by text content or type."
 } satisfies Record<FormaToolName, string>;
 
 export function createFormaTools(store: FormaStore): FormaTools {
@@ -346,7 +346,7 @@ export function createFormaTools(store: FormaStore): FormaTools {
           "Use get_page_copy to inspect page-level source copy translations.",
           "Use get_product_artifact to read a design — it returns bundle_url, per-asset urls, preview_url, versions, and current_version.",
           "Open a design by fetching bundle_url (self-contained HTML). Load assets from their density-keyed urls.",
-          "Use export_artifact with format=zip to download the complete self-contained bundle (index.html + assets + manifest.json), format=png for the preview image, or format=html/svg for the single entry file."
+          "Use export_artifact with format=zip to download the complete self-contained bundle (index.html + assets + manifest.json), format=png for the preview image, format=html/svg for the single entry file, format=icons for generated icon assets, or format=vzi for a decodable VZI file."
         ],
         workflows: {
           develop_frontend: [
