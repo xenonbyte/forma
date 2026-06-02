@@ -133,6 +133,13 @@ export function resolveViewport(platform: Platform | undefined): {
  * that holds SVG or image data to its corresponding icon manifest entry by
  * document-order index of inline-svg/img elements.
  *
+ * **Ordering contract**: matching is performed by iteration order of
+ * `content.elements` (a `Map`, insertion-ordered per JS spec).  This
+ * DEPENDS on `VZITransformer` inserting elements in DOCUMENT order — the
+ * same order the icon extractor enumerated inline svg/img nodes.  The
+ * count-mismatch check is the guard; if `VZITransformer` ever reorders
+ * its output this function must be re-validated.
+ *
  * For each matched element:
  *  - An `ImageAsset` with `storageType: 'reference'` and `url` pointing at
  *    the SVG icon file is added to `content.images`.
@@ -153,7 +160,14 @@ function injectIconRefs(
     return 0;
   }
 
-  // Gather elements in document-order (preserve insertion order of the Map)
+  // Ordering contract: this loop matches VZI image/svg elements to icon manifest
+  // entries by **insertion-order index** of `content.elements` (a Map, which is
+  // insertion-ordered per the JS spec).  This RELIES on VZITransformer inserting
+  // elements in DOCUMENT order — i.e., the same order the icon extractor
+  // enumerated inline svg/img elements.  The count-mismatch check below is the
+  // guard: if VZITransformer ever reorders its output (e.g. z-index sort),
+  // this mapping will silently misalign and this block must be re-validated.
+  // Precondition: Map insertion order == document order of svg/img elements.
   const svgAndImageElements = Array.from(content.elements.entries()).filter(
     ([, el]) => el.svgData !== undefined || el.imageData !== undefined,
   );
@@ -283,7 +297,15 @@ export async function captureRequirementVzi(
         try {
           ir = await parser.parse(html);
         } finally {
-          await parser.dispose();
+          // Non-masking dispose: if parse() threw, we must not let a secondary
+          // dispose() error replace the original parse exception in the catch
+          // below. Log and swallow any dispose failure so the real error propagates.
+          await parser.dispose().catch((disposeErr) => {
+            console.warn(
+              `[vzi-capture] PuppeteerParser.dispose() failed (artifact ${artifactId}): `,
+              disposeErr,
+            );
+          });
         }
       } catch (err) {
         throw new FormaError(
@@ -321,7 +343,6 @@ export async function captureRequirementVzi(
         ...content.metadata,
         name: pageId,
         source: {
-          url: undefined,
           title: `${productId}/${requirementId}/${artifactId}/v${version}`,
         },
       };
@@ -331,6 +352,13 @@ export async function captureRequirementVzi(
       // VZIMetadata.source is { url?, title? } so we use the existing fields.
       // For richer metadata we also pack into an extra custom metadata key via type assertion
       // since VZIMetadata is defined with only known fields — use a compatible extension.
+      //
+      // IMPORTANT: This depends on VZIEncoder preserving unknown/extension metadata fields
+      // (formaProductId, formaRequirementId, formaArtifactId, formaSourceVersion,
+      // formaPlatform, formaViewport, formaViewportSource, formaGenerationSource)
+      // through encode → decode.  The smoke test in
+      // packages/core/tests/requirement-vzi-capture.test.ts asserts this contract.
+      // If the encoder is ever updated and drops unknown fields, that test will catch it.
       const extMeta = content.metadata as typeof content.metadata & Record<string, unknown>;
       extMeta['formaProductId'] = productId;
       extMeta['formaRequirementId'] = requirementId;

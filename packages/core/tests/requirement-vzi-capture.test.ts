@@ -275,6 +275,24 @@ describe('captureRequirementVzi (smoke — Puppeteer required)', () => {
 
         // Non-empty annotations (enableAnnotations is on)
         expect(content.annotations.length).toBeGreaterThan(0);
+
+        // ── FIX 2: metadata round-trip — verify VZIEncoder preserves forma fields ──
+        // The production code writes forma extension fields onto content.metadata
+        // by casting to Record<string,unknown>. This block asserts that VZIEncoder
+        // faithfully preserves these fields through encode → decode so that the
+        // design-handoff MCP surface can read them back.  If any assertion fails,
+        // the encoder is dropping extension metadata and the storage approach must
+        // be revisited.
+        const meta = content.metadata as Record<string, unknown>;
+        expect(meta['formaSourceVersion']).toBe('v1');
+        expect(meta['formaPlatform']).toBe('desktop');
+        expect(meta['formaViewport']).toEqual({ width: 1024, height: 1280 });
+        expect(meta['formaViewportSource']).toBe('desktop');
+        // These identity fields should also survive
+        expect(meta['formaProductId']).toBe(PRODUCT_ID);
+        expect(meta['formaRequirementId']).toBe(REQ_ID);
+        expect(meta['formaArtifactId']).toBe(ARTIFACT_ID);
+        expect(meta['formaGenerationSource']).toBe('forma-vzi-capture');
       } finally {
         await rm(formaHome, { recursive: true, force: true });
       }

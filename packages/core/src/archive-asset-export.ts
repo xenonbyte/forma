@@ -81,7 +81,7 @@ function toIconDeps(deps: ExportArchiveAssetsDeps): ExportRequirementIconsDeps {
     productsRoot: deps.productsRoot,
     listDesignPointers: deps.listDesignPointers,
     readFile: deps.readFile,
-    writeFile: deps.writeFile as ExportRequirementIconsDeps['writeFile'],
+    writeFile: deps.writeFile,
     rmDir: deps.rmDir,
     rename: deps.rename,
     mkdir: deps.mkdir,

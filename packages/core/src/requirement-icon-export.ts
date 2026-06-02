@@ -33,7 +33,7 @@ export interface ExportRequirementIconsDeps {
   /** Read a file from disk (override in tests for observability). */
   readFile: (path: string) => Promise<Buffer>;
   /** Write a file to disk, creating parent dirs as needed. */
-  writeFile: (path: string, data: Buffer | string) => Promise<void>;
+  writeFile: (path: string, data: Buffer | Uint8Array | string) => Promise<void>;
   /** Remove a directory tree (force, ignore-missing). */
   rmDir: (path: string) => Promise<void>;
   /** Atomically rename src → dest (must be same filesystem). */
