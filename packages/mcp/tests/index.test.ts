@@ -164,7 +164,11 @@ describe("MCP server startup", () => {
     expect(server).toBe(mocks.serverInstances[0]);
     expect(store.recoverPendingProductDeletes).toHaveBeenCalledTimes(1);
     expect(mocks.serverInstances[0]!.registerTool).toHaveBeenCalled();
-  });
+    // First test in this suite pays the one-time cold dynamic-import transform
+    // of the vzi/core/mcp graph (vi.resetModules re-imports per test); under
+    // full-suite parallel load that can exceed the 5s default. Logic is fast
+    // (passes <1s in isolation) — give the cold import headroom.
+  }, 30_000);
 
   it("logs recovery warnings to an injected logger", async () => {
     const logger = { warn: vi.fn() };
