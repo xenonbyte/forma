@@ -96,15 +96,6 @@ async function readIconCount(iconsManifestPath: string): Promise<number> {
 }
 
 /**
- * Resolve a requirement_id to its productId via store.
- * Uses getRequirement which returns product_id in the result.
- */
-async function resolveProductId(store: FormaStore, requirementId: string): Promise<string> {
-  const req = await store.requirements.getRequirement({ requirement_id: requirementId });
-  return req.product_id;
-}
-
-/**
  * Gate: requirement must be archived. Throws REQUIREMENT_NOT_FINALIZED otherwise.
  */
 async function assertArchived(store: FormaStore, requirementId: string) {
@@ -186,12 +177,15 @@ async function resolvePagePointer(
  * Resolve an element's assetRef from its stored iconRelativePath to an
  * absolute path inside the artifact's dir. Returns undefined if no ref.
  *
- * Safety: the resolved path must be inside productsRoot.
+ * Safety: the resolved path must be inside productsRoot. If it escapes,
+ * throws FormaError('ARTIFACT_INVALID_INPUT') — this indicates tampering
+ * or a write-path bug and must NOT be silently swallowed.
  */
 function resolveAssetRef(
   element: { metadata?: Record<string, unknown> } | undefined | null,
   artifactDir: string,
-  productsRoot: string
+  productsRoot: string,
+  artifactId: string
 ): string | undefined {
   if (!element?.metadata) return undefined;
   const rel = element.metadata['iconRelativePath'];
@@ -200,8 +194,12 @@ function resolveAssetRef(
   const abs = resolve(join(artifactDir, rel));
   const root = resolve(productsRoot);
   if (!isSameOrChildPath(root, abs)) {
-    // Path-safety violation — do not expose the path
-    return undefined;
+    // Path-safety violation — do not expose the escaped path in details
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      'Resolved icon asset path escapes the artifact root',
+      { artifactId }
+    );
   }
   return abs;
 }
@@ -210,12 +208,16 @@ function resolveAssetRef(
  * Attach resolved assetRef to each element in the list that has an
  * iconRelativePath in its metadata. The content.elements Map provides the
  * raw element metadata; the query result list provides the element IDs.
+ *
+ * Throws FormaError('ARTIFACT_INVALID_INPUT') if any element's iconRelativePath
+ * resolves outside productsRoot (propagates from resolveAssetRef).
  */
 function attachAssetRefs(
   elements: Array<{ id: string; assetRef?: string }>,
   content: VZIContent,
   artifactDir: string,
-  productsRoot: string
+  productsRoot: string,
+  artifactId: string
 ): void {
   for (const el of elements) {
     const raw = content.elements.get(el.id);
@@ -223,7 +225,8 @@ function attachAssetRefs(
     const assetRef = resolveAssetRef(
       raw as { metadata?: Record<string, unknown> },
       artifactDir,
-      productsRoot
+      productsRoot,
+      artifactId
     );
     if (assetRef !== undefined) {
       el.assetRef = assetRef;
@@ -357,7 +360,7 @@ export async function toolGetPageUi(
     source?: unknown;
     assetRef?: string;
   }> = elementList.elements.map((el) => ({ ...el }));
-  attachAssetRefs(elementsWithAssetRef, content, artifactDir, productsRoot);
+  attachAssetRefs(elementsWithAssetRef, content, artifactDir, productsRoot, pageInfo.artifactId);
 
   return {
     viewport: viewport ?? null,
@@ -408,7 +411,8 @@ export async function toolGetUiNode(
   const assetRef = resolveAssetRef(
     raw as { metadata?: Record<string, unknown> } | undefined,
     artifactDir,
-    productsRoot
+    productsRoot,
+    pageInfo.artifactId
   );
 
   // Node-scoped annotations

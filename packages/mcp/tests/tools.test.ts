@@ -1,4 +1,4 @@
-import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, getFormaPaths, type FormaStore } from "@xenonbyte/forma-core";
+import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, type FormaStore } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -2345,10 +2345,8 @@ function buildMinimalVziBytes(opts: {
       bounds: { x: 16, y: 56, width: 24, height: 24 },
       styles: {},
       svgData: {
-        raw: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="red"/></svg>',
+        viewBox: "0 0 24 24",
         paths: [{ d: "M12 2C6.47 2 2 6.47 2 12", fill: "red" }],
-        width: 24,
-        height: 24,
       },
       metadata: {
         ...(iconRelativePath ? { iconRelativePath } : {}),
@@ -3287,6 +3285,180 @@ describe("design-handoff tools (Task 8)", () => {
       const textEl = payload.tree.find((el: { id: string }) => el.id === "el-text");
       expect(rootEl?.assetRef).toBeUndefined();
       expect(textEl?.assetRef).toBeUndefined();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  // ─── FIX 1: assetRef path-escape must throw ARTIFACT_INVALID_INPUT ────────
+
+  it("get_page_ui throws ARTIFACT_INVALID_INPUT when iconRelativePath escapes artifact root", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-escape-pageui-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      // Build VZI with an SVG element whose iconRelativePath traverses outside
+      const vziBytes = buildMinimalVziBytes({
+        title: PAGE_ID,
+        withSvgElement: true,
+        // 5 levels up from productsRoot/P-aabbcc/od-project/artifacts/ArtAAAAAAAAAAAAA → escapes productsRoot
+        iconRelativePath: "../../../../../etc/x.svg",
+      });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+
+      expect(result.isError).toBe(true);
+      const payload = textPayload(result);
+      expect(payload.error_code).toBe("ARTIFACT_INVALID_INPUT");
+      // The escaped path must NOT be exposed in details
+      expect(JSON.stringify(payload.details ?? {})).not.toContain("etc");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_ui_node throws ARTIFACT_INVALID_INPUT when iconRelativePath escapes artifact root", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-escape-uinode-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({
+        title: PAGE_ID,
+        withSvgElement: true,
+        // 5 levels up from productsRoot/P-aabbcc/od-project/artifacts/ArtAAAAAAAAAAAAA → escapes productsRoot
+        iconRelativePath: "../../../../../etc/x.svg",
+      });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_ui_node({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "el-svg",
+      });
+
+      expect(result.isError).toBe(true);
+      const payload = textPayload(result);
+      expect(payload.error_code).toBe("ARTIFACT_INVALID_INPUT");
+      // The escaped path must NOT be exposed in details
+      expect(JSON.stringify(payload.details ?? {})).not.toContain("etc");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  // ─── FIX 5: fields filter produces different tree output ──────────────────
+  // fields='text' sets typeFilter='text'; fields='all' has no type filter.
+  // With a fixture that has both text and image elements, 'text' omits the
+  // image element that 'all' includes.
+
+  it("get_page_ui fields='text' excludes image elements that fields='all' includes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-fields-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      // Build VZI with both text and image elements
+      const vziBytes = buildMinimalVziBytes({
+        title: PAGE_ID,
+        withSvgElement: true,
+        iconRelativePath: ICON_REL_PATH,
+      });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const allResult = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID, fields: "all" });
+      const textResult = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID, fields: "text" });
+
+      expect(allResult.isError).toBeUndefined();
+      expect(textResult.isError).toBeUndefined();
+
+      const allTree: Array<{ id: string; type: string }> = textPayload(allResult).tree;
+      const textTree: Array<{ id: string; type: string }> = textPayload(textResult).tree;
+
+      // fields='all' must include the image element; fields='text' must exclude it
+      expect(allTree.some((el) => el.id === "el-svg" && el.type === "image")).toBe(true);
+      expect(textTree.some((el) => el.id === "el-svg")).toBe(false);
+
+      // fields='text' must still include the text element
+      expect(textTree.some((el) => el.id === "el-text" && el.type === "text")).toBe(true);
+
+      // The two outputs are different
+      expect(allTree.length).not.toBe(textTree.length);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
