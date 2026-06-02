@@ -74,6 +74,94 @@ function parseTailwindConfig(configLiteral: string): TailwindConfigObject | null
   }
 }
 
+function extractBalancedObjectLiteral(source: string, openBraceIndex: number): string | null {
+  let depth = 0;
+  let quote: '"' | "'" | '`' | null = null;
+  let escaped = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = openBraceIndex; i < source.length; i += 1) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (inLineComment) {
+      if (ch === '\n' || ch === '\r') {
+        inLineComment = false;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (ch === '*' && next === '/') {
+        inBlockComment = false;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === '\\') {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === '/' && next === '/') {
+      inLineComment = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '/' && next === '*') {
+      inBlockComment = true;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'" || ch === '`') {
+      quote = ch;
+      continue;
+    }
+
+    if (ch === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (ch === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openBraceIndex, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function extractTailwindConfigLiteral(content: string): string | null {
+  const match = /tailwind\.config\s*=\s*/.exec(content);
+  if (!match) {
+    return null;
+  }
+
+  let openBraceIndex = match.index + match[0].length;
+  while (openBraceIndex < content.length && /\s/.test(content[openBraceIndex])) {
+    openBraceIndex += 1;
+  }
+
+  if (content[openBraceIndex] !== '{') {
+    return null;
+  }
+
+  return extractBalancedObjectLiteral(content, openBraceIndex);
+}
+
 /**
  * 提取 Tailwind 配置
  */
@@ -86,12 +174,12 @@ function extractTailwindConfig(document: Document): Partial<Config> {
       continue;
     }
 
-    const configMatch = content.match(/tailwind\.config\s*=\s*({[\s\S]*?})\s*(?:;|\n|$)/);
-    if (!configMatch) {
+    const configLiteral = extractTailwindConfigLiteral(content);
+    if (!configLiteral) {
       continue;
     }
 
-    const parsed = parseTailwindConfig(configMatch[1]);
+    const parsed = parseTailwindConfig(configLiteral);
     if (parsed) {
       return parsed as Partial<Config>;
     }

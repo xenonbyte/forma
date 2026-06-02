@@ -41,6 +41,10 @@ import { FormaError } from './errors.js';
 import type { Platform } from './schemas.js';
 import type { ExportedPageIcons, ExportRequirementIconsResult } from './requirement-icon-export.js';
 import type { IconEntry, IconManifest } from './artifact-icon-extraction.js';
+import {
+  listCurrentRequirementDesignPointers,
+  type GetRequirementPageIds,
+} from './requirement-design-pointer-filter.js';
 
 const ICON_SOURCE_ORDER_ATTR = 'data-forma-icon-source-order';
 
@@ -53,6 +57,8 @@ export interface CaptureRequirementVziDeps {
   getProductPlatform: (productId: string) => Promise<Platform | undefined>;
   /** Returns all design pointers for the given product. */
   listDesignPointers: (productId: string) => Promise<DesignPointer[]>;
+  /** Returns current page ids for the requirement, when stale removed-page pointers must be excluded. */
+  getRequirementPageIds?: GetRequirementPageIds;
   /** Read a file from disk. */
   readFile: (path: string) => Promise<Buffer>;
   /** Write a file to disk, creating parent dirs as needed. */
@@ -327,7 +333,7 @@ export async function captureRequirementVzi(
   input: CaptureRequirementVziInput,
   iconExportResult?: ExportRequirementIconsResult,
 ): Promise<CaptureRequirementVziResult> {
-  const { productsRoot, getProductPlatform, listDesignPointers } = deps;
+  const { productsRoot, getProductPlatform } = deps;
   const { productId, requirementId } = input;
 
   // Resolve viewport from product platform
@@ -335,11 +341,7 @@ export async function captureRequirementVzi(
   const { preset, viewportSource, width: viewportWidth, height: viewportHeight } =
     resolveViewport(platform);
 
-  // Filter to active pointers for this requirement
-  const allPointers = await listDesignPointers(productId);
-  const pointers = allPointers.filter(
-    (p) => p.requirementId === requirementId && p.designStatus === 'active',
-  );
+  const pointers = await listCurrentRequirementDesignPointers(deps, productId, requirementId);
 
   const pages: CapturedPageVzi[] = [];
 
@@ -521,11 +523,13 @@ export function makeCaptureRequirementVziDeps(
   productsRoot: string,
   getProductPlatformFn: (productId: string) => Promise<Platform | undefined>,
   listDesignPointersFn: (productId: string) => Promise<DesignPointer[]>,
+  getRequirementPageIdsFn?: GetRequirementPageIds,
 ): CaptureRequirementVziDeps {
   return {
     productsRoot,
     getProductPlatform: getProductPlatformFn,
     listDesignPointers: listDesignPointersFn,
+    getRequirementPageIds: getRequirementPageIdsFn,
     readFile: (path) => readFile(path),
     writeFile: async (path, data) => {
       await mkdir(dirname(path), { recursive: true });

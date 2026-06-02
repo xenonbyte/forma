@@ -144,6 +144,44 @@ describe('Case 1: multi-page filtering by requirementId', () => {
     }
   });
 
+  it('skips active pointers whose page no longer exists on the requirement', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'forma-icon-test-'));
+    try {
+      const deps = await makeTestDeps(home);
+      const { productsRoot } = deps;
+      const staleArtifactId = 'ArtCCCCCCCCCCCCC';
+
+      await scaffoldArtifactVersion(
+        productsRoot, PRODUCT_ID, ARTIFACT_ID_1, 3,
+        makeHtml([makeSvg(24, 24, 'Current')]),
+      );
+      await scaffoldArtifactVersion(
+        productsRoot, PRODUCT_ID, staleArtifactId, 1,
+        makeHtml([makeSvg(16, 16, 'Removed')]),
+      );
+
+      deps.listDesignPointers = async () => [
+        makePointer(REQ_ID, PAGE_ID_1, ARTIFACT_ID_1, 3),
+        makePointer(REQ_ID, 'page-removed', staleArtifactId, 1),
+      ];
+      deps.getRequirementPageIds = async () => [PAGE_ID_1];
+
+      const result = await exportRequirementIcons(deps, {
+        productId: PRODUCT_ID,
+        requirementId: REQ_ID,
+        generatedFrom: 'requirement-archive',
+      });
+
+      expect(result.pages.map((page) => page.pageId)).toEqual([PAGE_ID_1]);
+      expect(result.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID_1]);
+      await expect(
+        readFile(getArtifactIconsManifestPath(productsRoot, PRODUCT_ID, staleArtifactId), 'utf8'),
+      ).rejects.toThrow();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it('returns empty result when no pointers match requirementId', async () => {
     const home = await mkdtemp(join(tmpdir(), 'forma-icon-test-'));
     try {

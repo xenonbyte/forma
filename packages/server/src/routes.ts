@@ -333,7 +333,11 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
             const product = await store.products.getProduct(productId);
             return product.platform as Platform | undefined;
           },
-          (productId) => store.products.listDesignPointers(productId) as Promise<Array<{ artifactId: string; version: number; requirementId: string; pageId: string; variant: string; designStatus: "pending" | "active" | "expired" }>>
+          (productId) => store.products.listDesignPointers(productId) as Promise<Array<{ artifactId: string; version: number; requirementId: string; pageId: string; variant: string; designStatus: "pending" | "active" | "expired" }>>,
+          async (productId, requirementId) => {
+            const current = await getOwnedRequirement(store, productId, requirementId);
+            return current.pages.map((page) => page.page_id);
+          }
         );
         return exportArchiveAssets(deps, { productId: pid, requirementId: rid, generatedFrom: "requirement-archive" });
       });

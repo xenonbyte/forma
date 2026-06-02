@@ -32,6 +32,7 @@ import {
   type CaptureRequirementVziResult,
 } from './requirement-vzi-capture.js';
 import { FormaError } from './errors.js';
+import type { GetRequirementPageIds } from './requirement-design-pointer-filter.js';
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -46,6 +47,8 @@ export interface ExportArchiveAssetsDeps {
   getProductPlatform: (productId: string) => Promise<Platform | undefined>;
   /** Returns all design pointers for the given product. */
   listDesignPointers: (productId: string) => Promise<DesignPointer[]>;
+  /** Returns current page ids for the requirement, so removed-page pointers are excluded. */
+  getRequirementPageIds?: GetRequirementPageIds;
   /** Read a file from disk. */
   readFile: (path: string) => Promise<Buffer>;
   /** Write a file to disk, creating parent dirs as needed. */
@@ -81,6 +84,7 @@ function toIconDeps(deps: ExportArchiveAssetsDeps): ExportRequirementIconsDeps {
     productsRoot: deps.productsRoot,
     getProductPlatform: deps.getProductPlatform,
     listDesignPointers: deps.listDesignPointers,
+    getRequirementPageIds: deps.getRequirementPageIds,
     readFile: deps.readFile,
     writeFile: deps.writeFile,
     rmDir: deps.rmDir,
@@ -97,6 +101,7 @@ function toVziDeps(deps: ExportArchiveAssetsDeps): CaptureRequirementVziDeps {
     productsRoot: deps.productsRoot,
     getProductPlatform: deps.getProductPlatform,
     listDesignPointers: deps.listDesignPointers,
+    getRequirementPageIds: deps.getRequirementPageIds,
     readFile: deps.readFile,
     writeFile: deps.writeFile,
     rmDir: deps.rmDir,
@@ -165,11 +170,13 @@ export function makeExportArchiveAssetsDeps(
   productsRoot: string,
   getProductPlatformFn: (productId: string) => Promise<Platform | undefined>,
   listDesignPointersFn: (productId: string) => Promise<DesignPointer[]>,
+  getRequirementPageIdsFn?: GetRequirementPageIds,
 ): ExportArchiveAssetsDeps {
   return {
     productsRoot,
     getProductPlatform: getProductPlatformFn,
     listDesignPointers: listDesignPointersFn,
+    getRequirementPageIds: getRequirementPageIdsFn,
     readFile: (path) => readFile(path),
     writeFile: async (path, data) => {
       await mkdir(dirname(path), { recursive: true });

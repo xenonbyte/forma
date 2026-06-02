@@ -147,6 +147,13 @@ interface HandoffIconManifestInfo {
   generatedFrom?: string;
 }
 
+function requirementPageIdSet(req: { pages?: Array<{ page_id?: string }> }): ReadonlySet<string> | undefined {
+  const pageIds = (req.pages ?? [])
+    .map((page) => page.page_id)
+    .filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0);
+  return pageIds.length > 0 ? new Set(pageIds) : undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -220,7 +227,8 @@ async function readHandoffIconManifest(
 async function resolveArchivedPagePointers(
   productId: string,
   requirementId: string,
-  productsRoot: string
+  productsRoot: string,
+  currentPageIds?: ReadonlySet<string>
 ): Promise<PagePointerInfo[]> {
   const artifactsDir = getArtifactsDir(productsRoot, productId);
   let entries: Dirent[];
@@ -286,6 +294,9 @@ async function resolveArchivedPagePointers(
 
     const version = manifest.version;
     const pageId = manifest.pageId;
+    if (currentPageIds && !currentPageIds.has(pageId)) {
+      continue;
+    }
     const variant = manifest.variant ?? 'default';
     const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
@@ -318,11 +329,15 @@ async function resolveActivePagePointers(
   store: FormaStore,
   productId: string,
   requirementId: string,
-  productsRoot: string
+  productsRoot: string,
+  currentPageIds?: ReadonlySet<string>
 ): Promise<PagePointerInfo[]> {
   const allPointers = await store.products.listDesignPointers(productId);
   const pointers = allPointers.filter(
-    (p) => p.requirementId === requirementId && p.designStatus === 'active'
+    (p) =>
+      p.requirementId === requirementId &&
+      p.designStatus === 'active' &&
+      (!currentPageIds || currentPageIds.has(p.pageId))
   );
 
   const pages: PagePointerInfo[] = [];
@@ -350,14 +365,15 @@ async function resolvePagePointers(
   store: FormaStore,
   productId: string,
   requirementId: string,
-  productsRoot: string
+  productsRoot: string,
+  currentPageIds?: ReadonlySet<string>
 ): Promise<PagePointerInfo[]> {
-  const archivedPages = await resolveArchivedPagePointers(productId, requirementId, productsRoot);
+  const archivedPages = await resolveArchivedPagePointers(productId, requirementId, productsRoot, currentPageIds);
   if (archivedPages.length > 0) {
     return archivedPages;
   }
 
-  return resolveActivePagePointers(store, productId, requirementId, productsRoot);
+  return resolveActivePagePointers(store, productId, requirementId, productsRoot, currentPageIds);
 }
 
 /**
@@ -370,9 +386,10 @@ async function resolvePagePointer(
   requirementId: string,
   pageId: string,
   productsRoot: string,
+  currentPageIds?: ReadonlySet<string>,
   options: { variant?: string; artifactId?: string } = {}
 ): Promise<PagePointerInfo> {
-  const pages = await resolvePagePointers(store, productId, requirementId, productsRoot);
+  const pages = await resolvePagePointers(store, productId, requirementId, productsRoot, currentPageIds);
   const matches = pages.filter((p) =>
     p.pageId === pageId &&
     (options.variant === undefined || p.variant === options.variant) &&
@@ -501,7 +518,13 @@ export async function toolGetDesignHandoff(
   const productId = req.product_id;
   const productsRoot = getFormaPaths(store.home).productsDir;
 
-  const pages = await resolvePagePointers(store, productId, requirement_id, productsRoot);
+  const pages = await resolvePagePointers(
+    store,
+    productId,
+    requirement_id,
+    productsRoot,
+    requirementPageIdSet(req)
+  );
 
   const rules = await store.requirements.getProductRules(productId);
   const translations = await store.copy.getTranslations(productId, requirement_id);
@@ -544,7 +567,13 @@ export async function toolGetPageUi(
   const productsRoot = getFormaPaths(store.home).productsDir;
 
   const pageInfo = await resolvePagePointer(
-    store, productId, requirement_id, page_id, productsRoot, { variant, artifactId: artifact_id }
+    store,
+    productId,
+    requirement_id,
+    page_id,
+    productsRoot,
+    requirementPageIdSet(req),
+    { variant, artifactId: artifact_id }
   );
 
   const content = await loadVzi(pageInfo.vziPath);
@@ -639,7 +668,13 @@ export async function toolGetUiNode(
   const productsRoot = getFormaPaths(store.home).productsDir;
 
   const pageInfo = await resolvePagePointer(
-    store, productId, requirement_id, page_id, productsRoot, { variant, artifactId: artifact_id }
+    store,
+    productId,
+    requirement_id,
+    page_id,
+    productsRoot,
+    requirementPageIdSet(req),
+    { variant, artifactId: artifact_id }
   );
 
   const content = await loadVzi(pageInfo.vziPath);
@@ -693,7 +728,13 @@ export async function toolSearchPageUi(
   const productsRoot = getFormaPaths(store.home).productsDir;
 
   const pageInfo = await resolvePagePointer(
-    store, productId, requirement_id, page_id, productsRoot, { variant, artifactId: artifact_id }
+    store,
+    productId,
+    requirement_id,
+    page_id,
+    productsRoot,
+    requirementPageIdSet(req),
+    { variant, artifactId: artifact_id }
   );
 
   const content = await loadVzi(pageInfo.vziPath);

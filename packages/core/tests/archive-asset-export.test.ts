@@ -165,6 +165,40 @@ describe('exportArchiveAssets', () => {
     120_000,
   );
 
+  it(
+    'filters both icons and VZI to current requirement pages',
+    async () => {
+      const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-current-pages-'));
+      const staleArtifactId = 'ArtCCCCCCCCCCCCC';
+      try {
+        const deps = await makeTestDeps(formaHome);
+        const productsRoot = join(formaHome, 'products');
+
+        await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_HTML_WITH_SVG);
+        await seedVersionHtml(productsRoot, PRODUCT_ID, staleArtifactId, 1, DESIGN_HTML_WITH_SVG);
+
+        deps.listDesignPointers = async () => [
+          makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1),
+          makePointer(REQ_ID, 'page-removed', staleArtifactId, 1),
+        ];
+        deps.getRequirementPageIds = async () => [PAGE_ID];
+
+        const result = await exportArchiveAssets(deps, {
+          productId: PRODUCT_ID,
+          requirementId: REQ_ID,
+          generatedFrom: 'requirement-archive',
+        });
+
+        expect(result.icons.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
+        expect(result.vzi.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
+        await expect(readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, staleArtifactId))).rejects.toThrow();
+      } finally {
+        await rm(formaHome, { recursive: true, force: true });
+      }
+    },
+    120_000,
+  );
+
   it('propagates icon-phase failure without starting VZI phase', async () => {
     const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-icon-fail-'));
     try {

@@ -3186,6 +3186,71 @@ describe("design-handoff tools (Task 8)", () => {
     }
   });
 
+  it("get_design_handoff skips archived manifests for pages removed from the requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-removed-page-"));
+    const staleArtifactId = "ArtCCCCCCCCCCCCC";
+    try {
+      const productsRoot = join(home, "data", "products");
+
+      await writeVziFixture(
+        productsRoot,
+        PRODUCT_ID,
+        ARTIFACT_ID,
+        buildMinimalVziBytes({ title: PAGE_ID }),
+      );
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
+        requirementId: REQ_ID,
+        pageId: PAGE_ID,
+        version: "v1",
+      });
+
+      await writeVziFixture(
+        productsRoot,
+        PRODUCT_ID,
+        staleArtifactId,
+        buildMinimalVziBytes({ title: "page-removed" }),
+      );
+      await writeIconsFixture(productsRoot, PRODUCT_ID, staleArtifactId, ICON_REL_PATH, {
+        requirementId: REQ_ID,
+        pageId: "page-removed",
+        version: "v1",
+      });
+
+      for (const artifactId of [ARTIFACT_ID, staleArtifactId]) {
+        const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, artifactId, 1);
+        await mkdir(versionDir, { recursive: true });
+        await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+      }
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+          getProductRules: vi.fn(async () => []),
+        },
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.pages.map((page: { pageId: string; artifactId: string }) => ({
+        pageId: page.pageId,
+        artifactId: page.artifactId,
+      }))).toEqual([{ pageId: PAGE_ID, artifactId: ARTIFACT_ID }]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("pins archived handoff to the generated asset version after the active pointer advances", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-pinned-"));
     try {

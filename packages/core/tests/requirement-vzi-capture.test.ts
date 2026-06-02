@@ -822,6 +822,32 @@ describe('captureRequirementVzi multi-page filtering', () => {
     }
   }, 90_000);
 
+  it('skips active pointers whose page no longer exists on the requirement', async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-filter-current-pages-'));
+    try {
+      const deps = await makeTestDeps(formaHome, 'desktop');
+      const productsRoot = join(formaHome, 'products');
+      const staleArtifactId = 'ArtCCCCCCCCCCCCC';
+
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
+      await seedVersionHtml(productsRoot, PRODUCT_ID, staleArtifactId, 1, DESIGN_PAGE_HTML);
+
+      deps.listDesignPointers = async () => [
+        makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1),
+        makePointer(REQ_ID, 'page-removed', staleArtifactId, 1),
+      ];
+      deps.getRequirementPageIds = async () => [PAGE_ID];
+
+      const result = await captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID });
+
+      expect(result.pages.map((page) => page.pageId)).toEqual([PAGE_ID]);
+      expect(result.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
+      await expect(readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, staleArtifactId))).rejects.toThrow();
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 90_000);
+
   it('returns empty pages array when no active pointers match requirementId', async () => {
     const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-noop-'));
     try {
