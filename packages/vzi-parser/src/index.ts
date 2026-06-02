@@ -79,6 +79,10 @@ export async function parseAsync(
   options?: import('./parser').HTMLParserOptions
 ): Promise<import('@vzi-core/types').IntermediateRepresentation> {
   const { HTMLParser } = await import('./parser.js');
-  const parser = new HTMLParser(options);
-  return parser.parseAsync(html);
+  const parser = new HTMLParser({ ...options, reusePuppeteer: false });
+  try {
+    return await parser.parseAsync(html);
+  } finally {
+    await parser.dispose();
+  }
 }

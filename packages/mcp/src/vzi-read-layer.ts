@@ -17,6 +17,7 @@
 import { readFile } from 'node:fs/promises';
 import { VZIDecoder } from '@vzi-core/format';
 import { createMcpQuery } from '@vzi-core/transformer';
+import { FormaError } from '@xenonbyte/forma-core';
 import type {
   McpOverview,
   McpElementList,
@@ -46,11 +47,12 @@ async function loadVzi(vziPath: string) {
   } catch (cause) {
     const err = cause as NodeJS.ErrnoException;
     if (err.code === 'ENOENT') {
-      throw Object.assign(new Error(`VZI file not found: ${vziPath}`), { code: 'NOT_FOUND' });
+      throw new FormaError('ARTIFACT_NOT_FOUND', `VZI file not found: ${vziPath}`, { vziPath });
     }
-    throw Object.assign(
-      new Error(`Failed to read VZI file: ${vziPath} — ${err.message}`),
-      { code: 'IO_ERROR' }
+    throw new FormaError(
+      'ARTIFACT_WRITE_FAIL',
+      `Failed to read VZI file: ${vziPath} — ${err.message}`,
+      { vziPath, cause: err.message }
     );
   }
 
@@ -60,9 +62,10 @@ async function loadVzi(vziPath: string) {
   if (result.errors.length > 0) {
     const fatals = result.errors.filter((e) => e.fatal);
     if (fatals.length > 0) {
-      throw Object.assign(
-        new Error(`VZI decode fatal errors: ${fatals.map((e) => e.message).join('; ')}`),
-        { code: 'INVALID_FORMAT', details: { errors: fatals } }
+      throw new FormaError(
+        'ARTIFACT_UNSUPPORTED_FORMAT',
+        `VZI decode fatal errors: ${fatals.map((e) => e.message).join('; ')}`,
+        { vziPath, errors: fatals }
       );
     }
     // Non-fatal errors are tolerated (degraded mode); callers may inspect result.
@@ -124,8 +127,9 @@ export async function getPageUi(input: GetPageUiInput): Promise<PageUiResult> {
     typeFilter: type,
   });
 
+  // TODO(PLAN-TASK-008): resolve element image refs to absolute <artifactId>/icons/ asset paths (assetRef); pending icon export + tool wiring.
   return {
-    elements: query.listElements(type),
+    elements: query.listElements(),
   };
 }
 
@@ -146,6 +150,7 @@ export async function getUiNode(input: GetUiNodeInput): Promise<UiNodeResult> {
   const content = await loadVzi(vziPath);
   const query = createMcpQuery(content, buildQueryOptions(format));
 
+  // TODO(PLAN-TASK-008): resolve element image refs to absolute <artifactId>/icons/ asset paths (assetRef); pending icon export + tool wiring.
   return {
     element: query.getElement(elementId, depth),
   };
