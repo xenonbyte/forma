@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { parse } from "node-html-parser";
 import sharp from "sharp";
 import { FormaError } from "./errors.js";
+import { scanSvg } from "./artifact-static-validation.js";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -81,59 +82,6 @@ function slugify(label: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-/**
- * Run minimal SVG safety checks equivalent to scanSvg in artifact-static-validation.ts.
- * Throws FormaError(ARTIFACT_NOT_STATIC) on any violation.
- */
-function assertSafeSvg(svgText: string, index: number): void {
-  const root = parse(svgText, { comment: false });
-
-  // Reject <script>
-  if (root.querySelectorAll("script").length > 0) {
-    throw new FormaError(
-      "ARTIFACT_NOT_STATIC",
-      `Unsafe SVG at icon index ${index}: contains <script> element`,
-      { index },
-    );
-  }
-
-  for (const el of root.querySelectorAll("*")) {
-    const tag = el.tagName?.toLowerCase() ?? "";
-
-    // Reject on* event handlers
-    for (const attrName of Object.keys(el.attributes)) {
-      if (attrName.toLowerCase().startsWith("on")) {
-        throw new FormaError(
-          "ARTIFACT_NOT_STATIC",
-          `Unsafe SVG at icon index ${index}: inline event handler "${attrName}" on <${tag}>`,
-          { index, attr: attrName },
-        );
-      }
-    }
-
-    // Reject remote / javascript: hrefs
-    for (const hrefAttr of ["href", "xlink:href"]) {
-      const val = el.getAttribute(hrefAttr) ?? el.rawAttributes[hrefAttr];
-      if (!val) continue;
-      const trimmed = val.trim();
-      if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("//")) {
-        throw new FormaError(
-          "ARTIFACT_NOT_STATIC",
-          `Unsafe SVG at icon index ${index}: remote ${hrefAttr} on <${tag}>: ${trimmed}`,
-          { index },
-        );
-      }
-      if (/^javascript:/i.test(trimmed)) {
-        throw new FormaError(
-          "ARTIFACT_NOT_STATIC",
-          `Unsafe SVG at icon index ${index}: javascript: URL in ${hrefAttr} on <${tag}>`,
-          { index },
-        );
-      }
-    }
-  }
 }
 
 /**
@@ -226,8 +174,16 @@ export async function extractIconAssets(
     const el = svgElements[i];
     const svgText = el.toString();
 
-    // 1. Safety validation — throws FormaError on violation
-    assertSafeSvg(svgText, i);
+    // 1. Safety validation — collect violations via the shared scanSvg, then throw
+    const svgViolations: string[] = [];
+    scanSvg(`icon[${i}]`, svgText, svgViolations);
+    if (svgViolations.length > 0) {
+      throw new FormaError(
+        "ARTIFACT_NOT_STATIC",
+        `Unsafe SVG at icon index ${i}: ${svgViolations[0]}`,
+        { index: i, violations: svgViolations },
+      );
+    }
 
     const svgBuf = Buffer.from(svgText, "utf8");
     const hash = contentHash(svgBuf);

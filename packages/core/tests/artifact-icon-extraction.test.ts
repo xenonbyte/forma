@@ -18,7 +18,6 @@
  *  12. Fallback name: icon-<index>-<WxH> when no aria-label
  */
 
-import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { extractIconAssets } from "../src/artifact-icon-extraction.js";
@@ -60,11 +59,6 @@ const SVG_UNSAFE_SCRIPT = `<svg xmlns="http://www.w3.org/2000/svg" width="24" he
 
 /** Unsafe SVG with on* event handler */
 const SVG_UNSAFE_EVENT = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect onclick="alert(1)"/></svg>`;
-
-/** sha256 first 16 hex chars of a Buffer */
-function hash16(buf: Buffer): string {
-  return createHash("sha256").update(buf).digest("hex").slice(0, 16);
-}
 
 function wrapInHtml(svgs: string[]): string {
   return `<!DOCTYPE html><html><body>${svgs.join("\n")}</body></html>`;
@@ -304,6 +298,34 @@ describe("Case 11: unsafe SVG rejection — on* event handler", () => {
   it("throws FormaError for SVG with onclick attribute", async () => {
     const html = wrapInHtml([SVG_UNSAFE_EVENT]);
     await expect(extractIconAssets(html, METADATA)).rejects.toBeInstanceOf(FormaError);
+  });
+});
+
+// ─── Case 12a: Unsafe SVG rejection — data: href/xlink:href ─────────────────
+
+describe("Case 12a: unsafe SVG rejection — data: href/xlink:href", () => {
+  it("throws FormaError for SVG with data: URL in href attribute", async () => {
+    const svgWithDataHref = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><image href="data:image/png;base64,abc123"/></svg>`;
+    const html = wrapInHtml([svgWithDataHref]);
+    await expect(extractIconAssets(html, METADATA)).rejects.toBeInstanceOf(FormaError);
+  });
+
+  it("throws FormaError for SVG with data: URL in xlink:href attribute", async () => {
+    const svgWithDataXlinkHref = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="24" height="24"><image xlink:href="data:image/png;base64,abc123"/></svg>`;
+    const html = wrapInHtml([svgWithDataXlinkHref]);
+    await expect(extractIconAssets(html, METADATA)).rejects.toBeInstanceOf(FormaError);
+  });
+
+  it("error code is ARTIFACT_NOT_STATIC for data: href violation", async () => {
+    const svgWithDataHref = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><image href="data:image/svg+xml;base64,PHN2Zy8+"/></svg>`;
+    const html = wrapInHtml([svgWithDataHref]);
+    try {
+      await extractIconAssets(html, METADATA);
+      expect.fail("Should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(FormaError);
+      expect((e as FormaError).code).toBe("ARTIFACT_NOT_STATIC");
+    }
   });
 });
 

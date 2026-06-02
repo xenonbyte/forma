@@ -198,7 +198,7 @@ function scanParsedTree(
 }
 
 /** Scan an SVG file string (rule 9). */
-function scanSvg(path: string, svgText: string, violations: string[]): void {
+export function scanSvg(path: string, svgText: string, violations: string[]): void {
   const root = parse(svgText, { comment: false });
 
   // <script> in SVG
