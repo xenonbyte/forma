@@ -35,7 +35,7 @@ import type { Platform } from '../src/schemas.js';
 import { FormaError } from '../src/errors.js';
 import { VZIDecoder } from '@vzi-core/format';
 import type { ExportRequirementIconsResult } from '../src/requirement-icon-export.js';
-import type { IconManifest, IconEntry } from '../src/artifact-icon-extraction.js';
+import type { IconManifest } from '../src/artifact-icon-extraction.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
