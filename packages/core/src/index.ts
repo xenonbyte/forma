@@ -33,6 +33,8 @@ export * from "./artifact-asset-pipeline.js";
 export * from "./artifact-static-validation.js";
 export * from "./artifact-icon-extraction.js";
 export * from "./requirement-icon-export.js";
+export * from "./requirement-vzi-capture.js";
+export * from "./archive-asset-export.js";
 export * from "./design-save.js";
 export * from "./quality/index.js";
 export * from "./design-context.js";

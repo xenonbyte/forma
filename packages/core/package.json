@@ -39,6 +39,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@vzi-core/format": "workspace:*",
+    "@vzi-core/parser": "workspace:*",
+    "@vzi-core/transformer": "workspace:*",
+    "@vzi-core/types": "workspace:*",
     "js-yaml": "^4.1.0",
     "node-html-parser": "^7.1.0",
     "puppeteer": "^25.1.0",

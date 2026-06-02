@@ -81,6 +81,18 @@ importers:
 
   packages/core:
     dependencies:
+      '@vzi-core/format':
+        specifier: workspace:*
+        version: link:../vzi-format
+      '@vzi-core/parser':
+        specifier: workspace:*
+        version: link:../vzi-parser
+      '@vzi-core/transformer':
+        specifier: workspace:*
+        version: link:../vzi-transformer
+      '@vzi-core/types':
+        specifier: workspace:*
+        version: link:../vzi-types
       js-yaml:
         specifier: ^4.1.0
         version: 4.1.1
