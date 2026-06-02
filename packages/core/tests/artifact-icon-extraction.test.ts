@@ -20,7 +20,7 @@
  *  14.  parseSvgSize ignores unit-bearing width/height, falls back to viewBox
  *  15.  Empty aria-label slug falls back to icon-<index> name (no leading hyphen)
  *  16.  Parent aria-label is used when SVG has no own label
- *  17.  sharp rasterization failure becomes FormaError(ARTIFACT_INVALID_INPUT)
+ *  17.  Non-renderable SVGs are skipped instead of blocking archive
  */
 
 import { describe, expect, it } from "vitest";
@@ -404,21 +404,43 @@ describe("Case 15: empty slug falls back to icon-<index> name", () => {
   });
 });
 
-// ─── Case 17: sharp rasterization failure → FormaError ───────────────────────
+// ─── Case 17: non-renderable SVG skip ────────────────────────────────────────
 
-describe("Case 17: sharp rasterization failure becomes FormaError", () => {
-  it("rejects with FormaError(ARTIFACT_INVALID_INPUT) for an unrasterizable SVG", async () => {
-    // An SVG with no dimensions and no viewBox passes scanSvg safety checks but
-    // causes sharp to fail with a "bad dimensions" error at rasterization time.
+describe("Case 17: non-renderable SVGs are skipped", () => {
+  it("returns a zero-icon manifest for an empty SVG that VZI will not materialize", async () => {
     const svg = `<svg xmlns="http://www.w3.org/2000/svg"></svg>`;
     const html = wrapInHtml([svg]);
 
-    await expect(extractIconAssets(html, METADATA)).rejects.toSatisfy((e: unknown) => {
-      return (
-        e instanceof FormaError &&
-        e.code === "ARTIFACT_INVALID_INPUT" &&
-        typeof (e.details as Record<string, unknown>).sharpError === "string"
-      );
-    });
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    expect(files.size).toBe(0);
+    expect(manifest.icons).toEqual([]);
+    expect(manifest.instances).toEqual([]);
+  });
+});
+
+describe("Case 18: non-rendered or unsupported SVGs are not icon occurrences", () => {
+  it("skips template, hidden, zero-size, and unsupported <use>-only SVGs while preserving visible source order", async () => {
+    const hiddenSprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none" width="24" height="24"><symbol id="sprite-check"><path d="M20 6L9 17l-5-5"/></symbol></svg>`;
+    const templateSvg = `<template><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Template"><path d="M0 0h24v24H0z"/></svg></template>`;
+    const zeroSizeSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" aria-label="Zero"><path d="M0 0h24v24H0z"/></svg>`;
+    const useOnlySvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Use Only"><use href="#sprite-check"/></svg>`;
+    const visibleSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Visible Check"><path d="M20 6L9 17l-5-5"/></svg>`;
+
+    const { manifest } = await extractIconAssets(
+      wrapInHtml([hiddenSprite, templateSvg, zeroSizeSvg, useOnlySvg, visibleSvg]),
+      METADATA,
+    );
+
+    expect(manifest.icons).toHaveLength(1);
+    expect(manifest.icons[0].name).toBe("visible-check");
+    expect(manifest.icons[0].sourceOrders).toEqual([4]);
+    expect(manifest.instances).toEqual([
+      {
+        sourceOrder: 4,
+        iconId: manifest.icons[0].id,
+        contentHash: manifest.icons[0].contentHash,
+      },
+    ]);
   });
 });

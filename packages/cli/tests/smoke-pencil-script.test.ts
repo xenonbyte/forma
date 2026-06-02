@@ -139,13 +139,31 @@ describe("npm publish package configuration", () => {
   it("publishes the runtime dependency chain without the private agent package", async () => {
     const rootPackage = await readRootPackageJson();
     const cliPackage = await readPackageJson("packages/cli/package.json");
+    const packScript = rootPackage.scripts?.["pack:publish"] ?? "";
+    const publishScript = rootPackage.scripts?.["publish:npm"] ?? "";
+    const publicRuntimePackages = [
+      "@vzi-core/types",
+      "@vzi-core/format",
+      "@vzi-core/parser",
+      "@vzi-core/transformer",
+      "@xenonbyte/forma-core",
+      "@xenonbyte/forma-mcp",
+      "@xenonbyte/forma-server",
+      "@xenonbyte/forma-cli",
+    ];
 
-    expect(rootPackage.scripts?.["pack:publish"]).toContain("@xenonbyte/forma-core pack --dry-run");
-    expect(rootPackage.scripts?.["pack:publish"]).toContain("@xenonbyte/forma-cli pack --dry-run");
-    expect(rootPackage.scripts?.["pack:publish"]?.startsWith("pnpm build && ")).toBe(true);
-    expect(rootPackage.scripts?.["publish:npm"]).toBe(
-      "pnpm build && pnpm --filter @xenonbyte/forma-core publish && pnpm --filter @xenonbyte/forma-mcp publish && pnpm --filter @xenonbyte/forma-server publish && pnpm --filter @xenonbyte/forma-cli publish"
+    expect(packScript.startsWith("pnpm build && ")).toBe(true);
+    for (const packageName of publicRuntimePackages) {
+      expect(packScript).toContain(`--filter ${packageName} pack --dry-run`);
+      expect(publishScript).toContain(`--filter ${packageName} publish`);
+    }
+    expect(publishScript.indexOf("@vzi-core/transformer publish")).toBeLessThan(
+      publishScript.indexOf("@xenonbyte/forma-core publish")
     );
+    expect(publishScript.indexOf("@vzi-core/transformer publish")).toBeLessThan(
+      publishScript.indexOf("@xenonbyte/forma-mcp publish")
+    );
+    expect(publishScript).not.toContain("@xenonbyte/forma-agent publish");
     expect(cliPackage.dependencies).not.toHaveProperty("@xenonbyte/forma-agent");
   });
 });

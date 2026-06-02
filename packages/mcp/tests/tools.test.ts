@@ -2,12 +2,15 @@ import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, 
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import AdmZip from "adm-zip";
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod/v4";
 import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
 import { VZIEncoder } from "@vzi-core/format";
 import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
+
+const puppeteerParserOptions = vi.hoisted(() => [] as Array<Record<string, unknown> | undefined>);
 
 vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
@@ -58,7 +61,9 @@ vi.mock("@vzi-core/parser", async () => {
   };
 
   class MockPuppeteerParser {
-    constructor(_opts?: unknown) {}
+    constructor(opts?: Record<string, unknown>) {
+      puppeteerParserOptions.push(opts);
+    }
     async parse(_html: string) { return fakeIR; }
     async dispose() { return undefined; }
   }
@@ -1482,6 +1487,7 @@ describe("artifact tools (C-03)", () => {
   });
 
   it("export_artifact vzi format returns output_path ending with .vzi", async () => {
+    puppeteerParserOptions.length = 0;
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-vzi-"));
     const artifactId = "ABCDEFGHIJ123456";
     const productId = "P-123abc";
@@ -1522,6 +1528,10 @@ describe("artifact tools (C-03)", () => {
     expect(payload).toHaveProperty("output_path");
     expect(typeof payload.output_path).toBe("string");
     expect((payload.output_path as string)).toMatch(/\.vzi$/);
+    expect(puppeteerParserOptions.at(-1)).toMatchObject({
+      viewportPreset: "desktop",
+      baseUrl: pathToFileURL(`${versionDir}/`).toString()
+    });
     // archiveRequirement must not have been called
     expect((store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement).not.toHaveBeenCalled();
   });
@@ -2525,6 +2535,8 @@ function buildMinimalVziBytes(opts: {
   formaRequirementId?: string;
   formaArtifactId?: string;
   iconRelativePath?: string;
+  withNestedText?: boolean;
+  textContent?: string;
 } = {}): Uint8Array {
   const {
     title = "test-page",
@@ -2533,6 +2545,8 @@ function buildMinimalVziBytes(opts: {
     formaRequirementId,
     formaArtifactId,
     iconRelativePath,
+    withNestedText = false,
+    textContent = "Hello design",
   } = opts;
 
   const elements: Record<string, import("@vzi-core/types").IRElement> = {
@@ -2549,9 +2563,20 @@ function buildMinimalVziBytes(opts: {
       type: "text",
       bounds: { x: 16, y: 16, width: 200, height: 24 },
       styles: { color: "#333333", fontSize: 16, fontFamily: "Inter" },
-      textContent: "Hello design",
+      textContent,
     },
   };
+
+  if (withNestedText) {
+    elements["el-nested"] = {
+      id: "el-nested",
+      parentId: "el-text",
+      type: "text",
+      bounds: { x: 24, y: 48, width: 160, height: 20 },
+      styles: { color: "#555555", fontSize: 14, fontFamily: "Inter" },
+      textContent: "Nested detail",
+    };
+  }
 
   if (withSvgElement) {
     const svgEl: import("@vzi-core/types").IRElement = {
@@ -2740,15 +2765,35 @@ describe("design-handoff tools (Task 8)", () => {
     expect(formaToolInputSchemas.get_page_ui.safeParse({ page_id: PAGE_ID }).success).toBe(false);
   });
 
-  it("get_page_ui accepts optional depth, fields, node_id", () => {
+  it("get_page_ui accepts optional depth, fields, node_id, variant, and artifact_id", () => {
     const valid = formaToolInputSchemas.get_page_ui.safeParse({
       requirement_id: REQ_ID,
       page_id: PAGE_ID,
       depth: 3,
       fields: "layout",
-      node_id: "el-root"
+      node_id: "el-root",
+      variant: "experiment",
+      artifact_id: "artifact-123"
     });
     expect(valid.success).toBe(true);
+  });
+
+  it("get_ui_node and search_page_ui accept optional variant and artifact_id", () => {
+    expect(formaToolInputSchemas.get_ui_node.safeParse({
+      requirement_id: REQ_ID,
+      page_id: PAGE_ID,
+      node_id: "el-root",
+      variant: "experiment",
+      artifact_id: "artifact-123"
+    }).success).toBe(true);
+
+    expect(formaToolInputSchemas.search_page_ui.safeParse({
+      requirement_id: REQ_ID,
+      page_id: PAGE_ID,
+      query: "hello",
+      variant: "experiment",
+      artifact_id: "artifact-123"
+    }).success).toBe(true);
   });
 
   it("get_page_ui rejects invalid fields value", () => {
@@ -2959,6 +3004,108 @@ describe("design-handoff tools (Task 8)", () => {
       expect(payload.pages[0].vziPath).toContain(ARTIFACT_ID);
       expect(payload.rules).toEqual(rules);
       expect(payload.copy).toEqual(translations);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_design_handoff exposes variant identity and read tools can select duplicate page variants", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-variants-"));
+    const secondArtifactId = "ArtBBBBBBBBBBBBB";
+    try {
+      const productsRoot = join(home, "data", "products");
+      await writeVziFixture(
+        productsRoot,
+        PRODUCT_ID,
+        ARTIFACT_ID,
+        buildMinimalVziBytes({ title: PAGE_ID, textContent: "Default variant" }),
+      );
+      await writeVziFixture(
+        productsRoot,
+        PRODUCT_ID,
+        secondArtifactId,
+        buildMinimalVziBytes({ title: PAGE_ID, textContent: "Experiment variant" }),
+      );
+
+      for (const [artifactId, version] of [[ARTIFACT_ID, 1], [secondArtifactId, 2]] as const) {
+        const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, artifactId, version);
+        await mkdir(versionDir, { recursive: true });
+        await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+      }
+
+      const pointers = [
+        {
+          requirementId: REQ_ID,
+          pageId: PAGE_ID,
+          variant: "default",
+          artifactId: ARTIFACT_ID,
+          version: 1,
+          designStatus: "active" as const,
+        },
+        {
+          requirementId: REQ_ID,
+          pageId: PAGE_ID,
+          variant: "experiment",
+          artifactId: secondArtifactId,
+          version: 2,
+          designStatus: "active" as const,
+        },
+      ];
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => pointers),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const handoff = textPayload(await tools.get_design_handoff({ requirement_id: REQ_ID }));
+      expect(handoff.pages.map((page: { pageId: string; variant?: string; artifactId: string }) => ({
+        pageId: page.pageId,
+        variant: page.variant,
+        artifactId: page.artifactId,
+      }))).toEqual([
+        { pageId: PAGE_ID, variant: "default", artifactId: ARTIFACT_ID },
+        { pageId: PAGE_ID, variant: "experiment", artifactId: secondArtifactId },
+      ]);
+
+      const pageUi = textPayload(await tools.get_page_ui({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        variant: "experiment",
+      }));
+      expect(pageUi.artifactId).toBe(secondArtifactId);
+      expect(pageUi.variant).toBe("experiment");
+      expect(pageUi.tree.some((el: { textContent?: string }) => el.textContent === "Experiment variant")).toBe(true);
+
+      const searchResult = textPayload(await tools.search_page_ui({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        artifact_id: secondArtifactId,
+        query: "Experiment",
+      }));
+      expect(searchResult.artifactId).toBe(secondArtifactId);
+      expect(searchResult.variant).toBe("experiment");
+      expect(searchResult.total).toBeGreaterThan(0);
+
+      const nodeResult = textPayload(await tools.get_ui_node({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        variant: "experiment",
+        node_id: "el-text",
+      }));
+      expect(nodeResult.textContent).toBe("Experiment variant");
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -3274,7 +3421,7 @@ describe("design-handoff tools (Task 8)", () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-pageui-nodeid-"));
     try {
       const productsRoot = join(home, "data", "products");
-      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID, withNestedText: true });
       await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
 
       const store = fakeStore({
@@ -3317,10 +3464,8 @@ describe("design-handoff tools (Task 8)", () => {
       });
       const subtreePayload = textPayload(subtreeResult);
 
-      // Subtree should include el-text
-      expect(subtreePayload.tree.some((el: { id: string }) => el.id === "el-text")).toBe(true);
-      // Subtree should be <= full tree
-      expect(subtreePayload.tree.length).toBeLessThanOrEqual(fullPayload.tree.length);
+      const subtreeIds = subtreePayload.tree.map((el: { id: string }) => el.id);
+      expect(subtreeIds).toEqual(["el-text", "el-nested"]);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

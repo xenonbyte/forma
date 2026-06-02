@@ -127,6 +127,31 @@ interface ExtractElementsResult {
   truncatedAtDepth?: number;
 }
 
+export function withDocumentBaseUrl(html: string, baseUrl: string): string {
+  const href = new URL(baseUrl.trim()).toString();
+  const $ = cheerio.load(html);
+
+  if ($('base[href]').length > 0) {
+    return $.html();
+  }
+
+  let head = $('head').first();
+  if (head.length === 0) {
+    const htmlElement = $('html').first();
+    if (htmlElement.length > 0) {
+      htmlElement.prepend('<head></head>');
+    } else {
+      $.root().prepend('<head></head>');
+    }
+    head = $('head').first();
+  }
+
+  const base = $('<base>');
+  base.attr('href', href);
+  head.prepend(base);
+  return $.html();
+}
+
 /**
  * Puppeteer 解析器类
  */
@@ -783,7 +808,9 @@ export class PuppeteerParser {
         deviceScaleFactor: 2,
       });
 
-      await this.page.setContent(htmlForParse, {
+      const htmlForContent = withDocumentBaseUrl(htmlForParse, this.options.baseUrl);
+
+      await this.page.setContent(htmlForContent, {
         waitUntil: 'load',
         timeout: this.options.maxWaitTime,
       });

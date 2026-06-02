@@ -1,7 +1,12 @@
 import { playwright } from "@vitest/browser-playwright";
 import { configDefaults, defineConfig } from "vitest/config";
 
-const workspaceAliases = {
+export const workspaceAliases: Record<string, string> = {
+  "@vzi-core/types": new URL("./packages/vzi-types/src/index.ts", import.meta.url).pathname,
+  "@vzi-core/format": new URL("./packages/vzi-format/src/index.ts", import.meta.url).pathname,
+  "@vzi-core/parser": new URL("./packages/vzi-parser/src/index.ts", import.meta.url).pathname,
+  "@vzi-core/transformer": new URL("./packages/vzi-transformer/src/index.ts", import.meta.url).pathname,
+  "@vzi-core/renderer": new URL("./packages/vzi-renderer/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-agent": new URL("./packages/agent/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-cli": new URL("./packages/cli/src/index.ts", import.meta.url).pathname,
   // Browser-safe quality subpath. MUST precede the "@xenonbyte/forma-core" root

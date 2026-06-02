@@ -13,8 +13,8 @@
     "typecheck": "pnpm build && pnpm -r --if-present typecheck && pnpm typecheck:scripts",
     "typecheck:scripts": "tsc -p scripts/tsconfig.json",
     "pack:cli": "pnpm --filter @xenonbyte/forma-cli pack",
-    "pack:publish": "pnpm build && pnpm --filter @xenonbyte/forma-core pack --dry-run && pnpm --filter @xenonbyte/forma-mcp pack --dry-run && pnpm --filter @xenonbyte/forma-server pack --dry-run && pnpm --filter @xenonbyte/forma-cli pack --dry-run",
-    "publish:npm": "pnpm build && pnpm --filter @xenonbyte/forma-core publish && pnpm --filter @xenonbyte/forma-mcp publish && pnpm --filter @xenonbyte/forma-server publish && pnpm --filter @xenonbyte/forma-cli publish",
+    "pack:publish": "pnpm build && pnpm --filter @vzi-core/types pack --dry-run && pnpm --filter @vzi-core/format pack --dry-run && pnpm --filter @vzi-core/parser pack --dry-run && pnpm --filter @vzi-core/transformer pack --dry-run && pnpm --filter @xenonbyte/forma-core pack --dry-run && pnpm --filter @xenonbyte/forma-mcp pack --dry-run && pnpm --filter @xenonbyte/forma-server pack --dry-run && pnpm --filter @xenonbyte/forma-cli pack --dry-run",
+    "publish:npm": "pnpm build && pnpm --filter @vzi-core/types publish && pnpm --filter @vzi-core/format publish && pnpm --filter @vzi-core/parser publish && pnpm --filter @vzi-core/transformer publish && pnpm --filter @xenonbyte/forma-core publish && pnpm --filter @xenonbyte/forma-mcp publish && pnpm --filter @xenonbyte/forma-server publish && pnpm --filter @xenonbyte/forma-cli publish",
     "dev:web": "pnpm --filter @xenonbyte/forma-web dev",
     "desktop:dev": "pnpm --filter @xenonbyte/forma-desktop dev",
     "check:vzi-boundary": "node scripts/check-vzi-renderer-boundary.mjs"

@@ -6,6 +6,7 @@ import {
   writeFile
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   FormaError,
   artifactBundleUrl,
@@ -329,10 +330,10 @@ const descriptions = {
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   change_artifact_style: "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
   get_design_context: "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
-  get_design_handoff: "Read the design-handoff entry for an archived requirement: page directory with vziPath, indexHtmlPath, iconCount, rules, and copy. Only available after the requirement is archived.",
-  get_page_ui: "Read the full element tree (with tokens, annotations, and resolved asset paths) for one page of an archived requirement. Supports depth/fields/node_id filtering.",
-  get_ui_node: "Read complete detail for a single UI element node from an archived requirement: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
-  search_page_ui: "Search an archived requirement page's UI elements by text content or type."
+  get_design_handoff: "Read the design-handoff entry for an archived requirement: page directory with variant/artifactId, vziPath, indexHtmlPath, iconCount, rules, and copy. Only available after the requirement is archived.",
+  get_page_ui: "Read the full element tree (with tokens, annotations, and resolved asset paths) for one archived requirement page/variant. Supports variant/artifact_id disambiguation plus depth/fields/node_id filtering.",
+  get_ui_node: "Read complete detail for a single UI element node from an archived requirement page/variant: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
+  search_page_ui: "Search an archived requirement page/variant's UI elements by text content or type. Supports variant/artifact_id disambiguation when page IDs are reused."
 } satisfies Record<FormaToolName, string>;
 
 export function createFormaTools(store: FormaStore): FormaTools {
@@ -849,7 +850,10 @@ async function exportArtifactVzi(
 
   // Parse HTML → IR via Puppeteer
   let ir: import("@vzi-core/types").IntermediateRepresentation;
-  const parser = new PuppeteerParser({ viewportPreset: "desktop" });
+  const parser = new PuppeteerParser({
+    viewportPreset: "desktop",
+    baseUrl: pathToFileURL(`${artifactBase}/`).toString()
+  });
   try {
     ir = await parser.parse(html);
   } catch (err) {

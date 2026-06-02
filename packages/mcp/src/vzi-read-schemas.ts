@@ -82,6 +82,8 @@ export const mcpGetDesignHandoffSchema = requirementIdParam.strict();
 export const mcpGetPageUiSchema = requirementIdParam
   .extend({
     page_id: z.string().min(1, 'page_id must not be empty'),
+    variant: z.string().min(1, 'variant must not be empty').optional(),
+    artifact_id: z.string().min(1, 'artifact_id must not be empty').optional(),
     /** Tree depth limit (1 = top-level only). Omit for full depth. */
     depth: z.number().int().positive().max(100).optional(),
     /**
@@ -103,6 +105,8 @@ export const mcpGetPageUiSchema = requirementIdParam
 export const mcpGetUiNodeSchema = requirementIdParam
   .extend({
     page_id: z.string().min(1, 'page_id must not be empty'),
+    variant: z.string().min(1, 'variant must not be empty').optional(),
+    artifact_id: z.string().min(1, 'artifact_id must not be empty').optional(),
     node_id: z.string().min(1, 'node_id must not be empty'),
   })
   .strict();
@@ -113,6 +117,8 @@ export const mcpGetUiNodeSchema = requirementIdParam
 export const mcpSearchPageUiSchema = requirementIdParam
   .extend({
     page_id: z.string().min(1, 'page_id must not be empty'),
+    variant: z.string().min(1, 'variant must not be empty').optional(),
+    artifact_id: z.string().min(1, 'artifact_id must not be empty').optional(),
     query: z.string().min(1, 'query must not be empty'),
   })
   .strict();

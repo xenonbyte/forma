@@ -158,6 +158,7 @@ async function assertArchived(store: FormaStore, requirementId: string) {
 
 interface PagePointerInfo {
   pageId: string;
+  variant: string;
   artifactId: string;
   version: number;
   vziPath: string;
@@ -182,7 +183,7 @@ async function resolvePagePointers(
 
   const pages: PagePointerInfo[] = [];
   for (const ptr of pointers) {
-    const { artifactId, version, pageId } = ptr;
+    const { artifactId, version, pageId, variant } = ptr;
     const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
     const indexHtmlPath = join(versionDir, 'index.html');
@@ -190,7 +191,7 @@ async function resolvePagePointers(
     await assertReadableHandoffFile(vziPath, artifactId, 'vzi');
     const iconCount = await readIconCount(iconsManifestPath, artifactId);
 
-    pages.push({ pageId, artifactId, version, vziPath, indexHtmlPath, iconCount });
+    pages.push({ pageId, variant, artifactId, version, vziPath, indexHtmlPath, iconCount });
   }
 
   return pages;
@@ -205,15 +206,39 @@ async function resolvePagePointer(
   productId: string,
   requirementId: string,
   pageId: string,
-  productsRoot: string
+  productsRoot: string,
+  options: { variant?: string; artifactId?: string } = {}
 ): Promise<PagePointerInfo> {
   const pages = await resolvePagePointers(store, productId, requirementId, productsRoot);
-  const page = pages.find((p) => p.pageId === pageId);
+  const matches = pages.filter((p) =>
+    p.pageId === pageId &&
+    (options.variant === undefined || p.variant === options.variant) &&
+    (options.artifactId === undefined || p.artifactId === options.artifactId)
+  );
+  if (matches.length > 1) {
+    throw new FormaError(
+      'ARTIFACT_INVALID_INPUT',
+      `Multiple design variants found for requirement ${requirementId}, page ${pageId}; specify variant or artifact_id`,
+      {
+        requirement_id: requirementId,
+        page_id: pageId,
+        product_id: productId,
+        variants: matches.map((p) => ({ variant: p.variant, artifactId: p.artifactId, version: p.version })),
+      }
+    );
+  }
+  const page = matches[0];
   if (!page) {
     throw new FormaError(
       'ARTIFACT_NOT_FOUND',
       `No design pointer found for requirement ${requirementId}, page ${pageId}`,
-      { requirement_id: requirementId, page_id: pageId, product_id: productId }
+      {
+        requirement_id: requirementId,
+        page_id: pageId,
+        product_id: productId,
+        ...(options.variant !== undefined ? { variant: options.variant } : {}),
+        ...(options.artifactId !== undefined ? { artifact_id: options.artifactId } : {}),
+      }
     );
   }
   return page;
@@ -326,6 +351,7 @@ export async function toolGetDesignHandoff(
     },
     pages: pages.map((p) => ({
       pageId: p.pageId,
+      variant: p.variant,
       title: p.pageId,
       artifactId: p.artifactId,
       version: p.version,
@@ -347,7 +373,7 @@ export async function toolGetPageUi(
   store: FormaStore,
   input: McpGetPageUiInput
 ) {
-  const { requirement_id, page_id, depth, fields, node_id } = input;
+  const { requirement_id, page_id, variant, artifact_id, depth, fields, node_id } = input;
 
   // Gate
   const req = await assertArchived(store, requirement_id);
@@ -355,7 +381,7 @@ export async function toolGetPageUi(
   const productsRoot = getFormaPaths(store.home).productsDir;
 
   const pageInfo = await resolvePagePointer(
-    store, productId, requirement_id, page_id, productsRoot
+    store, productId, requirement_id, page_id, productsRoot, { variant, artifactId: artifact_id }
   );
 
   const content = await loadVzi(pageInfo.vziPath);
@@ -368,7 +394,7 @@ export async function toolGetPageUi(
 
   const query = createMcpQuery(content, {
     format: 'json',
-    depth,
+    depth: node_id ? undefined : depth,
     typeFilter,
   });
 
@@ -391,23 +417,7 @@ export async function toolGetPageUi(
         { requirementId: requirement_id, pageId: page_id, nodeId: node_id }
       );
     }
-    // Collect all IDs in the subtree recursively (visited guard breaks cycles)
-    const subtreeIds = new Set<string>();
-    const visited = new Set<string>();
-    function collectIds(nodeId: string, currentDepth: number) {
-      if (visited.has(nodeId)) return;
-      visited.add(nodeId);
-      subtreeIds.add(nodeId);
-      const maxDepth = depth ?? 100;
-      if (currentDepth >= maxDepth) return;
-      const el = query.getElement(nodeId, 0);
-      if (el?.children) {
-        for (const childId of el.children) {
-          collectIds(childId, currentDepth + 1);
-        }
-      }
-    }
-    collectIds(node_id, 0);
+    const subtreeIds = new Set<string>([rootNode.id, ...(rootNode.children ?? [])]);
     const filtered = elementList.elements.filter((e) => subtreeIds.has(e.id));
     elementList = { ...elementList, elements: filtered, total: filtered.length };
   }
@@ -436,6 +446,11 @@ export async function toolGetPageUi(
   return {
     viewport: viewport ?? null,
     platform: platform ?? null,
+    requirement_id,
+    page_id,
+    variant: pageInfo.variant,
+    artifactId: pageInfo.artifactId,
+    version: pageInfo.version,
     tokens: {
       colors: tokensOutput.colors ?? [],
       fonts: tokensOutput.fonts ?? [],
@@ -453,7 +468,7 @@ export async function toolGetUiNode(
   store: FormaStore,
   input: McpGetUiNodeInput
 ) {
-  const { requirement_id, page_id, node_id } = input;
+  const { requirement_id, page_id, variant, artifact_id, node_id } = input;
 
   // Gate
   const req = await assertArchived(store, requirement_id);
@@ -461,7 +476,7 @@ export async function toolGetUiNode(
   const productsRoot = getFormaPaths(store.home).productsDir;
 
   const pageInfo = await resolvePagePointer(
-    store, productId, requirement_id, page_id, productsRoot
+    store, productId, requirement_id, page_id, productsRoot, { variant, artifactId: artifact_id }
   );
 
   const content = await loadVzi(pageInfo.vziPath);
@@ -490,6 +505,11 @@ export async function toolGetUiNode(
 
   return {
     ...element,
+    requirement_id,
+    page_id,
+    variant: pageInfo.variant,
+    artifactId: pageInfo.artifactId,
+    version: pageInfo.version,
     ...(assetRef !== undefined ? { assetRef } : {}),
     annotations: annotations.annotations,
   };
@@ -502,7 +522,7 @@ export async function toolSearchPageUi(
   store: FormaStore,
   input: McpSearchPageUiInput
 ) {
-  const { requirement_id, page_id, query: searchQuery } = input;
+  const { requirement_id, page_id, variant, artifact_id, query: searchQuery } = input;
 
   // Gate
   const req = await assertArchived(store, requirement_id);
@@ -510,7 +530,7 @@ export async function toolSearchPageUi(
   const productsRoot = getFormaPaths(store.home).productsDir;
 
   const pageInfo = await resolvePagePointer(
-    store, productId, requirement_id, page_id, productsRoot
+    store, productId, requirement_id, page_id, productsRoot, { variant, artifactId: artifact_id }
   );
 
   const content = await loadVzi(pageInfo.vziPath);
@@ -526,6 +546,9 @@ export async function toolSearchPageUi(
     query: searchQuery,
     page_id,
     requirement_id,
+    variant: pageInfo.variant,
+    artifactId: pageInfo.artifactId,
+    version: pageInfo.version,
     elements: elementsWithAssetRef,
     total: result.total,
   };

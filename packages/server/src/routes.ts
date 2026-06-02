@@ -93,11 +93,16 @@ export interface FormaRoutesStore {
   };
   requirements: {
     archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
+    archiveRequirementLocked?(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
     createEmptyRequirement(productId: string, title: string): Promise<unknown>;
     getRequirement(input: { requirement_id: string } | { product_id: string }): Promise<RequirementRecord>;
     getRequirementHistory(productId: string): Promise<RequirementRecord[]>;
     saveRequirement(input: unknown): Promise<unknown>;
   };
+  runProductMutation?<T>(
+    input: { operation: string; product_id?: string },
+    fn: (context: { warnings: string[] }) => Promise<T>
+  ): Promise<T>;
   styles: {
     getStyle(name: string): Promise<BrandStyleContent>;
     listStyles(): Promise<unknown>;
@@ -333,13 +338,37 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         return exportArchiveAssets(deps, { productId: pid, requirementId: rid, generatedFrom: "requirement-archive" });
       });
 
-    const assets = await generateAssets(productId, requirementId);
+    const archiveWithAssets = async (recheckStatus: boolean) => {
+      if (recheckStatus) {
+        const current = await getOwnedRequirement(store, productId, requirementId);
+        if (current.status !== "active") {
+          throw new RouteHttpError(
+            "REQUIREMENT_STATUS_INVALID",
+            "Requirement status invalid",
+            { requirement_id: requirementId, status: current.status },
+            409
+          );
+        }
+      }
 
-    // Phase 2: commit archived status (AFTER assets are successfully generated)
-    const archived = await store.requirements.archiveRequirement(requirementId);
-    const archivedRequirement = await store.requirements.getRequirement({ requirement_id: archived.id });
+      const assets = await generateAssets(productId, requirementId);
+      const archiveRequirementLocked = store.requirements.archiveRequirementLocked;
+      const archived = archiveRequirementLocked
+        ? await archiveRequirementLocked.call(store.requirements, requirementId)
+        : await store.requirements.archiveRequirement(requirementId);
+      const archivedRequirement = await store.requirements.getRequirement({ requirement_id: archived.id });
 
-    return { requirement: archivedRequirement, icons: assets.icons, vzi: assets.vzi };
+      return { requirement: archivedRequirement, icons: assets.icons, vzi: assets.vzi };
+    };
+
+    if (store.runProductMutation && store.requirements.archiveRequirementLocked) {
+      return await store.runProductMutation(
+        { operation: "archive_requirement", product_id: productId },
+        () => archiveWithAssets(true)
+      );
+    }
+
+    return await archiveWithAssets(false);
   });
 
   app.get<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId", async (request) =>

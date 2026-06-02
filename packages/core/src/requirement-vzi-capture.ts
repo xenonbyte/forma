@@ -24,6 +24,7 @@
 
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { PuppeteerParser, VIEWPORT_PRESETS, type ViewportPreset } from '@vzi-core/parser';
 import { VZITransformer, buildVziContentFromTransformResult } from '@vzi-core/transformer';
@@ -319,7 +320,10 @@ export async function captureRequirementVzi(
       // ── 2. Parse via Puppeteer ──────────────────────────────────────────────
       let ir: import('@vzi-core/types').IntermediateRepresentation;
       try {
-        const parser = new PuppeteerParser({ viewportPreset: preset });
+        const parser = new PuppeteerParser({
+          viewportPreset: preset,
+          baseUrl: pathToFileURL(`${versionDir}/`).toString(),
+        });
         try {
           ir = await parser.parse(html);
         } finally {

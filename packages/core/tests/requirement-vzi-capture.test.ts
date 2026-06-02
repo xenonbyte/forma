@@ -34,7 +34,7 @@ import type { DesignPointer } from '../src/product.js';
 import type { Platform } from '../src/schemas.js';
 import { FormaError } from '../src/errors.js';
 import { VZIDecoder } from '@vzi-core/format';
-import type { ExportRequirementIconsResult } from '../src/requirement-icon-export.js';
+import { exportRequirementIcons, type ExportRequirementIconsResult } from '../src/requirement-icon-export.js';
 import type { IconManifest } from '../src/artifact-icon-extraction.js';
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -521,6 +521,56 @@ describe('captureRequirementVzi with iconExportResult', () => {
       expect(inlineSvg?.metadata?.iconAssetId).toBeDefined();
       expect(ordinaryImage).toBeDefined();
       expect(ordinaryImage?.metadata?.iconAssetId).toBeUndefined();
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 90_000);
+
+  it('does not fail archive capture when non-rendered SVGs are skipped by icon extraction', async () => {
+    const htmlWithHiddenSprite = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none" width="24" height="24" aria-label="Sprite">
+    <path d="M0 0h24v24H0z" />
+  </svg>
+  <main style="width:1024px;height:768px;padding:24px">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Visible Check">
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
+  </main>
+</body>
+</html>`;
+
+    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-hidden-svg-'));
+    try {
+      const deps = await makeTestDeps(formaHome, 'desktop');
+      const productsRoot = join(formaHome, 'products');
+
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, htmlWithHiddenSprite);
+      const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
+      deps.listDesignPointers = async () => [pointer];
+
+      const icons = await exportRequirementIcons(deps, {
+        productId: PRODUCT_ID,
+        requirementId: REQ_ID,
+        generatedFrom: 'requirement-archive',
+      });
+
+      expect(icons.totalIcons).toBe(1);
+      const result = await captureRequirementVzi(
+        deps,
+        { productId: PRODUCT_ID, requirementId: REQ_ID },
+        icons,
+      );
+
+      expect(result.pages[0].iconRefsInjected).toBe(1);
+
+      const vziBytes = await readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID));
+      const decoded = new VZIDecoder({ enableErrorRecovery: true }).decode(new Uint8Array(vziBytes));
+      const linkedElements = Array.from(decoded.content.elements.values()).filter(
+        (el) => el.metadata?.iconRelativePath !== undefined,
+      );
+      expect(linkedElements).toHaveLength(1);
     } finally {
       await rm(formaHome, { recursive: true, force: true });
     }

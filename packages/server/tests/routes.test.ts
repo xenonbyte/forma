@@ -850,6 +850,86 @@ describe("Fastify API routes", () => {
     expect(callOrder).toEqual(["exportArchiveAssets", "archiveRequirement"]);
   });
 
+  it("runs archive asset generation and archived status commit inside one product mutation lock", async () => {
+    const callOrder: string[] = [];
+    let lockActive = false;
+    const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => {
+      expect(lockActive).toBe(true);
+      callOrder.push("exportArchiveAssets");
+      return { icons: { pages: [], totalIcons: 3 }, vzi: { pages: [], totalElements: 42 } };
+    });
+    const archiveRequirement = vi.fn(async () => {
+      throw new Error("archiveRequirement must not be called while the route already owns the lock");
+    });
+    const archiveRequirementLocked = vi.fn(async () => {
+      expect(lockActive).toBe(true);
+      callOrder.push("archiveRequirementLocked");
+      return { id: "R-12345678", status: "archived" };
+    });
+    const runProductMutation = vi.fn(async (
+      input: { operation: string; product_id?: string },
+      fn: (ctx: { warnings: string[] }) => Promise<unknown>
+    ) => {
+      expect(input).toEqual({ operation: "archive_requirement", product_id: "P-123abc" });
+      callOrder.push("lock:start");
+      lockActive = true;
+      try {
+        return await fn({ warnings: [] });
+      } finally {
+        lockActive = false;
+        callOrder.push("lock:end");
+      }
+    });
+    const getRequirement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "active",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      })
+      .mockResolvedValueOnce({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "active",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      })
+      .mockResolvedValueOnce({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "archived",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      });
+    const requirements = {
+      ...fakeStore().requirements,
+      archiveRequirement,
+      archiveRequirementLocked,
+      getRequirement
+    };
+    const app = await appWith(fakeStore({
+      exportArchiveAssets,
+      requirements,
+      runProductMutation
+    } as unknown as Partial<FormaServerStore>));
+
+    const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
+
+    expect(response.statusCode).toBe(200);
+    expect(archiveRequirement).not.toHaveBeenCalled();
+    expect(archiveRequirementLocked).toHaveBeenCalledWith("R-12345678");
+    expect(runProductMutation).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(["lock:start", "exportArchiveAssets", "archiveRequirementLocked", "lock:end"]);
+  });
+
   it("maps not found and invalid input errors", async () => {
     const store = fakeStore({
       products: {
