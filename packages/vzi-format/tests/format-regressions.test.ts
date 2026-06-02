@@ -96,6 +96,7 @@ describe("VZI format regressions", () => {
     const encoded = new VZIEncoder().encode(makeSplitSpatialContent());
 
     expect(getVZIFileInfo(encoded)).toMatchObject({
+      version: "2.0",
       elementCount: 4,
       hasSpatialIndex: true,
     });

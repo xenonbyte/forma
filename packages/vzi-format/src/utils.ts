@@ -138,13 +138,21 @@ export function getVZIFileInfo(buffer: Buffer | Uint8Array): {
   }
 
   return {
-    version: `${(version >> 8) & 0xff}.${version & 0xff}`,
+    version: formatVZIVersion(version),
     elementCount,
     blockCount,
     fileSize,
     hasEncryption,
     hasSpatialIndex,
   };
+}
+
+function formatVZIVersion(version: number): string {
+  if (version <= 0xff) {
+    return `${version}.0`;
+  }
+
+  return `${(version >> 8) & 0xff}.${version & 0xff}`;
 }
 
 /**

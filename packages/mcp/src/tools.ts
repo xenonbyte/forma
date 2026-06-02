@@ -750,33 +750,42 @@ async function exportArtifact(
       throw err;
     }
   } else if (format === "icons") {
-    return await exportArtifactIcons(artifactBase, artifact_id, product_id, exportsDir);
+    const htmlEntry = artifactExportEntry(manifest, "html");
+    if (htmlEntry === undefined) {
+      throw unsupportedArtifactFormatError(manifest, artifact_id, format);
+    }
+    return await exportArtifactIcons(artifactBase, htmlEntry, artifact_id, product_id, exportsDir);
   } else if (format === "vzi") {
-    return await exportArtifactVzi(artifactBase, artifact_id, product_id, exportsDir);
+    const htmlEntry = artifactExportEntry(manifest, "html");
+    if (htmlEntry === undefined) {
+      throw unsupportedArtifactFormatError(manifest, artifact_id, format);
+    }
+    return await exportArtifactVzi(artifactBase, htmlEntry, artifact_id, product_id, exportsDir);
   }
 
   return { output_path: outputPath };
 }
 
 /**
- * Manual icon export for a single artifact: reads index.html, runs
+ * Manual icon export for a single artifact: reads the manifest HTML entry, runs
  * extractIconAssets, and writes the result to an export staging directory.
  * Does NOT touch archive state or requirement status.
  */
 async function exportArtifactIcons(
   artifactBase: string,
+  htmlEntry: string,
   artifactId: string,
   productId: string,
   exportsDir: string
 ): Promise<{ output_path: string }> {
-  const htmlPath = join(artifactBase, "index.html");
+  const htmlPath = join(artifactBase, htmlEntry);
   let html: string;
   try {
     html = await readFile(htmlPath, "utf8");
   } catch (err) {
     throw new FormaError(
       "ARTIFACT_NOT_FOUND",
-      `Could not read index.html for artifact ${artifactId}`,
+      `Could not read ${htmlEntry} for artifact ${artifactId}`,
       { artifactId, path: htmlPath, cause: String(err) }
     );
   }
@@ -819,7 +828,7 @@ async function exportArtifactIcons(
 }
 
 /**
- * Manual VZI export for a single artifact: reads index.html, runs the
+ * Manual VZI export for a single artifact: reads the manifest HTML entry, runs the
  * PuppeteerParser → VZITransformer → VZIEncoder chain, and writes the result
  * to an export staging file.
  * Does NOT touch archive state or requirement status.
@@ -828,18 +837,19 @@ async function exportArtifactIcons(
  */
 async function exportArtifactVzi(
   artifactBase: string,
+  htmlEntry: string,
   artifactId: string,
   productId: string,
   exportsDir: string
 ): Promise<{ output_path: string }> {
-  const htmlPath = join(artifactBase, "index.html");
+  const htmlPath = join(artifactBase, htmlEntry);
   let html: string;
   try {
     html = await readFile(htmlPath, "utf8");
   } catch (err) {
     throw new FormaError(
       "ARTIFACT_NOT_FOUND",
-      `Could not read index.html for artifact ${artifactId}`,
+      `Could not read ${htmlEntry} for artifact ${artifactId}`,
       { artifactId, path: htmlPath, cause: String(err) }
     );
   }
@@ -904,8 +914,15 @@ function assertArtifactSupportsExportFormat(
   format: z.infer<typeof exportArtifactSchema>["format"]
 ): void {
   // Formats that are always supported regardless of artifact kind
-  if (format === "zip" || format === "png" || format === "icons" || format === "vzi") {
+  if (format === "zip" || format === "png") {
     return;
+  }
+
+  if (format === "icons" || format === "vzi") {
+    if (artifactExportEntry(manifest, "html") !== undefined) {
+      return;
+    }
+    throw unsupportedArtifactFormatError(manifest, artifactId, format);
   }
 
   if (artifactExportEntry(manifest, format) !== undefined) {
@@ -918,7 +935,7 @@ function assertArtifactSupportsExportFormat(
 function unsupportedArtifactFormatError(
   manifest: ArtifactManifest,
   artifactId: string,
-  format: "html" | "svg"
+  format: z.infer<typeof exportArtifactSchema>["format"]
 ): FormaError {
   return new FormaError("ARTIFACT_UNSUPPORTED_FORMAT", "Artifact does not support requested export format", {
     artifact_id: artifactId,

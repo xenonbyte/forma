@@ -92,6 +92,6 @@ Vitest with `environment: "node"` and workspace aliases (vitest.config.ts resolv
 
 The SPA uses a custom hash-based router (packages/web/src/routes.tsx) with `RouteDefinition[]`. Navigation dispatches `forma:navigation` custom events and listens for `popstate`. No React Router dependency.
 
-### Active design specs (in-flight)
+### Design handoff
 
-- `docs/superpowers/specs/2026-06-01-icon-export-design-handoff-design.md` — archive-time icon slicing + R1: vendor `vzi-core` (fork) to convert each page's final design HTML to `.vzi` at archive, store icons/vzi **page-level** under `<artifactId>/icons/` and `<artifactId>/vzi/page.vzi`, and expose a 3+1 dev-handoff MCP surface (`get_design_handoff`/`get_page_ui`/`get_ui_node`). **Not yet implemented** — being built on branch `feat/icon-export-vzi-handoff`. (`docs/superpowers/specs/` is otherwise git-ignored.)
+- Archive-time handoff assets are implemented: final design HTML is converted to page-level icons and `.vzi` files under `<artifactId>/icons/` and `<artifactId>/vzi/page.vzi`. Core implementation lives in `packages/core/src/archive-asset-export.ts`, `packages/core/src/requirement-icon-export.ts`, and `packages/core/src/requirement-vzi-capture.ts`. MCP exposes `get_design_handoff`, `get_page_ui`, `get_ui_node`, and `search_page_ui` for archived requirements.

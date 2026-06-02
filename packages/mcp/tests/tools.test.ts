@@ -1,4 +1,4 @@
-import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, type FormaStore } from "@xenonbyte/forma-core";
+import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, getArtifactsDir, type FormaStore } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -1464,6 +1464,98 @@ describe("artifact tools (C-03)", () => {
   });
 
   // ─── export_artifact: icons + vzi formats (Task 9) ───────────────────────
+
+  it.each([
+    { format: "icons" as const, expectedPath: "icons" },
+    { format: "vzi" as const, expectedPath: ".vzi" }
+  ])("export_artifact $format format uses the manifest HTML entry when it is not index.html", async ({ format, expectedPath }) => {
+    puppeteerParserOptions.length = 0;
+    const home = await mkdtemp(join(tmpdir(), `forma-mcp-export-${format}-entry-`));
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(
+      join(versionDir, "page.html"),
+      `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
+      "utf8"
+    );
+    const manifest = {
+      ...fakeManifest(),
+      entry: "page.html",
+      exports: ["page.html"]
+    };
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: productId,
+      artifact_id: artifactId,
+      format
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.output_path as string).toContain(expectedPath);
+    if (format === "vzi") {
+      expect(puppeteerParserOptions.at(-1)).toMatchObject({
+        viewportPreset: "desktop",
+        baseUrl: pathToFileURL(`${versionDir}/`).toString()
+      });
+    }
+  });
+
+  it.each(["icons", "vzi"] as const)(
+    "export_artifact %s format rejects artifacts without an HTML entry",
+    async (format) => {
+      const home = await mkdtemp(join(tmpdir(), `forma-mcp-export-${format}-unsupported-`));
+      const artifactId = "ABCDEFGHIJ123456";
+      const productId = "P-123abc";
+      const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "icon.svg"), `<svg xmlns="http://www.w3.org/2000/svg"/>`, "utf8");
+      const manifest = {
+        ...fakeManifest(),
+        kind: "svg" as const,
+        renderer: "svg" as const,
+        entry: "icon.svg",
+        exports: ["icon.svg"]
+      };
+      const store = fakeStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [])
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.export_artifact({
+        product_id: productId,
+        artifact_id: artifactId,
+        format
+      });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
+    }
+  );
 
   it("export_artifact icons format returns output_path containing an icons dir with icons.json", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-icons-"));
@@ -3034,6 +3126,61 @@ describe("design-handoff tools (Task 8)", () => {
       expect(payload.pages[0].vziPath).toContain(ARTIFACT_ID);
       expect(payload.rules).toEqual(rules);
       expect(payload.copy).toEqual(translations);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_design_handoff skips temporary and invalid artifact directories while scanning archives", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-skip-invalid-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      await writeVziFixture(
+        productsRoot,
+        PRODUCT_ID,
+        ARTIFACT_ID,
+        buildMinimalVziBytes({ title: PAGE_ID }),
+      );
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
+        requirementId: REQ_ID,
+        pageId: PAGE_ID,
+        version: "v1",
+      });
+
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+
+      const artifactsDir = getArtifactsDir(productsRoot, PRODUCT_ID);
+      await mkdir(join(artifactsDir, ".tmp-in-progress"), { recursive: true });
+      await mkdir(join(artifactsDir, "invalid.artifact"), { recursive: true });
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+          getProductRules: vi.fn(async () => []),
+        },
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.pages).toHaveLength(1);
+      expect(payload.pages[0]).toMatchObject({
+        pageId: PAGE_ID,
+        artifactId: ARTIFACT_ID,
+        version: 1,
+      });
     } finally {
       await rm(home, { recursive: true, force: true });
     }

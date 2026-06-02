@@ -245,7 +245,20 @@ async function resolveArchivedPagePointers(
     }
 
     const artifactId = entry.name;
-    const iconsManifestPath = getArtifactIconsManifestPath(productsRoot, productId, artifactId);
+    if (artifactId.startsWith('.tmp-')) {
+      continue;
+    }
+
+    let iconsManifestPath: string;
+    try {
+      iconsManifestPath = getArtifactIconsManifestPath(productsRoot, productId, artifactId);
+    } catch (cause) {
+      if (cause instanceof FormaError && cause.code === 'ARTIFACT_INVALID_INPUT') {
+        continue;
+      }
+      throw cause;
+    }
+
     let manifest: HandoffIconManifestInfo;
     try {
       manifest = await readHandoffIconManifest(iconsManifestPath, artifactId);
