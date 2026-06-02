@@ -1,11 +1,13 @@
-import { FormaError, createFormaStore, type FormaStore } from "@xenonbyte/forma-core";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, getFormaPaths, type FormaStore } from "@xenonbyte/forma-core";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import AdmZip from "adm-zip";
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod/v4";
 import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
+import { VZIEncoder } from "@vzi-core/format";
+import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
 
 vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
   const actual = await importOriginal() as Record<string, unknown>;
@@ -2290,5 +2292,1032 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
+  });
+});
+
+// ─── Design Handoff Tools (Task 8) ──────────────────────────────────────────
+
+/**
+ * Build a minimal VZI byte buffer using the real transformer + encoder.
+ * No Puppeteer required — hand-crafts a minimal IR with two elements
+ * (one container and one text) plus one SVG-bearing element.
+ */
+function buildMinimalVziBytes(opts: {
+  title?: string;
+  withSvgElement?: boolean;
+  formaProductId?: string;
+  formaRequirementId?: string;
+  formaArtifactId?: string;
+  iconRelativePath?: string;
+} = {}): Uint8Array {
+  const {
+    title = "test-page",
+    withSvgElement = false,
+    formaProductId,
+    formaRequirementId,
+    formaArtifactId,
+    iconRelativePath,
+  } = opts;
+
+  const elements: Record<string, import("@vzi-core/types").IRElement> = {
+    "el-root": {
+      id: "el-root",
+      parentId: null,
+      type: "container",
+      bounds: { x: 0, y: 0, width: 1024, height: 768 },
+      styles: { backgroundColor: "#ffffff", display: "flex" },
+    },
+    "el-text": {
+      id: "el-text",
+      parentId: "el-root",
+      type: "text",
+      bounds: { x: 16, y: 16, width: 200, height: 24 },
+      styles: { color: "#333333", fontSize: 16, fontFamily: "Inter" },
+      textContent: "Hello design",
+    },
+  };
+
+  if (withSvgElement) {
+    const svgEl: import("@vzi-core/types").IRElement = {
+      id: "el-svg",
+      parentId: "el-root",
+      type: "image" as import("@vzi-core/types").IRElementType,
+      bounds: { x: 16, y: 56, width: 24, height: 24 },
+      styles: {},
+      svgData: {
+        raw: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="10" fill="red"/></svg>',
+        paths: [{ d: "M12 2C6.47 2 2 6.47 2 12", fill: "red" }],
+        width: 24,
+        height: 24,
+      },
+      metadata: {
+        ...(iconRelativePath ? { iconRelativePath } : {}),
+      },
+    };
+    elements["el-svg"] = svgEl;
+  }
+
+  const ir: import("@vzi-core/types").IntermediateRepresentation = {
+    version: "1.0",
+    rootElementId: "el-root",
+    elements,
+    metadata: { title, viewport: { width: 1024, height: 768 } },
+  };
+
+  const transformer = new VZITransformer({
+    title,
+    createdBy: "forma-test",
+    sourceType: "file",
+    sourceIdentifier: "test/fixture",
+    enableAnnotations: true,
+    enableTokenExtraction: true,
+  });
+  const transformResult = transformer.transform(ir);
+  const content = buildVziContentFromTransformResult(transformResult);
+
+  // Inject forma metadata extensions
+  const extMeta = content.metadata as typeof content.metadata & Record<string, unknown>;
+  extMeta["formaProductId"] = formaProductId ?? null;
+  extMeta["formaRequirementId"] = formaRequirementId ?? null;
+  extMeta["formaArtifactId"] = formaArtifactId ?? null;
+  extMeta["formaViewport"] = { width: 1024, height: 768 };
+  extMeta["formaPlatform"] = "web";
+
+  // If iconRelativePath is provided, also inject into image map (simulates Task 5)
+  if (withSvgElement && iconRelativePath) {
+    const svgEl = content.elements.get("el-svg");
+    if (svgEl) {
+      svgEl.metadata = { ...(svgEl.metadata ?? {}), iconRelativePath };
+      content.elements.set("el-svg", svgEl);
+    }
+  }
+
+  const encoder = new VZIEncoder();
+  return encoder.encode(content);
+}
+
+/**
+ * Write a VZI fixture to the expected artifact path.
+ */
+async function writeVziFixture(
+  productsRoot: string,
+  productId: string,
+  artifactId: string,
+  vziBytes: Uint8Array
+): Promise<void> {
+  const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
+  await mkdir(dirname(vziPath), { recursive: true });
+  await writeFile(vziPath, vziBytes);
+}
+
+/**
+ * Write icons.json manifest and a stub SVG file for icon resolution tests.
+ */
+async function writeIconsFixture(
+  productsRoot: string,
+  productId: string,
+  artifactId: string,
+  iconRelativePath: string  // e.g. "icons/icon-test.svg"
+): Promise<void> {
+  const iconsDir = getArtifactIconsDir(productsRoot, productId, artifactId);
+  await mkdir(iconsDir, { recursive: true });
+
+  const iconFilename = iconRelativePath.replace(/^icons\//, "");
+  await writeFile(join(iconsDir, iconFilename), '<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8");
+
+  const manifest = {
+    artifactId,
+    productId,
+    requirementId: "R-testtest",
+    pageId: "page-test",
+    version: "v1",
+    sourceVersion: "v1",
+    generatedFrom: "requirement-archive",
+    icons: [
+      {
+        id: "icon-test",
+        size: { w: 24, h: 24 },
+        usesCurrentColor: false,
+        sourceOrderFirst: true,
+        files: {
+          svg: iconRelativePath,
+          png: {},
+        },
+      },
+    ],
+  };
+  await writeFile(join(iconsDir, "icons.json"), JSON.stringify(manifest), "utf8");
+}
+
+describe("design-handoff tools (Task 8)", () => {
+  const PRODUCT_ID = "P-aabbcc";
+  const REQ_ID = "R-aabbccdd";
+  const ARTIFACT_ID = "ArtAAAAAAAAAAAAA";
+  const PAGE_ID = "page-home";
+  const ICON_REL_PATH = "icons/icon-test-abc123.svg";
+
+  // ─── Schema validation ──────────────────────────────────────────────────────
+
+  it("new tools appear in formaToolNames", () => {
+    expect(formaToolNames).toContain("get_design_handoff");
+    expect(formaToolNames).toContain("get_page_ui");
+    expect(formaToolNames).toContain("get_ui_node");
+    expect(formaToolNames).toContain("search_page_ui");
+  });
+
+  it("new tool schemas are JSON-Schema compatible (z.toJSONSchema)", () => {
+    const failures: string[] = [];
+    for (const name of ["get_design_handoff", "get_page_ui", "get_ui_node", "search_page_ui"] as const) {
+      try {
+        z.toJSONSchema(formaToolInputSchemas[name]);
+      } catch (err) {
+        failures.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it("get_design_handoff rejects product_id parameter (requirement_id only)", () => {
+    const parsed = formaToolInputSchemas.get_design_handoff.safeParse({
+      requirement_id: REQ_ID,
+      product_id: PRODUCT_ID
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("get_design_handoff requires requirement_id", () => {
+    const parsed = formaToolInputSchemas.get_design_handoff.safeParse({});
+    expect(parsed.success).toBe(false);
+  });
+
+  it("get_page_ui requires requirement_id and page_id", () => {
+    expect(formaToolInputSchemas.get_page_ui.safeParse({ requirement_id: REQ_ID, page_id: PAGE_ID }).success).toBe(true);
+    expect(formaToolInputSchemas.get_page_ui.safeParse({ requirement_id: REQ_ID }).success).toBe(false);
+    expect(formaToolInputSchemas.get_page_ui.safeParse({ page_id: PAGE_ID }).success).toBe(false);
+  });
+
+  it("get_page_ui accepts optional depth, fields, node_id", () => {
+    const valid = formaToolInputSchemas.get_page_ui.safeParse({
+      requirement_id: REQ_ID,
+      page_id: PAGE_ID,
+      depth: 3,
+      fields: "layout",
+      node_id: "el-root"
+    });
+    expect(valid.success).toBe(true);
+  });
+
+  it("get_page_ui rejects invalid fields value", () => {
+    const invalid = formaToolInputSchemas.get_page_ui.safeParse({
+      requirement_id: REQ_ID,
+      page_id: PAGE_ID,
+      fields: "unknown-field"
+    });
+    expect(invalid.success).toBe(false);
+  });
+
+  // ─── Gate: REQUIREMENT_NOT_FINALIZED ───────────────────────────────────────
+
+  it("get_design_handoff returns REQUIREMENT_NOT_FINALIZED when requirement is not archived", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: REQ_ID,
+          product_id: PRODUCT_ID,
+          status: "active",
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "REQUIREMENT_NOT_FINALIZED",
+    });
+    expect(textPayload(result).details).toMatchObject({ requirement_id: REQ_ID, status: "active" });
+  });
+
+  it("get_page_ui returns REQUIREMENT_NOT_FINALIZED when requirement is submitted", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: REQ_ID,
+          product_id: PRODUCT_ID,
+          status: "submitted",
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FINALIZED" });
+  });
+
+  it("get_ui_node returns REQUIREMENT_NOT_FINALIZED when requirement is empty", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: REQ_ID,
+          product_id: PRODUCT_ID,
+          status: "empty",
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_ui_node({ requirement_id: REQ_ID, page_id: PAGE_ID, node_id: "el-root" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FINALIZED" });
+  });
+
+  it("search_page_ui returns REQUIREMENT_NOT_FINALIZED when requirement is not archived", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: REQ_ID,
+          product_id: PRODUCT_ID,
+          status: "active",
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.search_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID, query: "hello" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "REQUIREMENT_NOT_FINALIZED" });
+  });
+
+  // ─── VZI missing → ARTIFACT_NOT_FOUND ─────────────────────────────────────
+
+  it("get_page_ui returns ARTIFACT_NOT_FOUND when VZI file is missing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-missing-"));
+    try {
+      await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+          getProductRules: vi.fn(async () => []),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  // ─── Full VZI read — tokens, annotations, handoff ─────────────────────────
+
+  it("get_design_handoff returns page directory with vziPath, indexHtmlPath, iconCount for archived requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH);
+
+      // Seed index.html
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+
+      const rules = [{ id: "rule-1", given: "g", when: "w", then: "t" }];
+      const translations = [{ page_id: PAGE_ID, entries: [] }];
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+          getProductRules: vi.fn(async () => rules),
+        },
+        copy: {
+          ...fakeStore().copy,
+          getTranslations: vi.fn(async () => translations),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.requirement).toMatchObject({ id: REQ_ID, status: "archived" });
+      expect(payload.pages).toHaveLength(1);
+      expect(payload.pages[0]).toMatchObject({
+        pageId: PAGE_ID,
+        iconCount: 1,
+      });
+      expect(payload.pages[0].vziPath).toMatch(/page\.vzi$/);
+      expect(payload.pages[0].indexHtmlPath).toMatch(/index\.html$/);
+      // vziPath must be inside productsRoot (path-safety)
+      expect(payload.pages[0].vziPath).toContain(PRODUCT_ID);
+      expect(payload.pages[0].vziPath).toContain(ARTIFACT_ID);
+      expect(payload.rules).toEqual(rules);
+      expect(payload.copy).toEqual(translations);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui returns top-level de-duplicated tokens and annotations for archived requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-pageui-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      // Top-level tokens: arrays (de-duplicated)
+      expect(Array.isArray(payload.tokens.colors)).toBe(true);
+      expect(Array.isArray(payload.tokens.fonts)).toBe(true);
+      // Annotations at top level
+      expect(Array.isArray(payload.annotations)).toBe(true);
+      // Tree at top level
+      expect(Array.isArray(payload.tree)).toBe(true);
+      // Viewport and platform from VZI metadata
+      expect(payload.viewport).toMatchObject({ width: 1024, height: 768 });
+      expect(payload.platform).toBe("web");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui tree contains elements with correct types and bounds", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-pageui-tree-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.tree.length).toBeGreaterThan(0);
+      const root = payload.tree.find((el: { id: string }) => el.id === "el-root");
+      expect(root).toBeDefined();
+      expect(root.type).toBe("container");
+      expect(root.bounds).toMatchObject({ x: 0, y: 0, width: 1024, height: 768 });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui depth filter limits tree depth", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-pageui-depth-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const allResult = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const depth1Result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID, depth: 1 });
+
+      const allPayload = textPayload(allResult);
+      const depth1Payload = textPayload(depth1Result);
+
+      expect(allPayload.tree.length).toBeGreaterThanOrEqual(depth1Payload.tree.length);
+      // At depth 1, no element should have depth > 1
+      for (const el of depth1Payload.tree) {
+        if (el.depth !== undefined) {
+          expect(el.depth).toBeLessThanOrEqual(1);
+        }
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui node_id returns subtree rooted at that node", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-pageui-nodeid-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      // Get full tree first
+      const fullResult = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const fullPayload = textPayload(fullResult);
+      const textEl = fullPayload.tree.find((el: { id: string }) => el.id === "el-text");
+      expect(textEl).toBeDefined();
+
+      // Get subtree rooted at el-text
+      const subtreeResult = await tools.get_page_ui({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "el-text"
+      });
+      const subtreePayload = textPayload(subtreeResult);
+
+      // Subtree should include el-text
+      expect(subtreePayload.tree.some((el: { id: string }) => el.id === "el-text")).toBe(true);
+      // Subtree should be <= full tree
+      expect(subtreePayload.tree.length).toBeLessThanOrEqual(fullPayload.tree.length);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_ui_node returns full element detail with node-scoped annotations", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-uinode-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_ui_node({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "el-root"
+      });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.id).toBe("el-root");
+      expect(payload.type).toBe("container");
+      expect(payload.bounds).toMatchObject({ x: 0, y: 0, width: 1024, height: 768 });
+      // Node-scoped annotations must be present (array, may be empty for this node)
+      expect(Array.isArray(payload.annotations)).toBe(true);
+      // children must be present
+      expect(Array.isArray(payload.children)).toBe(true);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_ui_node returns ARTIFACT_NOT_FOUND for non-existent node_id", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-uinode-missing-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_ui_node({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "non-existent-node"
+      });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("search_page_ui returns matching elements for text query", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-search-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.search_page_ui({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        query: "Hello design"
+      });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.query).toBe("Hello design");
+      expect(payload.page_id).toBe(PAGE_ID);
+      expect(Array.isArray(payload.elements)).toBe(true);
+      expect(typeof payload.total).toBe("number");
+      // The text element "Hello design" should be found
+      expect(payload.elements.some((el: { textContent?: string }) =>
+        el.textContent?.includes("Hello design")
+      )).toBe(true);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("search_page_ui returns empty results for non-matching query", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-search-empty-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.search_page_ui({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        query: "zzz-no-match-zzz"
+      });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.total).toBe(0);
+      expect(payload.elements).toHaveLength(0);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  // ─── assetRef resolution ───────────────────────────────────────────────────
+
+  it("get_page_ui resolves assetRef to absolute icons/ path for elements with iconRelativePath", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-assetref-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      // Build VZI with an SVG element that has iconRelativePath in metadata
+      const vziBytes = buildMinimalVziBytes({
+        title: PAGE_ID,
+        withSvgElement: true,
+        iconRelativePath: ICON_REL_PATH,
+      });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      // Find the SVG element — it should have an assetRef
+      const svgEl = payload.tree.find((el: { id: string; assetRef?: string }) =>
+        el.id === "el-svg" && el.assetRef !== undefined
+      );
+      expect(svgEl).toBeDefined();
+      // assetRef must be an absolute path
+      expect(svgEl.assetRef).toMatch(/^\//);
+      // assetRef must be inside productsRoot (path-safety)
+      expect(svgEl.assetRef).toContain(PRODUCT_ID);
+      expect(svgEl.assetRef).toContain(ARTIFACT_ID);
+      expect(svgEl.assetRef).toContain("icons");
+      // assetRef must be inside the home directory (Forma root safety)
+      expect(svgEl.assetRef).toContain(home);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_ui_node resolves assetRef for a node with iconRelativePath", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-uinode-assetref-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({
+        title: PAGE_ID,
+        withSvgElement: true,
+        iconRelativePath: ICON_REL_PATH,
+      });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_ui_node({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "el-svg"
+      });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      expect(payload.id).toBe("el-svg");
+      // assetRef must be resolved to absolute path inside Forma root
+      expect(typeof payload.assetRef).toBe("string");
+      expect(payload.assetRef).toMatch(/^\//);
+      expect(payload.assetRef).toContain(home);
+      expect(payload.assetRef).toContain("icons");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui does not expose assetRef for elements without iconRelativePath", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-no-assetref-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID }); // no SVG, no iconRelativePath
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+      const payload = textPayload(result);
+
+      expect(result.isError).toBeUndefined();
+      // Root and text elements must NOT have assetRef
+      const rootEl = payload.tree.find((el: { id: string }) => el.id === "el-root");
+      const textEl = payload.tree.find((el: { id: string }) => el.id === "el-text");
+      expect(rootEl?.assetRef).toBeUndefined();
+      expect(textEl?.assetRef).toBeUndefined();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  // ─── Existing tools are not affected by new gate ───────────────────────────
+
+  it("existing tools (generate_requirement_design, get_product_artifact) remain ungated", async () => {
+    // These tools must not return REQUIREMENT_NOT_FINALIZED
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const generateResult = await tools.generate_requirement_design({
+      product_id: PRODUCT_ID,
+      requirement_id: REQ_ID,
+      page_id: PAGE_ID,
+      html: "<!DOCTYPE html><html></html>",
+      title: "Test",
+      brand_style: "linear",
+    });
+    const artifactResult = await tools.get_product_artifact({
+      product_id: PRODUCT_ID,
+      artifact_id: ARTIFACT_ID,
+    });
+
+    // Neither should return REQUIREMENT_NOT_FINALIZED
+    if (generateResult.isError) {
+      expect(textPayload(generateResult).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+    }
+    if (artifactResult.isError) {
+      expect(textPayload(artifactResult).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+    }
   });
 });

@@ -23,7 +23,8 @@ export type FormaErrorCode =
   | "REQUIREMENT_PRODUCT_MISMATCH"
   | "PREVIEW_RENDER_FAILED"
   | "ARTIFACT_REMOTE_RESOURCE"
-  | "ARTIFACT_NOT_STATIC";
+  | "ARTIFACT_NOT_STATIC"
+  | "REQUIREMENT_NOT_FINALIZED";
 
 export class FormaError extends Error {
   constructor(

@@ -127,7 +127,9 @@ export async function getPageUi(input: GetPageUiInput): Promise<PageUiResult> {
     typeFilter: type,
   });
 
-  // TODO(PLAN-TASK-008): resolve element image refs to absolute <artifactId>/icons/ asset paths (assetRef); pending icon export + tool wiring.
+  // Asset ref resolution is performed in the higher-level MCP tools (design-handoff.ts)
+  // where the productsRoot, productId, and artifactId are available.
+  // The lower-level getPageUi here just decodes the VZI and lists elements.
   return {
     elements: query.listElements(),
   };
@@ -150,7 +152,8 @@ export async function getUiNode(input: GetUiNodeInput): Promise<UiNodeResult> {
   const content = await loadVzi(vziPath);
   const query = createMcpQuery(content, buildQueryOptions(format));
 
-  // TODO(PLAN-TASK-008): resolve element image refs to absolute <artifactId>/icons/ asset paths (assetRef); pending icon export + tool wiring.
+  // Asset ref resolution is performed in the higher-level MCP tools (design-handoff.ts)
+  // where the productsRoot, productId, and artifactId are available.
   return {
     element: query.getElement(elementId, depth),
   };

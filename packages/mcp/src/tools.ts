@@ -25,6 +25,18 @@ import {
 } from "@xenonbyte/forma-core";
 import AdmZip from "adm-zip";
 import * as z from "zod/v4";
+import {
+  toolGetDesignHandoff,
+  toolGetPageUi,
+  toolGetUiNode,
+  toolSearchPageUi,
+} from "./design-handoff.js";
+import {
+  mcpGetDesignHandoffSchema,
+  mcpGetPageUiSchema,
+  mcpGetUiNodeSchema,
+  mcpSearchPageUiSchema,
+} from "./vzi-read-schemas.js";
 
 export const formaToolNames = [
   "help",
@@ -51,7 +63,11 @@ export const formaToolNames = [
   "generate_requirement_design",
   "generate_components",
   "change_artifact_style",
-  "get_design_context"
+  "get_design_context",
+  "get_design_handoff",
+  "get_page_ui",
+  "get_ui_node",
+  "search_page_ui"
 ] as const;
 
 export type FormaToolName = (typeof formaToolNames)[number];
@@ -275,7 +291,11 @@ export const formaToolInputSchemas = {
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
   change_artifact_style: changeArtifactStyleSchema,
-  get_design_context: getDesignContextSchema
+  get_design_context: getDesignContextSchema,
+  get_design_handoff: mcpGetDesignHandoffSchema,
+  get_page_ui: mcpGetPageUiSchema,
+  get_ui_node: mcpGetUiNodeSchema,
+  search_page_ui: mcpSearchPageUiSchema
 } satisfies Record<FormaToolName, z.ZodType>;
 
 const descriptions = {
@@ -303,7 +323,11 @@ const descriptions = {
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   change_artifact_style: "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
-  get_design_context: "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools)."
+  get_design_context: "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
+  get_design_handoff: "Read the design-handoff entry for an archived requirement: page directory with vziPath, indexHtmlPath, iconCount, rules, and copy. Only available after the requirement is archived.",
+  get_page_ui: "Read the full element tree (with tokens, annotations, and resolved asset paths) for one page of an archived requirement. Supports depth/fields/node_id filtering.",
+  get_ui_node: "Read complete detail for a single UI element node: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
+  search_page_ui: "Search a page's UI elements by text content or type."
 } satisfies Record<FormaToolName, string>;
 
 export function createFormaTools(store: FormaStore): FormaTools {
@@ -391,7 +415,15 @@ export function createFormaTools(store: FormaStore): FormaTools {
           systemStyle: input.system_style,
           craftSlugs: input.craft_slugs
         }
-      ))
+      )),
+    get_design_handoff: tool("get_design_handoff", async (input) =>
+      toolGetDesignHandoff(store, input)),
+    get_page_ui: tool("get_page_ui", async (input) =>
+      toolGetPageUi(store, input)),
+    get_ui_node: tool("get_ui_node", async (input) =>
+      toolGetUiNode(store, input)),
+    search_page_ui: tool("search_page_ui", async (input) =>
+      toolSearchPageUi(store, input))
   };
 }
 
