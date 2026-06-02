@@ -13,8 +13,11 @@ import {
   isSameOrChildPath,
   normalizeKind,
   normalizeFormaExtension,
+  exportArchiveAssets,
+  makeExportArchiveAssetsDeps,
   type ArtifactManifest,
   type BrandStyleContent,
+  type ExportArchiveAssetsResult,
   type Language,
   type Platform,
   type SchemaNormalizationRecoveryState
@@ -75,9 +78,15 @@ export interface FormaRoutesStore {
     getTranslations(productId: string, requirementId: string): Promise<Array<{ page_id: string; entries?: unknown[]; [key: string]: unknown }>>;
   };
   deleteProduct(input: { product_id: string; confirm_product_id: string }): Promise<unknown>;
+  /**
+   * Optional injectable for archive-time asset generation (icons + VZI).
+   * When provided (e.g. in tests), it is used directly. When absent, the route
+   * builds production deps from `home` + `products` and calls the core function.
+   */
+  exportArchiveAssets?: (productId: string, requirementId: string) => Promise<ExportArchiveAssetsResult>;
   products: {
     createProduct(input: { name: string; description: string }): Promise<unknown>;
-    getProduct(productId: string): Promise<{ id: string; designSystemArtifactId?: string; requirements?: Record<string, { latestArtifactId?: string }>; [key: string]: unknown }>;
+    getProduct(productId: string): Promise<{ id: string; platform?: string; designSystemArtifactId?: string; requirements?: Record<string, { latestArtifactId?: string }>; [key: string]: unknown }>;
     initProductConfig(productId: string, config: unknown): Promise<unknown>;
     listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
     listDesignPointers(productId: string): Promise<Array<{ artifactId: string; version: number }>>;
@@ -291,9 +300,46 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
 
   app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request, reply) => {
     if (!checkMutationOrigin(request, reply)) return;
-    await getOwnedRequirement(store, request.params.id, request.params.reqId);
-    const archived = await store.requirements.archiveRequirement(request.params.reqId);
-    return store.requirements.getRequirement({ requirement_id: archived.id });
+    const productId = request.params.id;
+    const requirementId = request.params.reqId;
+
+    // Ownership check (also gives us the current requirement status)
+    const requirement = await getOwnedRequirement(store, productId, requirementId);
+
+    // Precheck: only active requirements can be archived
+    if (requirement.status !== "active") {
+      throw new RouteHttpError(
+        "REQUIREMENT_STATUS_INVALID",
+        "Requirement status invalid",
+        { requirement_id: requirementId, status: requirement.status },
+        409
+      );
+    }
+
+    // Phase 1: generate handoff assets (icons + VZI) BEFORE committing archived status.
+    // If generation fails, the error propagates and archiveRequirement is NOT called.
+    const generateAssets: (pid: string, rid: string) => Promise<ExportArchiveAssetsResult> =
+      store.exportArchiveAssets ??
+      ((pid, rid) => {
+        const productsRoot = getFormaPaths(store.home).productsDir;
+        const deps = makeExportArchiveAssetsDeps(
+          productsRoot,
+          async (productId) => {
+            const product = await store.products.getProduct(productId);
+            return product.platform as Platform | undefined;
+          },
+          (productId) => store.products.listDesignPointers(productId) as Promise<Array<{ artifactId: string; version: number; requirementId: string; pageId: string; variant: string; designStatus: "pending" | "active" | "expired" }>>
+        );
+        return exportArchiveAssets(deps, { productId: pid, requirementId: rid, generatedFrom: "requirement-archive" });
+      });
+
+    const assets = await generateAssets(productId, requirementId);
+
+    // Phase 2: commit archived status (AFTER assets are successfully generated)
+    const archived = await store.requirements.archiveRequirement(requirementId);
+    const archivedRequirement = await store.requirements.getRequirement({ requirement_id: archived.id });
+
+    return { requirement: archivedRequirement, icons: assets.icons, vzi: assets.vzi };
   });
 
   app.get<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId", async (request) =>

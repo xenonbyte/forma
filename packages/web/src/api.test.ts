@@ -99,11 +99,29 @@ describe("apiRequest", () => {
           navigation: []
         });
       }
+      if (path.endsWith("/archive")) {
+        // New archive response shape: { requirement, icons, vzi }
+        return jsonResponse({
+          requirement: {
+            id: "R-12345678",
+            product_id: "P-123abc",
+            title: "Checkout",
+            status: "archived",
+            created_at: "2026-05-17T00:00:00.000Z",
+            updated_at: "2026-05-17T00:00:00.000Z",
+            pages: [],
+            navigation: [],
+            document_md: "# Checkout"
+          },
+          icons: { pages: [], totalIcons: 0 },
+          vzi: { pages: [] }
+        });
+      }
       return jsonResponse({
         id: "R-12345678",
         product_id: "P-123abc",
         title: "Checkout",
-        status: path.endsWith("/archive") ? "archived" : "submitted",
+        status: "submitted",
         created_at: "2026-05-17T00:00:00.000Z",
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
@@ -130,9 +148,9 @@ describe("apiRequest", () => {
     ).resolves.toMatchObject({ id: "R-12345678", document_md: "# Checkout" });
 
     await expect(client.archiveRequirement("P-123abc", "R-12345678")).resolves.toMatchObject({
-      id: "R-12345678",
-      status: "archived",
-      document_md: "# Checkout"
+      requirement: { id: "R-12345678", status: "archived", document_md: "# Checkout" },
+      icons: { totalIcons: 0 },
+      vzi: { pages: [] }
     });
     expect(requests).toEqual([
       {

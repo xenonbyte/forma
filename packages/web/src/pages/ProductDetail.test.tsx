@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as productDetail from "./ProductDetail.js";
 import { ProductDetail } from "./ProductDetail.js";
-import { ApiError, type FormaApiClient, type Product, type ProductBaseline, type RequirementWithDocument, type StyleMetadata } from "../api.js";
+import { ApiError, type ArchiveRequirementResult, type FormaApiClient, type Product, type ProductBaseline, type RequirementWithDocument, type StyleMetadata } from "../api.js";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { localeStorageKey, setLocale as setAppLocale } from "../i18n.js";
 
@@ -360,7 +360,11 @@ describe("ProductDetail", () => {
 
 function createClient({ product, requirements }: { product: Product; requirements: RequirementWithDocument[] }) {
   return {
-    archiveRequirement: vi.fn(async (_productId, requirementId) => requirements.find((requirement) => requirement.id === requirementId) ?? activeRequirement),
+    archiveRequirement: vi.fn(async (_productId, requirementId): Promise<ArchiveRequirementResult> => ({
+      requirement: requirements.find((requirement) => requirement.id === requirementId) ?? activeRequirement,
+      icons: { pages: [], totalIcons: 0 },
+      vzi: { pages: [] }
+    })),
     configureProduct: vi.fn(async (_productId, input) => ({
       ...product,
       platform: input.platform,

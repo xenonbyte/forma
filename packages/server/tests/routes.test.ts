@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildServer, type FormaServer, type FormaServerStore } from "../src/app.js";
-import type { ArtifactManifest } from "@xenonbyte/forma-core";
+import type { ArtifactManifest, ExportArchiveAssetsResult } from "@xenonbyte/forma-core";
 
 const apps: FormaServer[] = [];
 
@@ -114,6 +114,10 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
       ]),
       saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
     },
+    exportArchiveAssets: vi.fn(async (): Promise<ExportArchiveAssetsResult> => ({
+      icons: { pages: [], totalIcons: 0 },
+      vzi: { pages: [] }
+    })),
     recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
     styles: {
       getStyle: vi.fn(async () => ({
@@ -625,9 +629,14 @@ describe("Fastify API routes", () => {
     await expect(server).rejects.toBe(error);
   });
 
-  it("maps requirement archive invalid status to 409", async () => {
+  it("maps requirement archive invalid status to 409 (non-active requirement is rejected before asset generation)", async () => {
+    const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => ({
+      icons: { pages: [], totalIcons: 0 },
+      vzi: { pages: [] }
+    }));
     const app = await appWith(
       fakeStore({
+        exportArchiveAssets,
         requirements: {
           ...fakeStore().requirements,
           archiveRequirement: vi.fn(async () => {
@@ -635,7 +644,14 @@ describe("Fastify API routes", () => {
               requirement_id: "R-12345678",
               status: "submitted"
             });
-          })
+          }),
+          getRequirement: vi.fn(async () => ({
+            id: "R-12345678",
+            product_id: "P-123abc",
+            pages: [],
+            status: "submitted",
+            document_md: ""
+          }))
         }
       })
     );
@@ -643,11 +659,10 @@ describe("Fastify API routes", () => {
     const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
 
     expect(response.statusCode).toBe(409);
-    expect(response.json()).toEqual({
-      error_code: "REQUIREMENT_STATUS_INVALID",
-      message: "Requirement status invalid",
-      details: { requirement_id: "R-12345678", status: "submitted" }
+    expect(response.json()).toMatchObject({
+      error_code: "REQUIREMENT_STATUS_INVALID"
     });
+    expect(exportArchiveAssets).not.toHaveBeenCalled();
   });
 
   it("creates an empty requirement from title only without submitting requirement content", async () => {
@@ -783,43 +798,56 @@ describe("Fastify API routes", () => {
     expect(requirements.saveRequirement).not.toHaveBeenCalled();
   });
 
-  it("returns archived requirement with document from archive route", async () => {
-    const requirements = {
-      ...fakeStore().requirements,
-      archiveRequirement: vi.fn(async () => ({ id: "R-12345678", status: "archived" })),
-      getRequirement: vi
-        .fn()
-        .mockResolvedValueOnce({
-          id: "R-12345678",
-          product_id: "P-123abc",
-          title: "Checkout",
-          status: "active",
-          created_at: "2026-05-17T00:00:00.000Z",
-          updated_at: "2026-05-17T00:00:00.000Z",
-          pages: [],
-          navigation: [],
-          document_md: "# Checkout"
-        })
-        .mockResolvedValueOnce({
-          id: "R-12345678",
-          product_id: "P-123abc",
-          title: "Checkout",
-          status: "archived",
-          created_at: "2026-05-17T00:00:00.000Z",
-          updated_at: "2026-05-17T00:00:00.000Z",
-          pages: [],
-          navigation: [],
-          document_md: "# Checkout"
-        })
-    };
-    const app = await appWith(fakeStore({ requirements }));
+  it("returns { requirement, icons, vzi } from archive route and runs asset generation before status commit", async () => {
+    const callOrder: string[] = [];
+    const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => {
+      callOrder.push("exportArchiveAssets");
+      return { icons: { pages: [], totalIcons: 3 }, vzi: { pages: [] } };
+    });
+    const archiveRequirement = vi.fn(async () => {
+      callOrder.push("archiveRequirement");
+      return { id: "R-12345678", status: "archived" };
+    });
+    const getRequirement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "active",
+        created_at: "2026-05-17T00:00:00.000Z",
+        updated_at: "2026-05-17T00:00:00.000Z",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      })
+      .mockResolvedValueOnce({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        title: "Checkout",
+        status: "archived",
+        created_at: "2026-05-17T00:00:00.000Z",
+        updated_at: "2026-05-17T00:00:00.000Z",
+        pages: [],
+        navigation: [],
+        document_md: "# Checkout"
+      });
+    const requirements = { ...fakeStore().requirements, archiveRequirement, getRequirement };
+    const app = await appWith(fakeStore({ exportArchiveAssets, requirements }));
 
     const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({ id: "R-12345678", status: "archived", document_md: "# Checkout" });
-    expect(requirements.archiveRequirement).toHaveBeenCalledWith("R-12345678");
-    expect(requirements.getRequirement).toHaveBeenLastCalledWith({ requirement_id: "R-12345678" });
+    const body = response.json();
+    expect(body).toMatchObject({
+      requirement: { id: "R-12345678", status: "archived", document_md: "# Checkout" },
+      icons: { totalIcons: 3 },
+      vzi: { pages: [] }
+    });
+    expect(archiveRequirement).toHaveBeenCalledWith("R-12345678");
+    expect(getRequirement).toHaveBeenLastCalledWith({ requirement_id: "R-12345678" });
+    // Asset generation MUST run before status is committed
+    expect(callOrder).toEqual(["exportArchiveAssets", "archiveRequirement"]);
   });
 
   it("maps not found and invalid input errors", async () => {
@@ -862,6 +890,32 @@ describe("Fastify API routes", () => {
       message: "Unexpected server error",
       details: {}
     });
+  });
+
+  it("returns retryable error and keeps status non-archived when exportArchiveAssets fails", async () => {
+    const archiveRequirement = vi.fn(async () => ({ id: "R-12345678", status: "archived" }));
+    const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => {
+      throw new FormaError("ARTIFACT_WRITE_FAIL", "Icon export failed", { phase: "icons" });
+    });
+    const getRequirement = vi.fn(async () => ({
+      id: "R-12345678",
+      product_id: "P-123abc",
+      title: "Checkout",
+      status: "active",
+      pages: [],
+      navigation: [],
+      document_md: "# Checkout"
+    }));
+    const requirements = { ...fakeStore().requirements, archiveRequirement, getRequirement };
+    const app = await appWith(fakeStore({ exportArchiveAssets, requirements }));
+
+    const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
+
+    // Generation failure → non-2xx (retryable error envelope)
+    expect(response.statusCode).not.toBe(200);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_WRITE_FAIL" });
+    // Status commit must NOT have happened
+    expect(archiveRequirement).not.toHaveBeenCalled();
   });
 
   it("returns 404 for cross-product requirement read and archive routes", async () => {

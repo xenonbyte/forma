@@ -279,6 +279,21 @@ export interface RequirementDesignAssetExport {
   revision: string;
 }
 
+export interface ArchiveIconsResult {
+  pages: unknown[];
+  totalIcons: number;
+}
+
+export interface ArchiveVziResult {
+  pages: unknown[];
+}
+
+export interface ArchiveRequirementResult {
+  requirement: RequirementWithDocument;
+  icons: ArchiveIconsResult;
+  vzi: ArchiveVziResult;
+}
+
 export type RequirementDesignOperationIntent =
   | "generate"
   | "refine"
@@ -317,7 +332,7 @@ export interface ProductComponentOperationInput {
 }
 
 export interface FormaApiClient {
-  archiveRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
+  archiveRequirement(productId: string, requirementId: string): Promise<ArchiveRequirementResult>;
   applyProductComponentOperations(productId: string, sessionId: string, input: { operations: ProductComponentOperationInput[] }): Promise<RequirementDesignSessionResult>;
   applyRequirementDesignOperations(productId: string, requirementId: string, sessionId: string, input: { operations: RequirementDesignOperationInput[] }): Promise<RequirementDesignSessionResult>;
   beginProductComponentSession(productId: string, input: {
@@ -419,7 +434,7 @@ export async function apiRequest<T>(path: string, options: ApiRequestOptions = {
 export function createApiClient(fetcher?: Fetcher): FormaApiClient {
   return {
     archiveRequirement: (productId, requirementId) =>
-      apiRecord<RequirementWithDocument>(`/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/archive`, {
+      apiRecord<ArchiveRequirementResult>(`/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/archive`, {
         ...requestOptions(fetcher),
         method: "PUT"
       }),
