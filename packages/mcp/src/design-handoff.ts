@@ -85,13 +85,19 @@ async function loadVzi(vziPath: string): Promise<VZIContent> {
 }
 
 /** Read icons.json manifest and return the icon count (0 if file absent). */
-async function readIconCount(iconsManifestPath: string): Promise<number> {
+async function readIconCount(iconsManifestPath: string, artifactId: string): Promise<number> {
+  let raw: string;
   try {
-    const raw = await readFile(iconsManifestPath, 'utf8');
+    raw = await readFile(iconsManifestPath, 'utf8');
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
+  }
+  try {
     const manifest = JSON.parse(raw) as { icons?: unknown[] };
     return Array.isArray(manifest.icons) ? manifest.icons.length : 0;
   } catch {
-    return 0;
+    throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
   }
 }
 
@@ -132,7 +138,7 @@ async function resolvePagePointers(
 ): Promise<PagePointerInfo[]> {
   const allPointers = await store.products.listDesignPointers(productId);
   const pointers = allPointers.filter(
-    (p) => p.requirementId === requirementId
+    (p) => p.requirementId === requirementId && p.designStatus === 'active'
   );
 
   const pages: PagePointerInfo[] = [];
@@ -142,7 +148,7 @@ async function resolvePagePointers(
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
     const indexHtmlPath = join(versionDir, 'index.html');
     const iconsManifestPath = getArtifactIconsManifestPath(productsRoot, productId, artifactId);
-    const iconCount = await readIconCount(iconsManifestPath);
+    const iconCount = await readIconCount(iconsManifestPath, artifactId);
 
     pages.push({ pageId, artifactId, version, vziPath, indexHtmlPath, iconCount });
   }
@@ -259,7 +265,7 @@ export async function toolGetDesignHandoff(
   return {
     requirement: {
       id: req.id,
-      title: (req as Record<string, unknown>).title ?? req.id,
+      title: req.title,
       status: req.status,
     },
     pages: pages.map((p) => ({
@@ -320,25 +326,32 @@ export async function toolGetPageUi(
   // If node_id specified, filter to subtree rooted at that node
   if (node_id) {
     const rootNode = query.getElement(node_id, depth ?? 100);
-    if (rootNode) {
-      // Collect all IDs in the subtree recursively
-      const subtreeIds = new Set<string>();
-      function collectIds(nodeId: string) {
-        subtreeIds.add(nodeId);
-        const el = query.getElement(nodeId, 0);
-        if (el?.children) {
-          for (const childId of el.children) {
-            collectIds(childId);
-          }
+    if (!rootNode) {
+      throw new FormaError(
+        'ARTIFACT_NOT_FOUND',
+        `Node ${node_id} not found in page UI`,
+        { requirementId: requirement_id, pageId: page_id, nodeId: node_id }
+      );
+    }
+    // Collect all IDs in the subtree recursively (visited guard breaks cycles)
+    const subtreeIds = new Set<string>();
+    const visited = new Set<string>();
+    function collectIds(nodeId: string, currentDepth: number) {
+      if (visited.has(nodeId)) return;
+      visited.add(nodeId);
+      subtreeIds.add(nodeId);
+      const maxDepth = depth ?? 100;
+      if (currentDepth >= maxDepth) return;
+      const el = query.getElement(nodeId, 0);
+      if (el?.children) {
+        for (const childId of el.children) {
+          collectIds(childId, currentDepth + 1);
         }
       }
-      collectIds(node_id);
-      elementList = {
-        ...elementList,
-        elements: elementList.elements.filter((e) => subtreeIds.has(e.id)),
-        total: elementList.elements.filter((e) => subtreeIds.has(e.id)).length,
-      };
     }
+    collectIds(node_id, 0);
+    const filtered = elementList.elements.filter((e) => subtreeIds.has(e.id));
+    elementList = { ...elementList, elements: filtered, total: filtered.length };
   }
 
   // Build viewport from VZI metadata

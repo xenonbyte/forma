@@ -3397,6 +3397,57 @@ describe("design-handoff tools (Task 8)", () => {
     }
   });
 
+  // ─── FIX 2: get_page_ui with non-existent node_id throws ARTIFACT_NOT_FOUND ──
+
+  it("get_page_ui with non-existent node_id throws ARTIFACT_NOT_FOUND (not a full-tree response)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-nodeid-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      const vziBytes = buildMinimalVziBytes({ title: PAGE_ID });
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, vziBytes);
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "el-does-not-exist",
+      });
+
+      expect(result.isError).toBe(true);
+      const payload = textPayload(result);
+      expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
+      // Must NOT return a full-tree payload when node_id is provided but not found
+      expect(payload.tree).toBeUndefined();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   // ─── FIX 5: fields filter produces different tree output ──────────────────
   // fields='text' sets typeFilter='text'; fields='all' has no type filter.
   // With a fixture that has both text and image elements, 'text' omits the
