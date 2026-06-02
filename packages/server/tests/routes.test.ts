@@ -1716,3 +1716,177 @@ describe("SPEC-IF-HTTP-005: removed routes return 404", () => {
     }
   });
 });
+
+describe("regression: HTTP bundle + preview routes are NOT gated by archive status (Task 10)", () => {
+  // These tests verify that the new archived-gate added to dev-handoff MCP tools
+  // does NOT affect the HTTP routes that serve artifact bundles and previews.
+  // Active (non-archived) products must always serve bundles and previews over HTTP.
+
+  it("GET versioned bundle returns 200 for an ACTIVE product artifact (no archive gate)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-http-regress-bundle-"));
+    const productId = "P-123abc";
+    const artifactId = "A-abcdef1234567890";
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), "<!doctype html><body>Active Design</body>", "utf8");
+
+    // Store returns an active (non-archived) requirement when queried.
+    // The HTTP route must NOT check requirement status — bundle is always served.
+    const store = fakeStore({
+      home,
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-12345678",
+          product_id: productId,
+          status: "active",  // NOT archived
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/html");
+    expect(response.body).toContain("Active Design");
+    // The route must NOT have called getRequirement (archive gate does not belong here)
+    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
+  });
+
+  it("GET versioned preview returns 200 for an ACTIVE product artifact (no archive gate)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-http-regress-preview-"));
+    const productId = "P-123abc";
+    const artifactId = "A-abcdef1234567890";
+    const previewDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1", "preview");
+    await mkdir(previewDir, { recursive: true });
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    await writeFile(join(previewDir, "2x.png"), pngBytes);
+
+    const store = fakeStore({
+      home,
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-12345678",
+          product_id: productId,
+          status: "active",  // NOT archived
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toBe("image/png");
+    expect(response.rawPayload).toEqual(pngBytes);
+    // The route must NOT have called getRequirement (archive gate does not belong here)
+    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
+  });
+
+  it("GET artifact manifest returns 200 for an ACTIVE product artifact (no archive gate)", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          status: "active",  // NOT archived
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveProperty("manifest");
+    // getRequirement must NOT have been called by the artifact manifest route
+    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
+  });
+
+  it("GET artifact list returns 200 for a product with only ACTIVE requirements (no archive gate)", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-12345678",
+          product_id: "P-123abc",
+          status: "active",
+          pages: [],
+          document_md: ""
+        }))
+      }
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body).toHaveProperty("artifacts");
+    expect(Array.isArray(body.artifacts)).toBe(true);
+    // getRequirement must NOT have been called by the artifact list route
+    expect(store.requirements.getRequirement).not.toHaveBeenCalled();
+  });
+
+  it("GET bundle + preview both return 200 after serving an active design (gate isolation)", async () => {
+    // Composite regression: both file-serving routes succeed without calling
+    // any archive/requirement check on the same active product.
+    const home = await mkdtemp(join(tmpdir(), "forma-http-regress-composite-"));
+    const productId = "P-123abc";
+    const artifactId = "A-abcdef1234567890";
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    const previewDir = join(versionDir, "preview");
+    await mkdir(previewDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), "<!doctype html><body>Ungated</body>", "utf8");
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    await writeFile(join(previewDir, "2x.png"), pngBytes);
+
+    const requirementGetMock = vi.fn(async () => ({
+      id: "R-12345678",
+      product_id: productId,
+      status: "active",
+      pages: [],
+      document_md: ""
+    }));
+    const store = fakeStore({
+      home,
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: requirementGetMock
+      }
+    });
+    const app = await appWith(store);
+
+    const [bundleRes, previewRes] = await Promise.all([
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html` }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png` })
+    ]);
+
+    expect(bundleRes.statusCode).toBe(200);
+    expect(previewRes.statusCode).toBe(200);
+    // Neither route should have touched getRequirement
+    expect(requirementGetMock).not.toHaveBeenCalled();
+  });
+});

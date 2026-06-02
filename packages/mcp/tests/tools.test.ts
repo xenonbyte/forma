@@ -3756,3 +3756,366 @@ describe("design-handoff tools (Task 8)", () => {
     }
   });
 });
+
+// ─── Regression: archived-gate scoped ONLY to dev-handoff tools (Task 10) ────
+//
+// These tests prove that existing design tools (get_product_artifact,
+// export_artifact with all formats including the new icons/vzi,
+// get_design_context, generate_requirement_design, generate_components,
+// change_artifact_style) do NOT gate on requirement.status.
+// They must succeed (or fail for a non-gate reason) for a non-archived
+// (active/submitted) requirement.
+//
+// The test for each tool uses a store whose getRequirement mock returns
+// status: "active" — if the tool accidentally called assertArchived, it would
+// return REQUIREMENT_NOT_FINALIZED. Any other error code is acceptable.
+
+describe("regression: existing MCP tools are NOT gated by archive status", () => {
+  // Shared store: getRequirement returns status=active (NOT archived).
+  // The 4 dev-handoff tools WOULD reject this — the existing tools must NOT.
+  function activeRequirementStore(overrides: Record<string, unknown> = {}) {
+    return fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-active001",
+          product_id: "P-123abc",
+          status: "active",
+          pages: [{ page_id: "page-checkout", baseline_page: "checkout" }],
+          document_md: "# Active requirement"
+        })),
+        getProductRules: vi.fn(async () => []),
+      },
+      ...overrides
+    });
+  }
+
+  it("get_product_artifact succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const store = activeRequirementStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_artifact({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456"
+    });
+
+    // Tool must NOT be gated — it never checks requirement status
+    if (result.isError) {
+      expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+    } else {
+      expect(result.isError).toBeUndefined();
+    }
+    // Confirm assertArchived (getRequirement check) was NOT called by this tool
+    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
+      .not.toHaveBeenCalled();
+  });
+
+  it("export_artifact html format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-regress-export-html-"));
+    try {
+      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<main>Active design</main>", "utf8");
+
+      const store = activeRequirementStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [])
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.export_artifact({
+        product_id: "P-123abc",
+        artifact_id: "ABCDEFGHIJ123456",
+        format: "html"
+      });
+
+      if (result.isError) {
+        expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+      } else {
+        expect(result.isError).toBeUndefined();
+        expect(textPayload(result)).toHaveProperty("output_path");
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("export_artifact zip format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-regress-export-zip-"));
+    try {
+      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<main>Active design</main>", "utf8");
+
+      const store = activeRequirementStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [])
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.export_artifact({
+        product_id: "P-123abc",
+        artifact_id: "ABCDEFGHIJ123456",
+        format: "zip"
+      });
+
+      if (result.isError) {
+        expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+      } else {
+        expect(result.isError).toBeUndefined();
+        expect(textPayload(result)).toHaveProperty("output_path");
+      }
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("export_artifact icons format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-regress-export-icons-"));
+    try {
+      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(
+        join(versionDir, "index.html"),
+        `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
+        "utf8"
+      );
+
+      const store = activeRequirementStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [])
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.export_artifact({
+        product_id: "P-123abc",
+        artifact_id: "ABCDEFGHIJ123456",
+        format: "icons"
+      });
+
+      if (result.isError) {
+        expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+      } else {
+        expect(result.isError).toBeUndefined();
+        expect(textPayload(result)).toHaveProperty("output_path");
+      }
+      // getRequirement must NOT have been called by export_artifact
+      expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
+        .not.toHaveBeenCalled();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("export_artifact vzi format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-regress-export-vzi-"));
+    try {
+      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(
+        join(versionDir, "index.html"),
+        `<!DOCTYPE html><html><body><p>active design</p></body></html>`,
+        "utf8"
+      );
+
+      const store = activeRequirementStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [])
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.export_artifact({
+        product_id: "P-123abc",
+        artifact_id: "ABCDEFGHIJ123456",
+        format: "vzi"
+      });
+
+      if (result.isError) {
+        expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+      } else {
+        expect(result.isError).toBeUndefined();
+        expect((textPayload(result).output_path as string)).toMatch(/\.vzi$/);
+      }
+      // getRequirement must NOT have been called by export_artifact
+      expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
+        .not.toHaveBeenCalled();
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_design_context succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const store = activeRequirementStore({
+      styles: {
+        getStyle: vi.fn(async () => ({ kind: "brand" as const, metadata: { name: "linear" }, designMd: "# Linear", tokensCss: ":root{}", componentsHtml: "<div/>" })),
+        listStyles: vi.fn(async () => [{ name: "linear" }]),
+        listCraftDocs: vi.fn(async () => []),
+        readCraftDoc: vi.fn(async (slug: string) => ({ slug, content: "" })),
+        listSystemStyles: vi.fn(async () => [])
+      },
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          brand_style: "linear",
+          languages: ["en"],
+          default_language: "en",
+          requirements: {}
+        }))
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-active001"
+    });
+
+    // get_design_context must NOT be gated by archive status
+    if (result.isError) {
+      expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
+    } else {
+      expect(result.isError).toBeUndefined();
+    }
+  });
+
+  it("generate_requirement_design succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
+    const store = activeRequirementStore({
+      generateRequirementDesign: vi.fn(async () => ({
+        artifact_id: "ABCDEFGHIJ123456",
+        version: 1,
+        preview_status: "pending"
+      }))
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_requirement_design({
+      product_id: "P-123abc",
+      requirement_id: "R-active001",
+      page_id: "page-checkout",
+      html: "<main>Active design</main>",
+      title: "Checkout",
+      brand_style: "linear"
+    });
+
+    // Must succeed without REQUIREMENT_NOT_FINALIZED
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1 });
+    // generate_requirement_design must NOT call getRequirement (no archive check)
+    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
+      .not.toHaveBeenCalled();
+  });
+
+  it("generate_components succeeds (no REQUIREMENT_NOT_FINALIZED) for a non-archived product", async () => {
+    const store = activeRequirementStore({
+      generateComponents: vi.fn(async () => ({
+        artifact_id: "ABCDEFGHIJ123456",
+        version: 1,
+        preview_status: "pending"
+      }))
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_components({
+      product_id: "P-123abc",
+      html: "<section>Button</section>",
+      title: "Component Library",
+      brand_style: "linear"
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1 });
+    // generate_components must NOT call getRequirement (no archive check)
+    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
+      .not.toHaveBeenCalled();
+  });
+
+  it("change_artifact_style succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status product", async () => {
+    const store = activeRequirementStore({
+      changeArtifactStyle: vi.fn(async () => ({
+        artifact_id: "ABCDEFGHIJ123456",
+        version: 2,
+        preview_status: "pending"
+      }))
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.change_artifact_style({
+      product_id: "P-123abc",
+      artifact_id: "ABCDEFGHIJ123456",
+      html: "<main>Restyled</main>",
+      title: "Checkout (Dark)",
+      brand_style: "dark"
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 2 });
+    // change_artifact_style must NOT call getRequirement (no archive check)
+    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
+      .not.toHaveBeenCalled();
+  });
+
+  it("only the 4 dev-handoff tools (get_design_handoff/get_page_ui/get_ui_node/search_page_ui) return REQUIREMENT_NOT_FINALIZED for a non-archived requirement", async () => {
+    // This is the definitive scope test: when status=active, exactly these 4 tools
+    // must return REQUIREMENT_NOT_FINALIZED; all others must NOT.
+    const store = activeRequirementStore();
+    const tools = createFormaTools(store);
+
+    const devHandoffInput = { requirement_id: "R-active001" };
+    const pageInput = { requirement_id: "R-active001", page_id: "page-checkout" };
+    const nodeInput = { requirement_id: "R-active001", page_id: "page-checkout", node_id: "el-root" };
+    const searchInput = { requirement_id: "R-active001", page_id: "page-checkout", query: "hello" };
+
+    const [handoff, pageUi, uiNode, searchUi] = await Promise.all([
+      tools.get_design_handoff(devHandoffInput),
+      tools.get_page_ui(pageInput),
+      tools.get_ui_node(nodeInput),
+      tools.search_page_ui(searchInput)
+    ]);
+
+    // All 4 must be gated
+    expect(handoff.isError).toBe(true);
+    expect(textPayload(handoff).error_code).toBe("REQUIREMENT_NOT_FINALIZED");
+    expect(pageUi.isError).toBe(true);
+    expect(textPayload(pageUi).error_code).toBe("REQUIREMENT_NOT_FINALIZED");
+    expect(uiNode.isError).toBe(true);
+    expect(textPayload(uiNode).error_code).toBe("REQUIREMENT_NOT_FINALIZED");
+    expect(searchUi.isError).toBe(true);
+    expect(textPayload(searchUi).error_code).toBe("REQUIREMENT_NOT_FINALIZED");
+  });
+});
