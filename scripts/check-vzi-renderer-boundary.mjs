@@ -160,12 +160,13 @@ function stripLineComment(line) {
  * of the given module specifier.
  */
 function lineImportsModule(line, mod) {
-  // ESM static: import ... from 'mod'  or  import ... from "mod"
-  // ESM dynamic: import('mod') or import("mod")
-  // CJS: require('mod') or require("mod")
+  // ESM static:        import ... from 'mod'  or  import ... from "mod"
+  // ESM side-effect:   import 'mod'  (no `from`)
+  // ESM dynamic:       import('mod') or import("mod")
+  // CJS:               require('mod') or require("mod")
   const esc = mod.replace(/[.*+?^${}()|[\]\\@/]/g, '\\$&');
   const pattern = new RegExp(
-    `(?:from\\s*['"]\`?${esc}['"]\`?|import\\s*\\(['"]\`?${esc}['"]\`?\\)|require\\s*\\(['"]\`?${esc}['"]\`?\\))`
+    `(?:from\\s*['"]\`?${esc}['"]\`?|import\\s*\\(['"]\`?${esc}['"]\`?\\)|require\\s*\\(['"]\`?${esc}['"]\`?\\)|import\\s+['"]\`?${esc}['"]\`?)`
   );
   return pattern.test(line);
 }
