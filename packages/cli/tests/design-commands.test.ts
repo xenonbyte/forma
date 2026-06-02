@@ -179,3 +179,61 @@ describe("fm-rollback-design template", () => {
     }
   });
 });
+
+describe("fm-develop-design-handoff template", () => {
+  it("uses the Forma route header on every platform", async () => {
+    const t = await loadCommand("fm-develop-design-handoff");
+    expect(t.claude).toContain("# Forma route: fm-develop-design-handoff");
+    expect(t.codex).toContain("name: fm-develop-design-handoff");
+    expect(t.gemini).toContain("# Forma route: fm-develop-design-handoff");
+  });
+
+  it("starts with get_design_handoff before page UI reads on every platform", async () => {
+    const t = await loadCommand("fm-develop-design-handoff");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("get_design_handoff");
+      expect(lc).toContain("get_page_ui");
+      expectOrder(lc, "get_design_handoff", "get_page_ui");
+    }
+  });
+
+  it("mentions get_ui_node and search_page_ui for deeper inspection", async () => {
+    const t = await loadCommand("fm-develop-design-handoff");
+    expect(t.blob).toContain("get_ui_node");
+    expect(t.blob).toContain("search_page_ui");
+  });
+
+  it("uses soft-gate wording (convention/guard) not hard-auth claims", async () => {
+    const t = await loadCommand("fm-develop-design-handoff");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      // Must use soft-gate language
+      expect(lc).toContain("convention");
+      // Must NOT claim hard security isolation
+      expect(lc).not.toContain("security isolation");
+      expect(lc).not.toContain("access control");
+      // Must explicitly disclaim hard security (not silently assert it)
+      expect(lc).toContain("not a hard security boundary");
+    }
+  });
+
+  it("instructs agent to STOP on REQUIREMENT_NOT_FINALIZED before reading un-archived designs", async () => {
+    const t = await loadCommand("fm-develop-design-handoff");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("requirement_not_finalized");
+      expect(lc).toContain("stop");
+      expect(lc).toContain("archived");
+    }
+  });
+
+  it("references indexHtmlPath, vziPath, and icon assetRefs for faithful reconstruction", async () => {
+    const t = await loadCommand("fm-develop-design-handoff");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toContain("indexHtmlPath");
+      expect(body).toContain("vziPath");
+      expect(body).toContain("assetRefs");
+    }
+  });
+});

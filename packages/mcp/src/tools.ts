@@ -350,6 +350,10 @@ export function createFormaTools(store: FormaStore): FormaTools {
         ],
         workflows: {
           develop_frontend: [
+            "get_design_handoff",
+            "get_page_ui",
+            "get_ui_node",
+            "search_page_ui",
             "get_requirement",
             "get_product_rules"
           ]

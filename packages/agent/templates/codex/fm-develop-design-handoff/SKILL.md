@@ -1,0 +1,20 @@
+---
+name: fm-develop-design-handoff
+description: Read an archived Forma design handoff and its page UI trees to implement the frontend.
+---
+
+# Forma route: fm-develop-design-handoff
+
+Codex route: `$fm-develop-design-handoff`.
+
+Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
+
+Read the finalized design handoff for an archived requirement and use the page UI data (element tree, tokens, annotations, icon asset refs) to implement the frontend. The archived-status gate is a convention to avoid consuming an un-finalized design — it is NOT a hard security boundary.
+
+Execution:
+1. Require product_id and requirement_id from context or ask the user to run `$fm-list-product` and identify the requirement first.
+2. Call `get_design_handoff(requirement_id)`. If the response code is `REQUIREMENT_NOT_FINALIZED`, STOP and ask the user to confirm the requirement is archived before proceeding. Do not try to read or reconstruct a design from an un-archived requirement.
+3. For each page in the handoff `pages[]`, call `get_page_ui(requirement_id, page_id, { fields: "all", depth: 2 })` to retrieve the full element tree with tokens, annotations, and resolved icon asset refs.
+4. Use `get_ui_node(requirement_id, page_id, node_id)` only when deeper single-node detail is needed; use `search_page_ui(requirement_id, page_id, query)` to locate specific elements by text or type.
+5. Use the returned `indexHtmlPath` (HTML source), `vziPath` (VZI bundle), and resolved icon `assetRefs` (absolute `icons/` paths) to reconstruct the design faithfully — especially native elements: bounds, text, tokens, annotations.
+6. Report the pages implemented, the `indexHtmlPath` and `vziPath` consumed, and any icon assets referenced.
