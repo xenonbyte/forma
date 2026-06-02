@@ -31,6 +31,9 @@
   "dependencies": {
     "@cfworker/json-schema": "^4.1.1",
     "@modelcontextprotocol/server": "2.0.0-alpha.2",
+    "@vzi-core/format": "workspace:*",
+    "@vzi-core/transformer": "workspace:*",
+    "@vzi-core/types": "workspace:*",
     "@xenonbyte/forma-core": "workspace:*",
     "adm-zip": "^0.5.16",
     "zod": "^4.4.3"

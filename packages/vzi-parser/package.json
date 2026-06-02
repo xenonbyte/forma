@@ -1,0 +1,36 @@
+{
+  "name": "@vzi-core/parser",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@vzi-core/types": "workspace:*",
+    "autoprefixer": "^10.4.27",
+    "cheerio": "^1.1.0",
+    "domhandler": "^5.0.3",
+    "jsdom": "^24.0.0",
+    "postcss": "^8.5.8",
+    "puppeteer": "^25.1.0",
+    "tailwindcss": "^3.4.0"
+  },
+  "devDependencies": {
+    "@types/jsdom": "^21.1.7",
+    "@types/node": "^20.10.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0"
+  }
+}
