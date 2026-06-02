@@ -1,0 +1,322 @@
+/**
+ * artifact-icon-extraction.test.ts
+ *
+ * TDD tests for extractIconAssets — written before the implementation.
+ *
+ * Cases covered:
+ *   1. Deterministic names: aria-label slug + 16-char content hash
+ *   2. Relative paths under icons/ only
+ *   3. Manifest top-level metadata fields
+ *   4. Density keys 1x/2x/3x in manifest files.png
+ *   5. currentColor flag (usesCurrentColor=true, no injected foreground)
+ *   6. Zero-icon pages → empty files Map + manifest.icons = []
+ *   7. Duplicate SVG dedupe: same content → one physical file set, occurrence/source order preserved
+ *   8. width/height from attrs; fallback to viewBox
+ *   9. Transparent PNG output (no flatten)
+ *  10. Unsafe SVG rejection (script element)
+ *  11. Unsafe SVG rejection (on* event handler)
+ *  12. Fallback name: icon-<index>-<WxH> when no aria-label
+ */
+
+import { createHash } from "node:crypto";
+import { describe, expect, it } from "vitest";
+import sharp from "sharp";
+import { extractIconAssets } from "../src/artifact-icon-extraction.js";
+import { FormaError } from "../src/errors.js";
+
+// ─── Fixtures ─────────────────────────────────────────────────────────────────
+
+const METADATA = {
+  artifactId: "art-001",
+  productId: "prod-001",
+  requirementId: "req-001",
+  pageId: "page-001",
+  version: "v3",
+  generatedFrom: "requirement-archive" as const,
+};
+
+/** Minimal safe SVG with explicit width/height and aria-label on container */
+function makeSvg(
+  width: number,
+  height: number,
+  label?: string,
+  extraContent = "",
+): string {
+  const labelAttr = label ? ` aria-label="${label}"` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"${labelAttr}><rect width="${width}" height="${height}"/>${extraContent}</svg>`;
+}
+
+/** SVG with currentColor fill */
+const SVG_CURRENT_COLOR = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="Close"><path fill="currentColor" d="M0 0h24v24H0z"/></svg>`;
+
+/** SVG using viewBox only, no width/height attrs */
+function makeSvgViewBox(vbW: number, vbH: number, label?: string): string {
+  const labelAttr = label ? ` aria-label="${label}"` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${vbW} ${vbH}"${labelAttr}><rect width="${vbW}" height="${vbH}"/></svg>`;
+}
+
+/** Unsafe SVG containing a <script> element */
+const SVG_UNSAFE_SCRIPT = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><script>alert(1)</script></svg>`;
+
+/** Unsafe SVG with on* event handler */
+const SVG_UNSAFE_EVENT = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect onclick="alert(1)"/></svg>`;
+
+/** sha256 first 16 hex chars of a Buffer */
+function hash16(buf: Buffer): string {
+  return createHash("sha256").update(buf).digest("hex").slice(0, 16);
+}
+
+function wrapInHtml(svgs: string[]): string {
+  return `<!DOCTYPE html><html><body>${svgs.join("\n")}</body></html>`;
+}
+
+// ─── Case 1: Deterministic names ─────────────────────────────────────────────
+
+describe("Case 1: deterministic names", () => {
+  it("uses aria-label slug + 16-char content hash as file basename", async () => {
+    const svg = makeSvg(24, 24, "Close Icon");
+    const html = wrapInHtml([svg]);
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    // id must be: slug + 16-char hex hash
+    expect(manifest.icons[0].id).toMatch(/^close-icon-[0-9a-f]{16}$/);
+    // SVG file path must match id
+    const id = manifest.icons[0].id;
+    expect(files.has(`icons/${id}.svg`)).toBe(true);
+    // Running twice with same input must produce same id (deterministic)
+    const { manifest: m2 } = await extractIconAssets(html, METADATA);
+    expect(m2.icons[0].id).toBe(id);
+  });
+
+  it("falls back to icon-<index>-<WxH>-<hash> when no aria-label present", async () => {
+    const svg = makeSvg(32, 32);
+    const html = wrapInHtml([svg]);
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].id).toMatch(/^icon-0-32x32-[0-9a-f]{16}$/);
+    const id = manifest.icons[0].id;
+    expect(files.has(`icons/${id}.svg`)).toBe(true);
+  });
+});
+
+// ─── Case 2: Relative paths under icons/ ────────────────────────────────────
+
+describe("Case 2: relative paths under icons/", () => {
+  it("all keys in files start with icons/", async () => {
+    const svg = makeSvg(24, 24, "Arrow");
+    const html = wrapInHtml([svg]);
+    const { files } = await extractIconAssets(html, METADATA);
+
+    for (const key of files.keys()) {
+      expect(key).toMatch(/^icons\//);
+    }
+  });
+});
+
+// ─── Case 3: Manifest top-level metadata ─────────────────────────────────────
+
+describe("Case 3: manifest top-level metadata", () => {
+  it("includes all required metadata fields + sourceVersion = version", async () => {
+    const svg = makeSvg(24, 24, "Star");
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.artifactId).toBe(METADATA.artifactId);
+    expect(manifest.productId).toBe(METADATA.productId);
+    expect(manifest.requirementId).toBe(METADATA.requirementId);
+    expect(manifest.pageId).toBe(METADATA.pageId);
+    expect(manifest.version).toBe(METADATA.version);
+    expect(manifest.sourceVersion).toBe(METADATA.version);
+    expect(manifest.generatedFrom).toBe(METADATA.generatedFrom);
+  });
+});
+
+// ─── Case 4: Density keys 1x/2x/3x ──────────────────────────────────────────
+
+describe("Case 4: density keys 1x/2x/3x", () => {
+  it("manifest.icons[0].files.png has 1x, 2x, 3x keys", async () => {
+    const svg = makeSvg(24, 24, "Check");
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    const icon = manifest.icons[0];
+    expect(icon.files.png).toHaveProperty("1x");
+    expect(icon.files.png).toHaveProperty("2x");
+    expect(icon.files.png).toHaveProperty("3x");
+  });
+
+  it("all three PNG density files exist in files Map", async () => {
+    const svg = makeSvg(24, 24, "Check");
+    const html = wrapInHtml([svg]);
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    const icon = manifest.icons[0];
+    expect(files.has(icon.files.png["1x"])).toBe(true);
+    expect(files.has(icon.files.png["2x"])).toBe(true);
+    expect(files.has(icon.files.png["3x"])).toBe(true);
+  });
+
+  it("default densities are [1, 2, 3]", async () => {
+    const svg = makeSvg(24, 24, "Check");
+    const html = wrapInHtml([svg]);
+    const { files } = await extractIconAssets(html, METADATA);
+
+    // Default: three density tiers
+    const pngCount = [...files.keys()].filter((k) => k.endsWith(".png")).length;
+    expect(pngCount).toBe(3);
+  });
+
+  it("respects custom densities option", async () => {
+    const svg = makeSvg(24, 24, "Check");
+    const html = wrapInHtml([svg]);
+    const { files } = await extractIconAssets(html, METADATA, { densities: [1, 2] });
+
+    const pngCount = [...files.keys()].filter((k) => k.endsWith(".png")).length;
+    expect(pngCount).toBe(2);
+  });
+});
+
+// ─── Case 5: currentColor ────────────────────────────────────────────────────
+
+describe("Case 5: currentColor flag", () => {
+  it("sets usesCurrentColor=true when fill=currentColor is present", async () => {
+    const html = wrapInHtml([SVG_CURRENT_COLOR]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    const icon = manifest.icons[0];
+    expect(icon.usesCurrentColor).toBe(true);
+  });
+
+  it("sets usesCurrentColor=false when no currentColor", async () => {
+    const svg = makeSvg(24, 24, "Solid");
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    const icon = manifest.icons[0];
+    expect(icon.usesCurrentColor).toBe(false);
+  });
+});
+
+// ─── Case 6: Zero-icon pages ─────────────────────────────────────────────────
+
+describe("Case 6: zero-icon pages", () => {
+  it("returns empty files Map when no inline SVGs present", async () => {
+    const html = `<!DOCTYPE html><html><body><p>Hello world</p></body></html>`;
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    expect(files.size).toBe(0);
+    expect(manifest.icons).toEqual([]);
+  });
+});
+
+// ─── Case 7: Duplicate SVG dedupe ────────────────────────────────────────────
+
+describe("Case 7: duplicate SVG dedupe", () => {
+  it("same content → one physical file set, both occurrences in manifest with sourceOrderFirst", async () => {
+    const svgA = makeSvg(24, 24, "Home");
+    const svgB = makeSvg(24, 24, "Home"); // identical content
+    const html = wrapInHtml([svgA, svgB]);
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    // One physical SVG file only
+    const svgFiles = [...files.keys()].filter((k) => k.endsWith(".svg"));
+    expect(svgFiles).toHaveLength(1);
+
+    // One physical PNG set: 3 files
+    const pngFiles = [...files.keys()].filter((k) => k.endsWith(".png"));
+    expect(pngFiles).toHaveLength(3);
+
+    // Manifest has 2 entries (preserved occurrence/source order)
+    expect(manifest.icons).toHaveLength(2);
+
+    // sourceOrderFirst: first occurrence = true, second = false
+    expect(manifest.icons[0].sourceOrderFirst).toBe(true);
+    expect(manifest.icons[1].sourceOrderFirst).toBe(false);
+
+    // Both point to the same physical files
+    expect(manifest.icons[0].files.svg).toBe(manifest.icons[1].files.svg);
+    expect(manifest.icons[0].files.png["1x"]).toBe(manifest.icons[1].files.png["1x"]);
+  });
+});
+
+// ─── Case 8: width/height from attrs vs viewBox ───────────────────────────────
+
+describe("Case 8: size from attrs vs viewBox", () => {
+  it("reads size from SVG width/height attributes", async () => {
+    const svg = makeSvg(48, 32, "Rect");
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].size).toEqual({ w: 48, h: 32 });
+  });
+
+  it("falls back to viewBox dimensions when width/height attrs absent", async () => {
+    const svg = makeSvgViewBox(64, 64, "Square");
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].size).toEqual({ w: 64, h: 64 });
+  });
+});
+
+// ─── Case 9: Transparent PNG output ──────────────────────────────────────────
+
+describe("Case 9: transparent PNG output", () => {
+  it("produced PNG has alpha channel (no flatten)", async () => {
+    const svg = makeSvg(24, 24, "Transparent");
+    const html = wrapInHtml([svg]);
+    const { files, manifest } = await extractIconAssets(html, METADATA);
+
+    const pngPath = manifest.icons[0].files.png["1x"];
+    const pngBuf = files.get(pngPath);
+    expect(pngBuf).toBeDefined();
+
+    const meta = await sharp(pngBuf!).metadata();
+    // PNG with alpha channel: channels=4 or hasAlpha=true
+    expect(meta.hasAlpha).toBe(true);
+  });
+});
+
+// ─── Case 10: Unsafe SVG rejection — script element ──────────────────────────
+
+describe("Case 10: unsafe SVG rejection — script element", () => {
+  it("throws FormaError for SVG containing <script>", async () => {
+    const html = wrapInHtml([SVG_UNSAFE_SCRIPT]);
+    await expect(extractIconAssets(html, METADATA)).rejects.toBeInstanceOf(FormaError);
+  });
+
+  it("error code is ARTIFACT_NOT_STATIC or ARTIFACT_INVALID_INPUT", async () => {
+    const html = wrapInHtml([SVG_UNSAFE_SCRIPT]);
+    try {
+      await extractIconAssets(html, METADATA);
+      expect.fail("Should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(FormaError);
+      const err = e as FormaError;
+      expect(["ARTIFACT_NOT_STATIC", "ARTIFACT_INVALID_INPUT"]).toContain(err.code);
+    }
+  });
+});
+
+// ─── Case 11: Unsafe SVG rejection — on* event handler ───────────────────────
+
+describe("Case 11: unsafe SVG rejection — on* event handler", () => {
+  it("throws FormaError for SVG with onclick attribute", async () => {
+    const html = wrapInHtml([SVG_UNSAFE_EVENT]);
+    await expect(extractIconAssets(html, METADATA)).rejects.toBeInstanceOf(FormaError);
+  });
+});
+
+// ─── Case 12: Fallback name icon-<index>-<WxH> ───────────────────────────────
+
+describe("Case 12: fallback name", () => {
+  it("uses icon-<index>-<WxH> format for zero-label SVGs", async () => {
+    const svg1 = makeSvg(16, 16); // no label
+    const svg2 = makeSvg(32, 32); // no label
+    const html = wrapInHtml([svg1, svg2]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].id).toMatch(/^icon-0-16x16-[0-9a-f]{16}$/);
+    expect(manifest.icons[1].id).toMatch(/^icon-1-32x32-[0-9a-f]{16}$/);
+  });
+});
