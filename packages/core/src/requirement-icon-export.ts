@@ -18,7 +18,6 @@ import type { IconManifest } from './artifact-icon-extraction.js';
 import { extractIconAssets } from './artifact-icon-extraction.js';
 import {
   getArtifactIconsDir,
-  getArtifactIconsManifestPath,
   getArtifactVersionDir,
 } from './artifact-paths.js';
 import { FormaError } from './errors.js';
