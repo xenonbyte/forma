@@ -104,7 +104,9 @@ function parseSvgSize(svgText: string): { w: number; h: number } {
   const widthAttr = svgEl.getAttribute("width");
   const heightAttr = svgEl.getAttribute("height");
 
-  if (widthAttr && heightAttr) {
+  // Only accept plain numbers or `Npx`; reject `%`, `em`, `rem`, `vw`, etc.
+  const isPlainNumber = (s: string) => /^\s*\d+(\.\d+)?(px)?\s*$/.test(s);
+  if (widthAttr && heightAttr && isPlainNumber(widthAttr) && isPlainNumber(heightAttr)) {
     const w = parseFloat(widthAttr);
     const h = parseFloat(heightAttr);
     if (!isNaN(w) && !isNaN(h)) return { w, h };
@@ -124,11 +126,9 @@ function parseSvgSize(svgText: string): { w: number; h: number } {
 }
 
 /**
- * Find the nearest aria-label on the element itself or a direct ancestor
- * within the HTML document tree. Returns undefined if none found.
- *
- * We pass the outer HTML of the SVG as it was extracted; the caller also
- * passes the original node so we can walk ancestors.
+ * Read the `aria-label` attribute from the `<svg>` element itself.
+ * Returns undefined if the attribute is absent or blank.
+ * No ancestor walking is performed.
  */
 function findAriaLabel(svgText: string): string | undefined {
   const root = parse(svgText, { comment: false });
@@ -191,8 +191,9 @@ export async function extractIconAssets(
     // 2. Determine name
     const ariaLabel = findAriaLabel(svgText);
     const size = parseSvgSize(svgText);
-    const baseName = ariaLabel
-      ? `${slugify(ariaLabel)}-${hash}`
+    const slug = ariaLabel ? slugify(ariaLabel) : "";
+    const baseName = slug
+      ? `${slug}-${hash}`
       : `icon-${i}-${size.w}x${size.h}-${hash}`;
 
     const id = baseName;
@@ -218,10 +219,19 @@ export async function extractIconAssets(
       for (const density of densities) {
         const targetW = Math.round(baseW * density);
         const targetH = Math.round(baseH * density);
-        const pngBuf = await sharp(svgBuf, { density: 96 * density })
-          .resize({ width: targetW, height: targetH, fit: "fill" })
-          .png()
-          .toBuffer();
+        let pngBuf: Buffer;
+        try {
+          pngBuf = await sharp(svgBuf, { density: 96 * density })
+            .resize({ width: targetW, height: targetH, fit: "fill" })
+            .png()
+            .toBuffer();
+        } catch (e) {
+          throw new FormaError(
+            "ARTIFACT_INVALID_INPUT",
+            `Failed to rasterize icon SVG at index ${i}: ${e instanceof Error ? e.message : String(e)}`,
+            { index: i, sharpError: e instanceof Error ? e.message : String(e) },
+          );
+        }
 
         const densityKey = `${density}x`;
         const pngPath = `icons/${baseName}@${densityKey}.png`;

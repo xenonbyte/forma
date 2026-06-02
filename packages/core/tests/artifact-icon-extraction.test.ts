@@ -4,18 +4,22 @@
  * TDD tests for extractIconAssets — written before the implementation.
  *
  * Cases covered:
- *   1. Deterministic names: aria-label slug + 16-char content hash
- *   2. Relative paths under icons/ only
- *   3. Manifest top-level metadata fields
- *   4. Density keys 1x/2x/3x in manifest files.png
- *   5. currentColor flag (usesCurrentColor=true, no injected foreground)
- *   6. Zero-icon pages → empty files Map + manifest.icons = []
- *   7. Duplicate SVG dedupe: same content → one physical file set, occurrence/source order preserved
- *   8. width/height from attrs; fallback to viewBox
- *   9. Transparent PNG output (no flatten)
- *  10. Unsafe SVG rejection (script element)
- *  11. Unsafe SVG rejection (on* event handler)
- *  12. Fallback name: icon-<index>-<WxH> when no aria-label
+ *   1.  Deterministic names: aria-label slug + 16-char content hash
+ *   2.  Relative paths under icons/ only
+ *   3.  Manifest top-level metadata fields
+ *   4.  Density keys 1x/2x/3x in manifest files.png
+ *   5.  currentColor flag (usesCurrentColor=true, no injected foreground)
+ *   6.  Zero-icon pages → empty files Map + manifest.icons = []
+ *   7.  Duplicate SVG dedupe: same content → one physical file set, occurrence/source order preserved
+ *   8.  width/height from attrs; fallback to viewBox
+ *   9.  Transparent PNG output (no flatten)
+ *  10.  Unsafe SVG rejection (script element)
+ *  11.  Unsafe SVG rejection (on* event handler)
+ *  12.  Unsafe SVG rejection (data: href/xlink:href)
+ *  13.  Fallback name: icon-<index>-<WxH> when no aria-label
+ *  14.  parseSvgSize ignores unit-bearing width/height, falls back to viewBox
+ *  15.  Empty aria-label slug falls back to icon-<index> name (no leading hyphen)
+ *  16.  sharp rasterization failure becomes FormaError(ARTIFACT_INVALID_INPUT)
  */
 
 import { describe, expect, it } from "vitest";
@@ -301,9 +305,9 @@ describe("Case 11: unsafe SVG rejection — on* event handler", () => {
   });
 });
 
-// ─── Case 12a: Unsafe SVG rejection — data: href/xlink:href ─────────────────
+// ─── Case 12: Unsafe SVG rejection — data: href/xlink:href ──────────────────
 
-describe("Case 12a: unsafe SVG rejection — data: href/xlink:href", () => {
+describe("Case 12: unsafe SVG rejection — data: href/xlink:href", () => {
   it("throws FormaError for SVG with data: URL in href attribute", async () => {
     const svgWithDataHref = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><image href="data:image/png;base64,abc123"/></svg>`;
     const html = wrapInHtml([svgWithDataHref]);
@@ -329,9 +333,9 @@ describe("Case 12a: unsafe SVG rejection — data: href/xlink:href", () => {
   });
 });
 
-// ─── Case 12: Fallback name icon-<index>-<WxH> ───────────────────────────────
+// ─── Case 13: Fallback name icon-<index>-<WxH> ───────────────────────────────
 
-describe("Case 12: fallback name", () => {
+describe("Case 13: fallback name", () => {
   it("uses icon-<index>-<WxH> format for zero-label SVGs", async () => {
     const svg1 = makeSvg(16, 16); // no label
     const svg2 = makeSvg(32, 32); // no label
@@ -340,5 +344,62 @@ describe("Case 12: fallback name", () => {
 
     expect(manifest.icons[0].id).toMatch(/^icon-0-16x16-[0-9a-f]{16}$/);
     expect(manifest.icons[1].id).toMatch(/^icon-1-32x32-[0-9a-f]{16}$/);
+  });
+});
+
+// ─── Case 14: parseSvgSize ignores unit-bearing attrs ────────────────────────
+
+describe("Case 14: parseSvgSize ignores unit-bearing width/height", () => {
+  it("falls back to viewBox when width attr has em units", async () => {
+    // width="2em" must be ignored; viewBox gives the real dimensions
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="2em" height="2em" viewBox="0 0 48 48" aria-label="Unit Test"><rect width="48" height="48"/></svg>`;
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].size).toEqual({ w: 48, h: 48 });
+  });
+
+  it("falls back to viewBox when width attr has percent units", async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 32 32" aria-label="Percent"><rect width="32" height="32"/></svg>`;
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    expect(manifest.icons[0].size).toEqual({ w: 32, h: 32 });
+  });
+});
+
+// ─── Case 15: Empty aria-label slug must not produce a leading-hyphen name ───
+
+describe("Case 15: empty slug falls back to icon-<index> name", () => {
+  it("uses icon-<index>-<WxH> when aria-label slugifies to empty string", async () => {
+    // aria-label="!!!" slugifies to "" — must NOT produce "-<hash>"
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="!!!"><rect width="24" height="24"/></svg>`;
+    const html = wrapInHtml([svg]);
+    const { manifest } = await extractIconAssets(html, METADATA);
+
+    const id = manifest.icons[0].id;
+    // Must not start with a hyphen
+    expect(id).not.toMatch(/^-/);
+    // Must follow the fallback pattern
+    expect(id).toMatch(/^icon-0-24x24-[0-9a-f]{16}$/);
+  });
+});
+
+// ─── Case 16: sharp rasterization failure → FormaError ───────────────────────
+
+describe("Case 16: sharp rasterization failure becomes FormaError", () => {
+  it("rejects with FormaError(ARTIFACT_INVALID_INPUT) for an unrasterizable SVG", async () => {
+    // An SVG with no dimensions and no viewBox passes scanSvg safety checks but
+    // causes sharp to fail with a "bad dimensions" error at rasterization time.
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"></svg>`;
+    const html = wrapInHtml([svg]);
+
+    await expect(extractIconAssets(html, METADATA)).rejects.toSatisfy((e: unknown) => {
+      return (
+        e instanceof FormaError &&
+        e.code === "ARTIFACT_INVALID_INPUT" &&
+        typeof (e.details as Record<string, unknown>).sharpError === "string"
+      );
+    });
   });
 });
