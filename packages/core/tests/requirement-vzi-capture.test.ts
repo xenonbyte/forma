@@ -283,7 +283,7 @@ describe('captureRequirementVzi (smoke — Puppeteer required)', () => {
         // design-handoff MCP surface can read them back.  If any assertion fails,
         // the encoder is dropping extension metadata and the storage approach must
         // be revisited.
-        const meta = content.metadata as Record<string, unknown>;
+        const meta = content.metadata as unknown as Record<string, unknown>;
         expect(meta['formaSourceVersion']).toBe('v1');
         expect(meta['formaPlatform']).toBe('desktop');
         expect(meta['formaViewport']).toEqual({ width: 1024, height: 1280 });
