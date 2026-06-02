@@ -12,7 +12,8 @@ const formaCommands = [
   "fm-rollback-design",
   "fm-design",
   "fm-refine-components",
-  "fm-change-style"
+  "fm-change-style",
+  "fm-develop-design-handoff"
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
@@ -34,7 +35,8 @@ const codexSkillDescriptions = {
   "fm-rollback-design": "Roll back a Forma design artifact to a previous version.",
   "fm-design": "Generate a static-HTML page design for a Forma requirement via MCP, then self-review.",
   "fm-refine-components": "Generate or refine a Forma product component library (static HTML) via MCP, then self-review.",
-  "fm-change-style": "Re-skin a Forma artifact under a new brand and system style via MCP, then self-review."
+  "fm-change-style": "Re-skin a Forma artifact under a new brand and system style via MCP, then self-review.",
+  "fm-develop-design-handoff": "Read an archived Forma design handoff and its page UI trees to implement the frontend."
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";
