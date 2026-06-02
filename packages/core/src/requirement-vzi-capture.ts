@@ -38,6 +38,7 @@ import {
 import { FormaError } from './errors.js';
 import type { Platform } from './schemas.js';
 import type { ExportedPageIcons, ExportRequirementIconsResult } from './requirement-icon-export.js';
+import type { IconEntry, IconManifest } from './artifact-icon-extraction.js';
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -85,12 +86,15 @@ export interface CapturedPageVzi {
   viewportSource: ViewportSource;
   /** Number of icon asset refs injected into the VZI. */
   iconRefsInjected: number;
+  /** Number of UI elements encoded into this page VZI. */
+  elementCount: number;
   /** Absolute path to the written page.vzi file. */
   vziPath: string;
 }
 
 export interface CaptureRequirementVziResult {
   pages: CapturedPageVzi[];
+  totalElements: number;
 }
 
 // ─── Viewport mapping ─────────────────────────────────────────────────────────
@@ -129,14 +133,13 @@ export function resolveViewport(platform: Platform | undefined): {
 // ─── Icon ref injection ────────────────────────────────────────────────────────
 
 /**
- * Inject icon asset references into a VZIContent.  Matches each VZI element
- * that holds SVG or image data to its corresponding icon manifest entry by
- * document-order index of inline-svg/img elements.
+ * Inject icon asset references into a VZIContent.  Matches each VZI inline
+ * SVG element to its corresponding icon manifest entry by document-order index.
  *
  * **Ordering contract**: matching is performed by iteration order of
  * `content.elements` (a `Map`, insertion-ordered per JS spec).  This
  * DEPENDS on `VZITransformer` inserting elements in DOCUMENT order — the
- * same order the icon extractor enumerated inline svg/img nodes.  The
+ * same order the icon extractor enumerated inline SVG nodes.  The
  * count-mismatch check is the guard; if `VZITransformer` ever reorders
  * its output this function must be re-validated.
  *
@@ -146,7 +149,7 @@ export function resolveViewport(platform: Platform | undefined): {
  *  - The element's `metadata.iconAssetId` is set to the ImageAsset id.
  *
  * Returns the number of refs injected.  Throws FormaError if the count of
- * icon-bearing elements in the VZI does not match the manifest icon count
+ * inline SVG elements in the VZI does not match the manifest icon count
  * (mismatch detected before archive commit).
  */
 function injectIconRefs(
@@ -160,36 +163,37 @@ function injectIconRefs(
     return 0;
   }
 
-  // Ordering contract: this loop matches VZI image/svg elements to icon manifest
+  // Ordering contract: this loop matches VZI inline SVG elements to icon manifest
   // entries by **insertion-order index** of `content.elements` (a Map, which is
   // insertion-ordered per the JS spec).  This RELIES on VZITransformer inserting
   // elements in DOCUMENT order — i.e., the same order the icon extractor
-  // enumerated inline svg/img elements.  The count-mismatch check below is the
+  // enumerated inline SVG elements.  The count-mismatch check below is the
   // guard: if VZITransformer ever reorders its output (e.g. z-index sort),
   // this mapping will silently misalign and this block must be re-validated.
-  // Precondition: Map insertion order == document order of svg/img elements.
-  const svgAndImageElements = Array.from(content.elements.entries()).filter(
-    ([, el]) => el.svgData !== undefined || el.imageData !== undefined,
+  // Precondition: Map insertion order == document order of inline SVG elements.
+  const inlineSvgElements = Array.from(content.elements.entries()).filter(
+    ([, el]) => el.svgData !== undefined,
   );
+  const iconOccurrences = iconOccurrencesInSourceOrder(manifest);
 
-  if (svgAndImageElements.length !== icons.length) {
+  if (inlineSvgElements.length !== iconOccurrences.length) {
     throw new FormaError(
       'ARTIFACT_WRITE_FAIL',
       `Icon/VZI mapping mismatch for artifact ${artifactId}: ` +
-        `VZI has ${svgAndImageElements.length} image/svg elements but icon manifest has ${icons.length} entries. ` +
+        `VZI has ${inlineSvgElements.length} inline SVG elements but icon manifest has ${iconOccurrences.length} source occurrences. ` +
         `Cannot safely link icon refs by document order.`,
       {
         artifactId,
-        vziImageCount: svgAndImageElements.length,
-        iconManifestCount: icons.length,
+        vziInlineSvgCount: inlineSvgElements.length,
+        iconManifestOccurrenceCount: iconOccurrences.length,
       },
     );
   }
 
   let injected = 0;
-  for (let i = 0; i < svgAndImageElements.length; i++) {
-    const [elementId, element] = svgAndImageElements[i];
-    const icon = icons[i];
+  for (let i = 0; i < inlineSvgElements.length; i++) {
+    const [elementId, element] = inlineSvgElements[i];
+    const icon = iconOccurrences[i];
 
     // Use the icon manifest's own files.svg path as the canonical asset ref.
     // The manifest records the actual relative path written to disk (e.g.
@@ -206,7 +210,7 @@ function injectIconRefs(
       width: 0,
       height: 0,
       size: 0,
-      hash: icon.id,
+      hash: icon.contentHash,
     };
 
     content.images.set(assetId, asset);
@@ -225,6 +229,28 @@ function injectIconRefs(
   }
 
   return injected;
+}
+
+function iconOccurrencesInSourceOrder(manifest: IconManifest): IconEntry[] {
+  const byId = new Map(manifest.icons.map((icon) => [icon.id, icon]));
+  const byHash = new Map(manifest.icons.map((icon) => [icon.contentHash, icon]));
+  const instances = Array.isArray(manifest.instances) ? manifest.instances : [];
+
+  if (instances.length > 0) {
+    return instances
+      .slice()
+      .sort((a, b) => a.sourceOrder - b.sourceOrder)
+      .map((instance) => byId.get(instance.iconId) ?? byHash.get(instance.contentHash))
+      .filter((icon): icon is IconEntry => icon !== undefined);
+  }
+
+  return manifest.icons
+    .flatMap((icon, index) => {
+      const sourceOrders = Array.isArray(icon.sourceOrders) ? icon.sourceOrders : [index];
+      return sourceOrders.map((sourceOrder) => ({ sourceOrder, icon }));
+    })
+    .sort((a, b) => a.sourceOrder - b.sourceOrder)
+    .map(({ icon }) => icon);
 }
 
 // ─── Temp dir naming ──────────────────────────────────────────────────────────
@@ -337,6 +363,7 @@ export async function captureRequirementVzi(
 
       // ── 4. Build VZIContent ─────────────────────────────────────────────────
       const content: VZIContent = buildVziContentFromTransformResult(transformResult);
+      const elementCount = content.elements.size;
 
       // Attach Forma-specific metadata
       content.metadata = {
@@ -409,6 +436,7 @@ export async function captureRequirementVzi(
         viewportHeight,
         viewportSource,
         iconRefsInjected,
+        elementCount,
         vziPath,
       });
     } catch (err) {
@@ -424,7 +452,8 @@ export async function captureRequirementVzi(
     }
   }
 
-  return { pages };
+  const totalElements = pages.reduce((sum, page) => sum + page.elementCount, 0);
+  return { pages, totalElements };
 }
 
 // ─── Real deps factory ────────────────────────────────────────────────────────

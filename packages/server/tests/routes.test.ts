@@ -116,7 +116,7 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
     },
     exportArchiveAssets: vi.fn(async (): Promise<ExportArchiveAssetsResult> => ({
       icons: { pages: [], totalIcons: 0 },
-      vzi: { pages: [] }
+      vzi: { pages: [], totalElements: 0 }
     })),
     recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
     styles: {
@@ -632,7 +632,7 @@ describe("Fastify API routes", () => {
   it("maps requirement archive invalid status to 409 (non-active requirement is rejected before asset generation)", async () => {
     const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => ({
       icons: { pages: [], totalIcons: 0 },
-      vzi: { pages: [] }
+      vzi: { pages: [], totalElements: 0 }
     }));
     const app = await appWith(
       fakeStore({
@@ -802,7 +802,7 @@ describe("Fastify API routes", () => {
     const callOrder: string[] = [];
     const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => {
       callOrder.push("exportArchiveAssets");
-      return { icons: { pages: [], totalIcons: 3 }, vzi: { pages: [] } };
+      return { icons: { pages: [], totalIcons: 3 }, vzi: { pages: [], totalElements: 42 } };
     });
     const archiveRequirement = vi.fn(async () => {
       callOrder.push("archiveRequirement");
@@ -842,7 +842,7 @@ describe("Fastify API routes", () => {
     expect(body).toMatchObject({
       requirement: { id: "R-12345678", status: "archived", document_md: "# Checkout" },
       icons: { totalIcons: 3 },
-      vzi: { pages: [] }
+      vzi: { pages: [], totalElements: 42 }
     });
     expect(archiveRequirement).toHaveBeenCalledWith("R-12345678");
     expect(getRequirement).toHaveBeenLastCalledWith({ requirement_id: "R-12345678" });

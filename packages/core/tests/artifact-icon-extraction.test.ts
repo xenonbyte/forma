@@ -119,6 +119,7 @@ describe("Case 3: manifest top-level metadata", () => {
     const html = wrapInHtml([svg]);
     const { manifest } = await extractIconAssets(html, METADATA);
 
+    expect(manifest.schemaVersion).toBe(1);
     expect(manifest.artifactId).toBe(METADATA.artifactId);
     expect(manifest.productId).toBe(METADATA.productId);
     expect(manifest.requirementId).toBe(METADATA.requirementId);
@@ -126,6 +127,15 @@ describe("Case 3: manifest top-level metadata", () => {
     expect(manifest.version).toBe(METADATA.version);
     expect(manifest.sourceVersion).toBe(METADATA.version);
     expect(manifest.generatedFrom).toBe(METADATA.generatedFrom);
+    expect(Date.parse(manifest.generatedAt)).not.toBeNaN();
+    expect(manifest.densities).toEqual([1, 2, 3]);
+    expect(manifest.instances).toHaveLength(1);
+    expect(manifest.icons[0]).toMatchObject({
+      name: "star",
+      contentHash: expect.stringMatching(/^[0-9a-f]{16}$/),
+      sourceOrderFirst: 0,
+      sourceOrders: [0],
+    });
   });
 });
 
@@ -167,10 +177,11 @@ describe("Case 4: density keys 1x/2x/3x", () => {
   it("respects custom densities option", async () => {
     const svg = makeSvg(24, 24, "Check");
     const html = wrapInHtml([svg]);
-    const { files } = await extractIconAssets(html, METADATA, { densities: [1, 2] });
+    const { files, manifest } = await extractIconAssets(html, METADATA, { densities: [1, 2] });
 
     const pngCount = [...files.keys()].filter((k) => k.endsWith(".png")).length;
     expect(pngCount).toBe(2);
+    expect(manifest.densities).toEqual([1, 2]);
   });
 });
 
@@ -210,7 +221,7 @@ describe("Case 6: zero-icon pages", () => {
 // ─── Case 7: Duplicate SVG dedupe ────────────────────────────────────────────
 
 describe("Case 7: duplicate SVG dedupe", () => {
-  it("same content → one physical file set, both occurrences in manifest with sourceOrderFirst", async () => {
+  it("same content → one physical file set and occurrence mapping", async () => {
     const svgA = makeSvg(24, 24, "Home");
     const svgB = makeSvg(24, 24, "Home"); // identical content
     const html = wrapInHtml([svgA, svgB]);
@@ -224,16 +235,14 @@ describe("Case 7: duplicate SVG dedupe", () => {
     const pngFiles = [...files.keys()].filter((k) => k.endsWith(".png"));
     expect(pngFiles).toHaveLength(3);
 
-    // Manifest has 2 entries (preserved occurrence/source order)
-    expect(manifest.icons).toHaveLength(2);
-
-    // sourceOrderFirst: first occurrence = true, second = false
-    expect(manifest.icons[0].sourceOrderFirst).toBe(true);
-    expect(manifest.icons[1].sourceOrderFirst).toBe(false);
-
-    // Both point to the same physical files
-    expect(manifest.icons[0].files.svg).toBe(manifest.icons[1].files.svg);
-    expect(manifest.icons[0].files.png["1x"]).toBe(manifest.icons[1].files.png["1x"]);
+    // Manifest has 1 unique icon plus 2 source occurrences.
+    expect(manifest.icons).toHaveLength(1);
+    expect(manifest.icons[0].sourceOrderFirst).toBe(0);
+    expect(manifest.icons[0].sourceOrders).toEqual([0, 1]);
+    expect(manifest.instances).toEqual([
+      { sourceOrder: 0, iconId: manifest.icons[0].id, contentHash: manifest.icons[0].contentHash },
+      { sourceOrder: 1, iconId: manifest.icons[0].id, contentHash: manifest.icons[0].contentHash },
+    ]);
   });
 });
 

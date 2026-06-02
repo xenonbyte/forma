@@ -21,7 +21,7 @@
  *   - We resolve it to an absolute path by joining the artifact dir with the
  *     relative path: getArtifactDir(productsRoot, productId, artifactId) +
  *     "/" + iconRelativePath.
- *   - Path-safety: resolved path must be inside productsRoot (checked via
+ *   - Path-safety: resolved path must be inside the current artifact dir (checked via
  *     isSameOrChildPath, same guard as artifact-paths.ts).
  *   - If the element has no iconRelativePath, assetRef is not added.
  */
@@ -183,14 +183,13 @@ async function resolvePagePointer(
  * Resolve an element's assetRef from its stored iconRelativePath to an
  * absolute path inside the artifact's dir. Returns undefined if no ref.
  *
- * Safety: the resolved path must be inside productsRoot. If it escapes,
+ * Safety: the resolved path must be inside the current artifact dir. If it escapes,
  * throws FormaError('ARTIFACT_INVALID_INPUT') — this indicates tampering
  * or a write-path bug and must NOT be silently swallowed.
  */
 function resolveAssetRef(
   element: { metadata?: Record<string, unknown> } | undefined | null,
   artifactDir: string,
-  productsRoot: string,
   artifactId: string
 ): string | undefined {
   if (!element?.metadata) return undefined;
@@ -198,7 +197,7 @@ function resolveAssetRef(
   if (typeof rel !== 'string' || rel.length === 0) return undefined;
 
   const abs = resolve(join(artifactDir, rel));
-  const root = resolve(productsRoot);
+  const root = resolve(artifactDir);
   if (!isSameOrChildPath(root, abs)) {
     // Path-safety violation — do not expose the escaped path in details
     throw new FormaError(
@@ -216,13 +215,12 @@ function resolveAssetRef(
  * raw element metadata; the query result list provides the element IDs.
  *
  * Throws FormaError('ARTIFACT_INVALID_INPUT') if any element's iconRelativePath
- * resolves outside productsRoot (propagates from resolveAssetRef).
+ * resolves outside the current artifact dir (propagates from resolveAssetRef).
  */
 function attachAssetRefs(
   elements: Array<{ id: string; assetRef?: string }>,
   content: VZIContent,
   artifactDir: string,
-  productsRoot: string,
   artifactId: string
 ): void {
   for (const el of elements) {
@@ -231,7 +229,6 @@ function attachAssetRefs(
     const assetRef = resolveAssetRef(
       raw as { metadata?: Record<string, unknown> },
       artifactDir,
-      productsRoot,
       artifactId
     );
     if (assetRef !== undefined) {
@@ -373,7 +370,7 @@ export async function toolGetPageUi(
     source?: unknown;
     assetRef?: string;
   }> = elementList.elements.map((el) => ({ ...el }));
-  attachAssetRefs(elementsWithAssetRef, content, artifactDir, productsRoot, pageInfo.artifactId);
+  attachAssetRefs(elementsWithAssetRef, content, artifactDir, pageInfo.artifactId);
 
   return {
     viewport: viewport ?? null,
@@ -424,7 +421,6 @@ export async function toolGetUiNode(
   const assetRef = resolveAssetRef(
     raw as { metadata?: Record<string, unknown> } | undefined,
     artifactDir,
-    productsRoot,
     pageInfo.artifactId
   );
 
@@ -460,12 +456,16 @@ export async function toolSearchPageUi(
   const query = createMcpQuery(content, { format: 'json' });
 
   const result = query.searchElements(searchQuery);
+  const artifactDir = getArtifactDir(productsRoot, productId, pageInfo.artifactId);
+  const elementsWithAssetRef: Array<(typeof result.elements)[number] & { assetRef?: string }> =
+    result.elements.map((el) => ({ ...el }));
+  attachAssetRefs(elementsWithAssetRef, content, artifactDir, pageInfo.artifactId);
 
   return {
     query: searchQuery,
     page_id,
     requirement_id,
-    elements: result.elements,
+    elements: elementsWithAssetRef,
     total: result.total,
   };
 }

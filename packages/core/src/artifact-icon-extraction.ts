@@ -36,21 +36,31 @@ export interface IconExtractionOptions {
 export interface IconEntry {
   /** Unique identifier = slug + hash (or fallback name + hash). */
   id: string;
+  /** Slug-safe name derived from the first occurrence label or fallback. */
+  name: string;
+  /** SVG content hash used for dedupe and VZI occurrence matching. */
+  contentHash: string;
   size: { w: number; h: number };
   usesCurrentColor: boolean;
-  /**
-   * True only on the first occurrence of a given SVG content. Subsequent
-   * occurrences with identical content set this to false.
-   */
-  sourceOrderFirst: boolean;
+  /** Source-order index of the first occurrence of this unique SVG content. */
+  sourceOrderFirst: number;
+  /** Source-order indexes for every occurrence of this unique SVG content. */
+  sourceOrders: number[];
   files: {
     svg: string; // relative path, e.g. icons/<name>.svg
     png: Record<string, string>; // "1x" | "2x" | "3x" → relative path
   };
 }
 
+export interface IconInstance {
+  sourceOrder: number;
+  iconId: string;
+  contentHash: string;
+}
+
 export interface IconManifest {
   // Top-level metadata
+  schemaVersion: 1;
   artifactId: string;
   productId: string;
   requirementId: string;
@@ -58,7 +68,10 @@ export interface IconManifest {
   version: string;
   sourceVersion: string;
   generatedFrom: IconGeneratedFrom;
+  generatedAt: string;
+  densities: number[];
   icons: IconEntry[];
+  instances: IconInstance[];
 }
 
 export interface IconExtractionResult {
@@ -160,12 +173,10 @@ export async function extractIconAssets(
   const densities = options.densities ?? [1, 2, 3];
   const files = new Map<string, Buffer>();
   const icons: IconEntry[] = [];
+  const instances: IconInstance[] = [];
 
   // Track which content hashes have already produced physical files
-  const physicalFilesByHash = new Map<
-    string,
-    { svgPath: string; pngPaths: Record<string, string> }
-  >();
+  const iconsByHash = new Map<string, IconEntry>();
 
   const root = parse(html, { comment: true });
   const svgElements = root.querySelectorAll("svg");
@@ -192,27 +203,22 @@ export async function extractIconAssets(
     const ariaLabel = findAriaLabel(svgText);
     const size = parseSvgSize(svgText);
     const slug = ariaLabel ? slugify(ariaLabel) : "";
-    const baseName = slug
-      ? `${slug}-${hash}`
-      : `icon-${i}-${size.w}x${size.h}-${hash}`;
+    const iconName = slug || `icon-${i}-${size.w}x${size.h}`;
+    const baseName = `${iconName}-${hash}`;
 
     const id = baseName;
     const usesCurrentColor = detectCurrentColor(svgText);
 
     // 3. Check for dedup
-    const alreadyProduced = physicalFilesByHash.get(hash);
-    const isFirstOccurrence = alreadyProduced === undefined;
+    let icon = iconsByHash.get(hash);
 
-    let svgPath: string;
-    let pngPaths: Record<string, string>;
-
-    if (isFirstOccurrence) {
+    if (!icon) {
       // Write physical SVG file
-      svgPath = `icons/${baseName}.svg`;
+      const svgPath = `icons/${baseName}.svg`;
       files.set(svgPath, svgBuf);
 
       // Generate PNG tiers
-      pngPaths = {};
+      const pngPaths: Record<string, string> = {};
       const baseW = size.w > 0 ? size.w : 24;
       const baseH = size.h > 0 ? size.h : 24;
 
@@ -239,26 +245,34 @@ export async function extractIconAssets(
         pngPaths[densityKey] = pngPath;
       }
 
-      physicalFilesByHash.set(hash, { svgPath, pngPaths });
+      icon = {
+        id,
+        name: iconName,
+        contentHash: hash,
+        size,
+        usesCurrentColor,
+        sourceOrderFirst: i,
+        sourceOrders: [i],
+        files: {
+          svg: svgPath,
+          png: pngPaths,
+        },
+      };
+      iconsByHash.set(hash, icon);
+      icons.push(icon);
     } else {
-      // Reuse existing physical files
-      svgPath = alreadyProduced.svgPath;
-      pngPaths = alreadyProduced.pngPaths;
+      icon.sourceOrders.push(i);
     }
 
-    icons.push({
-      id,
-      size,
-      usesCurrentColor,
-      sourceOrderFirst: isFirstOccurrence,
-      files: {
-        svg: svgPath,
-        png: pngPaths,
-      },
+    instances.push({
+      sourceOrder: i,
+      iconId: icon.id,
+      contentHash: hash,
     });
   }
 
   const manifest: IconManifest = {
+    schemaVersion: 1,
     artifactId: metadata.artifactId,
     productId: metadata.productId,
     requirementId: metadata.requirementId,
@@ -266,7 +280,10 @@ export async function extractIconAssets(
     version: metadata.version,
     sourceVersion: metadata.version,
     generatedFrom: metadata.generatedFrom,
+    generatedAt: new Date().toISOString(),
+    densities,
     icons,
+    instances,
   };
 
   return { files, manifest };

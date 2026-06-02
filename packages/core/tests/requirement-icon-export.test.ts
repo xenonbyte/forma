@@ -198,7 +198,10 @@ describe('Case 2: zero-icon page still writes icons.json', () => {
       const manifestPath = getArtifactIconsManifestPath(productsRoot, PRODUCT_ID, ARTIFACT_ID_1);
       const raw = await readFile(manifestPath, 'utf8');
       const parsed = JSON.parse(raw);
+      expect(parsed.schemaVersion).toBe(1);
       expect(parsed.icons).toEqual([]);
+      expect(parsed.instances).toEqual([]);
+      expect(parsed.densities).toEqual([1, 2, 3]);
       expect(parsed.artifactId).toBe(ARTIFACT_ID_1);
 
       // icons/ dir exists
@@ -497,14 +500,22 @@ describe('Case 7: icons.json manifest content', () => {
       const raw = await readFile(manifestPath, 'utf8');
       const manifest = JSON.parse(raw);
 
+      expect(manifest.schemaVersion).toBe(1);
       expect(manifest.artifactId).toBe(ARTIFACT_ID_1);
       expect(manifest.productId).toBe(PRODUCT_ID);
       expect(manifest.requirementId).toBe(REQ_ID);
       expect(manifest.pageId).toBe(PAGE_ID_1);
       expect(manifest.generatedFrom).toBe('manual-export');
+      expect(Date.parse(manifest.generatedAt)).not.toBeNaN();
+      expect(manifest.densities).toEqual([1, 2, 3]);
       expect(Array.isArray(manifest.icons)).toBe(true);
       expect(manifest.icons).toHaveLength(1);
       expect(manifest.icons[0].id).toMatch(/^close-[0-9a-f]{16}$/);
+      expect(manifest.icons[0].contentHash).toMatch(/^[0-9a-f]{16}$/);
+      expect(manifest.icons[0].sourceOrders).toEqual([0]);
+      expect(manifest.instances).toEqual([
+        { sourceOrder: 0, iconId: manifest.icons[0].id, contentHash: manifest.icons[0].contentHash },
+      ]);
     } finally {
       await rm(home, { recursive: true, force: true });
     }

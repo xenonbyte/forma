@@ -119,6 +119,7 @@ describe('exportArchiveAssets', () => {
       expect(result.icons.pages).toHaveLength(0);
       expect(result.icons.totalIcons).toBe(0);
       expect(result.vzi.pages).toHaveLength(0);
+      expect(result.vzi.totalElements).toBe(0);
     } finally {
       await rm(formaHome, { recursive: true, force: true });
     }
@@ -150,6 +151,8 @@ describe('exportArchiveAssets', () => {
         // VZI phase
         expect(result.vzi.pages).toHaveLength(1);
         expect(result.vzi.pages[0].artifactId).toBe(ARTIFACT_ID);
+        expect(result.vzi.pages[0].elementCount).toBeGreaterThan(0);
+        expect(result.vzi.totalElements).toBe(result.vzi.pages[0].elementCount);
 
         // VZI file should exist on disk
         const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
@@ -219,6 +222,8 @@ describe('exportArchiveAssets', () => {
 
       // VZI succeeded with 0 injected refs
       expect(result.vzi.pages[0].iconRefsInjected).toBe(0);
+      expect(result.vzi.pages[0].elementCount).toBeGreaterThan(0);
+      expect(result.vzi.totalElements).toBe(result.vzi.pages[0].elementCount);
     } finally {
       await rm(formaHome, { recursive: true, force: true });
     }

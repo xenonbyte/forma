@@ -114,7 +114,7 @@ describe("apiRequest", () => {
             document_md: "# Checkout"
           },
           icons: { pages: [], totalIcons: 0 },
-          vzi: { pages: [] }
+          vzi: { pages: [], totalElements: 0 }
         });
       }
       return jsonResponse({
@@ -150,7 +150,7 @@ describe("apiRequest", () => {
     await expect(client.archiveRequirement("P-123abc", "R-12345678")).resolves.toMatchObject({
       requirement: { id: "R-12345678", status: "archived", document_md: "# Checkout" },
       icons: { totalIcons: 0 },
-      vzi: { pages: [] }
+      vzi: { pages: [], totalElements: 0 }
     });
     expect(requests).toEqual([
       {
