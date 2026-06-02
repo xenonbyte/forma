@@ -154,6 +154,9 @@ importers:
       '@vzi-core/format':
         specifier: workspace:*
         version: link:../vzi-format
+      '@vzi-core/parser':
+        specifier: workspace:*
+        version: link:../vzi-parser
       '@vzi-core/transformer':
         specifier: workspace:*
         version: link:../vzi-transformer

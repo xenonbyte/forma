@@ -2,15 +2,17 @@ import {
   copyFile,
   mkdir,
   readFile,
-  rm
+  rm,
+  writeFile
 } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   FormaError,
   artifactBundleUrl,
   artifactPreviewUrl,
   assetDensityPath,
   buildDesignContext,
+  extractIconAssets,
   getArtifactDir,
   getArtifactVersionDir,
   getArtifactVersionPreviewPath,
@@ -23,6 +25,9 @@ import {
   type FormaStore,
   type SchemaNormalizationRecoveryState
 } from "@xenonbyte/forma-core";
+import { PuppeteerParser } from "@vzi-core/parser";
+import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
+import { VZIEncoder } from "@vzi-core/format";
 import AdmZip from "adm-zip";
 import * as z from "zod/v4";
 import {
@@ -188,7 +193,7 @@ const getProductArtifactSchema = z.object({
 const exportArtifactSchema = z.object({
   product_id: z.string().min(1),
   artifact_id: z.string().min(1),
-  format: z.enum(["html", "svg", "png", "zip"])
+  format: z.enum(["html", "svg", "png", "zip", "icons", "vzi"])
 }).strict();
 
 const rollbackRequirementDesignSchema = z.object({
@@ -739,9 +744,154 @@ async function exportArtifact(
       await rm(outputPath, { force: true }).catch(() => undefined);
       throw err;
     }
+  } else if (format === "icons") {
+    return await exportArtifactIcons(artifactBase, artifact_id, product_id, exportsDir);
+  } else if (format === "vzi") {
+    return await exportArtifactVzi(artifactBase, artifact_id, product_id, exportsDir);
   }
 
   return { output_path: outputPath };
+}
+
+/**
+ * Manual icon export for a single artifact: reads index.html, runs
+ * extractIconAssets, and writes the result to an export staging directory.
+ * Does NOT touch archive state or requirement status.
+ */
+async function exportArtifactIcons(
+  artifactBase: string,
+  artifactId: string,
+  productId: string,
+  exportsDir: string
+): Promise<{ output_path: string }> {
+  const htmlPath = join(artifactBase, "index.html");
+  let html: string;
+  try {
+    html = await readFile(htmlPath, "utf8");
+  } catch (err) {
+    throw new FormaError(
+      "ARTIFACT_NOT_FOUND",
+      `Could not read index.html for artifact ${artifactId}`,
+      { artifactId, path: htmlPath, cause: String(err) }
+    );
+  }
+
+  let result: Awaited<ReturnType<typeof extractIconAssets>>;
+  try {
+    result = await extractIconAssets(html, {
+      artifactId,
+      productId,
+      requirementId: "manual-export",
+      pageId: "manual",
+      version: "manual",
+      generatedFrom: "manual-export"
+    });
+  } catch (err) {
+    if (err instanceof FormaError) throw err;
+    throw new FormaError(
+      "ARTIFACT_WRITE_FAIL",
+      `Icon extraction failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
+      { artifactId, productId, cause: String(err) }
+    );
+  }
+
+  // Write to export staging dir: <exportsDir>/<artifactId>.icons/
+  const iconsExportDir = join(exportsDir, `${artifactId}.icons`);
+  await rm(iconsExportDir, { recursive: true, force: true });
+  await mkdir(iconsExportDir, { recursive: true });
+
+  for (const [relativePath, buf] of result.files) {
+    // relativePath starts with "icons/…"; strip the prefix since we're writing into iconsExportDir
+    const strippedPath = relativePath.startsWith("icons/")
+      ? relativePath.slice("icons/".length)
+      : relativePath;
+    const destPath = join(iconsExportDir, strippedPath);
+    const destDir = dirname(destPath);
+    await mkdir(destDir, { recursive: true });
+    await writeFile(destPath, buf);
+  }
+
+  // Write icons.json manifest
+  await writeFile(join(iconsExportDir, "icons.json"), JSON.stringify(result.manifest, null, 2), "utf8");
+
+  return { output_path: iconsExportDir };
+}
+
+/**
+ * Manual VZI export for a single artifact: reads index.html, runs the
+ * PuppeteerParser → VZITransformer → VZIEncoder chain, and writes the result
+ * to an export staging file.
+ * Does NOT touch archive state or requirement status.
+ * Icon resource linking is OPTIONAL for manual export; this implementation
+ * generates a valid decodable .vzi without icon assetRef injection.
+ */
+async function exportArtifactVzi(
+  artifactBase: string,
+  artifactId: string,
+  productId: string,
+  exportsDir: string
+): Promise<{ output_path: string }> {
+  const htmlPath = join(artifactBase, "index.html");
+  let html: string;
+  try {
+    html = await readFile(htmlPath, "utf8");
+  } catch (err) {
+    throw new FormaError(
+      "ARTIFACT_NOT_FOUND",
+      `Could not read index.html for artifact ${artifactId}`,
+      { artifactId, path: htmlPath, cause: String(err) }
+    );
+  }
+
+  // Parse HTML → IR via Puppeteer
+  let ir: import("@vzi-core/types").IntermediateRepresentation;
+  const parser = new PuppeteerParser({ viewportPreset: "desktop" });
+  try {
+    ir = await parser.parse(html);
+  } catch (err) {
+    throw new FormaError(
+      "ARTIFACT_WRITE_FAIL",
+      `VZI parse failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
+      { artifactId, productId, cause: String(err) }
+    );
+  } finally {
+    await parser.dispose().catch(() => undefined);
+  }
+
+  // Transform IR → VZIContent
+  let vziBytes: Uint8Array;
+  try {
+    const transformer = new VZITransformer({
+      title: artifactId,
+      createdBy: "forma-manual-export",
+      sourceType: "file",
+      sourceIdentifier: `${productId}/${artifactId}`,
+      enableAnnotations: true,
+      enableTokenExtraction: true,
+    });
+    const transformResult = transformer.transform(ir);
+    const content = buildVziContentFromTransformResult(transformResult);
+
+    // Attach Forma metadata
+    const extMeta = content.metadata as typeof content.metadata & Record<string, unknown>;
+    extMeta["formaProductId"] = productId;
+    extMeta["formaArtifactId"] = artifactId;
+    extMeta["formaGenerationSource"] = "forma-manual-export";
+
+    const encoder = new VZIEncoder();
+    vziBytes = encoder.encode(content);
+  } catch (err) {
+    throw new FormaError(
+      "ARTIFACT_WRITE_FAIL",
+      `VZI encode failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
+      { artifactId, productId, cause: String(err) }
+    );
+  }
+
+  const vziOutputPath = join(exportsDir, `${artifactId}.vzi`);
+  await writeFile(vziOutputPath, Buffer.from(vziBytes));
+
+  return { output_path: vziOutputPath };
 }
 
 function assertArtifactSupportsExportFormat(
@@ -749,7 +899,8 @@ function assertArtifactSupportsExportFormat(
   artifactId: string,
   format: z.infer<typeof exportArtifactSchema>["format"]
 ): void {
-  if (format === "zip" || format === "png") {
+  // Formats that are always supported regardless of artifact kind
+  if (format === "zip" || format === "png" || format === "icons" || format === "vzi") {
     return;
   }
 

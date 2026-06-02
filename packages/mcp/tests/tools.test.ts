@@ -21,7 +21,55 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
           ["preview/1x.png", new Uint8Array()]
         ])
       }))
+    })),
+    extractIconAssets: vi.fn(async () => ({
+      files: new Map([
+        ["icons/icon-0-24x24-abc123.svg", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8")]
+      ]),
+      manifest: {
+        artifactId: "ABCDEFGHIJ123456",
+        productId: "P-123abc",
+        requirementId: "manual-export",
+        pageId: "manual",
+        version: "manual",
+        sourceVersion: "manual",
+        generatedFrom: "manual-export" as const,
+        icons: []
+      }
     }))
+  };
+});
+
+vi.mock("@vzi-core/parser", async () => {
+  // Minimal fake IR that VZITransformer can process
+  const fakeIR: import("@vzi-core/types").IntermediateRepresentation = {
+    version: "1.0",
+    rootElementId: "el-root",
+    elements: {
+      "el-root": {
+        id: "el-root",
+        parentId: null,
+        type: "container",
+        bounds: { x: 0, y: 0, width: 1024, height: 768 },
+        styles: { backgroundColor: "#ffffff" }
+      }
+    },
+    metadata: { title: "mock-page", viewport: { width: 1024, height: 768 } }
+  };
+
+  class MockPuppeteerParser {
+    constructor(_opts?: unknown) {}
+    async parse(_html: string) { return fakeIR; }
+    async dispose() { return undefined; }
+  }
+
+  return {
+    PuppeteerParser: MockPuppeteerParser,
+    VIEWPORT_PRESETS: {
+      mobile: { width: 390, height: 884 },
+      tablet: { width: 768, height: 1024 },
+      desktop: { width: 1024, height: 1280 }
+    }
   };
 });
 
@@ -1380,6 +1428,170 @@ describe("artifact tools (C-03)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+  });
+
+  // ─── export_artifact: icons + vzi formats (Task 9) ───────────────────────
+
+  it("export_artifact icons format returns output_path containing an icons dir with icons.json", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-icons-"));
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    // Write index.html with a valid inline SVG in the versioned artifact dir
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(
+      join(versionDir, "index.html"),
+      `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
+      "utf8"
+    );
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        archiveRequirement: vi.fn(async () => { throw new Error("archiveRequirement must NOT be called during manual export"); })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: productId,
+      artifact_id: artifactId,
+      format: "icons"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload).toHaveProperty("output_path");
+    expect(typeof payload.output_path).toBe("string");
+    expect((payload.output_path as string)).toContain("icons");
+    // archiveRequirement must not have been called
+    expect((store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement).not.toHaveBeenCalled();
+  });
+
+  it("export_artifact vzi format returns output_path ending with .vzi", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-vzi-"));
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    // Write index.html in the versioned artifact dir
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(
+      join(versionDir, "index.html"),
+      `<!DOCTYPE html><html><body><p>hello</p></body></html>`,
+      "utf8"
+    );
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        archiveRequirement: vi.fn(async () => { throw new Error("archiveRequirement must NOT be called during manual export"); })
+      }
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: productId,
+      artifact_id: artifactId,
+      format: "vzi"
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload).toHaveProperty("output_path");
+    expect(typeof payload.output_path).toBe("string");
+    expect((payload.output_path as string)).toMatch(/\.vzi$/);
+    // archiveRequirement must not have been called
+    expect((store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement).not.toHaveBeenCalled();
+  });
+
+  it("export_artifact icons/vzi do NOT mutate requirement status (archiveRequirement not called)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-no-archive-"));
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), `<html><body></body></html>`, "utf8");
+
+    const archiveRequirement = vi.fn(async () => { throw new Error("must not be called"); });
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        archiveRequirement
+      }
+    });
+    const tools = createFormaTools(store);
+
+    // Both formats must not call archiveRequirement
+    await tools.export_artifact({ product_id: productId, artifact_id: artifactId, format: "icons" });
+    await tools.export_artifact({ product_id: productId, artifact_id: artifactId, format: "vzi" });
+
+    expect(archiveRequirement).not.toHaveBeenCalled();
+  });
+
+  it("export_artifact existing formats (html/svg/png/zip) still work and shape is unchanged", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-regression-"));
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), "<main>Hello</main>", "utf8");
+    const manifest = { ...fakeManifest() };
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => [])
+      }
+    });
+    const tools = createFormaTools(store);
+
+    // html → output_path (single entry file)
+    const htmlResult = await tools.export_artifact({ product_id: productId, artifact_id: artifactId, format: "html" });
+    expect(htmlResult.isError).toBeUndefined();
+    expect(textPayload(htmlResult)).toHaveProperty("output_path");
+
+    // zip → output_path with valid ZIP content
+    const zipResult = await tools.export_artifact({ product_id: productId, artifact_id: artifactId, format: "zip" });
+    expect(zipResult.isError).toBeUndefined();
+    expect(textPayload(zipResult)).toHaveProperty("output_path");
+
+    // pdf (not in enum) → VALIDATION_ERROR (schema rejects before handler)
+    const pdfResult = await tools.export_artifact({ product_id: productId, artifact_id: artifactId, format: "pdf" });
+    expect(pdfResult.isError).toBe(true);
+    expect(textPayload(pdfResult)).toMatchObject({ error_code: "VALIDATION_ERROR" });
   });
 
   // ─── rollback_requirement_design ─────────────────────────────────────────
