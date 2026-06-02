@@ -10,6 +10,10 @@ import {
   getArtifactVersionManifestPath,
   getArtifactVersionAssetsDir,
   getArtifactVersionPreviewPath,
+  getArtifactIconsDir,
+  getArtifactIconsManifestPath,
+  getArtifactVziDir,
+  getArtifactVziPath,
 } from '../src/artifact-paths.js';
 
 describe('artifact-paths', () => {
@@ -86,5 +90,50 @@ describe('A2 versioned artifact paths', () => {
     expect(() => getArtifactVersionDir(root, pid, aid, 0)).toThrow();
     expect(() => getArtifactVersionDir(root, pid, aid, 1.5)).toThrow();
     expect(() => getArtifactVersionDir(root, pid, aid, -1)).toThrow();
+  });
+});
+
+describe('A5 page-level icons/vzi path helpers', () => {
+  const root = '/data/products';
+  const pid = 'P-abc123';
+  const aid = 'AbCdEfGhIjKlMnOp';
+  const base = `/data/products/P-abc123/od-project/artifacts/AbCdEfGhIjKlMnOp`;
+
+  it('getArtifactIconsDir returns artifact-level icons/ sibling', () => {
+    expect(getArtifactIconsDir(root, pid, aid)).toBe(`${base}/icons`);
+  });
+
+  it('getArtifactIconsManifestPath returns icons/icons.json', () => {
+    expect(getArtifactIconsManifestPath(root, pid, aid)).toBe(`${base}/icons/icons.json`);
+  });
+
+  it('getArtifactVziDir returns artifact-level vzi/ sibling', () => {
+    expect(getArtifactVziDir(root, pid, aid)).toBe(`${base}/vzi`);
+  });
+
+  it('getArtifactVziPath returns vzi/page.vzi', () => {
+    expect(getArtifactVziPath(root, pid, aid)).toBe(`${base}/vzi/page.vzi`);
+  });
+
+  it('all icons/vzi paths are under od-project/artifacts', () => {
+    const paths = [
+      getArtifactIconsDir(root, pid, aid),
+      getArtifactIconsManifestPath(root, pid, aid),
+      getArtifactVziDir(root, pid, aid),
+      getArtifactVziPath(root, pid, aid),
+    ];
+    for (const p of paths) {
+      expect(p).toContain('od-project/artifacts');
+    }
+  });
+
+  it('rejects invalid product id', () => {
+    expect(() => getArtifactIconsDir(root, '../P-abc123', aid)).toThrow('Invalid product id');
+    expect(() => getArtifactVziPath(root, 'bad-id', aid)).toThrow('Invalid product id');
+  });
+
+  it('rejects invalid artifact id', () => {
+    expect(() => getArtifactIconsDir(root, pid, '../escape')).toThrow('Invalid artifact id');
+    expect(() => getArtifactVziPath(root, pid, 'bad id!')).toThrow('Invalid artifact id');
   });
 });

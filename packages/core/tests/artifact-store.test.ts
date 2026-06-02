@@ -644,6 +644,32 @@ describe('A3 versioned artifact read/write', () => {
     expect(await store.listArtifactVersions(productId, aid)).toEqual([1, 2, 3]);
   });
 
+  it('A5 regression: icons/ and vzi/ siblings are ignored by listArtifactVersions', async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = 'FfCdEfGhIjKlMnOp';
+
+    // Write v1
+    await store.writeArtifactVersion({
+      productId,
+      artifactId: aid,
+      version: 1,
+      manifest: makeManifest({ id: aid, kind: 'design-page', forma: { requirementId: 'R-1234abcd', pageId: 'home', variant: 'default' } }),
+      files: new Map([['index.html', Buffer.from('<h1>v1</h1>')]]),
+    });
+
+    // Manually create icons/ and vzi/ siblings next to v1/
+    const artifactDir = join(productsRoot, productId, 'od-project', 'artifacts', aid);
+    await mkdir(join(artifactDir, 'icons'), { recursive: true });
+    await mkdir(join(artifactDir, 'vzi'), { recursive: true });
+    await writeFile(join(artifactDir, 'icons', 'icons.json'), JSON.stringify([]));
+    await writeFile(join(artifactDir, 'vzi', 'page.vzi'), 'vzi-content');
+
+    // listArtifactVersions must return only [1] — icons/ and vzi/ are ignored
+    const versions = await store.listArtifactVersions(productId, aid);
+    expect(versions).toEqual([1]);
+  });
+
 });
 
 describe('A4 assets write-path consistency', () => {

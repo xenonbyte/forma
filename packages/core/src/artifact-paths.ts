@@ -126,6 +126,68 @@ export function getArtifactVersionPreviewPath(
   );
 }
 
+export function getArtifactIconsDir(
+  productsRoot: string,
+  productId: string,
+  artifactId: string,
+): string {
+  return safeArtifactPath(
+    productsRoot,
+    validateProductId(productId),
+    'od-project',
+    'artifacts',
+    validateArtifactId(artifactId),
+    'icons',
+  );
+}
+
+export function getArtifactIconsManifestPath(
+  productsRoot: string,
+  productId: string,
+  artifactId: string,
+): string {
+  return safeArtifactPath(
+    productsRoot,
+    validateProductId(productId),
+    'od-project',
+    'artifacts',
+    validateArtifactId(artifactId),
+    'icons',
+    'icons.json',
+  );
+}
+
+export function getArtifactVziDir(
+  productsRoot: string,
+  productId: string,
+  artifactId: string,
+): string {
+  return safeArtifactPath(
+    productsRoot,
+    validateProductId(productId),
+    'od-project',
+    'artifacts',
+    validateArtifactId(artifactId),
+    'vzi',
+  );
+}
+
+export function getArtifactVziPath(
+  productsRoot: string,
+  productId: string,
+  artifactId: string,
+): string {
+  return safeArtifactPath(
+    productsRoot,
+    validateProductId(productId),
+    'od-project',
+    'artifacts',
+    validateArtifactId(artifactId),
+    'vzi',
+    'page.vzi',
+  );
+}
+
 function safeArtifactPath(productsRoot: string, ...segments: string[]): string {
   const path = join(productsRoot, ...segments);
   const root = resolve(productsRoot);
