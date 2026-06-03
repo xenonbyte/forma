@@ -181,7 +181,13 @@ export class DistanceRenderer {
   }
 
   /**
-   * 渲染标签
+   * 渲染标签（恒定屏幕尺寸，缩放无关）
+   *
+   * 与 DimensionRenderer 一致：在锚点处 scale(1/this.scale) 切回设备像素空间绘制，
+   * 字形按最终屏幕尺寸一次性栅格化（避免缩放抖动），并按 devicePixelRatio 补偿。
+   * 连接两点的距离线仍在世界坐标系绘制，只有这个数值标签是恒定屏幕尺寸。
+   *
+   * @param x,y 锚点（世界坐标）：水平标注为线段中点、垂直标注为线段中点
    */
   private renderLabel(
     canvas: Canvas,
@@ -191,61 +197,61 @@ export class DistanceRenderer {
     direction: 'horizontal' | 'vertical'
   ): void {
     const ck = this.canvasKit;
-    const fontSize = this.style.labelFontSize / this.scale;
-    const [paddingH, paddingV] = this.style.labelPadding;
+    const dpr =
+      typeof window !== 'undefined' && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
 
-    // 使用 FontManager 获取字体
+    canvas.save();
+    canvas.translate(x, y);
+    canvas.scale(1 / this.scale, 1 / this.scale);
+
+    const fontSize = this.style.labelFontSize * dpr;
+    const [paddingH, paddingV] = this.style.labelPadding;
+    const padH = paddingH * dpr;
+    const padV = paddingV * dpr;
+    const gap = 8 * dpr;
+
     const fontManager = FontManager.getInstance();
     const typeface = fontManager.getDefaultTypeface();
     const font = new ck.Font(typeface, fontSize);
 
-    // 测量文本（使用简化估算方法）
     const charWidth = fontSize * 0.6;
     const textWidth = text.length * charWidth;
     const textHeight = fontSize;
 
-    // 计算标签尺寸
-    const labelWidth = textWidth + (paddingH * 2) / this.scale;
-    const labelHeight = textHeight + (paddingV * 2) / this.scale;
+    const labelWidth = textWidth + padH * 2;
+    const labelHeight = textHeight + padV * 2;
 
-    // 计算标签位置
-    let labelX: number;
-    let labelY: number;
-
+    // 锚点在原点(0,0)。水平：居中于上方；垂直：右侧、纵向居中。
+    let labelLeft: number;
+    let labelTop: number;
     if (direction === 'horizontal') {
-      labelX = x - labelWidth / 2;
-      labelY = y - labelHeight / 2 - 8 / this.scale;
+      labelLeft = -labelWidth / 2;
+      labelTop = -labelHeight / 2 - gap;
     } else {
-      labelX = x + 8 / this.scale;
-      labelY = y - labelHeight / 2;
+      labelLeft = gap;
+      labelTop = -labelHeight / 2;
     }
 
-    // 绘制圆角矩形背景
-    const rect = ck.LTRBRect(
-      labelX,
-      labelY,
-      labelX + labelWidth,
-      labelY + labelHeight
-    );
-    const radius = this.style.labelBorderRadius / this.scale;
+    const rect = ck.LTRBRect(labelLeft, labelTop, labelLeft + labelWidth, labelTop + labelHeight);
+    const radius = this.style.labelBorderRadius * dpr;
 
     const bgPath = new ck.Path();
-    bgPath.addRRect(
-      ck.RRectXY(rect, radius, radius)
-    );
+    bgPath.addRRect(ck.RRectXY(rect, radius, radius));
     canvas.drawPath(bgPath, this.labelBackgroundPaint!);
     bgPath.delete();
 
-    // 绘制文本
     canvas.drawText(
       text,
-      labelX + paddingH / this.scale,
-      labelY + labelHeight - paddingV / this.scale - 2 / this.scale,
+      labelLeft + padH,
+      labelTop + labelHeight - padV - 2 * dpr,
       this.labelPaint!,
       font
     );
 
     font.delete();
+    canvas.restore();
   }
 
   /**

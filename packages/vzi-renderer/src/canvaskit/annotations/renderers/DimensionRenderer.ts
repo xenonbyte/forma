@@ -85,68 +85,80 @@ export class DimensionRenderer {
     const height = Math.round(bounds.height);
     const text = `${width} × ${height}`;
 
-    // 计算标签位置（元素下方居中）
-    const labelX = bounds.left + bounds.width / 2;
-    const labelY = bounds.top + bounds.height + 8 / this.scale; // 元素下方 8px
+    // 锚点：元素底边中心（世界坐标）。标签在其下方、恒定屏幕尺寸绘制。
+    const anchorX = bounds.left + bounds.width / 2;
+    const anchorY = bounds.top + bounds.height;
 
-    this.renderLabel(canvas, text, labelX, labelY);
+    this.renderLabel(canvas, text, anchorX, anchorY);
   }
 
   /**
-   * 渲染标签
+   * 渲染标签（恒定屏幕尺寸，缩放无关）
+   *
+   * 传入的 canvas 已应用视口变换 translate(offset)+scale(this.scale)，其中
+   * this.scale 为「设备像素 / 世界单位」。我们在锚点处 scale(1/this.scale) 切回
+   * 设备像素空间，按设备像素绘制标签——字形按最终尺寸一次性栅格化，避免
+   * 「世界字号栅格化再缩放」带来的亚像素抖动；同时按 devicePixelRatio 补偿，
+   * 使其在 Retina 上仍是可读的 ~12 CSS px。
    */
   private renderLabel(
     canvas: Canvas,
     text: string,
-    x: number,
-    y: number
+    anchorWorldX: number,
+    anchorWorldY: number
   ): void {
     const ck = this.canvasKit;
-    const fontSize = (this.style.dimensionLabelFontSize || 12) / this.scale;
-    const [paddingH, paddingV] = this.style.dimensionLabelPadding || [8, 4];
+    const dpr =
+      typeof window !== 'undefined' && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
 
-    // 使用 FontManager 获取字体
+    // 切换到以锚点为原点的设备像素空间。
+    canvas.save();
+    canvas.translate(anchorWorldX, anchorWorldY);
+    canvas.scale(1 / this.scale, 1 / this.scale);
+
+    // 设备像素尺寸（dpr 补偿后等价于固定的 CSS px）。
+    const fontSize = (this.style.dimensionLabelFontSize || 12) * dpr;
+    const [paddingH, paddingV] = this.style.dimensionLabelPadding || [8, 4];
+    const padH = paddingH * dpr;
+    const padV = paddingV * dpr;
+    const gap = 8 * dpr; // 元素下方 8px（屏幕）
+
     const fontManager = FontManager.getInstance();
     const typeface = fontManager.getDefaultTypeface();
     const font = new ck.Font(typeface, fontSize);
 
-    // 测量文本（使用简化估算方法）
+    // 测量文本（简化估算）。
     const charWidth = fontSize * 0.6;
     const textWidth = text.length * charWidth;
     const textHeight = fontSize;
 
-    // 计算标签尺寸
-    const labelWidth = textWidth + (paddingH * 2) / this.scale;
-    const labelHeight = textHeight + (paddingV * 2) / this.scale;
+    const labelWidth = textWidth + padH * 2;
+    const labelHeight = textHeight + padV * 2;
 
-    // 计算标签位置（居中）
-    const labelX = x - labelWidth / 2;
-    const labelY = y;
+    // 锚点在原点(0,0)，标签水平居中、置于元素下方。
+    const labelLeft = -labelWidth / 2;
+    const labelTop = gap;
 
-    // 绘制圆角矩形背景
-    const rect = ck.LTRBRect(
-      labelX,
-      labelY,
-      labelX + labelWidth,
-      labelY + labelHeight
-    );
-    const radius = (this.style.dimensionLabelBorderRadius || 4) / this.scale;
+    const rect = ck.LTRBRect(labelLeft, labelTop, labelLeft + labelWidth, labelTop + labelHeight);
+    const radius = (this.style.dimensionLabelBorderRadius || 4) * dpr;
 
     const bgPath = new ck.Path();
     bgPath.addRRect(ck.RRectXY(rect, radius, radius));
     canvas.drawPath(bgPath, this.labelBackgroundPaint!);
     bgPath.delete();
 
-    // 绘制文本
     canvas.drawText(
       text,
-      labelX + paddingH / this.scale,
-      labelY + labelHeight - paddingV / this.scale - 2 / this.scale,
+      labelLeft + padH,
+      labelTop + labelHeight - padV - 2 * dpr,
       this.labelPaint!,
       font
     );
 
     font.delete();
+    canvas.restore();
   }
 
   /**
