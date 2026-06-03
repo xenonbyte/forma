@@ -12,6 +12,7 @@
  */
 
 import { memo } from 'react';
+import type { JSX } from 'react';
 import type { IRElement, IRStyles, IRSource, IREffects, IRTransform } from '@vzi-core/types';
 
 /**
