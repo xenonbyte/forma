@@ -115,3 +115,14 @@ describe('composeSystemPrompt', () => {
     );
   });
 });
+
+describe('mobile de-shell (spec §5.4)', () => {
+  it('does not instruct drawing an iPhone frame / Dynamic Island / home indicator', () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).not.toMatch(/Real iPhone frame/i);
+    expect(DISCOVERY_AND_PHILOSOPHY).not.toMatch(/Dynamic Island/i);
+    expect(DISCOVERY_AND_PHILOSOPHY).not.toMatch(/home indicator/i);
+  });
+  it('still keeps the 44px hit-target content constraint', () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).toMatch(/44px/);
+  });
+});

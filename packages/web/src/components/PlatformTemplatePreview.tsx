@@ -1283,7 +1283,7 @@ const platformRules: DesignSpecTemplate["rules"] = {
       navigation: "top bar + optional bottom action",
       singleColumn: true
     },
-    structure: ["phone frame", "top app bar", "stacked cards", "list rows", "bottom primary action"],
+    structure: ["top app bar", "stacked cards", "list rows", "bottom primary action"],
     template: "mobile-product-shell"
   },
   tablet: {
