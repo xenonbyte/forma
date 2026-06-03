@@ -34,6 +34,7 @@ export * from "./artifact-static-validation.js";
 export * from "./artifact-icon-extraction.js";
 export * from "./requirement-icon-export.js";
 export * from "./requirement-vzi-capture.js";
+export * from "./requirement-handoff-pages.js";
 export * from "./archive-asset-export.js";
 export * from "./design-save.js";
 export * from "./quality/index.js";

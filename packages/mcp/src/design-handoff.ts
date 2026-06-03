@@ -28,18 +28,20 @@
  */
 
 import { constants as fsConstants } from 'node:fs';
-import type { Dirent } from 'node:fs';
-import { access, readFile, readdir } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
   FormaError,
   getArtifactDir,
-  getArtifactsDir,
   getArtifactIconsManifestPath,
   getArtifactVziPath,
   getArtifactVersionDir,
   getFormaPaths,
   isSameOrChildPath,
+  listArchivedHandoffPages,
+  readHandoffIconManifest,
+  assertReadableHandoffFile,
+  type HandoffPagePointer,
   type FormaStore,
 } from '@xenonbyte/forma-core';
 import { createMcpQuery } from '@vzi-core/transformer';
@@ -88,30 +90,6 @@ async function loadVzi(vziPath: string): Promise<VZIContent> {
   return result.content;
 }
 
-async function assertReadableHandoffFile(
-  path: string,
-  artifactId: string,
-  handoffType: 'icons' | 'vzi'
-): Promise<void> {
-  try {
-    await access(path, fsConstants.R_OK);
-  } catch (cause) {
-    const err = cause as NodeJS.ErrnoException;
-    if (err.code === 'ENOENT') {
-      throw new FormaError(
-        'ARTIFACT_NOT_FOUND',
-        `Generated ${handoffType} handoff file not found`,
-        { artifactId, handoffType, path }
-      );
-    }
-    throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
-      `Generated ${handoffType} handoff file is unreadable`,
-      { artifactId, handoffType, path, cause: err.message }
-    );
-  }
-}
-
 /**
  * Gate: requirement must be archived. Throws REQUIREMENT_NOT_FINALIZED otherwise.
  */
@@ -128,197 +106,13 @@ async function assertArchived(store: FormaStore, requirementId: string) {
   return req;
 }
 
-interface PagePointerInfo {
-  pageId: string;
-  variant: string;
-  artifactId: string;
-  version: number;
-  vziPath: string;
-  indexHtmlPath: string;
-  iconCount: number;
-}
-
-interface HandoffIconManifestInfo {
-  iconCount: number;
-  requirementId?: string;
-  pageId?: string;
-  variant?: string;
-  version?: number;
-  generatedFrom?: string;
-}
+type PagePointerInfo = HandoffPagePointer;
 
 function requirementPageIdSet(req: { pages?: Array<{ page_id?: string }> }): ReadonlySet<string> | undefined {
   const pageIds = (req.pages ?? [])
     .map((page) => page.page_id)
     .filter((pageId): pageId is string => typeof pageId === 'string' && pageId.length > 0);
   return pageIds.length > 0 ? new Set(pageIds) : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function parseManifestVersion(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
-    return value;
-  }
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  const match = value.match(/^v?([1-9]\d*)$/);
-  if (!match) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(match[1], 10);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
-}
-
-function parseHandoffIconManifest(raw: string, artifactId: string): HandoffIconManifestInfo {
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(raw);
-  } catch {
-    throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
-  }
-
-  if (!isRecord(manifest) || !Array.isArray(manifest.icons)) {
-    throw new FormaError('ARTIFACT_INVALID_INPUT', 'Corrupt icons manifest', { artifactId });
-  }
-
-  return {
-    iconCount: manifest.icons.length,
-    requirementId: typeof manifest.requirementId === 'string' ? manifest.requirementId : undefined,
-    pageId: typeof manifest.pageId === 'string' ? manifest.pageId : undefined,
-    variant: typeof manifest.variant === 'string' ? manifest.variant : undefined,
-    version: parseManifestVersion(manifest.sourceVersion ?? manifest.version),
-    generatedFrom: typeof manifest.generatedFrom === 'string' ? manifest.generatedFrom : undefined,
-  };
-}
-
-async function readHandoffIconManifest(
-  iconsManifestPath: string,
-  artifactId: string
-): Promise<HandoffIconManifestInfo> {
-  let raw: string;
-  try {
-    raw = await readFile(iconsManifestPath, 'utf8');
-  } catch (e) {
-    const err = e as NodeJS.ErrnoException;
-    if (err.code === 'ENOENT') {
-      throw new FormaError(
-        'ARTIFACT_NOT_FOUND',
-        'Generated icons manifest not found',
-        { artifactId, handoffType: 'icons', path: iconsManifestPath }
-      );
-    }
-    throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
-      'Generated icons manifest is unreadable',
-      { artifactId, handoffType: 'icons', path: iconsManifestPath, cause: err.message }
-    );
-  }
-  return parseHandoffIconManifest(raw, artifactId);
-}
-
-/**
- * Resolve archived handoff assets for a requirement to page info records.
- * Returns one record per generated requirement-archive icons/VZI bundle.
- */
-async function resolveArchivedPagePointers(
-  productId: string,
-  requirementId: string,
-  productsRoot: string,
-  currentPageIds?: ReadonlySet<string>
-): Promise<PagePointerInfo[]> {
-  const artifactsDir = getArtifactsDir(productsRoot, productId);
-  let entries: Dirent[];
-  try {
-    entries = await readdir(artifactsDir, { withFileTypes: true });
-  } catch (cause) {
-    const err = cause as NodeJS.ErrnoException;
-    if (err.code === 'ENOENT') {
-      return [];
-    }
-    throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
-      'Failed to read artifact directory for archived handoff',
-      { productId, path: artifactsDir, cause: err.message }
-    );
-  }
-
-  const pages: PagePointerInfo[] = [];
-  for (const entry of entries) {
-    if (!entry.isDirectory()) {
-      continue;
-    }
-
-    const artifactId = entry.name;
-    if (artifactId.startsWith('.tmp-')) {
-      continue;
-    }
-
-    let iconsManifestPath: string;
-    try {
-      iconsManifestPath = getArtifactIconsManifestPath(productsRoot, productId, artifactId);
-    } catch (cause) {
-      if (cause instanceof FormaError && cause.code === 'ARTIFACT_INVALID_INPUT') {
-        continue;
-      }
-      throw cause;
-    }
-
-    let manifest: HandoffIconManifestInfo;
-    try {
-      manifest = await readHandoffIconManifest(iconsManifestPath, artifactId);
-    } catch (cause) {
-      if (cause instanceof FormaError && cause.code === 'ARTIFACT_NOT_FOUND') {
-        continue;
-      }
-      throw cause;
-    }
-
-    if (
-      manifest.requirementId !== requirementId ||
-      manifest.generatedFrom !== 'requirement-archive'
-    ) {
-      continue;
-    }
-
-    if (!manifest.pageId || manifest.version === undefined) {
-      throw new FormaError(
-        'ARTIFACT_INVALID_INPUT',
-        'Corrupt icons manifest',
-        { artifactId, requirement_id: requirementId }
-      );
-    }
-
-    const version = manifest.version;
-    const pageId = manifest.pageId;
-    if (currentPageIds && !currentPageIds.has(pageId)) {
-      continue;
-    }
-    const variant = manifest.variant ?? 'default';
-    const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
-    const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
-    const indexHtmlPath = join(versionDir, 'index.html');
-    await assertReadableHandoffFile(vziPath, artifactId, 'vzi');
-
-    pages.push({
-      pageId,
-      variant,
-      artifactId,
-      version,
-      vziPath,
-      indexHtmlPath,
-      iconCount: manifest.iconCount,
-    });
-  }
-
-  return pages.sort((a, b) =>
-    a.pageId.localeCompare(b.pageId) ||
-    a.variant.localeCompare(b.variant) ||
-    a.artifactId.localeCompare(b.artifactId)
-  );
 }
 
 /**
@@ -368,7 +162,7 @@ async function resolvePagePointers(
   productsRoot: string,
   currentPageIds?: ReadonlySet<string>
 ): Promise<PagePointerInfo[]> {
-  const archivedPages = await resolveArchivedPagePointers(productId, requirementId, productsRoot, currentPageIds);
+  const archivedPages = await listArchivedHandoffPages(productsRoot, productId, requirementId, currentPageIds);
   if (archivedPages.length > 0) {
     return archivedPages;
   }
