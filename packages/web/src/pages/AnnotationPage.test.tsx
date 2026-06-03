@@ -22,27 +22,30 @@ vi.mock('@vzi-core/renderer', async () => {
   };
 });
 
-// Mock the decoder so we don't need real .vzi bytes.
-vi.mock('@vzi-core/format', () => ({
-  VZIDecoder: class {
-    decode(bytes: Uint8Array) {
-      const elements = bytes[0] === 9
-        ? new Map([
-          ['icon', { id: 'icon', parentId: null, type: 'image', bounds: { x: 0, y: 0, width: 24, height: 24 }, styles: {}, imageData: { src: 'icons/missing.svg' } }],
-          ['bundle', { id: 'bundle', parentId: null, type: 'image', bounds: { x: 32, y: 0, width: 24, height: 24 }, styles: {}, imageData: { src: 'assets/missing.png' } }],
-        ])
-        : new Map([['root', { id: 'root', parentId: null, type: 'container', bounds: { x: 0, y: 0, width: 390, height: 800 }, styles: {} }]]);
-      return {
-        content: {
-          metadata: { formaViewport: { width: 390, height: 800 } },
-          elements,
-          images: new Map(),
-        },
-        errors: [],
-      };
-    }
-  },
-}));
+interface DecodedPageContent {
+  metadata: Record<string, unknown>;
+  elements: Map<string, unknown>;
+  images: Map<string, unknown>;
+}
+
+function rootContent(): DecodedPageContent {
+  return {
+    metadata: { formaViewport: { width: 390, height: 800 } },
+    elements: new Map([['root', { id: 'root', parentId: null, type: 'container', bounds: { x: 0, y: 0, width: 390, height: 800 }, styles: {} }]]),
+    images: new Map(),
+  };
+}
+
+function missingResContent(): DecodedPageContent {
+  return {
+    metadata: { formaViewport: { width: 64, height: 24 } },
+    elements: new Map<string, unknown>([
+      ['icon', { id: 'icon', parentId: null, type: 'image', bounds: { x: 0, y: 0, width: 24, height: 24 }, styles: {}, imageData: { src: 'icons/missing.svg' } }],
+      ['bundle', { id: 'bundle', parentId: null, type: 'image', bounds: { x: 32, y: 0, width: 24, height: 24 }, styles: {}, imageData: { src: 'assets/missing.png' } }],
+    ]),
+    images: new Map(),
+  };
+}
 
 let container: HTMLElement;
 let root: Root;
@@ -60,19 +63,19 @@ afterEach(() => {
 async function render(
   client: FormaApiClient,
   options: {
-    fetchVzi?: (url: string) => Promise<Uint8Array>;
+    fetchContent?: (url: string) => Promise<DecodedPageContent>;
     checkResourceUrl?: (url: string) => Promise<boolean>;
   } = {},
 ) {
   const { AnnotationPage } = await import('./AnnotationPage.js');
-  const fetchVzi = options.fetchVzi ?? (async () => new Uint8Array([1, 2, 3]));
+  const fetchContent = options.fetchContent ?? (async () => rootContent());
   await act(async () => {
     root.render(
       <LocaleProvider>
         <AnnotationPage
           client={client}
           params={{ productId: 'P-abc123', reqId: 'R-1' }}
-          fetchVzi={fetchVzi}
+          fetchContent={fetchContent}
           checkResourceUrl={options.checkResourceUrl}
         />
       </LocaleProvider>,
@@ -88,6 +91,16 @@ function clientWith(handoff: RequirementHandoff): FormaApiClient {
   return { getRequirementHandoff: vi.fn(async () => handoff) } as unknown as FormaApiClient;
 }
 
+function page(over: Partial<RequirementHandoff['pages'][number]> = {}): RequirementHandoff['pages'][number] {
+  return {
+    pageId: 'home', artifactId: 'A', variant: 'default', version: 1, title: 'Home', iconCount: 0,
+    vziUrl: '/v', contentUrl: '/c',
+    iconBaseUrl: '/api/products/P-abc123/artifacts/A/icons/',
+    bundleBaseUrl: '/api/products/P-abc123/artifacts/A/versions/1/bundle/',
+    ...over,
+  };
+}
+
 describe('AnnotationPage', () => {
   it('shows an empty state (no surface) when there are no handoff pages', async () => {
     await render(clientWith({ pages: [], errors: [] }));
@@ -96,29 +109,13 @@ describe('AnnotationPage', () => {
   });
 
   it('renders the CanvasKit surface when pages decode', async () => {
-    await render(clientWith({
-      pages: [{
-        pageId: 'home', artifactId: 'A', variant: 'default', version: 1, title: 'Home', iconCount: 0,
-        vziUrl: '/v',
-        iconBaseUrl: '/api/products/P-abc123/artifacts/A/icons/',
-        bundleBaseUrl: '/api/products/P-abc123/artifacts/A/versions/1/bundle/',
-      }],
-      errors: [],
-    }));
+    await render(clientWith({ pages: [page()], errors: [] }));
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();
   });
 
   it('records missing icon and bundle resources but still renders the page', async () => {
-    await render(clientWith({
-      pages: [{
-        pageId: 'home', artifactId: 'A', variant: 'default', version: 1, title: 'Home', iconCount: 0,
-        vziUrl: '/v',
-        iconBaseUrl: '/api/products/P-abc123/artifacts/A/icons/',
-        bundleBaseUrl: '/api/products/P-abc123/artifacts/A/versions/1/bundle/',
-      }],
-      errors: [],
-    }), {
-      fetchVzi: async () => new Uint8Array([9]),
+    await render(clientWith({ pages: [page()], errors: [] }), {
+      fetchContent: async () => missingResContent(),
       checkResourceUrl: async () => false,
     });
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();
@@ -127,23 +124,17 @@ describe('AnnotationPage', () => {
     expect(container.textContent).toContain('missing resource');
   });
 
-  it('keeps a failed VZI page as a marked frame while rendering another decoded page', async () => {
+  it('keeps a failed content fetch as a marked frame while rendering another page', async () => {
     await render(clientWith({
       pages: [
-        {
-          pageId: 'home', artifactId: 'A', variant: 'default', version: 1, title: 'Home', iconCount: 0,
-          vziUrl: '/ok', iconBaseUrl: '/i/', bundleBaseUrl: '/b/',
-        },
-        {
-          pageId: 'settings', artifactId: 'B', variant: 'default', version: 1, title: 'Settings', iconCount: 0,
-          vziUrl: '/missing', iconBaseUrl: '/i2/', bundleBaseUrl: '/b2/',
-        },
+        page({ pageId: 'home', artifactId: 'A', title: 'Home', contentUrl: '/ok' }),
+        page({ pageId: 'settings', artifactId: 'B', title: 'Settings', contentUrl: '/missing' }),
       ],
       errors: [],
     }), {
-      fetchVzi: async (url) => {
+      fetchContent: async (url) => {
         if (url === '/missing') throw new Error('HTTP 404');
-        return new Uint8Array([1]);
+        return rootContent();
       },
     });
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();

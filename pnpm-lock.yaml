@@ -302,6 +302,10 @@ importers:
       fastify:
         specifier: ^5.8.5
         version: 5.8.5
+    devDependencies:
+      '@vzi-core/format':
+        specifier: workspace:*
+        version: link:../vzi-format
 
   packages/viewer:
     dependencies:

@@ -10,13 +10,4 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ["canvaskit-wasm"],
   },
-  build: {
-    rollupOptions: {
-      // vzi-format's encoder imports Node-only modules (zlib brotliCompressSync,
-      // crypto) that cannot be bundled for the browser. The encoder is never
-      // called in the web app (only VZIDecoder is used); externalising these
-      // Node built-ins lets the dead-code path resolve without a bundler error.
-      external: ["zlib", "crypto"],
-    },
-  },
 });

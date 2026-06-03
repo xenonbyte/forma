@@ -31,5 +31,8 @@
   "dependencies": {
     "@xenonbyte/forma-core": "workspace:*",
     "fastify": "^5.8.5"
+  },
+  "devDependencies": {
+    "@vzi-core/format": "workspace:*"
   }
 }

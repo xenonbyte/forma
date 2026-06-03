@@ -303,6 +303,7 @@ export interface HandoffPage {
   title: string;
   iconCount: number;
   vziUrl: string;
+  contentUrl: string;
   iconBaseUrl: string;
   bundleBaseUrl: string;
 }

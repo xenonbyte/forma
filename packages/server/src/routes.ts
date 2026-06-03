@@ -20,6 +20,7 @@ import {
   exportArchiveAssets,
   FormaError,
   makeExportArchiveAssetsDeps,
+  loadDecodedHandoffContent,
   type ArtifactManifest,
   type BrandStyleContent,
   type DesignPointer,
@@ -420,6 +421,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
           title: pageNameById.get(p.pageId) ?? p.pageId,
           iconCount: p.iconCount,
           vziUrl: vziUrl(productId, p.artifactId),
+          contentUrl: vziContentUrl(productId, p.artifactId),
           iconBaseUrl: iconBaseUrl(productId, p.artifactId),
           bundleBaseUrl: bundleBaseUrl(productId, p.artifactId, p.version),
         })),
@@ -456,6 +458,37 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       reply.header("Content-Type", "application/octet-stream");
       reply.header("Cache-Control", "public, max-age=3600");
       reply.send(content);
+    },
+  );
+
+  // Decoded VZI content (JSON) for the Web annotation canvas. The VZI decoder is
+  // Node-only, so decoding happens server-side; the browser consumes JSON.
+  app.get<{ Params: { pid: string; aid: string } }>(
+    "/api/products/:pid/artifacts/:aid/vzi/content",
+    async (request, reply) => {
+      const { pid, aid } = request.params;
+      const productsDir = getFormaPaths(store.home).productsDir;
+      let vziFile: string;
+      let vziDir: string;
+      try {
+        vziFile = getArtifactVziPath(productsDir, pid, aid);
+        vziDir = getArtifactVziDir(productsDir, pid, aid);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        return;
+      }
+      const resolved = resolve(vziFile);
+      if (!isSameOrChildPath(resolve(vziDir), resolved)) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes vzi directory", details: {} });
+        return;
+      }
+      if (!(await fileExists(resolved))) {
+        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "VZI file not found", details: {} });
+        return;
+      }
+      const content = await loadDecodedHandoffContent(resolved);
+      reply.header("Cache-Control", "public, max-age=3600");
+      return content;
     },
   );
 
@@ -991,6 +1024,10 @@ function bundleBaseUrl(productId: string, artifactId: string, version: number): 
 
 function vziUrl(productId: string, artifactId: string): string {
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/vzi/page.vzi`;
+}
+
+function vziContentUrl(productId: string, artifactId: string): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/vzi/content`;
 }
 
 function iconBaseUrl(productId: string, artifactId: string): string {

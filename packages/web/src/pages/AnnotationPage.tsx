@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CanvasKitSurface } from "@vzi-core/renderer";
 import type { CanvasKitViewportState } from "@vzi-core/renderer";
-import { VZIDecoder } from "@vzi-core/format";
 import type { VZIContent } from "@vzi-core/format";
 import { apiClient, formatApiError, type FormaApiClient, type HandoffPage } from "../api.js";
 import { useT } from "../LocaleContext.js";
@@ -16,11 +15,17 @@ import {
   type ResourceError,
 } from "./annotation-adapter.js";
 
+interface DecodedPageContent {
+  metadata: Record<string, unknown>;
+  elements: Map<string, unknown>;
+  images: Map<string, unknown>;
+}
+
 export interface AnnotationPageProps {
   client?: FormaApiClient;
   params: { productId: string; reqId: string };
-  /** Injectable for tests; defaults to fetching the route as bytes. */
-  fetchVzi?: (url: string) => Promise<Uint8Array>;
+  /** Injectable for tests; defaults to fetching the decoded-content route as JSON. */
+  fetchContent?: (url: string) => Promise<DecodedPageContent>;
   /** Injectable for tests; defaults to HEAD for same-origin local artifact routes. */
   checkResourceUrl?: (url: string) => Promise<boolean>;
 }
@@ -39,10 +44,19 @@ type LoadState =
   | { status: "empty" }
   | { status: "ready"; pages: AdapterCanvasPageInput[]; pageErrors: PageLoadError[]; missingResources: ResourceError[] };
 
-async function defaultFetchVzi(url: string): Promise<Uint8Array> {
+async function defaultFetchContent(url: string): Promise<DecodedPageContent> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return new Uint8Array(await res.arrayBuffer());
+  const json = (await res.json()) as {
+    metadata?: Record<string, unknown>;
+    elements?: Array<[string, unknown]>;
+    images?: Array<[string, unknown]>;
+  };
+  return {
+    metadata: json.metadata ?? {},
+    elements: new Map(json.elements ?? []),
+    images: new Map(json.images ?? []),
+  };
 }
 
 async function defaultCheckResourceUrl(url: string): Promise<boolean> {
@@ -81,16 +95,6 @@ async function validateResourceUrls(
   return errors;
 }
 
-function decodeVzi(bytes: Uint8Array): VZIContent {
-  const decoder = new VZIDecoder({ enableErrorRecovery: true });
-  const result = decoder.decode(bytes);
-  const fatal = result.errors.filter((e) => e.fatal);
-  if (fatal.length > 0) {
-    throw new Error(fatal.map((e) => e.message).join("; "));
-  }
-  return result.content;
-}
-
 /** Initial fit-to-content viewport: scale so the whole tiled canvas is visible, centered. */
 function fitViewport(cw: number, ch: number, vw: number, vh: number): CanvasKitViewportState {
   if (cw <= 0 || ch <= 0) return { offsetX: 0, offsetY: 0, scale: 1 };
@@ -102,7 +106,7 @@ function fitViewport(cw: number, ch: number, vw: number, vh: number): CanvasKitV
 export function AnnotationPage({
   client = apiClient,
   params,
-  fetchVzi = defaultFetchVzi,
+  fetchContent = defaultFetchContent,
   checkResourceUrl = defaultCheckResourceUrl,
 }: AnnotationPageProps) {
   const t = useT();
@@ -130,8 +134,8 @@ export function AnnotationPage({
         const pageErrors: PageLoadError[] = [];
         for (const page of handoff.pages) {
           try {
-            const bytes = await fetchVzi(page.vziUrl);
-            pages.push(toAdapterInput(page, decodeVzi(bytes)));
+            const content = await fetchContent(page.contentUrl);
+            pages.push(toAdapterInput(page, content));
           } catch (e) {
             pageErrors.push({
               pageId: page.pageId,
@@ -162,7 +166,7 @@ export function AnnotationPage({
     return () => {
       cancelled = true;
     };
-  }, [client, productId, reqId, fetchVzi, checkResourceUrl]);
+  }, [client, productId, reqId, fetchContent, checkResourceUrl]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -314,13 +318,13 @@ function PageFrameOverlays({
   );
 }
 
-function toAdapterInput(page: HandoffPage, content: VZIContent): AdapterPageInput {
+function toAdapterInput(page: HandoffPage, content: DecodedPageContent): AdapterPageInput {
   return {
     pageId: page.pageId,
     artifactId: page.artifactId,
     variant: page.variant,
     title: page.title,
-    content,
+    content: content as unknown as VZIContent,
     urls: { iconBaseUrl: page.iconBaseUrl, bundleBaseUrl: page.bundleBaseUrl },
   };
 }

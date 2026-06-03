@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createFormaStore, FormaError, getArtifactVersionDir, getArtifactVziPath, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
+import { SpatialIndexBuilder, VZIEncoder } from "@vzi-core/format";
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -2196,5 +2197,51 @@ describe("annotation handoff routes", () => {
 
     const missing = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/icons/nope.svg` });
     expect(missing.statusCode).toBe(404);
+  });
+
+  it("GET /handoff exposes a decoded-content URL per page", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID } = await seedArchived(home);
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/requirements/R-1/handoff` });
+    expect(res.json().pages[0].contentUrl).toBe(`/api/products/${PID}/artifacts/A-home/vzi/content`);
+  });
+
+  it("GET vzi/content returns decoded JSON (metadata + element/image entries)", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const productsRoot = join(home, "data", "products");
+    const PID = "P-abc123";
+    const AID = "A-home";
+    await seedArchived(home);
+    const map = new Map<string, unknown>([
+      ["root", { id: "root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 320, height: 640 }, styles: {} }],
+    ]);
+    const source = {
+      header: {}, metadata: { formaViewport: { width: 320, height: 640 } }, elements: map, sharedStyles: new Map(),
+      spatialIndex: new SpatialIndexBuilder().build(map as never), colorTokens: [], fontTokens: [], annotations: [],
+      images: new Map(), layers: [], compatibility: { minReaderVersion: "2.0.0", formatVersion: "2.0.0", features: [] },
+    };
+    await writeFile(getArtifactVziPath(productsRoot, PID, AID), Buffer.from(new VZIEncoder().encode(source as never)));
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/vzi/content` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.metadata.formaViewport.width).toBe(320);
+    expect(body.elements.map((e: [string, unknown]) => e[0])).toContain("root");
+  });
+
+  it("GET vzi/content 404s when the file is missing", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID, AID } = await seedArchived(home);
+    await rm(getArtifactVziPath(join(home, "data", "products"), PID, AID), { force: true });
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/vzi/content` });
+    expect(res.statusCode).toBe(404);
   });
 });
