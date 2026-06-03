@@ -7,13 +7,25 @@ import type { FormaApiClient, RequirementHandoff } from '../api.js';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const canvasKitSurfaceCalls = vi.hoisted(() => [] as Array<{
+  elements?: unknown[];
+  onViewportChange?: (viewport: { offsetX: number; offsetY: number; scale: number }) => void;
+}>);
+
 // Mock the WebGL surface — happy-dom has no canvas/WebGL. The adapter pulls
 // buildCanvasKitElementTree from the same module, so mock it here too.
 vi.mock('@vzi-core/renderer', async () => {
   const React = await import('react');
   return {
-    CanvasKitSurface: (props: { elements?: unknown[]; width?: number; height?: number; viewport?: { offsetX: number; offsetY: number; scale: number } }) =>
-      React.createElement('div', {
+    CanvasKitSurface: (props: {
+      elements?: unknown[];
+      width?: number;
+      height?: number;
+      viewport?: { offsetX: number; offsetY: number; scale: number };
+      onViewportChange?: (viewport: { offsetX: number; offsetY: number; scale: number }) => void;
+    }) => {
+      canvasKitSurfaceCalls.push({ elements: props.elements, onViewportChange: props.onViewportChange });
+      return React.createElement('div', {
         'data-testid': 'ck-surface',
         'data-count': (props.elements ?? []).length,
         'data-width': props.width,
@@ -21,7 +33,8 @@ vi.mock('@vzi-core/renderer', async () => {
         'data-viewport-scale': props.viewport ? String(props.viewport.scale) : '',
         'data-viewport-offset-x': props.viewport ? String(props.viewport.offsetX) : '',
         'data-viewport-offset-y': props.viewport ? String(props.viewport.offsetY) : '',
-      }),
+      });
+    },
     buildCanvasKitElementTree: (doc: { elements?: Record<string, unknown> }) =>
       Object.values(doc.elements ?? {}).map((e) => ({ ...(e as object), children: [] })),
   };
@@ -55,6 +68,7 @@ function missingResContent(): DecodedPageContent {
 let container: HTMLElement;
 let root: Root;
 beforeEach(() => {
+  canvasKitSurfaceCalls.length = 0;
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -174,6 +188,23 @@ describe('AnnotationPage', () => {
     expect(Number(surface?.getAttribute('data-viewport-scale'))).toBeCloseTo(0.552, 3);
     expect(Number(surface?.getAttribute('data-viewport-offset-x'))).toBeCloseTo(212.36, 2);
     expect(Number(surface?.getAttribute('data-viewport-offset-y'))).toBe(28);
+  });
+
+  it('keeps CanvasKit elements stable across viewport-only updates when no resources are missing', async () => {
+    await render(clientWith({ pages: [page()], errors: [] }));
+
+    const initialCall = canvasKitSurfaceCalls.at(-1);
+    const initialElements = initialCall?.elements;
+    if (!initialElements || !initialCall?.onViewportChange) {
+      throw new Error('CanvasKitSurface did not render with viewport callback');
+    }
+
+    await act(async () => {
+      initialCall.onViewportChange?.({ offsetX: 12, offsetY: 34, scale: 0.75 });
+      await Promise.resolve();
+    });
+
+    expect(canvasKitSurfaceCalls.at(-1)?.elements).toBe(initialElements);
   });
 
   it('records missing icon and bundle resources but still renders the page', async () => {
