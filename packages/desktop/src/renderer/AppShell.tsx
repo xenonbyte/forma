@@ -28,19 +28,12 @@ interface PageState {
   pages: PageRow[];
 }
 
-interface BrandStyleRow {
-  name: string;
-  description: string;
-}
-
 function toWorkspaceSelection(sel: Selection): { productId: string | null; nav: WorkspaceSelection } {
   switch (sel.type) {
     case 'requirement':
       return { productId: sel.productId, nav: { type: 'requirement', reqId: sel.reqId } };
     case 'page':
       return { productId: sel.productId, nav: { type: 'page', reqId: sel.reqId, pageId: sel.pageId } };
-    case 'style':
-      return { productId: null, nav: { type: 'style', name: sel.name } };
     case 'none':
       return { productId: null, nav: { type: 'none' } };
   }
@@ -58,7 +51,6 @@ export function AppShell() {
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<RequirementRow[]>([]);
   const [pageState, setPageState] = useState<PageState>({ reqId: null, pages: [] });
-  const [brandStyles, setBrandStyles] = useState<BrandStyleRow[]>([]);
   const [baseUrl, setBaseUrl] = useState<string>('');
   const [connected, setConnected] = useState<boolean>(true);
   const [startupReady, setStartupReady] = useState<boolean>(false);
@@ -77,15 +69,13 @@ export function AppShell() {
     let cancelled = false;
     void (async () => {
       try {
-        const [{ products: ps }, base, styles] = await Promise.all([
+        const [{ products: ps }, base] = await Promise.all([
           forma.listProducts(),
           forma.formaServerBaseUrl(),
-          forma.listStyles(),
         ]);
         if (cancelled) return;
         setProducts(ps);
         setBaseUrl(base);
-        setBrandStyles(styles.map((s) => ({ name: s.name, description: s.description })));
 
         const hashSel = parseHash(window.location.hash);
         const fromHash = toWorkspaceSelection(hashSel);
@@ -94,7 +84,7 @@ export function AppShell() {
         const productId =
           hashProductExists ? hashSel.productId : (ps[0]?.id ?? null);
         setActiveProductId(productId);
-        if (hashSel.type === 'style' || hashProductExists) {
+        if (hashProductExists) {
           setNav(fromHash.nav);
         }
         setStartupReady(true);
@@ -121,12 +111,6 @@ export function AppShell() {
       if (hashSel.type === 'requirement' || hashSel.type === 'page') {
         if (!products.some((p) => p.id === hashSel.productId)) return;
         setActiveProductId(hashSel.productId);
-        setNav(fromHash.nav);
-        return;
-      }
-
-      if (hashSel.type === 'style') {
-        setActiveProductId((current) => current ?? (products[0]?.id ?? null));
         setNav(fromHash.nav);
         return;
       }
@@ -159,7 +143,6 @@ export function AppShell() {
         setRequirements(rs);
 
         setNav((current) => {
-          if (current.type === 'style') return current;
           if (
             (current.type === 'requirement' || current.type === 'page') &&
             rs.some((r) => r.id === current.reqId)
@@ -217,8 +200,6 @@ export function AppShell() {
     let sel: Selection;
     if (nav.type === 'none') {
       sel = { type: 'none' };
-    } else if (nav.type === 'style') {
-      sel = { type: 'style', name: nav.name };
     } else if (activeProductId) {
       sel =
         nav.type === 'page'
@@ -245,7 +226,6 @@ export function AppShell() {
   const productName = activeProduct?.name ?? '';
 
   const crumb = (() => {
-    if (nav.type === 'style') return `品牌风格 / ${nav.name}`;
     const req = requirements.find((r) => r.id === activeReqId);
     if (!req) return '';
     if (nav.type === 'page') {
@@ -262,7 +242,6 @@ export function AppShell() {
         activeProductId={activeProductId}
         requirements={requirements}
         pages={pages}
-        brandStyles={brandStyles}
         connected={connected}
         nav={nav}
         onSelect={setNav}

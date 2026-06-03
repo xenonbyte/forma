@@ -3,7 +3,6 @@ import { Viewer, buildViewerModel } from '@xenonbyte/forma-viewer';
 import type { ViewerEntry } from '@xenonbyte/forma-viewer';
 import { mapArtifactsToViewerInputs, type FormaArtifact } from './viewer/mapArtifacts.js';
 import { createDesktopResourceResolver } from './viewer/resolver.js';
-import { StyleDetail } from './StyleDetail.js';
 
 /**
  * Workspace selection (productId is supplied separately via prop). `none`
@@ -12,8 +11,7 @@ import { StyleDetail } from './StyleDetail.js';
 export type WorkspaceSelection =
   | { type: 'none' }
   | { type: 'requirement'; reqId: string }
-  | { type: 'page'; reqId: string; pageId: string }
-  | { type: 'style'; name: string };
+  | { type: 'page'; reqId: string; pageId: string };
 
 interface WorkspacePaneProps {
   selection: WorkspaceSelection;
@@ -28,14 +26,6 @@ type ViewerState =
   | { status: 'ready'; model: ReturnType<typeof buildViewerModel> };
 
 export function WorkspacePane({ selection, productId, baseUrl }: WorkspacePaneProps) {
-  if (selection.type === 'style') {
-    return (
-      <div className="workspace">
-        <StyleDetail name={selection.name} />
-      </div>
-    );
-  }
-
   if (selection.type === 'requirement' || selection.type === 'page') {
     const reqId = selection.reqId;
     const pageId = selection.type === 'page' ? selection.pageId : undefined;
@@ -49,7 +39,7 @@ export function WorkspacePane({ selection, productId, baseUrl }: WorkspacePanePr
 
   return (
     <div className="workspace">
-      <div className="workspace__empty">从左侧选择一个需求、页面或品牌风格以开始。</div>
+      <div className="workspace__empty">从左侧选择一个需求或页面以开始。</div>
     </div>
   );
 }

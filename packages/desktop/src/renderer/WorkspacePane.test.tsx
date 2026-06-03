@@ -59,15 +59,8 @@ function installForma() {
       { id: 'c', kind: 'design-page', title: '别的需求', updated_at: '', requirement_id: 'r2', page_id: 'login', variant: 'default', current_version: 1 },
     ],
   });
-  const getStyle = vi.fn().mockResolvedValue({
-    kind: 'brand',
-    metadata: { name: 'clean', description: '' },
-    designMd: '# Clean',
-    tokensCss: ':root{}',
-    componentsHtml: '<i></i>',
-  });
-  window.forma = { getProduct, getRequirement, listArtifacts, getStyle } as unknown as Window['forma'];
-  return { getProduct, getRequirement, listArtifacts, getStyle };
+  window.forma = { getProduct, getRequirement, listArtifacts } as unknown as Window['forma'];
+  return { getProduct, getRequirement, listArtifacts };
 }
 
 beforeEach(() => {
@@ -107,19 +100,6 @@ describe('WorkspacePane', () => {
     const model = viewerSpy.mock.calls.at(-1)![0].model as { __model: { entry: string; artifacts: Array<{ artifactId: string }> } };
     expect(model.__model.entry).toBe('page');
     expect(model.__model.artifacts.map((a) => a.artifactId)).toEqual(['a', 'd']);
-  });
-
-  it('style selection renders StyleDetail with only the name; baseUrl never reaches style reads', async () => {
-    const { getStyle } = installForma();
-    const { container } = render(
-      <WorkspacePane selection={{ type: 'style', name: 'clean' }} productId="p1" baseUrl="http://127.0.0.1:3000" />
-    );
-    await flush();
-
-    expect(container.querySelector("[data-testid='viewer']")).toBeNull();
-    expect(getStyle).toHaveBeenCalledWith('clean');
-    expect(resolverSpy).not.toHaveBeenCalled();
-    expect(container.textContent).toContain('# Clean');
   });
 
   it('renders an empty prompt for an empty selection', async () => {

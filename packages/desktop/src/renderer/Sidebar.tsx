@@ -18,19 +18,12 @@ interface SidebarPage {
   name: string;
 }
 
-interface SidebarBrandStyle {
-  name: string;
-  description: string;
-}
-
 interface SidebarProps {
   products: SidebarProduct[];
   activeProductId: string | null;
   requirements: SidebarRequirement[];
   /** Pages of the currently-selected requirement (from getRequirement(...).pages). */
   pages: SidebarPage[];
-  /** Brand styles only — system styles are a catalog stub and never listed here. */
-  brandStyles: SidebarBrandStyle[];
   connected: boolean;
   nav: WorkspaceSelection;
   onSelect: (selection: WorkspaceSelection) => void;
@@ -43,16 +36,15 @@ function itemClass(active: boolean): string {
 
 /**
  * Presentational sidebar (props in, callbacks out). Renders the product
- * switcher, the 需求 / 页面 / 品牌风格 nav sections, and the bottom connection
- * status dot. The active requirement id (when nav is a requirement/page) is
- * carried into page selections.
+ * switcher, the 需求 / 页面 nav sections, and the bottom connection status
+ * dot. The active requirement id (when nav is a requirement/page) is carried
+ * into page selections.
  */
 export function Sidebar({
   products,
   activeProductId,
   requirements,
   pages,
-  brandStyles,
   connected,
   nav,
   onSelect,
@@ -114,25 +106,6 @@ export function Sidebar({
               }}
             >
               {pg.name}
-            </button>
-          ))
-        )}
-      </section>
-
-      <section className="sidebar__section">
-        <h2 className="sidebar__section-title">品牌风格</h2>
-        {brandStyles.length === 0 ? (
-          <span className="sidebar__empty">暂无品牌风格</span>
-        ) : (
-          brandStyles.map((s) => (
-            <button
-              key={s.name}
-              type="button"
-              className={itemClass(nav.type === 'style' && nav.name === s.name)}
-              data-nav-style={s.name}
-              onClick={() => onSelect({ type: 'style', name: s.name })}
-            >
-              {s.name}
             </button>
           ))
         )}

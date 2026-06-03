@@ -55,14 +55,6 @@ function installForma() {
   });
   const listArtifacts = vi.fn().mockResolvedValue({ artifacts: [] });
   const formaServerBaseUrl = vi.fn().mockResolvedValue('http://127.0.0.1:3000');
-  const listStyles = vi.fn().mockResolvedValue([{ name: 'clean', description: 'Clean brand' }]);
-  const getStyle = vi.fn().mockResolvedValue({
-    kind: 'brand',
-    metadata: { name: 'clean', description: '' },
-    designMd: '# Clean',
-    tokensCss: ':root{}',
-    componentsHtml: '<i></i>',
-  });
   window.forma = {
     listProducts,
     getProduct,
@@ -70,8 +62,6 @@ function installForma() {
     getRequirement,
     listArtifacts,
     formaServerBaseUrl,
-    listStyles,
-    getStyle,
   } as unknown as Window['forma'];
   return {
     listProducts,
@@ -79,8 +69,6 @@ function installForma() {
     getRequirement,
     listArtifacts,
     listRequirements,
-    listStyles,
-    getStyle,
     formaServerBaseUrl,
   };
 }
@@ -96,54 +84,19 @@ afterEach(() => {
 });
 
 describe('AppShell', () => {
-  it('loads products + styles and renders sidebar nav from getRequirement pages (not the listRequirements summary)', async () => {
-    const { listProducts, getRequirement, listStyles } = installForma();
+  it('loads products and renders sidebar nav from getRequirement pages (not the listRequirements summary)', async () => {
+    const { listProducts, getRequirement } = installForma();
     const { container } = render(<AppShell />);
     await flush();
     await flush();
 
     expect(listProducts).toHaveBeenCalled();
-    expect(listStyles).toHaveBeenCalled();
     // default requirement selected -> getRequirement called for full pages
     expect(getRequirement).toHaveBeenCalledWith('p1', 'r1');
 
     // page-nav from getRequirement pages
     expect(container.querySelector('[data-nav-page="login"]')).not.toBeNull();
     expect(container.querySelector('[data-nav-page="home"]')).not.toBeNull();
-    // brand style nav from listStyles
-    expect(container.querySelector('[data-nav-style="clean"]')).not.toBeNull();
-  });
-
-  it('never uses global fetch for style list/detail (IPC-only)', async () => {
-    const fetchSpy = vi.fn();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (globalThis as any).fetch = fetchSpy;
-    const { getStyle } = installForma();
-
-    const { container } = render(<AppShell />);
-    await flush();
-    await flush();
-
-    // click the brand style nav -> StyleDetail via getStyle, not fetch
-    await act(async () => {
-      (container.querySelector('[data-nav-style="clean"]') as HTMLButtonElement).click();
-    });
-    await flush();
-
-    expect(getStyle).toHaveBeenCalledWith('clean');
-    expect(fetchSpy).not.toHaveBeenCalled();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    delete (globalThis as any).fetch;
-  });
-
-  it('reflects a style selection from the location hash', async () => {
-    installForma();
-    window.location.hash = '#/styles/clean';
-    const { container } = render(<AppShell />);
-    await flush();
-    await flush();
-
-    expect(container.textContent).toContain('# Clean');
   });
 
   it('restores requirement deep-link from hash — shows deep-linked req, not the first one', async () => {

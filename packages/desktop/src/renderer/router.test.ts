@@ -25,17 +25,12 @@ describe('parseHash', () => {
     });
   });
 
-  it('parses a style selection', () => {
-    expect(parseHash('#/styles/clean')).toEqual({ type: 'style', name: 'clean' });
-  });
-
   it('decodes URI components', () => {
     expect(parseHash('#/products/p%201/requirements/r%2F1')).toEqual({
       type: 'requirement',
       productId: 'p 1',
       reqId: 'r/1',
     });
-    expect(parseHash('#/styles/a%20b')).toEqual({ type: 'style', name: 'a b' });
   });
 
   it('returns none for unrecognized shapes', () => {
@@ -46,12 +41,10 @@ describe('parseHash', () => {
 });
 
 describe('buildHash', () => {
-  it('builds requirement / page / style hashes and round-trips through parseHash', () => {
+  it('builds requirement / page hashes and round-trips through parseHash', () => {
     const req = { type: 'requirement', productId: 'p 1', reqId: 'r/1' } as const;
     const page = { type: 'page', productId: 'p-1', reqId: 'r-1', pageId: 'login' } as const;
-    const style = { type: 'style', name: 'a b' } as const;
     expect(parseHash(buildHash(req))).toEqual(req);
     expect(parseHash(buildHash(page))).toEqual(page);
-    expect(parseHash(buildHash(style))).toEqual(style);
   });
 });

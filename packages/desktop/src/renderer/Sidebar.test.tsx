@@ -34,28 +34,20 @@ const baseProps = {
     { page_id: 'login', name: '登录页' },
     { page_id: 'home', name: '首页' },
   ],
-  brandStyles: [
-    { name: 'clean', description: 'Clean brand' },
-    { name: 'editorial', description: 'Editorial brand' },
-  ],
   connected: true,
 };
 
 describe('Sidebar', () => {
-  it('renders the three nav sections with their items', () => {
+  it('renders the two nav sections with their items', () => {
     const { container } = render(
       <Sidebar {...baseProps} nav={{ type: 'none' }} onSelect={vi.fn()} onSelectProduct={vi.fn()} />
     );
 
     expect(container.textContent).toContain('需求');
     expect(container.textContent).toContain('页面');
-    expect(container.textContent).toContain('品牌风格');
 
     expect(container.querySelector('[data-nav-requirement="r1"]')).not.toBeNull();
     expect(container.querySelector('[data-nav-page="login"]')).not.toBeNull();
-    expect(container.querySelector('[data-nav-style="clean"]')).not.toBeNull();
-    // brand styles only, no system-style stubs entering nav
-    expect(container.querySelectorAll('[data-nav-style]')).toHaveLength(2);
   });
 
   it('fires onSelect with a requirement selection', () => {
@@ -79,15 +71,6 @@ describe('Sidebar', () => {
     );
     (container.querySelector('[data-nav-page="login"]') as HTMLButtonElement).click();
     expect(onSelect).toHaveBeenCalledWith({ type: 'page', reqId: 'r1', pageId: 'login' });
-  });
-
-  it('fires onSelect with a style selection', () => {
-    const onSelect = vi.fn();
-    const { container } = render(
-      <Sidebar {...baseProps} nav={{ type: 'none' }} onSelect={onSelect} onSelectProduct={vi.fn()} />
-    );
-    (container.querySelector('[data-nav-style="editorial"]') as HTMLButtonElement).click();
-    expect(onSelect).toHaveBeenCalledWith({ type: 'style', name: 'editorial' });
   });
 
   it('fires onSelectProduct from the product switcher', () => {
