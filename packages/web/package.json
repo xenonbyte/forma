@@ -10,8 +10,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@vzi-core/format": "workspace:*",
+    "@vzi-core/renderer": "workspace:*",
     "@xenonbyte/forma-core": "workspace:*",
     "@xenonbyte/forma-viewer": "workspace:*",
+    "canvaskit-wasm": "0.40.0",
     "leafer-ui": "^1.9.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

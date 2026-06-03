@@ -10,7 +10,7 @@ import type { CanvasKit } from 'canvaskit-wasm';
 export interface CanvasKitLoaderOptions {
   /**
    * WASM 文件位置
-   * 默认使用 CDN
+   * 默认使用 /runtime-assets/canvaskit/
    */
   locateFile?: (file: string) => string;
 
@@ -21,7 +21,6 @@ export interface CanvasKitLoaderOptions {
   useWebGL?: boolean;
 }
 
-const CANVASKIT_CDN_BASE = 'https://unpkg.com/canvaskit-wasm@0.40.0/bin/full/';
 const CANVASKIT_LOCAL_BASE = '/runtime-assets/canvaskit/';
 
 /**
@@ -90,7 +89,6 @@ export class CanvasKitLoader {
     }
 
     candidates.add(CANVASKIT_LOCAL_BASE);
-    candidates.add(CANVASKIT_CDN_BASE);
     return [...candidates];
   }
 

@@ -470,12 +470,21 @@ importers:
 
   packages/web:
     dependencies:
+      '@vzi-core/format':
+        specifier: workspace:*
+        version: link:../vzi-format
+      '@vzi-core/renderer':
+        specifier: workspace:*
+        version: link:../vzi-renderer
       '@xenonbyte/forma-core':
         specifier: workspace:*
         version: link:../core
       '@xenonbyte/forma-viewer':
         specifier: workspace:*
         version: link:../viewer
+      canvaskit-wasm:
+        specifier: 0.40.0
+        version: 0.40.0
       leafer-ui:
         specifier: ^1.9.0
         version: 1.12.4
