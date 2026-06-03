@@ -295,6 +295,30 @@ export interface ArchiveRequirementResult {
   vzi: ArchiveVziResult;
 }
 
+export interface HandoffPage {
+  pageId: string;
+  artifactId: string;
+  variant: string;
+  version: number;
+  title: string;
+  iconCount: number;
+  vziUrl: string;
+  iconBaseUrl: string;
+  bundleBaseUrl: string;
+}
+
+export interface HandoffPageError {
+  artifactId?: string;
+  pageId?: string;
+  path?: string;
+  reason: string;
+}
+
+export interface RequirementHandoff {
+  pages: HandoffPage[];
+  errors: HandoffPageError[];
+}
+
 export type RequirementDesignOperationIntent =
   | "generate"
   | "refine"
@@ -365,6 +389,7 @@ export interface FormaApiClient {
   getProduct(productId: string): Promise<Product>;
   getProductArtifact(productId: string, artifactId: string): Promise<ArtifactDetail>;
   getRequirement(productId: string, requirementId: string): Promise<RequirementWithDocument>;
+  getRequirementHandoff(productId: string, requirementId: string): Promise<RequirementHandoff>;
   getRequirementDesignDiff(productId: string, requirementId: string, input: { from_page_version: number; page_id?: string; to_page_version: number }): Promise<RequirementDesignDiff>;
   getRequirementDesignHistory(productId: string, requirementId: string, pageId?: string): Promise<RequirementDesignHistoryEntry[]>;
   getStyle(name: string): Promise<BrandStyleContent>;
@@ -559,6 +584,11 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     getRequirement: (productId, requirementId) =>
       apiRecord<RequirementWithDocument>(
         `/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`,
+        requestOptions(fetcher)
+      ),
+    getRequirementHandoff: (productId, requirementId) =>
+      apiRecord<RequirementHandoff>(
+        `/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/handoff`,
         requestOptions(fetcher)
       ),
     getRequirementDesignDiff: (productId, requirementId, input) =>
