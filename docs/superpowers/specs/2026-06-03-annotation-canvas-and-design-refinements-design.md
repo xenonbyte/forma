@@ -11,10 +11,10 @@
 
 1. **交付物已产出，但产品端无法消费。** 归档需求时，Forma 已经把最终设计转换为页级 icons（`<artifactId>/icons/` + `icons.json`）与 `.vzi` 文件（`<artifactId>/vzi/page.vzi`）。但当前只有 MCP 工具（`get_design_handoff` / `get_page_ui` / `get_ui_node` / `search_page_ui`）能读取这些交付物；web 与 desktop 都没有任何可视化入口。HTTP 层也无法取到 `.vzi`：现有 bundle 路由（`packages/server/src/routes.ts` 的 `…/versions/:v/bundle/*`）只服务 `v{n}/` 目录，覆盖不到其兄弟目录 `vzi/`、`icons/`。
 
-2. **VZI 渲染存在两条并存路径，且都未接入任何 app。** `@xenonbyte/forma-vzi-renderer` 同时提供：
+2. **VZI 渲染存在两条并存路径，且都未接入任何 app。** `@vzi-core/renderer`（包目录 `packages/vzi-renderer`）同时提供：
    - **CanvasKit live 渲染**（`CanvasKitSurface.tsx`，1093 行 + Border/Color/Gradient/Shadow/TextStyle 五个 converter + `FontManager`/`FontCache` + 命中索引）：从 IR 元素实时矢量渲染，保真度高。
    - **snapshot PNG 瓦片渲染**（`VZIRenderer.tsx` 的 `full|tile` 模式 + `tile/TileRenderEngine` + `snapshot/` + `SnapshotAnnotationOverlay`）：基于预烘焙 PNG 瓦片。
-   经核查，`@xenonbyte/forma-vzi-renderer` 不被任何 app 包（web/desktop/server/mcp）依赖，两条路径都处于"已实现未接线"状态。
+   经核查，`@vzi-core/renderer` 不被任何 app 包（web/desktop/server/mcp）依赖，两条路径都处于"已实现未接线"状态。
 
 3. **生成侧两处长期痛点：**
    - 移动端设计稿被提示词强制绘制手机外壳（iPhone/Pixel frame、Dynamic Island、状态栏、home indicator），来源在 `packages/od-contracts/src/prompts/`。
@@ -78,29 +78,48 @@
   ▼
 server 新增 3 路由 (packages/server/src/routes.ts):
   ② GET /api/products/:pid/requirements/:reqId/handoff
-       → { pages: [{ pageId, artifactId, variant, vziUrl, iconBaseUrl }] }
+       → { pages: [{ pageId, artifactId, variant, version, vziUrl, iconBaseUrl, bundleBaseUrl }] }
   ③ GET /api/products/:pid/artifacts/:aid/vzi/page.vzi
        → 二进制 (application/octet-stream)，沿用 bundle 路由的 isSameOrChildPath 越界校验
   ④ GET /api/products/:pid/artifacts/:aid/icons/*
-       → 图标资源 (供页面内 <img>/svg 引用解析)
+       → 图标资源 (供页面内 <img>/svg 引用解析)，路径相对 artifact icons 目录解析；
+          空路径、`..` 越界、绝对磁盘路径、不可解析路径一律 400；
+          不存在资源 404；响应只允许 SVG/PNG/JPEG/WebP/GIF 等安全内容类型，
+          并设置与现有静态资源一致的缓存头
   │
   ▼ fetch (arraybuffer)
 web AnnotationPage (新页面 packages/web/src/pages/AnnotationPage.tsx):
   ⑤ 每页 .vzi → new VZIDecoder().decodeContent(bytes) → VZIContent { elements, metadata, annotations }
-  ⑥ buildCanvasKitElementTree(content) 得每页根树；按 x 轴累加偏移
-     (x = Σ(前序页宽 + gap)) 合成为单个 IRElement[]，每页包一层带页名的 frame 容器
-  ⑦ 渲染单个 <CanvasKitSurface
+  ⑥ normalizeVziContentForCanvasKit(content, pageUrls)：
+     - 将 content.elements 的 Map/record 统一转成 FlatIRDocumentLike.elements record
+     - 重写元素 src/imageData.src/source.src 与 content.images 引用：
+       data: URL 原样保留；icons/* 或 metadata.iconRelativePath → iconBaseUrl；
+       相对 bundle 资源或 assets/* → bundleBaseUrl；
+       file:、绝对磁盘路径、不可解析 URL 显式报错；远程 http(s) URL 不静默拉取，按违规资源记录错误
+  ⑦ buildCanvasKitElementTree(normalizedIr) 得每页根树；按 x 轴累加偏移
+     (x = Σ(前序页宽 + gap)) 合成为单个 IRElement[]。由于当前 CanvasKit 渲染器按元素
+     自身绝对 bounds 绘制，adapter 必须递归平移该页所有元素的 bounds 与命中区域；
+     仅包一层 offset frame 不足以移动 descendants，除非先为 renderer 增加真实 group transform
+  ⑧ 渲染单个 <CanvasKitSurface
         elements={合成后的 IRElement[]}
         interactive panOnPrimaryDrag
         viewport / onViewportChange   (内置缩放/平移)
         onSelectElement={…}            (内置命中测试)
      />
-  ⑧ (phase 2) 标注层：VZIContent.annotations 矢量叠加 + 选中元素检视面板 (bounds/styles/tokens)
+  ⑨ (phase 2) 标注层：VZIContent.annotations 矢量叠加 + 选中元素检视面板 (bounds/styles/tokens)
 ```
 
 **单 surface 合成的依据**：`CanvasKitSurface` 的 props 接受 `elements?: IRElement[]`（多棵根树数组）或 `ir`，并内置 `viewport`（offsetX/offsetY/scale）平移缩放与 `onSelectElement`/`onHoverElement` 命中。因此把每页根树按布局偏移合并为一个 `IRElement[]`，即可用**单个 WebGL 上下文**渲染整个无限画布，规避多上下文上限（浏览器约 16 个）。
 
-**web 新增依赖**：`@vzi-core/format`（`VZIDecoder`）+ `@xenonbyte/forma-vzi-renderer`（`CanvasKitSurface`），并在 web 的 Vite 配置接入 `canvaskit-wasm`（仓库根已有 `canvaskit-wasm@0.40.0`）的 wasm 资源加载。
+**web 新增依赖**：`@vzi-core/format`（`VZIDecoder`）+ `@vzi-core/renderer`（`CanvasKitSurface`），并在 web 的 Vite 配置接入 `canvaskit-wasm`（仓库根已有 `canvaskit-wasm@0.40.0`）的 wasm 资源加载。接入前必须先处理 React 兼容性：web 使用 React/React DOM 19，`packages/vzi-renderer` 当前 peer/dev typings 是 React 18；实施时需把 renderer peer range 与 `@types/react*` 验证/更新到 React 19 兼容，确保 workspace 不安装第二份 React，并把 `@vzi-core/renderer` typecheck 与 web build/typecheck 纳入验收。
+
+**VZI 到 CanvasKit 适配契约**：`AnnotationPage` 不得把 `VZIContent` 直接传给 `buildCanvasKitElementTree`。必须新增一个小型 adapter（可放在 web 页面同目录或 renderer helper 中）完成 `VZIContent.elements` → `FlatIRDocumentLike` / `IRElement[]` 转换、页级 frame 包装、资源 URL 重写与错误上报；测试需覆盖至少一个真实 `.vzi` 解码后可生成非空 CanvasKit 元素树的场景。
+
+**错误与空态契约**：
+- `GET /handoff` 只允许归档需求；未归档沿用 `REQUIREMENT_NOT_FINALIZED`。已归档但没有可用 handoff 页面时返回 `200 { pages: [], errors: [] }`，Web 显示空态，不跳转到设计重生成。
+- 单页 `.vzi` 不存在、不可读或 fatal decode error 时，该页标记为失败并在标注页侧栏/页框错误态显示；其它页面继续渲染。全部页面失败时显示错误态但保留返回产品/需求的导航。
+- icons 或 bundle 资源缺失时不阻塞整页渲染；对应元素显示占位/错误标记并在错误列表记录 artifactId/pageId/path。路径越界、`file:`、绝对磁盘路径、远程 http(s) 资源属于违规资源，必须显式记录错误且不发起 fetch。
+- server 路由必须校验 product/artifact 归属关系，所有文件服务都使用 `isSameOrChildPath` 约束最终 resolved path；错误码保持 Forma API 既有结构（`error_code` + `message`）。
 
 **布局**：页面按需求的页顺序水平平铺（`page_id` 顺序，与 `getRequirementPageIds` 一致），页间留 gap，每页顶部显示页名/variant。初始视口 fit-to-content。
 
@@ -127,7 +146,17 @@ web AnnotationPage (新页面 packages/web/src/pages/AnnotationPage.tsx):
 **现状**：`vzi-renderer/src/canvaskit/FontManager.ts` 从远程拉取字体——`raw.githubusercontent.com/google/material-design-icons/...`、`fonts.googleapis.com/...`（`:228-239`），配合 `FontCache`（IndexedDB）缓存，`withLocalFontFirst` 仅"本地优先再回退远程"。
 
 **要求**：
-1. 将渲染所需字体（正文字族 + Material Icons/Symbols 等图标字体）以**本地字体文件**形式打进包（随 `@xenonbyte/forma-vzi-renderer` 或 web 资源发布），尽可能多预埋常用字族。
+1. 将渲染所需字体（正文字族 + Material Icons/Symbols 等图标字体）以**本地字体文件**形式打进包（随 `@vzi-core/renderer` 或 web 资源发布）。最低必须预埋并可断网加载：
+   - `NotoSansCJKsc-Regular.otf`（默认中文/UI 回退）
+   - `NotoSans-Variable.ttf`
+   - `Inter-Variable.ttf`
+   - `SpaceGrotesk-Variable.ttf`
+   - `NotoSansMono-Variable.ttf`
+   - `MaterialIcons-Regular.ttf`
+   - `MaterialSymbolsOutlined-Variable.ttf`
+   - `MaterialSymbolsRounded-Variable.ttf`
+   - `MaterialSymbolsSharp-Variable.ttf`
+   可额外预埋其它常用字族，但不能用"尽可能多"替代上述最低清单。
 2. `FontManager` 改为**纯本地加载**：默认字体与图标字体全部来自打包资源；移除/停用远程 URL 回退，使任意环境下 CanvasKit 渲染**不产生网络请求**。保留 `FontCache` 作为运行期内存/IndexedDB 缓存即可。
 3. 其它"确定的资源数据"（如固定图标集）同样直接内嵌。
 4. 不考虑包体积。
@@ -189,9 +218,9 @@ web AnnotationPage (新页面 packages/web/src/pages/AnnotationPage.tsx):
 | web | `src/routes.tsx`、`src/i18n.ts` | 新路由 + 文案 |
 | web | `src/pages/AnnotationPage.tsx`（新） | 标注画布页 |
 | web | `src/api.ts` | `getRequirementHandoff` / `vziUrl` / `iconUrl` + 类型 |
-| web | `package.json`、`vite.config.ts` | 加 `@vzi-core/format`、`@xenonbyte/forma-vzi-renderer`、canvaskit-wasm 接线 |
+| web | `package.json`、`vite.config.ts` | 加 `@vzi-core/format`、`@vzi-core/renderer`、canvaskit-wasm 接线 |
 | vzi-renderer | `src/snapshot/`、`components/VZIRenderer.tsx`、`components/SnapshotAnnotationOverlay.tsx`、`tile/`、`node.ts`、`index.ts` | 移除 snapshot 路径 |
-| vzi-renderer | `src/canvaskit/FontManager.ts` + 字体资源 | 本地预埋、零远程 |
+| vzi-renderer | `package.json`、`src/canvaskit/FontManager.ts` + 字体资源 | React 19 兼容声明、本地预埋、零远程 |
 | vzi-types | `src/snapshot.ts` | 移除 snapshot 类型 |
 | od-contracts | `src/prompts/discovery.ts`、`system.ts`、`directions.ts`、`official-system.ts` | 去手机外壳 + 收紧范围忠实度 |
 | agent | `templates/claude/fm-design.md`、`templates/codex/fm-design/SKILL.md` | 新增 scope-fidelity 约束 |
@@ -204,9 +233,9 @@ web AnnotationPage (新页面 packages/web/src/pages/AnnotationPage.tsx):
 ## 7. 验收标准
 
 1. 归档某需求后，需求列表该行出现"标注"按钮（仅归档态）；点击进入标注页。
-2. 标注页在无限画布上以 CanvasKit 渲染该需求**全部页面**的 `.vzi`，水平平铺、可平移/缩放、可点选元素；单 WebGL 上下文。
+2. 标注页在无限画布上以 CanvasKit 渲染该需求**全部页面**的 `.vzi`，水平平铺、可平移/缩放、可点选元素；单 WebGL 上下文；真实 `.vzi` 经 adapter 后生成非空 CanvasKit 元素树。
 3. 全仓库 VZI 渲染只剩 CanvasKit；`vzi-renderer` 无 snapshot/tile 残留；`grep -r "DesignSnapshotManifest"` 在 src 中无引用。§4 第 2/3 类 snapshot 完好。
-4. CanvasKit 渲染过程**零远程网络请求**（断网可正常渲染常用字族与图标字体）。
+4. CanvasKit 渲染过程**零远程网络请求**；断网可正常加载 §5.3 最低字体清单中的全部字体族与图标字体，缺失时有显式错误/日志。
 5. 重新生成的移动端设计稿**无手机外壳**。
 6. 对"元素清单明确"的需求，生成产物只含声明元素、无凭空新增。
 7. 桌面端左栏无品牌风格入口，`style` 路由不可达。
