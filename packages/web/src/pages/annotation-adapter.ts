@@ -47,13 +47,22 @@ function trackLocalResource(url: string, kind: 'icon' | 'bundle', path: string, 
   return url;
 }
 
+function pushResourceError(
+  errors: Array<Partial<ResourceError> & { reason: string }>,
+  ctx: RewriteCtx,
+  path: string,
+  reason: string,
+): void {
+  errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path, reason });
+}
+
 function safeRelativePath(raw: string, ctx: RewriteCtx, errors: Array<Partial<ResourceError> & { reason: string }>): string | undefined {
   const rel = stripDotSlash(raw).trim();
   let decoded: string;
   try {
     decoded = decodeURIComponent(rel);
   } catch {
-    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'malformed resource path' });
+    pushResourceError(errors, ctx, raw, 'malformed resource path');
     return undefined;
   }
   const parts = decoded.split('/');
@@ -75,10 +84,61 @@ function safeRelativePath(raw: string, ctx: RewriteCtx, errors: Array<Partial<Re
       return inner === '..' || inner.includes('/') || inner.includes('\\');
     })
   ) {
-    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'unsafe relative resource path' });
+    pushResourceError(errors, ctx, raw, 'unsafe relative resource path');
     return undefined;
   }
   return rel;
+}
+
+function bundleVersionSegment(bundleBaseUrl: string): string | undefined {
+  const match = bundleBaseUrl.match(/\/versions\/([1-9]\d*)\/bundle\/?$/);
+  return match ? `v${match[1]}` : undefined;
+}
+
+function artifactVersionFileRelativePath(
+  raw: string,
+  urls: PageAssetUrls,
+  ctx: RewriteCtx,
+  errors: Array<Partial<ResourceError> & { reason: string }>,
+): string | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    pushResourceError(errors, ctx, raw, 'malformed file: resource URL');
+    return undefined;
+  }
+  if (parsed.hostname && parsed.hostname !== 'localhost') {
+    pushResourceError(errors, ctx, raw, 'file: resource not allowed');
+    return undefined;
+  }
+  const versionSegment = bundleVersionSegment(urls.bundleBaseUrl);
+  if (!versionSegment) {
+    pushResourceError(errors, ctx, raw, 'file: resource not allowed');
+    return undefined;
+  }
+
+  const encodedSegments = parsed.pathname.split('/').filter((part) => part.length > 0);
+  const decodedSegments: string[] = [];
+  for (const segment of encodedSegments) {
+    try {
+      decodedSegments.push(decodeURIComponent(segment));
+    } catch {
+      pushResourceError(errors, ctx, raw, 'malformed file: resource path');
+      return undefined;
+    }
+  }
+
+  for (let i = decodedSegments.length - 2; i >= 0; i -= 1) {
+    if (decodedSegments[i] !== ctx.artifactId || decodedSegments[i + 1] !== versionSegment) {
+      continue;
+    }
+    const rel = encodedSegments.slice(i + 2).join('/');
+    return safeRelativePath(rel, ctx, errors);
+  }
+
+  pushResourceError(errors, ctx, raw, 'file: resource not allowed');
+  return undefined;
 }
 
 /**
@@ -86,7 +146,8 @@ function safeRelativePath(raw: string, ctx: RewriteCtx, errors: Array<Partial<Re
  * - data: preserved
  * - metadata.iconRelativePath / icons/* → iconBaseUrl
  * - assets/* or other bundle-relative → bundleBaseUrl
- * - http(s), file:, absolute disk path, unresolvable → recorded violation, dropped
+ * - file: under the same artifact version directory → bundleBaseUrl
+ * - http(s), other file:, absolute disk path, unresolvable → recorded violation, dropped
  */
 export function rewriteResourceUrl(
   raw: string | undefined,
@@ -103,18 +164,22 @@ export function rewriteResourceUrl(
       : undefined;
   }
   if (!raw || raw.length === 0) return undefined;
-  if (raw.startsWith('data:')) return raw;
+  if (/^data:/i.test(raw)) return raw;
 
   if (/^https?:\/\//i.test(raw)) {
-    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'remote http(s) resource not allowed' });
+    pushResourceError(errors, ctx, raw, 'remote http(s) resource not allowed');
     return undefined;
   }
-  if (raw.startsWith('file:')) {
-    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'file: resource not allowed' });
+  if (/^file:/i.test(raw)) {
+    const rel = artifactVersionFileRelativePath(raw, urls, ctx, errors);
+    return rel ? trackLocalResource(`${urls.bundleBaseUrl}${rel}`, 'bundle', rel, ctx) : undefined;
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
+    pushResourceError(errors, ctx, raw, 'unsupported resource protocol');
     return undefined;
   }
   if (raw.startsWith('/')) {
-    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'absolute path not allowed' });
+    pushResourceError(errors, ctx, raw, 'absolute path not allowed');
     return undefined;
   }
 
@@ -409,6 +474,7 @@ function markElementMissing(el: IRElement): IRElement {
 }
 
 export function withMissingResourcePlaceholders(elements: IRElement[], missingUrls: Set<string>): IRElement[] {
+  if (missingUrls.size === 0) return elements;
   return elements.map((el) => {
     const children = el.children ? withMissingResourcePlaceholders(el.children, missingUrls) : el.children;
     const next = children ? { ...el, children } : el;

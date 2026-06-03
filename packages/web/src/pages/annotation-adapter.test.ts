@@ -52,6 +52,29 @@ describe('rewriteResourceUrl', () => {
     const errs: never[] = [];
     expect(rewriteResourceUrl('assets/pic.png', undefined, URLS, ctx, errs)).toBe(`${URLS.bundleBaseUrl}assets/pic.png`);
   });
+  it('rewrites artifact-version file: URLs via bundleBaseUrl', () => {
+    const errs: never[] = [];
+    const refs: unknown[] = [];
+    expect(
+      rewriteResourceUrl(
+        'file:///Users/xubo/.forma/products/P-abc123/od-project/artifacts/A/v1/assets/pic.png',
+        undefined,
+        URLS,
+        { ...ctx, resourceRefs: refs as never },
+        errs,
+      ),
+    ).toBe(`${URLS.bundleBaseUrl}assets/pic.png`);
+    expect(errs).toHaveLength(0);
+    expect(refs).toEqual([
+      {
+        artifactId: 'A',
+        pageId: 'home',
+        path: 'assets/pic.png',
+        kind: 'bundle',
+        url: `${URLS.bundleBaseUrl}assets/pic.png`,
+      },
+    ]);
+  });
   it('records a violation and drops remote http(s) URLs without fetching', () => {
     const errs: { reason: string }[] = [];
     expect(rewriteResourceUrl('https://evil.example/x.png', undefined, URLS, ctx, errs)).toBeUndefined();
@@ -219,6 +242,37 @@ describe('composeAnnotationCanvas', () => {
         kind: 'bundle',
         url: `${URLS.bundleBaseUrl}assets/hero.png`,
       },
+    ]);
+  });
+
+  it('rewrites VZI file: image and background URLs captured from artifact HTML', () => {
+    const content = makeContent(
+      [
+        {
+          id: 'photo',
+          parentId: null,
+          type: 'image',
+          bounds: { x: 0, y: 0, width: 64, height: 64 },
+          styles: {},
+          imageData: { src: 'file:///Users/xubo/.forma/products/P-abc123/od-project/artifacts/A/v1/assets/photo.png' },
+        },
+        {
+          id: 'hero',
+          parentId: null,
+          type: 'container',
+          bounds: { x: 0, y: 72, width: 320, height: 160 },
+          styles: { backgroundImage: 'url("file:///Users/xubo/.forma/products/P-abc123/od-project/artifacts/A/v1/assets/hero.png")' },
+        },
+      ],
+      { formaViewport: { width: 320, height: 232 } },
+    );
+    const result = composeAnnotationCanvas([{ pageId: 'home', artifactId: 'A', variant: 'default', title: 'Home', content, urls: URLS }]);
+    expect(result.errors).toHaveLength(0);
+    expect(result.elements.find((e) => e.id === 'photo')?.src).toBe(`${URLS.bundleBaseUrl}assets/photo.png`);
+    expect(result.elements.find((e) => e.id === 'hero')?.styles.backgroundImage).toBe(`url("${URLS.bundleBaseUrl}assets/hero.png")`);
+    expect(result.resourceRefs.map((r) => ({ kind: r.kind, path: r.path, url: r.url }))).toEqual([
+      { kind: 'bundle', path: 'assets/photo.png', url: `${URLS.bundleBaseUrl}assets/photo.png` },
+      { kind: 'bundle', path: 'assets/hero.png', url: `${URLS.bundleBaseUrl}assets/hero.png` },
     ]);
   });
 
