@@ -126,3 +126,18 @@ describe('mobile de-shell (spec §5.4)', () => {
     expect(DISCOVERY_AND_PHILOSOPHY).toMatch(/44px/);
   });
 });
+
+import { OFFICIAL_DESIGNER_PROMPT } from '../src/prompts/official-system.js';
+
+describe('scope fidelity (spec §5.5)', () => {
+  it('ambition is scoped to craft, not added scope', () => {
+    expect(OFFICIAL_DESIGNER_PROMPT).not.toMatch(/a notch more ambitious than what was asked for/i);
+    expect(OFFICIAL_DESIGNER_PROMPT).toMatch(/scope|do not add|without (adding|expanding)/i);
+  });
+
+  it('the composed system prompt carries the final scope-fidelity rule', () => {
+    const prompt = composeSystemPrompt({});
+    expect(prompt).toMatch(/build exactly the pages, sections, controls, and elements/i);
+    expect(prompt).toMatch(/do not add features, screens, or content/i);
+  });
+});
