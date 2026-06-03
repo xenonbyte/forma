@@ -143,7 +143,12 @@ function getNodeLocalFontBaseCandidates(): string[] {
   const startDirs = [cwd, nodePath.resolve(cwd, '..'), nodePath.resolve(cwd, '../..')].filter(Boolean);
 
   for (const startDir of startDirs) {
-    for (const relativePath of ['.runtime-cache/runtime-assets/fonts', 'runtime-assets/fonts', 'public/runtime-assets/fonts']) {
+    for (const relativePath of [
+      '.runtime-cache/runtime-assets/fonts',
+      'runtime-assets/fonts',
+      'public/runtime-assets/fonts',
+      'packages/web/public/runtime-assets/fonts',
+    ]) {
       const candidate = nodePath.resolve(startDir, relativePath);
       if (nodeFs.existsSync(candidate)) {
         candidates.add(candidate);
@@ -212,6 +217,11 @@ function withLocalFontFirst(localFile: string, urls: string[]): string[] {
   return [...deduped];
 }
 
+/** Local bundled font candidates only — no remote fallback (spec §5.3). */
+function localFontUrls(localFile: string): string[] {
+  return withLocalFontFirst(localFile, []);
+}
+
 function mergeUniqueUrls(...groups: string[][]): string[] {
   const deduped = new Set<string>();
   for (const group of groups) {
@@ -224,86 +234,51 @@ function mergeUniqueUrls(...groups: string[][]): string[] {
   return [...deduped];
 }
 
-const MATERIAL_ICONS_REMOTE_URLS = [
-  'https://raw.githubusercontent.com/google/material-design-icons/master/font/MaterialIcons-Regular.ttf',
-  'https://fonts.googleapis.com/icon?family=Material+Icons',
-];
-
-const MATERIAL_SYMBOLS_OUTLINED_REMOTE_URLS = [
-  'https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsOutlined%5BFILL%2CGRAD%2Copsz%2Cwght%5D.ttf',
-  'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0',
-];
-
-const MATERIAL_SYMBOLS_ROUNDED_REMOTE_URLS = [
-  'https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsRounded%5BFILL%2CGRAD%2Copsz%2Cwght%5D.ttf',
-  'https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0',
-];
-
-const MATERIAL_SYMBOLS_SHARP_REMOTE_URLS = [
-  'https://raw.githubusercontent.com/google/material-design-icons/master/variablefont/MaterialSymbolsSharp%5BFILL%2CGRAD%2Copsz%2Cwght%5D.ttf',
-  'https://fonts.googleapis.com/css2?family=Material+Symbols+Sharp:opsz,wght,FILL,GRAD@24,400,0,0',
-];
+function isAllowedBrowserFontUrl(url: string): boolean {
+  if (isNodeRuntime()) return false;
+  if (!/^https?:\/\//i.test(url)) return !url.startsWith('file:');
+  if (typeof document === 'undefined' || typeof document.baseURI !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    const base = new URL(document.baseURI);
+    return parsed.origin === base.origin && parsed.pathname.includes('/runtime-assets/fonts/');
+  } catch {
+    return false;
+  }
+}
 
 const MATERIAL_SYMBOLS_OUTLINED_URLS = mergeUniqueUrls(
-  withLocalFontFirst('MaterialSymbolsOutlined-Variable.ttf', MATERIAL_SYMBOLS_OUTLINED_REMOTE_URLS),
-  withLocalFontFirst('MaterialIcons-Regular.ttf', MATERIAL_ICONS_REMOTE_URLS)
+  localFontUrls('MaterialSymbolsOutlined-Variable.ttf'),
+  localFontUrls('MaterialIcons-Regular.ttf'),
 );
-
 const MATERIAL_SYMBOLS_ROUNDED_URLS = mergeUniqueUrls(
-  withLocalFontFirst('MaterialSymbolsRounded-Variable.ttf', MATERIAL_SYMBOLS_ROUNDED_REMOTE_URLS),
-  withLocalFontFirst('MaterialIcons-Regular.ttf', MATERIAL_ICONS_REMOTE_URLS)
+  localFontUrls('MaterialSymbolsRounded-Variable.ttf'),
+  localFontUrls('MaterialIcons-Regular.ttf'),
 );
-
 const MATERIAL_SYMBOLS_SHARP_URLS = mergeUniqueUrls(
-  withLocalFontFirst('MaterialSymbolsSharp-Variable.ttf', MATERIAL_SYMBOLS_SHARP_REMOTE_URLS),
-  withLocalFontFirst('MaterialIcons-Regular.ttf', MATERIAL_ICONS_REMOTE_URLS)
+  localFontUrls('MaterialSymbolsSharp-Variable.ttf'),
+  localFontUrls('MaterialIcons-Regular.ttf'),
 );
-
-const MATERIAL_ICONS_URLS = withLocalFontFirst('MaterialIcons-Regular.ttf', MATERIAL_ICONS_REMOTE_URLS);
-const INTER_URLS = withLocalFontFirst('Inter-Variable.ttf', [
-  'https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf',
-  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/inter/Inter[opsz,wght].ttf',
-  'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap',
-]);
-const MONOSPACE_URLS = withLocalFontFirst('NotoSansMono-Variable.ttf', [
-  'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansmono/NotoSansMono%5Bwdth%2Cwght%5D.ttf',
-  'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosansmono/NotoSansMono[wdth,wght].ttf',
-  'https://fonts.googleapis.com/css2?family=Noto+Sans+Mono:wght@400;500;600;700&display=swap',
-]);
+const MATERIAL_ICONS_URLS = localFontUrls('MaterialIcons-Regular.ttf');
+const INTER_URLS = localFontUrls('Inter-Variable.ttf');
+const MONOSPACE_URLS = localFontUrls('NotoSansMono-Variable.ttf');
 
 const FONT_URL_MAP: Record<string, string[]> = {
-  // 中文字体（默认）- 使用 OTF 格式
-  'default': mergeUniqueUrls(
-    withLocalFontFirst('NotoSansCJKsc-Regular.otf', [
-      'https://raw.githubusercontent.com/googlefonts/noto-cjk/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf',
-    ]),
-    withLocalFontFirst('NotoSans-Variable.ttf', [
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/NotoSans%5Bwdth%2Cwght%5D.ttf',
-    ])
+  default: mergeUniqueUrls(
+    localFontUrls('NotoSansCJKsc-Regular.otf'),
+    localFontUrls('NotoSans-Variable.ttf'),
   ),
-
-  // 常见 Web 字体
-  'space grotesk': [
-    ...withLocalFontFirst('SpaceGrotesk-Variable.ttf', [
-      'https://raw.githubusercontent.com/google/fonts/main/ofl/spacegrotesk/SpaceGrotesk%5Bwght%5D.ttf',
-      'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/spacegrotesk/SpaceGrotesk[wght].ttf',
-      'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap',
-    ]),
-  ],
-  'inter': INTER_URLS,
+  'space grotesk': localFontUrls('SpaceGrotesk-Variable.ttf'),
+  inter: INTER_URLS,
   'font-display': INTER_URLS,
-
-  // 等宽字体（代码块、终端片段）
   'ui-monospace': MONOSPACE_URLS,
   'sfmono-regular': MONOSPACE_URLS,
-  'menlo': MONOSPACE_URLS,
-  'monaco': MONOSPACE_URLS,
-  'consolas': MONOSPACE_URLS,
+  menlo: MONOSPACE_URLS,
+  monaco: MONOSPACE_URLS,
+  consolas: MONOSPACE_URLS,
   'liberation mono': MONOSPACE_URLS,
   'courier new': MONOSPACE_URLS,
-  'monospace': MONOSPACE_URLS,
-
-  // Material 图标字体（ligature）
+  monospace: MONOSPACE_URLS,
   'material symbols outlined': MATERIAL_SYMBOLS_OUTLINED_URLS,
   'material-symbols-outlined': MATERIAL_SYMBOLS_OUTLINED_URLS,
   'material symbols rounded': MATERIAL_SYMBOLS_ROUNDED_URLS,
@@ -312,8 +287,6 @@ const FONT_URL_MAP: Record<string, string[]> = {
   'material-symbols-sharp': MATERIAL_SYMBOLS_SHARP_URLS,
   'material icons': MATERIAL_ICONS_URLS,
   'material-icons': MATERIAL_ICONS_URLS,
-
-  // 如需添加其他字体，请确保 URL 支持 CORS 且格式为 TTF/OTF
 };
 
 const DEFAULT_FONT_FAMILIES = new Set(['default', 'defaultfont', 'sans-serif', 'sans']);
@@ -327,13 +300,6 @@ function splitFontFamilies(fontFamily: string): string[] {
     .split(',')
     .map((family) => normalizeFontFamilyName(family))
     .filter((family) => family.length > 0);
-}
-
-function extractFontUrlsFromCss(cssText: string): string[] {
-  const matches = cssText.match(/url\(([^)]+)\)/g) || [];
-  return matches
-    .map((entry) => entry.replace(/^url\((.*)\)$/i, '$1').replace(/^['"]|['"]$/g, '').trim())
-    .filter((url) => /^https?:\/\//.test(url));
 }
 
 const FONT_FETCH_TIMEOUT_MS = 10000;
@@ -812,6 +778,15 @@ export class FontManager {
   }
 
   private async fetchFontDataByUrl(url: string): Promise<ArrayBuffer> {
+    const browserLocal = isAllowedBrowserFontUrl(url);
+    if (browserLocal) {
+      const response = await fetchWithTimeout(url);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch local font: ${response.statusText}`);
+      }
+      return await response.arrayBuffer();
+    }
+
     if (!/^https?:\/\//i.test(url)) {
       const nodeFs = getNodeFs();
       if (!nodeFs) {
@@ -822,41 +797,7 @@ export class FontManager {
       return fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength);
     }
 
-    const isCssEndpoint = url.includes('fonts.googleapis.com') || url.endsWith('.css');
-
-    if (isCssEndpoint) {
-      const cssResponse = await fetchWithTimeout(url);
-      if (!cssResponse.ok) {
-        throw new Error(`Failed to fetch font css: ${cssResponse.statusText}`);
-      }
-
-      const cssText = await cssResponse.text();
-      const fontUrls = extractFontUrlsFromCss(cssText);
-      if (fontUrls.length === 0) {
-        throw new Error('No font url found in css response');
-      }
-
-      let lastError: unknown = null;
-      for (const fontUrl of fontUrls) {
-        try {
-          const fontResponse = await fetchWithTimeout(fontUrl);
-          if (!fontResponse.ok) {
-            throw new Error(`Failed to fetch font file: ${fontResponse.statusText}`);
-          }
-          return await fontResponse.arrayBuffer();
-        } catch (error) {
-          lastError = error;
-        }
-      }
-
-      throw lastError instanceof Error ? lastError : new Error('Failed to fetch any font file');
-    }
-
-    const response = await fetchWithTimeout(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch font: ${response.statusText}`);
-    }
-    return await response.arrayBuffer();
+    throw new Error(`Remote font URL is not allowed in local-only FontManager: ${url}`);
   }
 
   /**
