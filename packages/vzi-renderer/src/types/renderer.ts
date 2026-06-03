@@ -12,59 +12,6 @@ import type { Annotation, ColorToken, FontToken } from './design-tokens';
 // ============================================
 
 /**
- * 渲染模式
- */
-export type RenderMode = 'full' | 'tile';
-
-/**
- * VZI 渲染器属性
- */
-export interface VZIRendererProps {
-  /** IR 数据或转换结果 */
-  data: RendererData;
-  /** 容器宽度 */
-  width: number;
-  /** 容器高度 */
-  height: number;
-  /** 渲染模式：full（全量渲染）或 tile（瓦片渲染） */
-  renderMode?: RenderMode;
-  /** 初始缩放比例 */
-  initialScale?: number;
-  /** 最小缩放比例 */
-  minScale?: number;
-  /** 最大缩放比例 */
-  maxScale?: number;
-  /** 是否显示网格 */
-  showGrid?: boolean;
-  /** 网格大小 */
-  gridSize?: number;
-  /** 是否显示标尺 */
-  showRulers?: boolean;
-  /** 是否显示标注 */
-  showAnnotations?: boolean;
-  /** 标注样式配置（CanvasKit 模式） */
-  annotationStyles?: Partial<import('../canvaskit/annotations/types').AnnotationStyleConfig>;
-  /** 视口配置 */
-  viewportConfig?: Partial<import('../canvaskit/annotations/types').ViewportConfig>;
-  /** 选中元素 ID */
-  selectedElementId?: string | null;
-  /** 悬停元素 ID */
-  hoveredElementId?: string | null;
-  /** 元素选中回调 */
-  onElementSelect?: (elementId: string | null) => void;
-  /** 元素悬停回调 */
-  onElementHover?: (elementId: string | null) => void;
-  /** 缩放变化回调 */
-  onScaleChange?: (scale: number) => void;
-  /** 画布位置变化回调 */
-  onPositionChange?: (x: number, y: number) => void;
-  /** 标注点击回调 */
-  onAnnotationClick?: (elementId: string) => void;
-  /** 自定义类名 */
-  className?: string;
-}
-
-/**
  * 渲染器数据输入
  */
 export type RendererData = IRData | TransformResultData;
