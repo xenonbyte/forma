@@ -4,6 +4,7 @@ export const localeStorageKey = "forma.locale";
 
 export const messages: Record<Locale, Record<string, string>> = {
   en: {
+    "action.annotate": "Annotate",
     "action.annotations": "Annotations",
     "action.archive": "Archive",
     "action.archiving": "Archiving",
@@ -36,6 +37,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "action.selected": "Selected",
     "action.view": "View",
     "action.zoomIn": "Zoom in",
+    "annotation.loading": "Loading handoff pages",
+    "annotation.empty": "No handoff pages",
+    "annotation.emptyHelp": "This archived requirement has no rendered pages to annotate.",
+    "annotation.pageFailed": "Page failed",
+    "annotation.resourceMissing": "Missing resource",
+    "annotation.selected": "Selected",
     "action.zoomOut": "Zoom out",
     "action.zoomOne": "100% zoom",
     "baseline.actions": "Actions",
@@ -280,6 +287,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "templatePreview.structure": "Expected structure"
   },
   zh: {
+    "action.annotate": "标注",
     "action.annotations": "标注",
     "action.archive": "归档",
     "action.archiving": "归档中",
@@ -312,6 +320,12 @@ export const messages: Record<Locale, Record<string, string>> = {
     "action.selected": "已选",
     "action.view": "查看",
     "action.zoomIn": "放大",
+    "annotation.loading": "正在加载交付页面",
+    "annotation.empty": "暂无可标注页面",
+    "annotation.emptyHelp": "该归档需求没有可渲染的交付页面。",
+    "annotation.pageFailed": "页面加载失败",
+    "annotation.resourceMissing": "资源缺失",
+    "annotation.selected": "已选中",
     "action.zoomOut": "缩小",
     "action.zoomOne": "100% 缩放",
     "baseline.actions": "操作",

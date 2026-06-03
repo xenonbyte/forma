@@ -392,6 +392,30 @@ describe("ProductDetail", () => {
     expect(container.textContent).toContain("Active");
   });
 
+  it("renders an Annotate link only for archived requirements", async () => {
+    const archivedRequirement: RequirementWithDocument = {
+      ...activeRequirement,
+      id: "R-arch",
+      status: "archived",
+    };
+    const activeReq: RequirementWithDocument = {
+      ...activeRequirement,
+      id: "R-act",
+      status: "active",
+    };
+    const client = createClient({ product: configuredProduct, requirements: [archivedRequirement, activeReq] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const links = Array.from(container.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+    expect(links).toContain("/products/P-123abc/requirements/R-arch/annotation");
+    expect(links).not.toContain("/products/P-123abc/requirements/R-act/annotation");
+  });
+
   it("shows product deletion errors without navigating", async () => {
     const client = createClient({ product: configuredProduct, requirements: [] });
     client.deleteProduct.mockRejectedValueOnce(new ApiError("DELETE_FAILED", "Deletion denied", {}, 409));

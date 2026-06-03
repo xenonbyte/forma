@@ -10,6 +10,7 @@ import { DesignView } from "./pages/DesignView.js";
 import { ViewerPage } from "./pages/ViewerPage.js";
 import { RequirementDetail } from "./pages/RequirementDetail.js";
 import { Settings } from "./pages/Settings.js";
+import { AnnotationPage } from "./pages/AnnotationPage.js";
 import { StyleDetail } from "./pages/StyleDetail.js";
 import { StyleLibrary } from "./pages/StyleLibrary.js";
 
@@ -94,6 +95,13 @@ export const routeTable: RouteDefinition[] = [
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/pages/:pageId/viewer",
     title: ({ pageId }) => `${pageId} 画布`
+  },
+  {
+    component: AnnotationPageRoute,
+    context: "Annotation",
+    navGroup: "products",
+    path: "/products/:productId/requirements/:reqId/annotation",
+    title: ({ reqId }) => `${reqId} annotation`
   },
   {
     component: RequirementDetail,
@@ -203,6 +211,10 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
   }
 
   return { found: false, hash, navigationState: undefined, params: {}, pathname, route: notFoundRoute };
+}
+
+function AnnotationPageRoute(props: RoutePageProps) {
+  return <AnnotationPage client={apiClient} params={props.params as { productId: string; reqId: string }} />;
 }
 
 function DesignViewRoute(props: RoutePageProps) {

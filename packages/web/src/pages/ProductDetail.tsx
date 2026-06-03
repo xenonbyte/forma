@@ -256,7 +256,7 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
         <WorkSurface title={t("requirement.list")}>
           <div className="divide-y divide-zinc-200">
             {state.requirementState.requirements.map((requirement) => (
-              <div className="grid gap-3 py-3 lg:grid-cols-[minmax(0,1fr)_8rem_9rem_8rem]" key={requirement.id}>
+              <div className="grid gap-3 py-3 lg:grid-cols-[minmax(0,1fr)_8rem_9rem_8rem_8rem]" key={requirement.id}>
                 <div className="min-w-0">
                   <a className={`${textLinkClasses} truncate`} href={`/products/${productId}/requirements/${requirement.id}`}>
                     {requirement.title}
@@ -277,6 +277,16 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
                 >
                   {archiving === requirement.id ? t("action.archiving") : t("action.archive")}
                 </button>
+                {requirement.status === "archived" ? (
+                  <a
+                    className={`${secondaryButtonClasses} text-center`}
+                    href={`/products/${productId}/requirements/${requirement.id}/annotation`}
+                  >
+                    {t("action.annotate")}
+                  </a>
+                ) : (
+                  <span aria-hidden="true" />
+                )}
               </div>
             ))}
           </div>
