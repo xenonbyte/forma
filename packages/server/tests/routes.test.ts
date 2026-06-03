@@ -2244,4 +2244,15 @@ describe("annotation handoff routes", () => {
     const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/vzi/content` });
     expect(res.statusCode).toBe(404);
   });
+
+  it("GET vzi/content 400s on an invalid product/artifact id", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID } = await seedArchived(home);
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    // artifact id containing '!' fails ARTIFACT_ID_PATTERN validation in getArtifactVziPath → 400
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/A-home%21/vzi/content` });
+    expect(res.statusCode).toBe(400);
+  });
 });

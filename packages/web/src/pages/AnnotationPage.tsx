@@ -73,6 +73,7 @@ async function defaultCheckResourceUrl(url: string): Promise<boolean> {
 async function validateResourceUrls(
   refs: ResourceRef[],
   checkResourceUrl: (url: string) => Promise<boolean>,
+  t: (key: string) => string,
 ): Promise<ResourceError[]> {
   const errors: ResourceError[] = [];
   for (const ref of refs) {
@@ -88,7 +89,7 @@ async function validateResourceUrls(
         artifactId: ref.artifactId,
         pageId: ref.pageId,
         path: ref.path,
-        reason: "missing resource",
+        reason: t("annotation.resourceMissing"),
       });
     }
   }
@@ -156,7 +157,7 @@ export function AnnotationPage({
         }
         if (cancelled) return;
         const initial = composeAnnotationCanvas(pages);
-        const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl);
+        const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl, t);
         if (cancelled) return;
         setState({ status: "ready", pages, pageErrors, missingResources });
       } catch (e) {

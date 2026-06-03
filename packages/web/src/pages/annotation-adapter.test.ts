@@ -63,6 +63,11 @@ describe('rewriteResourceUrl', () => {
     expect(rewriteResourceUrl('/etc/passwd', undefined, URLS, ctx, errs)).toBeUndefined();
     expect(errs).toHaveLength(2);
   });
+  it('records a violation for double-encoded traversal without fetching', () => {
+    const errs: { reason: string }[] = [];
+    expect(rewriteResourceUrl('icons/%252e%252e/x.svg', undefined, URLS, ctx, errs)).toBeUndefined();
+    expect(errs).toHaveLength(1);
+  });
   it('records a violation for traversal and backslash paths without fetching', () => {
     const errs: { reason: string }[] = [];
     expect(rewriteResourceUrl('icons/../x.svg', undefined, URLS, ctx, errs)).toBeUndefined();

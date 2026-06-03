@@ -121,7 +121,7 @@ describe('AnnotationPage', () => {
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();
     expect(container.textContent).toContain('icons/missing.svg');
     expect(container.textContent).toContain('assets/missing.png');
-    expect(container.textContent).toContain('missing resource');
+    expect(container.textContent).toContain('Missing resource');
   });
 
   it('keeps a failed content fetch as a marked frame while rendering another page', async () => {

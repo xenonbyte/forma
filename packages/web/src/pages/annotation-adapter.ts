@@ -51,7 +51,7 @@ function safeRelativePath(raw: string, ctx: RewriteCtx, errors: Array<Partial<Re
   try {
     decoded = decodeURIComponent(rel);
   } catch {
-    errors.push({ ...ctx, path: raw, reason: 'malformed resource path' });
+    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'malformed resource path' });
     return undefined;
   }
   const parts = decoded.split('/');
@@ -62,9 +62,18 @@ function safeRelativePath(raw: string, ctx: RewriteCtx, errors: Array<Partial<Re
     decoded.startsWith('/') ||
     /^https?:\/\//i.test(decoded) ||
     decoded.startsWith('file:') ||
-    parts.some((part) => part.length === 0 || part === '..')
+    parts.some((part) => {
+      if (part.length === 0 || part === '..') return true;
+      let inner = part;
+      try {
+        inner = decodeURIComponent(part);
+      } catch {
+        return true;
+      }
+      return inner === '..' || inner.includes('/') || inner.includes('\\');
+    })
   ) {
-    errors.push({ ...ctx, path: raw, reason: 'unsafe relative resource path' });
+    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'unsafe relative resource path' });
     return undefined;
   }
   return rel;
@@ -95,15 +104,15 @@ export function rewriteResourceUrl(
   if (raw.startsWith('data:')) return raw;
 
   if (/^https?:\/\//i.test(raw)) {
-    errors.push({ ...ctx, path: raw, reason: 'remote http(s) resource not allowed' });
+    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'remote http(s) resource not allowed' });
     return undefined;
   }
   if (raw.startsWith('file:')) {
-    errors.push({ ...ctx, path: raw, reason: 'file: resource not allowed' });
+    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'file: resource not allowed' });
     return undefined;
   }
   if (raw.startsWith('/')) {
-    errors.push({ ...ctx, path: raw, reason: 'absolute path not allowed' });
+    errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path: raw, reason: 'absolute path not allowed' });
     return undefined;
   }
 
