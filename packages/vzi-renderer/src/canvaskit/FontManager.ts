@@ -234,16 +234,24 @@ function mergeUniqueUrls(...groups: string[][]): string[] {
   return [...deduped];
 }
 
-function isAllowedBrowserFontUrl(url: string): boolean {
-  if (isNodeRuntime()) return false;
-  if (!/^https?:\/\//i.test(url)) return !url.startsWith('file:');
-  if (typeof document === 'undefined' || typeof document.baseURI !== 'string') return false;
+function isAllowedBrowserFontUrl(url: string): string | null {
+  if (isNodeRuntime()) return null;
+  if (typeof document === 'undefined' || typeof document.baseURI !== 'string') return null;
   try {
-    const parsed = new URL(url);
     const base = new URL(document.baseURI);
-    return parsed.origin === base.origin && parsed.pathname.includes('/runtime-assets/fonts/');
+    const parsed = new URL(url, base);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null;
+    }
+    if (parsed.origin !== base.origin) {
+      return null;
+    }
+    if (!parsed.pathname.includes('/runtime-assets/fonts/')) {
+      return null;
+    }
+    return parsed.toString();
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -780,14 +788,18 @@ export class FontManager {
   private async fetchFontDataByUrl(url: string): Promise<ArrayBuffer> {
     const browserLocal = isAllowedBrowserFontUrl(url);
     if (browserLocal) {
-      const response = await fetchWithTimeout(url);
+      const response = await fetchWithTimeout(browserLocal);
       if (!response.ok) {
         throw new Error(`Failed to fetch local font: ${response.statusText}`);
       }
       return await response.arrayBuffer();
     }
 
-    if (!/^https?:\/\//i.test(url)) {
+    if (!isNodeRuntime()) {
+      throw new Error(`Remote font URL is not allowed in local-only FontManager: ${url}`);
+    }
+
+    if (!/^https?:\/\//i.test(url) && !url.startsWith('//')) {
       const nodeFs = getNodeFs();
       if (!nodeFs) {
         throw new Error('Local font loading is only available in Node.js runtime');

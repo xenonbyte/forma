@@ -1,10 +1,30 @@
 import { readFileSync } from 'node:fs';
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
+import { FontManager } from '../src/canvaskit/FontManager';
 
 const SOURCE = readFileSync(
   new URL('../src/canvaskit/FontManager.ts', import.meta.url),
   'utf8',
 );
+
+type FontManagerInternals = {
+  fetchFontDataByUrl(url: string): Promise<ArrayBuffer>;
+};
+
+function fetchFontDataByUrl(url: string): Promise<ArrayBuffer> {
+  return (FontManager.getInstance() as unknown as FontManagerInternals).fetchFontDataByUrl(url);
+}
+
+function installBrowserFontEnvironment(baseURI: string): void {
+  vi.stubGlobal('process', undefined);
+  vi.stubGlobal('document', { baseURI });
+}
+
+afterEach(() => {
+  FontManager.getInstance().reset();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
 
 describe('FontManager is local-only', () => {
   for (const host of [
@@ -41,5 +61,35 @@ describe('FontManager is local-only', () => {
     expect(SOURCE).toContain('isAllowedBrowserFontUrl');
     expect(SOURCE).toContain('document.baseURI');
     expect(SOURCE).toContain('Remote font URL is not allowed in local-only FontManager');
+  });
+
+  it('rejects protocol-relative remote browser font URLs before fetch', async () => {
+    installBrowserFontEnvironment('https://app.example/product/page');
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new ArrayBuffer(1),
+    } as Response));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(
+      fetchFontDataByUrl('//cdn.example/runtime-assets/fonts/Inter-Variable.ttf'),
+    ).rejects.toThrow('Remote font URL is not allowed in local-only FontManager');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('normalizes same-origin browser font URLs before fetch', async () => {
+    installBrowserFontEnvironment('https://app.example/product/page');
+    const fontData = new ArrayBuffer(1);
+    const fetchSpy = vi.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => fontData,
+    } as Response));
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(
+      fetchFontDataByUrl('//app.example/runtime-assets/fonts/Inter-Variable.ttf'),
+    ).resolves.toBe(fontData);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://app.example/runtime-assets/fonts/Inter-Variable.ttf');
   });
 });

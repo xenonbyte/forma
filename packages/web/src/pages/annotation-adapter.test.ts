@@ -111,6 +111,33 @@ describe('composeAnnotationCanvas', () => {
     expect(secondChild?.bounds.x).toBe(480); // 10 + 470
   });
 
+  it('namespaces duplicate decoded element ids by artifact and page before merging pages', () => {
+    function duplicateContent(label: string): VZIContent {
+      return makeContent(
+        [
+          { id: 'root', parentId: null, type: 'container', bounds: { x: 0, y: 0, width: 100, height: 50 }, styles: {} },
+          { id: 'ir_0', parentId: 'root', type: 'text', bounds: { x: 8, y: 12, width: 60, height: 20 }, styles: {}, textContent: label },
+        ],
+        { formaViewport: { width: 100, height: 50 } },
+      );
+    }
+
+    const result = composeAnnotationCanvas([
+      { pageId: 'home', artifactId: 'artifact-1', variant: 'default', title: 'Home', content: duplicateContent('Home'), urls: URLS },
+      { pageId: 'settings', artifactId: 'artifact-1', variant: 'default', title: 'Settings', content: duplicateContent('Settings'), urls: URLS },
+    ], 10);
+
+    const firstRoot = result.elements.find((e) => e.id === 'artifact-1/home/root');
+    const secondRoot = result.elements.find((e) => e.id === 'artifact-1/settings/root');
+
+    expect(firstRoot?.children?.[0]?.id).toBe('artifact-1/home/ir_0');
+    expect(secondRoot?.children?.[0]?.id).toBe('artifact-1/settings/ir_0');
+    expect(firstRoot?.children?.[0]?.textContent).toBe('Home');
+    expect(secondRoot?.children?.[0]?.textContent).toBe('Settings');
+    expect(secondRoot?.bounds.x).toBe(110);
+    expect(result.elements.some((e) => e.id === 'root')).toBe(false);
+  });
+
   it('rewrites content.images refs and uses metadata asset IDs', () => {
     const content = makeContent(
       [
@@ -166,6 +193,53 @@ describe('composeAnnotationCanvas', () => {
     const marked = withMissingResourcePlaceholders(result.elements, new Set([`${URLS.iconBaseUrl}missing.svg`]));
     expect(marked.find((e) => e.id === 'icon')?.src).toBeUndefined();
     expect(marked.find((e) => e.id === 'icon')?.styles.backgroundColor).toBe('#fee2e2');
+  });
+
+  it('rewrites and tracks CSS background-image URLs via the bundle base URL', () => {
+    const content = makeContent(
+      [
+        {
+          id: 'hero',
+          parentId: null,
+          type: 'container',
+          bounds: { x: 0, y: 0, width: 320, height: 160 },
+          styles: { backgroundImage: 'linear-gradient(#000, #111), url("assets/hero.png")' },
+        },
+      ],
+      { formaViewport: { width: 320, height: 160 } },
+    );
+    const result = composeAnnotationCanvas([{ pageId: 'home', artifactId: 'A', variant: 'default', title: 'Home', content, urls: URLS }]);
+    expect(result.errors).toHaveLength(0);
+    expect(result.elements[0].styles.backgroundImage).toBe(`linear-gradient(#000, #111), url("${URLS.bundleBaseUrl}assets/hero.png")`);
+    expect(result.resourceRefs).toEqual([
+      {
+        artifactId: 'A',
+        pageId: 'home',
+        path: 'assets/hero.png',
+        kind: 'bundle',
+        url: `${URLS.bundleBaseUrl}assets/hero.png`,
+      },
+    ]);
+  });
+
+  it('records and drops unsafe CSS background-image URLs before rendering', () => {
+    const content = makeContent(
+      [
+        {
+          id: 'hero',
+          parentId: null,
+          type: 'container',
+          bounds: { x: 0, y: 0, width: 320, height: 160 },
+          styles: { backgroundImage: 'url("https://evil.example/hero.png")' },
+        },
+      ],
+      { formaViewport: { width: 320, height: 160 } },
+    );
+    const result = composeAnnotationCanvas([{ pageId: 'home', artifactId: 'A', variant: 'default', title: 'Home', content, urls: URLS }]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].reason).toContain('remote');
+    expect(result.elements[0].styles.backgroundImage).toBeUndefined();
+    expect(result.resourceRefs).toHaveLength(0);
   });
 
   it('turns a missing inline SVG icon reference into a placeholder instead of drawing stale svgData', () => {

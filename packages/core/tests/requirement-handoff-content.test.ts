@@ -47,4 +47,20 @@ describe('loadDecodedHandoffContent', () => {
     dirs.push(dir);
     await expect(loadDecodedHandoffContent(join(dir, 'nope.vzi'))).rejects.toMatchObject({ code: 'ARTIFACT_NOT_FOUND' });
   });
+
+  it('throws ARTIFACT_UNSUPPORTED_FORMAT when the VZI decoder rejects the header', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'forma-vzi-content-'));
+    dirs.push(dir);
+    const vziPath = join(dir, 'page.vzi');
+    await writeFile(vziPath, Buffer.from('not a vzi file'));
+
+    await expect(loadDecodedHandoffContent(vziPath)).rejects.toMatchObject({
+      code: 'ARTIFACT_UNSUPPORTED_FORMAT',
+      message: 'VZI decode failed',
+      details: {
+        path: vziPath,
+        errors: [expect.stringContaining('Failed to read VZI header')],
+      },
+    });
+  });
 });

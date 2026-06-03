@@ -31,7 +31,15 @@ export async function loadDecodedHandoffContent(vziPath: string): Promise<Decode
     throw new FormaError('ARTIFACT_WRITE_FAIL', 'VZI file is unreadable', { path: vziPath, cause: err.message });
   }
   const decoder = new VZIDecoder({ enableErrorRecovery: true });
-  const result = decoder.decode(new Uint8Array(bytes));
+  let result: ReturnType<VZIDecoder['decode']>;
+  try {
+    result = decoder.decode(new Uint8Array(bytes));
+  } catch (cause) {
+    throw new FormaError('ARTIFACT_UNSUPPORTED_FORMAT', 'VZI decode failed', {
+      path: vziPath,
+      errors: [cause instanceof Error ? cause.message : String(cause)],
+    });
+  }
   const fatal = result.errors.filter((e) => e.fatal);
   if (fatal.length > 0) {
     throw new FormaError('ARTIFACT_UNSUPPORTED_FORMAT', 'VZI decode failed', {

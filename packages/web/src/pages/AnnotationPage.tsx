@@ -44,6 +44,8 @@ type LoadState =
   | { status: "empty" }
   | { status: "ready"; pages: AdapterCanvasPageInput[]; pageErrors: PageLoadError[]; missingResources: ResourceError[] };
 
+const FALLBACK_CANVAS_SIZE = { width: 1200, height: 800 };
+
 async function defaultFetchContent(url: string): Promise<DecodedPageContent> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -114,13 +116,16 @@ export function AnnotationPage({
   const { productId, reqId } = params;
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ width: number; height: number }>({ width: 1200, height: 800 });
+  const [size, setSize] = useState<{ width: number; height: number }>(FALLBACK_CANVAS_SIZE);
+  const [hasMeasuredSize, setHasMeasuredSize] = useState(false);
   const [viewport, setViewport] = useState<CanvasKitViewportState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
+    setSize(FALLBACK_CANVAS_SIZE);
+    setHasMeasuredSize(false);
     setViewport(null);
     setSelectedId(null);
     void (async () => {
@@ -171,14 +176,24 @@ export function AnnotationPage({
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
+    if (!el) return;
+    const applyMeasuredSize = (width: number, height: number) => {
+      const next = { width: Math.max(1, width), height: Math.max(1, height) };
+      setSize((prev) => (prev.width === next.width && prev.height === next.height ? prev : next));
+      setHasMeasuredSize(true);
+    };
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      applyMeasuredSize(rect.width, rect.height);
+    }
+    if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const rect = entries[0]?.contentRect;
-      if (rect) setSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
+      if (rect) applyMeasuredSize(rect.width, rect.height);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [state.status]);
 
   const composed = useMemo(() => {
     if (state.status !== "ready") return null;
@@ -197,9 +212,9 @@ export function AnnotationPage({
 
   // Initial fit-to-content once we have both composed content and a measured size.
   useEffect(() => {
-    if (!composed || composed.contentWidth <= 0) return;
+    if (!composed || composed.contentWidth <= 0 || !hasMeasuredSize) return;
     setViewport((prev) => prev ?? fitViewport(composed.contentWidth, composed.contentHeight, size.width, size.height));
-  }, [composed, size.width, size.height]);
+  }, [composed, hasMeasuredSize, size.width, size.height]);
 
   const backLink = `/products/${productId}/requirements/${reqId}`;
 

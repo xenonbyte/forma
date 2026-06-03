@@ -12,10 +12,15 @@ import type { FormaApiClient, RequirementHandoff } from '../api.js';
 vi.mock('@vzi-core/renderer', async () => {
   const React = await import('react');
   return {
-    CanvasKitSurface: (props: { elements?: unknown[] }) =>
+    CanvasKitSurface: (props: { elements?: unknown[]; width?: number; height?: number; viewport?: { offsetX: number; offsetY: number; scale: number } }) =>
       React.createElement('div', {
         'data-testid': 'ck-surface',
         'data-count': (props.elements ?? []).length,
+        'data-width': props.width,
+        'data-height': props.height,
+        'data-viewport-scale': props.viewport ? String(props.viewport.scale) : '',
+        'data-viewport-offset-x': props.viewport ? String(props.viewport.offsetX) : '',
+        'data-viewport-offset-y': props.viewport ? String(props.viewport.offsetY) : '',
       }),
     buildCanvasKitElementTree: (doc: { elements?: Record<string, unknown> }) =>
       Object.values(doc.elements ?? {}).map((e) => ({ ...(e as object), children: [] })),
@@ -58,6 +63,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 async function render(
@@ -101,6 +107,26 @@ function page(over: Partial<RequirementHandoff['pages'][number]> = {}): Requirem
   };
 }
 
+type TestResizeObserverInstance = {
+  callback: (entries: Array<{ contentRect: { width: number; height: number } }>) => void;
+  observe: ReturnType<typeof vi.fn>;
+  disconnect: ReturnType<typeof vi.fn>;
+};
+
+function stubResizeObserver(): TestResizeObserverInstance[] {
+  const instances: TestResizeObserverInstance[] = [];
+  vi.stubGlobal('ResizeObserver', class {
+    callback: TestResizeObserverInstance['callback'];
+    observe = vi.fn();
+    disconnect = vi.fn();
+    constructor(callback: TestResizeObserverInstance['callback']) {
+      this.callback = callback;
+      instances.push(this);
+    }
+  });
+  return instances;
+}
+
 describe('AnnotationPage', () => {
   it('shows an empty state (no surface) when there are no handoff pages', async () => {
     await render(clientWith({ pages: [], errors: [] }));
@@ -111,6 +137,43 @@ describe('AnnotationPage', () => {
   it('renders the CanvasKit surface when pages decode', async () => {
     await render(clientWith({ pages: [page()], errors: [] }));
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();
+  });
+
+  it('observes the ready canvas container after loading before sizing the surface', async () => {
+    const instances = stubResizeObserver();
+
+    await render(clientWith({ pages: [page()], errors: [] }));
+
+    expect(instances).toHaveLength(1);
+    expect(instances[0].observe).toHaveBeenCalledWith(expect.any(HTMLDivElement));
+
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+    });
+
+    const surface = container.querySelector('[data-testid="ck-surface"]');
+    expect(surface?.getAttribute('data-width')).toBe('640');
+    expect(surface?.getAttribute('data-height')).toBe('480');
+  });
+
+  it('waits for a measured canvas size before fitting the initial viewport', async () => {
+    const instances = stubResizeObserver();
+
+    await render(clientWith({ pages: [page()], errors: [] }));
+
+    let surface = container.querySelector('[data-testid="ck-surface"]');
+    expect(surface?.getAttribute('data-viewport-scale')).toBe('');
+
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    surface = container.querySelector('[data-testid="ck-surface"]');
+    expect(Number(surface?.getAttribute('data-viewport-scale'))).toBeCloseTo(0.552, 3);
+    expect(Number(surface?.getAttribute('data-viewport-offset-x'))).toBeCloseTo(212.36, 2);
+    expect(Number(surface?.getAttribute('data-viewport-offset-y'))).toBe(28);
   });
 
   it('records missing icon and bundle resources but still renders the page', async () => {
@@ -125,6 +188,8 @@ describe('AnnotationPage', () => {
   });
 
   it('keeps a failed content fetch as a marked frame while rendering another page', async () => {
+    const instances = stubResizeObserver();
+
     await render(clientWith({
       pages: [
         page({ pageId: 'home', artifactId: 'A', title: 'Home', contentUrl: '/ok' }),
@@ -136,6 +201,10 @@ describe('AnnotationPage', () => {
         if (url === '/missing') throw new Error('HTTP 404');
         return rootContent();
       },
+    });
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
     });
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();
     expect(container.textContent).toContain('Settings');

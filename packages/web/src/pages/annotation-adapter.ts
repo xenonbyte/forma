@@ -29,6 +29,8 @@ export interface ResourceRef {
 interface RewriteCtx {
   artifactId: string;
   pageId: string;
+  variant?: string;
+  namespaceIds?: boolean;
   resourceRefs?: ResourceRef[];
 }
 
@@ -138,6 +140,12 @@ function readSrc(el: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function namespaceElementId(id: string, ctx: RewriteCtx): string {
+  if (!ctx.namespaceIds) return id;
+  const variantPart = ctx.variant && ctx.variant !== 'default' ? `/${ctx.variant}` : '';
+  return `${ctx.artifactId}/${ctx.pageId}${variantPart}/${id}`;
+}
+
 function readImageAssetUrl(metadata: Record<string, unknown>, imageUrls: Map<string, string>): string | undefined {
   for (const key of ['iconAssetId', 'imageAssetId', 'assetId']) {
     const id = metadata[key];
@@ -147,6 +155,50 @@ function readImageAssetUrl(metadata: Record<string, unknown>, imageUrls: Map<str
     }
   }
   return undefined;
+}
+
+const CSS_URL_RE = /url\(\s*(?:"([^"]*)"|'([^']*)'|([^)'"]*))\s*\)/gi;
+
+function rewriteCssUrlReferences(
+  value: string,
+  urls: PageAssetUrls,
+  ctx: RewriteCtx,
+  errors: Array<Partial<ResourceError> & { reason: string }>,
+): string | undefined {
+  let sawUrl = false;
+  let unsafeUrl = false;
+  const rewritten = value.replace(CSS_URL_RE, (match, doubleQuoted: string | undefined, singleQuoted: string | undefined, bare: string | undefined) => {
+    sawUrl = true;
+    const raw = (doubleQuoted ?? singleQuoted ?? bare ?? '').trim();
+    if (raw.startsWith('data:')) return match;
+    const mapped = rewriteResourceUrl(raw, undefined, urls, ctx, errors);
+    if (!mapped) {
+      unsafeUrl = true;
+      return '';
+    }
+    return `url("${mapped}")`;
+  });
+  if (!sawUrl) return value;
+  return unsafeUrl ? undefined : rewritten;
+}
+
+function rewriteStyleResourceUrls(
+  styles: Record<string, unknown>,
+  urls: PageAssetUrls,
+  ctx: RewriteCtx,
+  errors: Array<Partial<ResourceError> & { reason: string }>,
+): Record<string, unknown> {
+  const rewritten = { ...styles };
+  const backgroundImage = rewritten['backgroundImage'];
+  if (typeof backgroundImage === 'string') {
+    const next = rewriteCssUrlReferences(backgroundImage, urls, ctx, errors);
+    if (typeof next === 'string') {
+      rewritten['backgroundImage'] = next;
+    } else {
+      delete rewritten['backgroundImage'];
+    }
+  }
+  return rewritten;
 }
 
 function rewriteImageAssetUrls(
@@ -178,12 +230,14 @@ export function vziContentToFlatDoc(
     const el = rawEl as unknown as Record<string, unknown>;
     const metadata = asRecord(el['metadata']);
     const rewritten = readImageAssetUrl(metadata, imageUrls) ?? rewriteResourceUrl(readSrc(el), metadata, urls, ctx, errors);
-    elements[id] = {
-      id,
-      parentId: (typeof el['parentId'] === 'string' ? (el['parentId'] as string) : null),
+    const mappedId = namespaceElementId(id, ctx);
+    const parentId = typeof el['parentId'] === 'string' ? namespaceElementId(el['parentId'] as string, ctx) : null;
+    elements[mappedId] = {
+      id: mappedId,
+      parentId,
       type: typeof el['type'] === 'string' ? (el['type'] as string) : 'container',
       bounds: el['bounds'] as FlatIRElementLike['bounds'],
-      styles: asRecord(el['styles']),
+      styles: rewriteStyleResourceUrls(asRecord(el['styles']), urls, ctx, errors),
       textContent: typeof el['textContent'] === 'string' ? (el['textContent'] as string) : undefined,
       svgData: el['svgData'],
       ...(rewritten ? { src: rewritten } : {}),
@@ -277,6 +331,18 @@ function isFailedPage(page: AdapterCanvasPageInput): page is AdapterFailedPageIn
   return page.status === 'failed';
 }
 
+function hasDuplicateElementIds(pages: AdapterCanvasPageInput[]): boolean {
+  const seen = new Set<string>();
+  for (const page of pages) {
+    if (isFailedPage(page)) continue;
+    for (const id of page.content.elements.keys()) {
+      if (seen.has(id)) return true;
+      seen.add(id);
+    }
+  }
+  return false;
+}
+
 /** Tile each page's CanvasKit tree horizontally onto one IRElement[] (single WebGL context). */
 export function composeAnnotationCanvas(pages: AdapterCanvasPageInput[], gap = 80): ComposedCanvas {
   const elements: IRElement[] = [];
@@ -285,6 +351,7 @@ export function composeAnnotationCanvas(pages: AdapterCanvasPageInput[], gap = 8
   const resourceRefs: ResourceRef[] = [];
   let xCursor = 0;
   let maxHeight = 0;
+  const namespaceIds = hasDuplicateElementIds(pages);
 
   for (const page of pages) {
     if (isFailedPage(page)) {
@@ -306,7 +373,7 @@ export function composeAnnotationCanvas(pages: AdapterCanvasPageInput[], gap = 8
       continue;
     }
 
-    const ctx = { artifactId: page.artifactId, pageId: page.pageId, resourceRefs };
+    const ctx = { artifactId: page.artifactId, pageId: page.pageId, variant: page.variant, namespaceIds, resourceRefs };
     const doc = vziContentToFlatDoc(page.content, page.urls, ctx, errors);
     const tree = buildCanvasKitElementTree(doc);
     const { width, height } = pageSize(page.content);
