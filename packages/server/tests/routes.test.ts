@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createFormaStore, FormaError, getArtifactVersionDir, getArtifactVziPath, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
-import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -2077,5 +2077,124 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
     expect(previewRes.statusCode).toBe(200);
     // Neither route should have touched getRequirement
     expect(requirementGetMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("annotation handoff routes", () => {
+  async function seedArchived(home: string) {
+    const productsRoot = join(home, "data", "products");
+    const PID = "P-abc123";
+    const AID = "A-home";
+    const iconsDir = join(productsRoot, PID, "od-project", "artifacts", AID, "icons");
+    await mkdir(iconsDir, { recursive: true });
+    await writeFile(
+      join(iconsDir, "icons.json"),
+      JSON.stringify({
+        requirementId: "R-1", generatedFrom: "requirement-archive",
+        pageId: "home", variant: "default", sourceVersion: 1, icons: [{}],
+      }),
+    );
+    await writeFile(join(iconsDir, "logo.svg"), "<svg/>");
+    const vziPath = getArtifactVziPath(productsRoot, PID, AID);
+    await mkdir(join(vziPath, ".."), { recursive: true });
+    await writeFile(vziPath, Buffer.from([7, 8, 9]));
+    await mkdir(join(productsRoot, PID, "od-project", "artifacts", AID, "v1"), { recursive: true });
+    await writeFile(join(productsRoot, PID, "od-project", "artifacts", AID, "v1", "index.html"), "<html/>");
+    return { PID, AID };
+  }
+
+  function archivedStore(home: string, PID: string) {
+    return fakeStore({
+      home,
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({
+          id: "R-1", product_id: PID, status: "archived",
+          pages: [{ page_id: "home", name: "Home" }],
+        })),
+      },
+    } as Partial<FormaServerStore>);
+  }
+
+  it("GET /handoff lists archived pages with resource URLs", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID } = await seedArchived(home);
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/requirements/R-1/handoff` });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.pages).toHaveLength(1);
+    expect(body.pages[0]).toMatchObject({
+      pageId: "home", artifactId: "A-home", variant: "default", version: 1,
+      vziUrl: `/api/products/${PID}/artifacts/A-home/vzi/page.vzi`,
+      iconBaseUrl: `/api/products/${PID}/artifacts/A-home/icons/`,
+      bundleBaseUrl: `/api/products/${PID}/artifacts/A-home/versions/1/bundle/`,
+    });
+    expect(body.errors).toEqual([]);
+  });
+
+  it("GET /handoff still lists a page whose VZI is missing so the page can fail independently", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID, AID } = await seedArchived(home);
+    await rm(getArtifactVziPath(join(home, "data", "products"), PID, AID), { force: true });
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+
+    const list = await app.inject({ method: "GET", url: `/api/products/${PID}/requirements/R-1/handoff` });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().pages).toHaveLength(1);
+    expect(list.json().errors).toEqual([]);
+
+    const missingVzi = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/vzi/page.vzi` });
+    expect(missingVzi.statusCode).toBe(404);
+  });
+
+  it("GET /handoff 409s when the requirement is not archived", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const PID = "P-abc123";
+    const app = await buildServer({ store: fakeStore({
+      home,
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirement: vi.fn(async () => ({ id: "R-1", product_id: PID, status: "active", pages: [] })),
+      },
+    } as Partial<FormaServerStore>) });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/requirements/R-1/handoff` });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error_code).toBe("REQUIREMENT_NOT_FINALIZED");
+  });
+
+  it("GET vzi binary returns octet-stream bytes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID, AID } = await seedArchived(home);
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/vzi/page.vzi` });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/octet-stream");
+    expect(res.rawPayload).toEqual(Buffer.from([7, 8, 9]));
+  });
+
+  it("GET icons/* serves an svg and rejects traversal", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
+    const { PID, AID } = await seedArchived(home);
+    const app = await buildServer({ store: archivedStore(home, PID) });
+    apps.push(app);
+    await app.ready();
+    const ok = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/icons/logo.svg` });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.headers["content-type"]).toContain("image/svg+xml");
+
+    const escape = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/icons/..%2f..%2fmanifest.json` });
+    expect(escape.statusCode).toBe(400);
+
+    const missing = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/icons/nope.svg` });
+    expect(missing.statusCode).toBe(404);
   });
 });

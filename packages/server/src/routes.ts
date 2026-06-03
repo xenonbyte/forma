@@ -9,6 +9,10 @@ import {
   getArtifactDir,
   getArtifactVersionDir,
   getArtifactVersionPreviewPath,
+  getArtifactVziPath,
+  getArtifactVziDir,
+  getArtifactIconsDir,
+  listArchivedHandoffPages,
   getFormaPaths,
   isSameOrChildPath,
   normalizeKind,
@@ -379,6 +383,119 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
 
   app.get<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId", async (request) =>
     getOwnedRequirement(store, request.params.id, request.params.reqId)
+  );
+
+  // ─── Annotation handoff routes ─────────────────────────────────────────────
+
+  // Handoff page directory for the Web annotation canvas. Archived-only.
+  app.get<{ Params: { id: string; reqId: string } }>(
+    "/api/products/:id/requirements/:reqId/handoff",
+    async (request) => {
+      const { id: productId, reqId } = request.params;
+      const requirement = await getOwnedRequirement(store, productId, reqId);
+      if (requirement.status !== "archived") {
+        throw new RouteHttpError(
+          "REQUIREMENT_NOT_FINALIZED",
+          "Requirement is not yet archived",
+          { requirement_id: reqId, status: requirement.status },
+          409,
+        );
+      }
+      const productsDir = getFormaPaths(store.home).productsDir;
+      const pageOrder = requirement.pages.map((p) => p.page_id);
+      const pageIdSet = new Set(pageOrder);
+      const pointers = await listArchivedHandoffPages(productsDir, productId, reqId, pageIdSet);
+      const orderIndex = (pid: string) => {
+        const i = pageOrder.indexOf(pid);
+        return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+      };
+      const sorted = [...pointers].sort((a, b) => orderIndex(a.pageId) - orderIndex(b.pageId));
+      const pageNameById = new Map(requirement.pages.map((p) => [p.page_id, (p.name as string) ?? p.page_id]));
+      return {
+        pages: sorted.map((p) => ({
+          pageId: p.pageId,
+          artifactId: p.artifactId,
+          variant: p.variant,
+          version: p.version,
+          title: pageNameById.get(p.pageId) ?? p.pageId,
+          iconCount: p.iconCount,
+          vziUrl: vziUrl(productId, p.artifactId),
+          iconBaseUrl: iconBaseUrl(productId, p.artifactId),
+          bundleBaseUrl: bundleBaseUrl(productId, p.artifactId, p.version),
+        })),
+        errors: [],
+      };
+    },
+  );
+
+  // Raw .vzi bytes for a handoff artifact.
+  app.get<{ Params: { pid: string; aid: string } }>(
+    "/api/products/:pid/artifacts/:aid/vzi/page.vzi",
+    async (request, reply) => {
+      const { pid, aid } = request.params;
+      const productsDir = getFormaPaths(store.home).productsDir;
+      let vziFile: string;
+      let vziDir: string;
+      try {
+        vziFile = getArtifactVziPath(productsDir, pid, aid);
+        vziDir = getArtifactVziDir(productsDir, pid, aid);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        return;
+      }
+      const resolved = resolve(vziFile);
+      if (!isSameOrChildPath(resolve(vziDir), resolved)) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes vzi directory", details: {} });
+        return;
+      }
+      if (!(await fileExists(resolved))) {
+        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "VZI file not found", details: {} });
+        return;
+      }
+      const content = await readFile(resolved);
+      reply.header("Content-Type", "application/octet-stream");
+      reply.header("Cache-Control", "public, max-age=3600");
+      reply.send(content);
+    },
+  );
+
+  // Icon assets (SVG/PNG/JPEG/WebP/GIF) for handoff pages.
+  app.get<{ Params: { pid: string; aid: string; "*": string } }>(
+    "/api/products/:pid/artifacts/:aid/icons/*",
+    async (request, reply) => {
+      const { pid, aid } = request.params;
+      const relPath = request.params["*"];
+      if (!relPath || relPath.startsWith("/") || relPath.includes("\0")) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid icon path", details: {} });
+        return;
+      }
+      const productsDir = getFormaPaths(store.home).productsDir;
+      let iconsDir: string;
+      try {
+        iconsDir = getArtifactIconsDir(productsDir, pid, aid);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        return;
+      }
+      const resolvedFile = resolve(iconsDir, relPath);
+      if (!isSameOrChildPath(resolve(iconsDir), resolvedFile)) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes icons directory", details: {} });
+        return;
+      }
+      const contentType = ICON_ALLOWED_CONTENT_TYPES.get(extname(resolvedFile).toLowerCase());
+      if (!contentType) {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Unsupported icon content type", details: {} });
+        return;
+      }
+      if (!(await fileExists(resolvedFile))) {
+        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Icon not found", details: {} });
+        return;
+      }
+      const content = await readFile(resolvedFile);
+      reply.header("Content-Type", contentType);
+      reply.header("Cache-Control", "public, max-age=3600");
+      reply.send(content);
+    },
   );
 
   // ─── Baseline compatibility routes ────────────────────────────────────────
@@ -867,6 +984,27 @@ function timestampForRequirement(requirement: RequirementRecord): number {
 function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
 }
+
+function bundleBaseUrl(productId: string, artifactId: string, version: number): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/bundle/`;
+}
+
+function vziUrl(productId: string, artifactId: string): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/vzi/page.vzi`;
+}
+
+function iconBaseUrl(productId: string, artifactId: string): string {
+  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/icons/`;
+}
+
+const ICON_ALLOWED_CONTENT_TYPES = new Map<string, string>([
+  [".svg", "image/svg+xml"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+]);
 
 /**
  * Collect the artifact ids that are "current" (referenced by a requirement pointer
