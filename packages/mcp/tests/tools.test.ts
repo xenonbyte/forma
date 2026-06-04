@@ -3532,6 +3532,89 @@ describe("design-handoff tools (Task 8)", () => {
     }
   });
 
+  it("get_design_handoff returns ARTIFACT_UNSUPPORTED_FORMAT when the generated VZI file is corrupt", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-corrupt-vzi-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, new Uint8Array([1, 2, 3]));
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
+        requirementId: REQ_ID,
+        pageId: PAGE_ID,
+      });
+
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [{ page_id: PAGE_ID }],
+            document_md: ""
+          })),
+        },
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_design_handoff({ requirement_id: REQ_ID });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({
+        error_code: "ARTIFACT_UNSUPPORTED_FORMAT",
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_page_ui returns ARTIFACT_UNSUPPORTED_FORMAT when VZI decode throws", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-pageui-corrupt-vzi-"));
+    try {
+      const productsRoot = join(home, "data", "products");
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, new Uint8Array([1, 2, 3]));
+
+      const store = fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({
+            id: REQ_ID,
+            product_id: PRODUCT_ID,
+            status: "archived",
+            pages: [],
+            document_md: ""
+          })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => [{
+            requirementId: REQ_ID,
+            pageId: PAGE_ID,
+            variant: "default",
+            artifactId: ARTIFACT_ID,
+            version: 1,
+            designStatus: "active" as const,
+          }]),
+        }
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_page_ui({ requirement_id: REQ_ID, page_id: PAGE_ID });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({
+        error_code: "ARTIFACT_UNSUPPORTED_FORMAT",
+      });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("get_design_handoff returns ARTIFACT_INVALID_INPUT when icons manifest is malformed", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-bad-icons-"));
     try {

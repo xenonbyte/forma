@@ -76,18 +76,31 @@ async function loadVzi(vziPath: string): Promise<VZIContent> {
   }
 
   const decoder = new VZIDecoder({ enableErrorRecovery: true });
-  const result = decoder.decode(new Uint8Array(buf));
+  let result: ReturnType<VZIDecoder['decode']>;
+  try {
+    result = decoder.decode(new Uint8Array(buf));
+  } catch (cause) {
+    throw new FormaError(
+      'ARTIFACT_UNSUPPORTED_FORMAT',
+      'VZI decode failed',
+      { vziPath, errors: [cause instanceof Error ? cause.message : String(cause)] }
+    );
+  }
 
   const fatals = result.errors.filter((e) => e.fatal);
   if (fatals.length > 0) {
     throw new FormaError(
       'ARTIFACT_UNSUPPORTED_FORMAT',
-      `VZI decode fatal errors: ${fatals.map((e) => e.message).join('; ')}`,
-      { vziPath, errors: fatals }
+      'VZI decode failed',
+      { vziPath, errors: fatals.map((e) => e.message) }
     );
   }
 
   return result.content;
+}
+
+async function assertDecodableHandoffFile(vziPath: string): Promise<void> {
+  await loadVzi(vziPath);
 }
 
 /**
@@ -142,6 +155,7 @@ async function resolveActivePagePointers(
     const indexHtmlPath = join(versionDir, 'index.html');
     const iconsManifestPath = getArtifactIconsManifestPath(productsRoot, productId, artifactId);
     await assertReadableHandoffFile(vziPath, artifactId, 'vzi');
+    await assertDecodableHandoffFile(vziPath);
     const iconCount = (await readHandoffIconManifest(iconsManifestPath, artifactId)).iconCount;
 
     pages.push({ pageId, variant, artifactId, version, vziPath, indexHtmlPath, iconCount });
@@ -166,6 +180,7 @@ async function resolvePagePointers(
   if (archivedPages.length > 0) {
     for (const page of archivedPages) {
       await assertReadableHandoffFile(page.vziPath, page.artifactId, 'vzi');
+      await assertDecodableHandoffFile(page.vziPath);
     }
     return archivedPages;
   }

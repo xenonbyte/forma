@@ -57,15 +57,24 @@ async function loadVzi(vziPath: string) {
   }
 
   const decoder = new VZIDecoder({ enableErrorRecovery: true });
-  const result = decoder.decode(new Uint8Array(buf));
+  let result: ReturnType<VZIDecoder['decode']>;
+  try {
+    result = decoder.decode(new Uint8Array(buf));
+  } catch (cause) {
+    throw new FormaError(
+      'ARTIFACT_UNSUPPORTED_FORMAT',
+      'VZI decode failed',
+      { vziPath, errors: [cause instanceof Error ? cause.message : String(cause)] }
+    );
+  }
 
   if (result.errors.length > 0) {
     const fatals = result.errors.filter((e) => e.fatal);
     if (fatals.length > 0) {
       throw new FormaError(
         'ARTIFACT_UNSUPPORTED_FORMAT',
-        `VZI decode fatal errors: ${fatals.map((e) => e.message).join('; ')}`,
-        { vziPath, errors: fatals }
+        'VZI decode failed',
+        { vziPath, errors: fatals.map((e) => e.message) }
       );
     }
     // Non-fatal errors are tolerated (degraded mode); callers may inspect result.
