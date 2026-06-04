@@ -83,6 +83,16 @@ forma serve
 
 Open the local URL to create and configure products, browse styles, manage requirements, inspect baseline pages, and review multilingual copy.
 
+### Network exposure & authentication
+
+`forma serve` binds to `127.0.0.1:3000` by default; on that loopback default the API has **no authentication** unless `FORMA_SERVER_TOKEN` is set (local-first). If you override the bind to a non-loopback address (`FORMA_SERVER_HOST=0.0.0.0`, an empty host value, or a LAN/public IP), the server **refuses to start** unless you also set `FORMA_SERVER_TOKEN`:
+
+```bash
+FORMA_SERVER_HOST=0.0.0.0 FORMA_SERVER_TOKEN=$(openssl rand -hex 32) forma serve
+```
+
+When `FORMA_SERVER_TOKEN` is set, every `/api/*` request must carry `Authorization: Bearer <token>`; requests without it get `401`, including on loopback binds. The bundled Web SPA shell stays open (static assets), but its browser `/api` calls do not attach this token — so the bundled Web UI is intended for unauthenticated loopback use. For remote access, drive the API programmatically with the bearer token, or front the server with a reverse proxy that injects auth. `FORMA_SERVER_TOKEN` is distinct from the CLI's `FORMA_SERVE_TOKEN` (which only tags the managed `serve` process).
+
 Design artifacts open in the shared `@xenonbyte/forma-viewer` canvas (design / annotation modes toggle in-canvas) via two hash routes:
 
 - by requirement: `#/products/:productId/requirements/:reqId/viewer`

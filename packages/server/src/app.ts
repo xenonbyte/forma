@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { timingSafeEqual } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -17,6 +18,12 @@ export interface BuildServerOptions {
   home?: string;
   bundledStylesDir?: string;
   webAssetsDir?: string;
+  /**
+   * When set, every `/api/*` request must carry `Authorization: Bearer <token>`.
+   * Used to protect non-loopback binds and optional authenticated loopback
+   * binds (see `index.ts`).
+   */
+  authToken?: string;
 }
 
 export type FormaServer = FastifyInstance;
@@ -26,6 +33,10 @@ export interface FormaServerStore extends FormaRoutesStore {
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FormaServer> {
   const app = Fastify();
+  const authToken = options.authToken?.trim();
+  if (authToken) {
+    registerApiBearerAuth(app, authToken);
+  }
   let store: FormaServerStore | undefined = options.store;
   let limitedState: SchemaNormalizationRecoveryState | undefined;
   if (!store) {
@@ -61,6 +72,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
 
       const asset = await readWebAsset(options.webAssetsDir, request.url);
       if (asset) {
+        reply.header("X-Content-Type-Options", "nosniff");
         reply.type(asset.contentType).send(request.method === "HEAD" ? undefined : asset.content);
         return;
       }
@@ -91,13 +103,74 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
     app.log.warn({ warning }, "Forma product deletion recovery warning");
   }
 
-  registerRoutes(app, store);
+  registerRoutes(app, store, { authenticatedApi: Boolean(authToken) });
   return app;
 }
 
 function isApiRequest(url: string): boolean {
   const requestPath = pathname(url);
   return requestPath === "/api" || requestPath.startsWith("/api/");
+}
+
+// Reject any /api/* request that does not present `Authorization: Bearer <token>`.
+// Static web assets (the SPA shell) are intentionally left open; non-loopback
+// deployments are expected to be programmatic API clients (or to inject auth via
+// a fronting proxy). Comparison is constant-time to avoid leaking the token.
+function registerApiBearerAuth(app: FastifyInstance, token: string): void {
+  const expected = Buffer.from(token, "utf8");
+  app.addHook("onRequest", async (request, reply) => {
+    if (!isApiRequest(request.url)) {
+      return;
+    }
+    const provided = bearerToken(request.headers.authorization);
+    if (!provided || !timingSafeEqualToken(expected, provided)) {
+      reply.status(401).send({
+        error_code: "UNAUTHORIZED",
+        message: "Missing or invalid bearer token",
+        details: {}
+      });
+      return reply;
+    }
+  });
+}
+
+function bearerToken(header: string | string[] | undefined): string | undefined {
+  const value = Array.isArray(header) ? header[0] : header;
+  if (!value) {
+    return undefined;
+  }
+  const match = /^Bearer\s+(.+)$/i.exec(value.trim());
+  return match ? match[1] : undefined;
+}
+
+function timingSafeEqualToken(expected: Buffer, provided: string): boolean {
+  const providedBuffer = Buffer.from(provided, "utf8");
+  if (providedBuffer.length !== expected.length) {
+    return false;
+  }
+  return timingSafeEqual(expected, providedBuffer);
+}
+
+/**
+ * True for hosts that only accept connections from the local machine, where the
+ * unauthenticated default is safe. Anything else (0.0.0.0, ::, a LAN/public IP)
+ * is treated as exposed and requires a bearer token.
+ */
+export function isLoopbackHost(host: string | undefined): boolean {
+  if (host === undefined) {
+    return true;
+  }
+  const value = host.trim().toLowerCase();
+  if (value === "") {
+    return false;
+  }
+  if (value === "localhost") {
+    return true;
+  }
+  if (value === "::1" || value === "::ffff:127.0.0.1") {
+    return true;
+  }
+  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value) || /^::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value);
 }
 
 function canServeWebAsset(method: string, url: string): boolean {

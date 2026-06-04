@@ -5,7 +5,8 @@ import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildServer, type FormaServer, type FormaServerStore } from "../src/app.js";
+import { buildServer, isLoopbackHost, type FormaServer, type FormaServerStore } from "../src/app.js";
+import { requireAuthTokenForHost } from "../src/index.js";
 import type { ArtifactManifest, ExportArchiveAssetsResult } from "@xenonbyte/forma-core";
 
 const apps: FormaServer[] = [];
@@ -1453,6 +1454,9 @@ describe("artifact routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("text/html");
+    // Defense-in-depth: served artifact HTML must not be MIME-sniffed.
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers["referrer-policy"]).toBe("no-referrer");
     expect(response.body).toContain("Bundle");
   });
 
@@ -1596,6 +1600,62 @@ describe("artifact routes", () => {
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toBe("image/png");
     expect(response.rawPayload).toEqual(pngBytes);
+  });
+
+  it("serves artifact bytes with private no-store cache headers when bearer auth is enabled", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-auth-cache-"));
+    const productId = "P-123abc";
+    const artifactId = "A-abcdef1234567890";
+    const productsRoot = join(home, "data", "products");
+    const artifactDir = join(productsRoot, productId, "od-project", "artifacts", artifactId);
+    const versionDir = join(artifactDir, "v1");
+    const flatPreviewDir = join(artifactDir, "preview");
+    const versionPreviewDir = join(versionDir, "preview");
+    const iconsDir = join(artifactDir, "icons");
+    await mkdir(flatPreviewDir, { recursive: true });
+    await mkdir(versionPreviewDir, { recursive: true });
+    await mkdir(iconsDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), "<!doctype html><body>Bundle</body>", "utf8");
+    await writeFile(join(flatPreviewDir, "2x.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await writeFile(join(versionPreviewDir, "2x.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    await writeFile(join(iconsDir, "logo.svg"), "<svg/>", "utf8");
+    const elements = new Map<string, unknown>([
+      ["root", { id: "root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 320, height: 640 }, styles: {} }]
+    ]);
+    await mkdir(join(getArtifactVziPath(productsRoot, productId, artifactId), ".."), { recursive: true });
+    await writeFile(getArtifactVziPath(productsRoot, productId, artifactId), Buffer.from(new VZIEncoder().encode({
+      header: {},
+      metadata: { formaViewport: { width: 320, height: 640 } },
+      elements,
+      sharedStyles: new Map(),
+      spatialIndex: new SpatialIndexBuilder().build(elements as never),
+      colorTokens: [],
+      fontTokens: [],
+      annotations: [],
+      images: new Map(),
+      layers: [],
+      compatibility: { minReaderVersion: "2.0.0", formatVersion: "2.0.0", features: [] }
+    } as never)));
+
+    const app = await buildServer({ store: fakeStore({ home }), authToken: "s3cret" });
+    apps.push(app);
+    await app.ready();
+    const headers = { authorization: "Bearer s3cret" };
+
+    const responses = await Promise.all([
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/preview/2x`, headers }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`, headers }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`, headers }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/icons/logo.svg`, headers }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/page.vzi`, headers }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/content`, headers })
+    ]);
+
+    for (const response of responses) {
+      expect(response.statusCode).toBe(200);
+      expect(response.headers["cache-control"]).toBe("private, no-store");
+      expect(response.headers.vary).toBe("Authorization");
+    }
   });
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res returns 400 for invalid resolution", async () => {
@@ -2327,5 +2387,78 @@ describe("annotation handoff routes", () => {
     // artifact id containing '!' fails ARTIFACT_ID_PATTERN validation in getArtifactVziPath → 400
     const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/A-home%21/vzi/content` });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("api bearer auth (non-loopback protection)", () => {
+  it("rejects /api requests without a bearer token when authToken is set", async () => {
+    const app = await buildServer({ store: fakeStore(), authToken: "s3cret" });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: "/api/products" });
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error_code).toBe("UNAUTHORIZED");
+  });
+
+  it("rejects an incorrect bearer token", async () => {
+    const app = await buildServer({ store: fakeStore(), authToken: "s3cret" });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/products",
+      headers: { authorization: "Bearer wrong" }
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("allows /api requests carrying the correct bearer token", async () => {
+    const app = await buildServer({ store: fakeStore(), authToken: "s3cret" });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/products",
+      headers: { authorization: "Bearer s3cret" }
+    });
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  it("leaves non-api routes open even when authToken is set", async () => {
+    const app = await buildServer({ store: fakeStore(), authToken: "s3cret" });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: "/" });
+    expect(res.statusCode).not.toBe(401);
+  });
+
+  it("serves /api unauthenticated when no authToken is configured (loopback default)", async () => {
+    const app = await buildServer({ store: fakeStore() });
+    apps.push(app);
+    await app.ready();
+    const res = await app.inject({ method: "GET", url: "/api/products" });
+    expect(res.statusCode).not.toBe(401);
+  });
+});
+
+describe("requireAuthTokenForHost / isLoopbackHost", () => {
+  it("treats loopback hosts as safe (no token required)", () => {
+    for (const host of ["127.0.0.1", "::1", "localhost", "127.5.0.1", "::ffff:127.0.0.1"]) {
+      expect(isLoopbackHost(host)).toBe(true);
+      expect(requireAuthTokenForHost(host, undefined)).toBeUndefined();
+    }
+  });
+
+  it("respects a configured token on loopback hosts", () => {
+    expect(requireAuthTokenForHost("127.0.0.1", "  tok  ")).toBe("tok");
+  });
+
+  it("requires a non-empty token for exposed hosts and fails loud otherwise", () => {
+    for (const host of ["", "0.0.0.0", "::", "192.168.1.10", "10.0.0.5"]) {
+      expect(isLoopbackHost(host)).toBe(false);
+      expect(() => requireAuthTokenForHost(host, undefined)).toThrow(/FORMA_SERVER_TOKEN/);
+      expect(() => requireAuthTokenForHost(host, "   ")).toThrow();
+      expect(requireAuthTokenForHost(host, "tok")).toBe("tok");
+    }
   });
 });
