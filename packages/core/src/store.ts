@@ -308,13 +308,41 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   };
 }
 
+// Strict-by-default startup contract: the store refuses to come up if ANY
+// product's read models (product.yaml, requirement history, copy translations)
+// fail to load. This is intentional — it surfaces on-disk corruption loudly
+// rather than serving partial/inconsistent data, and it is paired with the
+// schema-normalization recovery path (see readSchemaNormalizationRecoveryState)
+// for migrating legacy layouts. We do NOT degrade to "skip the bad product"
+// here; changing that is a deliberate product decision, not a bug fix.
+//
+// We do, however, attribute the failure to the offending product so the crash
+// log points at it instead of an opaque parse error.
 async function validateStrictStoreReadModels(store: FormaStore): Promise<void> {
   const products = await store.products.listProducts();
   for (const productEntry of products) {
-    await store.products.getProduct(productEntry.id);
-    const requirements = await store.requirements.getRequirementHistory(productEntry.id);
-    for (const requirement of requirements) {
-      await store.copy.getTranslations(productEntry.id, requirement.id);
+    try {
+      await store.products.getProduct(productEntry.id);
+      const requirements = await store.requirements.getRequirementHistory(productEntry.id);
+      for (const requirement of requirements) {
+        await store.copy.getTranslations(productEntry.id, requirement.id);
+      }
+    } catch (error) {
+      throw attributeStartupValidationError(error, productEntry.id);
     }
   }
+}
+
+function attributeStartupValidationError(error: unknown, productId: string): FormaError {
+  if (error instanceof FormaError) {
+    if (error.details.product_id === productId) {
+      return error;
+    }
+    return new FormaError(error.code, error.message, { ...error.details, product_id: productId });
+  }
+  return new FormaError(
+    "STRICT_SCHEMA_VALIDATION_FAILED",
+    `Startup read-model validation failed for product ${productId}`,
+    { product_id: productId, cause: error instanceof Error ? error.message : String(error) }
+  );
 }
