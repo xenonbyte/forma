@@ -77,6 +77,8 @@ $FORMA_HOME/                       (defaults to ~/.forma, override with FORMA_HO
 | `od-contracts` | Shared pure-TS contracts for the Open Design web/daemon boundary. |
 | `od-*` | Open Design renderer/plugin subsystem: `od-host` (renderer host bridge), `od-plugin-runtime` (pure-TS plugin runtime, no `node:fs`), `od-platform`, `od-sidecar`/`od-sidecar-proto` (sidecar + protocol), `od-diagnostics` (log export/redaction). |
 
+> **`od-*` status (in progress, not yet wired):** The `@xenonbyte/od-*` packages (version `0.0.1`) form a parallel subsystem that, as of now, is **imported only by each other** — no shipping entry point (`core`/`server`/`mcp`/`cli`/`web`/`desktop`/`viewer`) depends on them, and they are **not** in the npm publish set (`publish:npm`). They are still built and typechecked by the default `pnpm build`/`pnpm typecheck` (their tests resolve sibling packages through the built `dist`, e.g. `od-contracts/tests/package-runtime.test.ts`). Use `pnpm build:od` / `pnpm typecheck:od` to work on them in isolation. Treat them as work-in-progress until a shipping package imports them.
+
 ### Key patterns
 
 - **Product mutation lock**: Any write that mutates product state must go through `runProductMutation`. This serializes concurrent operations under a per-product file lock at `$FORMA_HOME/data/<productId>/locks/product-mutation.lock`. See `packages/core/src/product-mutation-lock.ts`.

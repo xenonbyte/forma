@@ -10,3 +10,8 @@ coverage/
 .codegraph
 .req-to-plan/
 packages/desktop/out/
+
+# Tool/workflow state and scratch output (not project sources)
+.drfx/
+.docs-review-fix/
+output/

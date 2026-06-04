@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so Biome's `--changed --since` can diff against the base.
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Report-only for now: the existing codebase predates Biome and carries a
+      # backlog (mostly web a11y rules). This surfaces lint/format drift on
+      # changed files without blocking. Flip to a blocking gate after the
+      # one-time `pnpm format` normalization + backlog cleanup land.
+      - name: Biome (report-only)
+        continue-on-error: true
+        run: pnpm exec biome ci --changed --since=origin/${{ github.base_ref || 'main' }} .
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      # `pnpm typecheck` builds every package first (incl. the in-progress od-*
+      # subsystem, whose tests resolve sibling packages through their built dist),
+      # then runs per-package tsc and the scripts typecheck — so it covers build.
+      - name: Typecheck (includes build)
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
