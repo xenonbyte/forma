@@ -362,7 +362,7 @@ export function AnnotationPage({
 }
 
 function frameKey(f: { artifactId: string; pageId: string }): string {
-  return `${f.artifactId} ${f.pageId}`;
+  return `${f.artifactId}\0${f.pageId}`;
 }
 
 /**

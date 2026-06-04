@@ -129,12 +129,17 @@ function artifactVersionFileRelativePath(
     }
   }
 
-  for (let i = decodedSegments.length - 2; i >= 0; i -= 1) {
-    if (decodedSegments[i] !== ctx.artifactId || decodedSegments[i + 1] !== versionSegment) {
+  for (let i = 0; i <= decodedSegments.length - 5; i += 1) {
+    if (
+      decodedSegments[i] !== 'od-project' ||
+      decodedSegments[i + 1] !== 'artifacts' ||
+      decodedSegments[i + 2] !== ctx.artifactId ||
+      decodedSegments[i + 3] !== versionSegment
+    ) {
       continue;
     }
-    const rel = encodedSegments.slice(i + 2).join('/');
-    return safeRelativePath(rel, ctx, errors);
+    const rel = safeRelativePath(encodedSegments.slice(i + 4).join('/'), ctx, errors);
+    return rel ? `${rel}${parsed.search}${parsed.hash}` : undefined;
   }
 
   pushResourceError(errors, ctx, raw, 'file: resource not allowed');

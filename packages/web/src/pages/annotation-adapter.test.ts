@@ -75,6 +75,37 @@ describe('rewriteResourceUrl', () => {
       },
     ]);
   });
+  it('preserves artifact-version file: URL query and fragment parts', () => {
+    const errs: never[] = [];
+    expect(
+      rewriteResourceUrl(
+        'file:///Users/xubo/.forma/products/P-abc123/od-project/artifacts/A/v1/assets/sprite.svg?theme=dark#icon',
+        undefined,
+        URLS,
+        ctx,
+        errs,
+      ),
+    ).toBe(`${URLS.bundleBaseUrl}assets/sprite.svg?theme=dark#icon`);
+    expect(errs).toHaveLength(0);
+  });
+  it('rejects file: URLs that only contain matching artifact/version segments outside the artifact root', () => {
+    const errs: { reason: string }[] = [];
+    expect(rewriteResourceUrl('file:///tmp/A/v1/logo.png', undefined, URLS, ctx, errs)).toBeUndefined();
+    expect(errs[0].reason).toBe('file: resource not allowed');
+  });
+  it('does not slice at nested artifact/version-like asset path segments', () => {
+    const errs: never[] = [];
+    expect(
+      rewriteResourceUrl(
+        'file:///Users/xubo/.forma/products/P-abc123/od-project/artifacts/A/v1/assets/A/v1/logo.png',
+        undefined,
+        URLS,
+        ctx,
+        errs,
+      ),
+    ).toBe(`${URLS.bundleBaseUrl}assets/A/v1/logo.png`);
+    expect(errs).toHaveLength(0);
+  });
   it('records a violation and drops remote http(s) URLs without fetching', () => {
     const errs: { reason: string }[] = [];
     expect(rewriteResourceUrl('https://evil.example/x.png', undefined, URLS, ctx, errs)).toBeUndefined();
