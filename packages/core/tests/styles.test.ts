@@ -1,9 +1,22 @@
-import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { StyleService } from '../src/styles.js';
 
+// Isolated per-run home so materialized styles never accumulate across runs. A
+// fixed /tmp path leaves orphaned styles.tmp-* dirs when a run is interrupted,
+// which then bogs down StyleService materialization (cp/rm) on later runs.
+let home: string;
+beforeAll(async () => {
+  home = await mkdtemp(join(tmpdir(), 'forma-styles-'));
+});
+afterAll(async () => {
+  await rm(home, { recursive: true, force: true });
+});
+
 function svc() {
-  return new StyleService({ home: '/tmp/forma-styles', bundledStylesDir: resolve('styles'), bundledCraftDir: resolve('craft') });
+  return new StyleService({ home, bundledStylesDir: resolve('styles'), bundledCraftDir: resolve('craft') });
 }
 
 describe('B4 styles.ts new format', () => {
