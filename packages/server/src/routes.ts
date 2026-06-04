@@ -1,6 +1,6 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, realpath, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   recoverV6NormalizationJournal,
@@ -436,25 +436,23 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
     async (request, reply) => {
       const { pid, aid } = request.params;
       const productsDir = getFormaPaths(store.home).productsDir;
+      let artifactDir: string;
       let vziFile: string;
       let vziDir: string;
       try {
+        artifactDir = getArtifactDir(productsDir, pid, aid);
         vziFile = getArtifactVziPath(productsDir, pid, aid);
         vziDir = getArtifactVziDir(productsDir, pid, aid);
       } catch {
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
-      const resolved = resolve(vziFile);
-      if (!isSameOrChildPath(resolve(vziDir), resolved)) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes vzi directory", details: {} });
+      const servedFile = await resolveServedFile(vziDir, vziFile, artifactDir);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
         return;
       }
-      if (!(await fileExists(resolved))) {
-        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "VZI file not found", details: {} });
-        return;
-      }
-      const content = await readFile(resolved);
+      const content = await readFile(servedFile.path);
       reply.header("Content-Type", "application/octet-stream");
       reply.header("Cache-Control", "public, max-age=3600");
       reply.send(content);
@@ -468,25 +466,23 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
     async (request, reply) => {
       const { pid, aid } = request.params;
       const productsDir = getFormaPaths(store.home).productsDir;
+      let artifactDir: string;
       let vziFile: string;
       let vziDir: string;
       try {
+        artifactDir = getArtifactDir(productsDir, pid, aid);
         vziFile = getArtifactVziPath(productsDir, pid, aid);
         vziDir = getArtifactVziDir(productsDir, pid, aid);
       } catch {
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
-      const resolved = resolve(vziFile);
-      if (!isSameOrChildPath(resolve(vziDir), resolved)) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes vzi directory", details: {} });
+      const servedFile = await resolveServedFile(vziDir, vziFile, artifactDir);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
         return;
       }
-      if (!(await fileExists(resolved))) {
-        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "VZI file not found", details: {} });
-        return;
-      }
-      const content = await loadDecodedHandoffContent(resolved);
+      const content = await loadDecodedHandoffContent(servedFile.path);
       reply.header("Cache-Control", "public, max-age=3600");
       return content;
     },
@@ -503,8 +499,10 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
+      let artifactDir: string;
       let iconsDir: string;
       try {
+        artifactDir = getArtifactDir(productsDir, pid, aid);
         iconsDir = getArtifactIconsDir(productsDir, pid, aid);
       } catch {
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
@@ -520,11 +518,12 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Unsupported icon content type", details: {} });
         return;
       }
-      if (!(await fileExists(resolvedFile))) {
-        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Icon not found", details: {} });
+      const servedFile = await resolveServedFile(iconsDir, resolvedFile, artifactDir);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
         return;
       }
-      const content = await readFile(resolvedFile);
+      const content = await readFile(servedFile.path);
       reply.header("Content-Type", contentType);
       reply.header("Cache-Control", "public, max-age=3600");
       reply.send(content);
@@ -639,12 +638,24 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
+      let artifactDir: string;
+      try {
+        artifactDir = getArtifactDir(productsDir, pid, aid);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        return;
+      }
       const previewPath = await resolveCurrentPreviewPath(store, productsDir, pid, aid, res);
-      if (!previewPath || !(await fileExists(previewPath))) {
+      if (!previewPath) {
         reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview not found", details: {} });
         return;
       }
-      const content = await readFile(previewPath);
+      const servedFile = await resolveServedFile(dirname(previewPath), previewPath, artifactDir);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
+        return;
+      }
+      const content = await readFile(servedFile.path);
       const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
       reply.header("Content-Type", "image/png");
       reply.header("ETag", etag);
@@ -666,14 +677,16 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
+      let artifactDir: string;
       let versionDir: string;
       try {
+        artifactDir = getArtifactDir(productsDir, pid, aid);
         versionDir = getArtifactVersionDir(productsDir, pid, aid, version);
       } catch {
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
-      if (!relPath) {
+      if (!relPath || relPath.startsWith("/") || relPath.includes("\0")) {
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Bundle path is required", details: {} });
         return;
       }
@@ -682,11 +695,12 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes bundle directory", details: {} });
         return;
       }
-      if (!(await fileExists(resolvedFile))) {
-        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Bundle file not found", details: {} });
+      const servedFile = await resolveServedFile(versionDir, resolvedFile, artifactDir);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
         return;
       }
-      const content = await readFile(resolvedFile);
+      const content = await readFile(servedFile.path);
       reply.header("Content-Type", contentTypeForPath(resolvedFile));
       reply.header("Cache-Control", "public, max-age=3600");
       reply.send(content);
@@ -710,18 +724,21 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       }
       const productsDir = getFormaPaths(store.home).productsDir;
       const resolution: "1x" | "2x" = res === "2x.png" ? "2x" : "1x";
+      let artifactDir: string;
       let previewPath: string;
       try {
+        artifactDir = getArtifactDir(productsDir, pid, aid);
         previewPath = getArtifactVersionPreviewPath(productsDir, pid, aid, version, resolution);
       } catch {
         reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
-      if (!(await fileExists(previewPath))) {
-        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview not found", details: {} });
+      const servedFile = await resolveServedFile(dirname(previewPath), previewPath, artifactDir);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
         return;
       }
-      const content = await readFile(previewPath);
+      const content = await readFile(servedFile.path);
       const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
       reply.header("Content-Type", "image/png");
       reply.header("ETag", etag);
@@ -1124,12 +1141,137 @@ function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+type ServedFileResolution =
+  | { ok: true; path: string }
+  | {
+      ok: false;
+      statusCode: 400 | 404;
+      error_code: "ARTIFACT_INVALID_INPUT" | "ARTIFACT_NOT_FOUND";
+      message: string;
+    };
+
+function isMissingPathError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR");
+}
+
+async function resolveRealDirectory(dir: string): Promise<{ realPath: string; expectedPath: string }> {
+  const lexicalPath = resolve(dir);
+  const realParent = await realpath(dirname(lexicalPath));
+  return {
+    realPath: await realpath(lexicalPath),
+    expectedPath: resolve(realParent, basename(lexicalPath))
+  };
+}
+
+async function resolveServedFile(
+  rootDir: string,
+  requestedFile: string,
+  containmentRootDir = rootDir
+): Promise<ServedFileResolution> {
+  if (rootDir.includes("\0") || requestedFile.includes("\0") || containmentRootDir.includes("\0")) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Invalid file path"
+    };
+  }
+
+  const lexicalContainmentRoot = resolve(containmentRootDir);
+  const lexicalRoot = resolve(rootDir);
+  const lexicalFile = resolve(requestedFile);
+  if (!isSameOrChildPath(lexicalContainmentRoot, lexicalRoot)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Path escapes artifact directory"
+    };
+  }
+  if (!isSameOrChildPath(lexicalRoot, lexicalFile)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Path escapes artifact directory"
+    };
+  }
+
+  let realContainmentRoot: string;
+  let expectedContainmentRoot: string;
+  let realRoot: string;
+  let expectedRoot: string;
+  let realFile: string;
+  try {
+    ({ realPath: realContainmentRoot, expectedPath: expectedContainmentRoot } = await resolveRealDirectory(lexicalContainmentRoot));
+    ({ realPath: realRoot, expectedPath: expectedRoot } = await resolveRealDirectory(lexicalRoot));
+    realFile = await realpath(lexicalFile);
+  } catch (error) {
+    if (isMissingPathError(error)) {
+      return {
+        ok: false,
+        statusCode: 404,
+        error_code: "ARTIFACT_NOT_FOUND",
+        message: "File not found"
+      };
+    }
+    throw error;
+  }
+
+  if (realContainmentRoot !== expectedContainmentRoot || realRoot !== expectedRoot) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Path escapes artifact directory"
+    };
+  }
+
+  if (!isSameOrChildPath(realContainmentRoot, realRoot)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Path escapes artifact directory"
+    };
+  }
+
+  if (!isSameOrChildPath(realRoot, realFile)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Path escapes artifact directory"
+    };
+  }
+
+  const fileStats = await stat(realFile);
+  if (!fileStats.isFile()) {
+    return {
+      ok: false,
+      statusCode: 400,
+      error_code: "ARTIFACT_INVALID_INPUT",
+      message: "Path is not a regular file"
+    };
+  }
+
+  return { ok: true, path: realFile };
+}
+
+function sendServedFileError(reply: FastifyReply, result: Exclude<ServedFileResolution, { ok: true }>): void {
+  reply.status(result.statusCode).send({
+    error_code: result.error_code,
+    message: result.message,
+    details: {}
+  });
+}
+
 async function fileExists(file: string): Promise<boolean> {
   try {
     await access(file);
     return true;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (isMissingPathError(error)) {
       return false;
     }
     throw error;

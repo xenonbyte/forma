@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { createFormaStore, FormaError, getArtifactVersionDir, getArtifactVziPath, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
 import { SpatialIndexBuilder, VZIEncoder } from "@vzi-core/format";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -1484,6 +1484,79 @@ describe("artifact routes", () => {
     const response = await app.inject({
       method: "GET",
       url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/..%2F..%2Fsecret"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
+  });
+
+  it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* rejects NUL bytes", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-bundle-nul-"));
+    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    await mkdir(versionDir, { recursive: true });
+
+    const app = await appWith(fakeStore({ home }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/index%00.html"
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
+  });
+
+  it("artifact file-serving routes reject symlinks that escape artifact subdirectories", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-file-symlink-"));
+    const productId = "P-123abc";
+    const artifactId = "A-abcdef1234567890";
+    const productArtifactDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId);
+    const versionDir = join(productArtifactDir, "v1");
+    const iconsDir = join(productArtifactDir, "icons");
+    const vziDir = join(productArtifactDir, "vzi");
+    const previewDir = join(versionDir, "preview");
+    await mkdir(join(versionDir, "assets"), { recursive: true });
+    await mkdir(iconsDir, { recursive: true });
+    await mkdir(vziDir, { recursive: true });
+    await mkdir(previewDir, { recursive: true });
+    const outside = join(home, "outside.txt");
+    await writeFile(outside, "outside", "utf8");
+    await symlink(outside, join(versionDir, "assets", "leak.txt"));
+    await symlink(outside, join(iconsDir, "leak.svg"));
+    await symlink(outside, join(vziDir, "page.vzi"));
+    await symlink(outside, join(previewDir, "2x.png"));
+
+    const app = await appWith(versionedOnlyStore(home));
+
+    const [bundle, icon, vzi, preview] = await Promise.all([
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/assets/leak.txt` }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/icons/leak.svg` }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/page.vzi` }),
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png` })
+    ]);
+
+    for (const response of [bundle, icon, vzi, preview]) {
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toMatchObject({ error_code: "ARTIFACT_INVALID_INPUT" });
+    }
+  });
+
+  it("artifact file-serving routes reject symlinked service roots", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-root-symlink-"));
+    const productId = "P-123abc";
+    const artifactId = "A-abcdef1234567890";
+    const productArtifactDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId);
+    const outsideVersionDir = join(home, "outside-version");
+    await mkdir(join(outsideVersionDir, "assets"), { recursive: true });
+    await mkdir(productArtifactDir, { recursive: true });
+    await writeFile(join(outsideVersionDir, "assets", "leak.txt"), "outside", "utf8");
+    await symlink(outsideVersionDir, join(productArtifactDir, "v1"));
+
+    const app = await appWith(versionedOnlyStore(home));
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/assets/leak.txt`
     });
 
     expect(response.statusCode).toBe(400);
