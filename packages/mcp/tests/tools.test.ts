@@ -3482,7 +3482,10 @@ describe("design-handoff tools (Task 8)", () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-missing-vzi-"));
     try {
       const productsRoot = join(home, "data", "products");
-      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH);
+      await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
+        requirementId: REQ_ID,
+        pageId: PAGE_ID,
+      });
 
       const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
       await mkdir(versionDir, { recursive: true });

@@ -164,6 +164,9 @@ async function resolvePagePointers(
 ): Promise<PagePointerInfo[]> {
   const archivedPages = await listArchivedHandoffPages(productsRoot, productId, requirementId, currentPageIds);
   if (archivedPages.length > 0) {
+    for (const page of archivedPages) {
+      await assertReadableHandoffFile(page.vziPath, page.artifactId, 'vzi');
+    }
     return archivedPages;
   }
 
