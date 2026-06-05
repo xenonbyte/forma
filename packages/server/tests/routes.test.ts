@@ -190,7 +190,6 @@ async function createStoreWithDeletionHooks(
   home: string,
   productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]>,
 ) {
-  await markNormalizationCommitted(home);
   return createFormaStore({
     home,
     bundledStylesDir: resolve("styles"),
@@ -238,115 +237,8 @@ async function webAssetsDir() {
   return root;
 }
 
-async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
-}
-
-async function writeLegacyRuntimeYaml(home: string): Promise<void> {
-  await mkdir(join(home, "data"), { recursive: true });
-  await writeFile(join(home, "data", "products.yaml"), "products: []\n", "utf8");
-}
-
-describe("schema normalization limited startup", () => {
-  it("starts normally after explicit committed normalization state", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-server-normal-startup-"));
-    await markNormalizationCommitted(home);
-    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
-    apps.push(app);
-    await app.ready();
-
-    const response = await app.inject({ method: "GET", url: "/api/products" });
-
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual([]);
-  });
-
-  it("preflight-only startup serves status without constructing normal route handlers", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-server-preflight-startup-"));
-    await writeLegacyRuntimeYaml(home);
-    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
-    apps.push(app);
-    await app.ready();
-
-    const status = await app.inject({ method: "GET", url: "/api/status" });
-    const blocked = await app.inject({ method: "GET", url: "/api/products" });
-    const blockedDesignMutation = await app.inject({
-      method: "POST",
-      url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
-      payload: { operation: "generate" },
-    });
-
-    expect(status.statusCode).toBe(200);
-    expect(status.json()).toMatchObject({
-      schema_normalization: {
-        mode: "preflight_only",
-        code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
-        preflight_status: "missing",
-        preflight_reason: "report_missing",
-      },
-    });
-    for (const response of [blocked, blockedDesignMutation]) {
-      expect(response.statusCode).toBe(409);
-      expect(response.json()).toEqual({
-        error_code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
-        message: "Schema normalization preflight required",
-        details: status.json().schema_normalization,
-      });
-    }
-  });
-
-  it("recovery-only startup serves status and validates recovery write payloads", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-server-recovery-startup-"));
-    await writeFile(join(home, ".v6-schema-cutover-active"), "active\n", "utf8");
-    const app = await buildServer({ home, bundledStylesDir: resolve("styles") });
-    apps.push(app);
-    await app.ready();
-
-    const status = await app.inject({ method: "GET", url: "/api/status" });
-    const recovery = await app.inject({ method: "GET", url: "/api/recovery/schema-normalization" });
-    const recoverJournal = await app.inject({
-      method: "POST",
-      url: "/api/recovery/schema-normalization/recover-journal",
-      payload: {},
-    });
-    const restoreBackup = await app.inject({
-      method: "POST",
-      url: "/api/recovery/schema-normalization/restore-backup",
-      payload: {},
-    });
-    const blocked = await app.inject({ method: "GET", url: "/api/products" });
-    const blockedComponentMutation = await app.inject({
-      method: "POST",
-      url: "/api/products/P-123abc/component-library/session/begin",
-      payload: { operation: "generate", seed_components: [{ component_key: "button-primary" }] },
-    });
-
-    expect(status.statusCode).toBe(200);
-    expect(status.json()).toMatchObject({
-      schema_normalization: {
-        mode: "recovery_only",
-        code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
-        active_marker_file: ".v6-schema-cutover-active",
-        recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"],
-      },
-    });
-    expect(recovery.statusCode).toBe(200);
-    expect(recovery.json()).toEqual(status.json().schema_normalization);
-    for (const response of [recoverJournal, restoreBackup]) {
-      expect(response.statusCode).toBe(400);
-      expect(response.json()).toMatchObject({ error_code: "INVALID_INPUT" });
-    }
-    for (const response of [blocked, blockedComponentMutation]) {
-      expect(response.statusCode).toBe(409);
-      expect(response.json()).toEqual({
-        error_code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
-        message: "Schema normalization recovery required",
-        details: status.json().schema_normalization,
-      });
-    }
-  });
-
-  it("does not swallow unrelated fatal startup errors", async () => {
+describe("server startup", () => {
+  it("does not swallow fatal startup errors", async () => {
     const root = await mkdtemp(join(tmpdir(), "forma-server-fatal-startup-"));
     const home = join(root, "home-file");
     await writeFile(home, "not a directory", "utf8");
@@ -1335,7 +1227,6 @@ describe("Fastify API routes", () => {
 
   it("auto-installs built-in styles for GET /api/styles on a fresh home", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-server-styles-"));
-    await markNormalizationCommitted(home);
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
     const app = await buildServer({ store });
     apps.push(app);

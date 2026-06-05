@@ -3,9 +3,6 @@ import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
-  recoverV6NormalizationJournal,
-  restoreV6NormalizationBackup,
-  SchemaNormalizationRecoveryError,
   getArtifactDir,
   getArtifactVersionDir,
   getArtifactVersionPreviewPath,
@@ -27,7 +24,6 @@ import {
   type ExportArchiveAssetsResult,
   type Language,
   type Platform,
-  type SchemaNormalizationRecoveryState,
 } from "@xenonbyte/forma-core";
 
 type UnknownRecord = Record<string, unknown>;
@@ -150,50 +146,6 @@ export class RouteInputError extends RouteHttpError {
     super("INVALID_INPUT", message, details, 400);
     this.name = "RouteInputError";
   }
-}
-
-export function registerPreflightOnlyRoutes(app: FastifyInstance, state: SchemaNormalizationRecoveryState): void {
-  app.get("/api/status", async () => ({ schema_normalization: state }));
-}
-
-export function registerRecoveryOnlyRoutes(app: FastifyInstance, state: SchemaNormalizationRecoveryState): void {
-  app.get("/api/status", async () => ({ schema_normalization: state }));
-  app.get("/api/recovery/schema-normalization", async () => state);
-  app.post<{ Body: unknown }>("/api/recovery/schema-normalization/recover-journal", async (request) => {
-    const body = objectBody(request.body);
-    const backupDir = requiredString(body, "backup_dir");
-    try {
-      return await recoverV6NormalizationJournal(state.home, backupDir);
-    } catch (error) {
-      throw recoveryInputError(error);
-    }
-  });
-  app.post<{ Body: unknown }>("/api/recovery/schema-normalization/restore-backup", async (request) => {
-    const body = objectBody(request.body);
-    const backupDir = requiredString(body, "backup_dir");
-    const confirm = requiredString(body, "confirm");
-    try {
-      return await restoreV6NormalizationBackup(state.home, backupDir, { confirm });
-    } catch (error) {
-      throw recoveryInputError(error);
-    }
-  });
-}
-
-export function sendNormalizationBlocked(reply: FastifyReply, state: SchemaNormalizationRecoveryState): void {
-  const preflight = state.code === "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED";
-  reply.status(409).send({
-    error_code: preflight ? "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED" : "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
-    message: preflight ? "Schema normalization preflight required" : "Schema normalization recovery required",
-    details: state,
-  });
-}
-
-function recoveryInputError(error: unknown): RouteHttpError {
-  if (error instanceof SchemaNormalizationRecoveryError) {
-    return new RouteHttpError("SCHEMA_NORMALIZATION_RECOVERY_REQUIRED", error.message, { ...error.result }, 409);
-  }
-  return new RouteInputError(errorMessage(error));
 }
 
 class RouteNotFoundError extends RouteHttpError {
@@ -847,10 +799,6 @@ function requiredString(input: UnknownRecord, field: string): string {
     throw new RouteInputError(`Missing required field: ${field}`, { field });
   }
   return value;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function requiredPlatform(input: UnknownRecord, field: string): Platform {

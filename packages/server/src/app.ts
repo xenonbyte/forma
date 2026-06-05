@@ -3,20 +3,8 @@ import { timingSafeEqual } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
-import {
-  createFormaStore,
-  FormaError,
-  isSchemaNormalizationStartupError,
-  type SchemaNormalizationRecoveryState,
-} from "@xenonbyte/forma-core";
-import {
-  registerPreflightOnlyRoutes,
-  registerRecoveryOnlyRoutes,
-  registerRoutes,
-  RouteHttpError,
-  sendNormalizationBlocked,
-  type FormaRoutesStore,
-} from "./routes.js";
+import { createFormaStore, FormaError } from "@xenonbyte/forma-core";
+import { registerRoutes, RouteHttpError, type FormaRoutesStore } from "./routes.js";
 
 export interface BuildServerOptions {
   store?: FormaServerStore;
@@ -43,19 +31,11 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
     registerApiBearerAuth(app, authToken);
   }
   let store: FormaServerStore | undefined = options.store;
-  let limitedState: SchemaNormalizationRecoveryState | undefined;
   if (!store) {
-    try {
-      store = await createFormaStore({
-        home: options.home ?? defaultFormaHome(),
-        bundledStylesDir: options.bundledStylesDir,
-      });
-    } catch (error) {
-      if (!isSchemaNormalizationStartupError(error)) {
-        throw error;
-      }
-      limitedState = error.state;
-    }
+    store = await createFormaStore({
+      home: options.home ?? defaultFormaHome(),
+      bundledStylesDir: options.bundledStylesDir,
+    });
   }
 
   app.setErrorHandler((error, _request, reply) => {
@@ -64,11 +44,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
   });
 
   app.setNotFoundHandler(async (request, reply) => {
-    if (limitedState && isApiRequest(request.url)) {
-      sendNormalizationBlocked(reply, limitedState);
-      return;
-    }
-
     if (options.webAssetsDir && canServeWebAsset(request.method, request.url)) {
       if (pathname(request.url) === "/favicon.ico") {
         reply.status(204).send();
@@ -89,15 +64,6 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
       details: {},
     });
   });
-
-  if (limitedState) {
-    if (limitedState.mode === "recovery_only") {
-      registerRecoveryOnlyRoutes(app, limitedState);
-    } else {
-      registerPreflightOnlyRoutes(app, limitedState);
-    }
-    return app;
-  }
 
   if (!store) {
     throw new Error("Forma store was not initialized");
