@@ -119,6 +119,10 @@ export interface FormaRoutesStore {
 
 export type FormaStore = FormaRoutesStore;
 
+export interface RegisterRoutesOptions {
+  authenticatedApi?: boolean;
+}
+
 export class RouteHttpError extends Error {
   constructor(
     public readonly code: string,
@@ -248,7 +252,8 @@ function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): bool
   return true;
 }
 
-export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): void {
+export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, options: RegisterRoutesOptions = {}): void {
+  const authenticatedApi = options.authenticatedApi === true;
 
   // ─── Product routes ────────────────────────────────────────────────────────
 
@@ -454,7 +459,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       }
       const content = await readFile(servedFile.path);
       reply.header("Content-Type", "application/octet-stream");
-      reply.header("Cache-Control", "public, max-age=3600");
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
       reply.send(content);
     },
   );
@@ -483,7 +489,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
         return;
       }
       const content = await loadDecodedHandoffContent(servedFile.path);
-      reply.header("Cache-Control", "public, max-age=3600");
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
       return content;
     },
   );
@@ -525,7 +532,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       }
       const content = await readFile(servedFile.path);
       reply.header("Content-Type", contentType);
-      reply.header("Cache-Control", "public, max-age=3600");
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
       reply.send(content);
     },
   );
@@ -659,7 +667,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
       reply.header("Content-Type", "image/png");
       reply.header("ETag", etag);
-      reply.header("Cache-Control", "public, max-age=3600");
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
       reply.send(content);
     }
   );
@@ -702,7 +711,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       }
       const content = await readFile(servedFile.path);
       reply.header("Content-Type", contentTypeForPath(resolvedFile));
-      reply.header("Cache-Control", "public, max-age=3600");
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
       reply.send(content);
     }
   );
@@ -742,7 +752,8 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore): v
       const etag = `"${createHash("sha256").update(content).digest("hex")}"`;
       reply.header("Content-Type", "image/png");
       reply.header("ETag", etag);
-      reply.header("Cache-Control", "public, max-age=3600");
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
       reply.send(content);
     }
   );
@@ -1296,6 +1307,14 @@ function contentTypeForPath(file: string): string {
       return "image/jpeg";
     case ".svg":
       return "image/svg+xml";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".avif":
+      return "image/avif";
+    case ".ico":
+      return "image/x-icon";
     case ".woff2":
       return "font/woff2";
     case ".woff":
@@ -1305,4 +1324,24 @@ function contentTypeForPath(file: string): string {
     default:
       return "application/octet-stream";
   }
+}
+
+function setArtifactCacheHeaders(reply: FastifyReply, authenticatedApi: boolean): void {
+  if (authenticatedApi) {
+    reply.header("Cache-Control", "private, no-store");
+    reply.header("Vary", "Authorization");
+    return;
+  }
+  reply.header("Cache-Control", "public, max-age=3600");
+}
+
+// Defense-in-depth for served artifact bytes (generated design HTML, bundle
+// assets, icons, previews). `nosniff` makes browsers honour the declared
+// Content-Type instead of MIME-sniffing arbitrary bytes into executable types;
+// `no-referrer` keeps artifact URLs out of outbound Referer headers. We do NOT
+// set X-Frame-Options/CSP here: the Web admin and desktop renderer legitimately
+// embed these bundles, and a strict policy would break that rendering.
+function setArtifactSecurityHeaders(reply: FastifyReply): void {
+  reply.header("X-Content-Type-Options", "nosniff");
+  reply.header("Referrer-Policy", "no-referrer");
 }
