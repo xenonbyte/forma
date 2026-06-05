@@ -16,7 +16,6 @@ export * from "./product-mutation-lock.js";
 export * from "./copy.js";
 export * from "./requirement.js";
 export * from "./requirement-design.js";
-export * from "./schema-normalization.js";
 export * from "./session.js";
 export * from "./store.js";
 export * from "./styles.js";
