@@ -1,6 +1,6 @@
 # 移除 v6 Schema 迁移 / 兼容子系统
 
-- 状态：草案（待评审）
+- 状态：已确认（维护者拍板发布边界），待编写实现计划
 - 日期：2026-06-05
 - 分支：`refactor/remove-v6-schema-migration`
 - 取代：本设计移除 `2026-05-21-forma-v6-01-preflight-normalization-design.md` 与 `2026-05-21-forma-v6-03-cutover-normalization-design.md` 所定义的功能
@@ -16,7 +16,9 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
 
 这套子系统横跨 `core` / `cli` / `server` / `mcp` 四个包，并让启动路径、约 12 个测试文件的 setup 都背上了「必须先迁移才能用」的包袱。
 
-按仓库现状（见根 `CLAUDE.md`），v6 与 `od-*` 子系统仍处于 in-progress，**尚未发布、无真实存量旧数据**需要迁移。继续维护这套「兼容旧格式」的迁移机制收益低、维护成本高，且与「代码以最新 v6 为唯一事实来源」的方向相悖。
+**发布边界（已确认）**：核查发现 `@xenonbyte/forma-{core,server,mcp,cli}` 已发布至 npm public（`0.1.0`–`0.1.8`），迁移代码自 `v0.1.5` 起即随包发布，`v0.1.8` CLI 仍含迁移命令——即这套迁移能力在客观上已作为公开发布工件存在。但维护者已明确确认（[USER] 2026-06-05）：**该项目当前仅本人使用，不存在第三方存量旧数据，明确不考虑历史数据与向后兼容**。因此不构成需要保留的迁移承诺，可直接删除迁移能力，无需另立一次性迁移或导出方案。
+
+继续维护这套「兼容旧格式」的迁移机制收益低、维护成本高，且与「代码以最新 v6 为唯一事实来源」的方向相悖。
 
 ## 目标
 
@@ -42,6 +44,7 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
 | 文档处理 | 删除迁移专属 spec（01-preflight、03-cutover），同步更新其它引用处。 |
 | `store-startup-validation.test.ts` | 读内容后处理：仅删迁移/门禁用例，保留纯 strict 读模型校验用例（若有）。 |
 | `v6-01-preflight` spec | 与 03-cutover 一起删除（preflight 是迁移机制的一环）。 |
+| 旧格式存量数据支持 | **已确认（维护者）**：项目当前仅本人使用，无第三方存量旧数据，明确不考虑历史数据与向后兼容，可直接删除迁移能力。npm `0.1.5`–`0.1.8` 虽已含迁移能力，但不构成需保留的迁移承诺。 |
 
 ## 删除范围
 
@@ -95,7 +98,11 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
 
 - 删除 `docs/superpowers/specs/2026-05-21-forma-v6-03-cutover-normalization-design.md`。
 - 删除 `docs/superpowers/specs/2026-05-21-forma-v6-01-preflight-normalization-design.md`。
-- 更新其它引用迁移命令 / 启动门禁 / limited 模式之处：v6-02 / 04 / 05 / 10 specs、`README.md`、根 `CLAUDE.md`、`docs/AGENT.md`、`docs/MCP.md`、`docs/tech-debt.md`。更新方式为删除/改写相关段落，使其反映「不再有迁移机制、启动直接 strict 校验」的现状。
+- 更新其它引用迁移命令 / 启动门禁 / limited 模式之处：v6-index / 02 / 04 / 05 / 08 / 10 / 11 / 12 specs、`README.md`、根 `CLAUDE.md`、`docs/AGENT.md`、`docs/MCP.md`、`docs/tech-debt.md`、`packages/desktop/VERIFICATION.md`。更新方式为删除/改写相关段落，使其反映「不再有迁移机制、启动直接 strict 校验」的现状。
+  - v6-11 仅需处理 `recovery/preflight pages`（limited 模式前端页面），**勿动**同文件的 `component refresh preflight result`（组件刷新，无关）。
+  - `desktop/VERIFICATION.md` 中「5 pre-existing failures … v6-schema-cutover」一段在删除迁移测试后同步修正。
+- **不命中但需注意（误命中，勿改）**：`v6-06` 的 `.pencil-preflight` Pencil 会话探针、`v6-09` 的 agent 设计会话 preflight 检查，均与 schema 迁移无关。
+- **`plans/` 目录暂不改**（如 `2026-05-21-forma-v6-implementation.md` 等）：plans 是历史实现快照，留作记录；仅更新面向当前的 specs 与活文档。
 
 ## 保留清单（明确不碰）
 
@@ -120,7 +127,7 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
   - `createFormaStore` 在 v6 合规数据上正常构建并通过 strict 校验；
   - server `buildServer` / mcp `createFormaMcpServer` 启动路径在去掉 limited 分支后正常；
   - 删除迁移命令后 CLI 其余命令不受影响（`status` / `serve` / `install` 等）。
-- 全仓 grep 确认无残留引用：`schema-normalization`、`SchemaNormalization`、`cutover`、`preflight`、`normalization-backups`、被删的 4 个 CLI 命令名。
+- 全仓 grep 确认无残留迁移引用：`schema-normalization|SchemaNormalization|SCHEMA_NORMALIZATION|v6-schema-cutover|recover-v6-normalization-journal|restore-v6-normalization-backup|normalization-preflight|normalization-backups|normalization_report|\\.v6-schema-cutover`。
 
 ## 风险与缓解
 
@@ -129,4 +136,4 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
 - **风险**：删启动门禁牵动约 12 个测试的 setup，遗漏会导致编译或运行失败。
   **缓解**：单批原子改动，最后统一跑全量测试；grep 兜底确认无残留符号引用。
 - **风险**：旧数据用户升级到此版本后启动直接报错且无迁移路径。
-  **缓解**：这是预期且已确认的取舍（v6 未发布、无存量数据）；错误信息由 strict 校验给出。
+  **缓解**：维护者已确认项目仅本人使用、无第三方存量旧数据、不考虑历史数据与兼容（[USER] 2026-06-05），该风险不适用；本地任何残留旧数据由 strict 校验 fail loud 给出明确错误。
