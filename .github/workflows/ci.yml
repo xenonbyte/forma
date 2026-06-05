@@ -47,11 +47,14 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
-      # Many core/parser tests drive Puppeteer (VZI/icon/preview capture), which
-      # needs its OWN Chrome binary. pnpm does not run puppeteer's postinstall
-      # browser download by default, so install it explicitly here.
-      - name: Install Puppeteer Chrome
-        run: pnpm --filter @vzi-core/parser exec puppeteer browsers install chrome
+      # Many core/parser tests drive Puppeteer; pnpm does not run puppeteer's
+      # postinstall browser download by default, so install the browsers here.
+      # Two binaries are needed: `chrome` for PuppeteerParser (headless: true) and
+      # `chrome-headless-shell` for preview-renderer.ts (headless: 'shell').
+      - name: Install Puppeteer browsers
+        run: |
+          pnpm --filter @vzi-core/parser exec puppeteer browsers install chrome
+          pnpm --filter @vzi-core/parser exec puppeteer browsers install chrome-headless-shell
 
       # `pnpm typecheck` builds every package first (incl. the in-progress od-*
       # subsystem, whose tests resolve sibling packages through their built dist),
