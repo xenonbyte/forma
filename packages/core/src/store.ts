@@ -23,7 +23,6 @@ import {
 import { RequirementService } from "./requirement.js";
 import { SessionService } from "./session.js";
 import { StyleService } from "./styles.js";
-import { readSchemaNormalizationRecoveryState, SchemaNormalizationStartupError } from "./schema-normalization.js";
 import { getFormaPaths } from "./paths.js";
 
 export interface FormaStoreOptions {
@@ -108,10 +107,6 @@ export async function createFormaStore(options: FormaStoreOptions): Promise<Form
     });
   }
 
-  const normalization = await readSchemaNormalizationRecoveryState(options.home);
-  if (normalization.mode !== "normal") {
-    throw new SchemaNormalizationStartupError(normalization);
-  }
   const store = createStrictFormaStore({ ...options, productMutationLock });
   await validateStrictStoreReadModels(store);
   return store;
@@ -307,11 +302,10 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
 
 // Strict-by-default startup contract: the store refuses to come up if ANY
 // product's read models (product.yaml, requirement history, copy translations)
-// fail to load. This is intentional — it surfaces on-disk corruption loudly
-// rather than serving partial/inconsistent data, and it is paired with the
-// schema-normalization recovery path (see readSchemaNormalizationRecoveryState)
-// for migrating legacy layouts. We do NOT degrade to "skip the bad product"
-// here; changing that is a deliberate product decision, not a bug fix.
+// fail to load. This is intentional — it surfaces on-disk corruption (including
+// any non-v6 legacy layout) loudly rather than serving partial/inconsistent
+// data. We do NOT degrade to "skip the bad product" here; changing that is a
+// deliberate product decision, not a bug fix.
 //
 // We do, however, attribute the failure to the offending product so the crash
 // log points at it instead of an opaque parse error.
