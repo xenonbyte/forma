@@ -42,8 +42,16 @@ jobs:
         continue-on-error: true
         run: pnpm exec biome ci --changed --since=origin/${{ github.base_ref || 'main' }} .
 
+      # Playwright Chromium powers the browser test projects (viewer, desktop-shell)
+      # and `--with-deps` installs the shared OS libraries both browsers need.
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
+
+      # Many core/parser tests drive Puppeteer (VZI/icon/preview capture), which
+      # needs its OWN Chrome binary. pnpm does not run puppeteer's postinstall
+      # browser download by default, so install it explicitly here.
+      - name: Install Puppeteer Chrome
+        run: pnpm --filter @vzi-core/parser exec puppeteer browsers install chrome
 
       # `pnpm typecheck` builds every package first (incl. the in-progress od-*
       # subsystem, whose tests resolve sibling packages through their built dist),
