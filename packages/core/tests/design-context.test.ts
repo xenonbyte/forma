@@ -1,17 +1,12 @@
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFormaStore } from "../src/store.js";
 import { buildDesignContext } from "../src/design-context.js";
 
-async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
-}
-
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-design-ctx-"));
-  await markNormalizationCommitted(home);
   return createFormaStore({
     home,
     bundledStylesDir: resolve("styles"),

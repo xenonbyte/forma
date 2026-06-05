@@ -5,7 +5,7 @@
  * Preview rendering uses headless browser — may need dangerouslyDisableSandbox.
  */
 
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
@@ -15,11 +15,6 @@ import { createFormaStore } from "../src/store.js";
 import { saveDesignArtifact, type SaveDesignInput } from "../src/design-save.js";
 import { FormaError } from "../src/errors.js";
 import { getFormaPaths } from "../src/paths.js";
-
-/** Required for createFormaStore to not throw SchemaNormalizationStartupError */
-async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -62,7 +57,6 @@ beforeEach(async () => {
   home = makeHome();
   homes.push(home);
   await mkdir(home, { recursive: true });
-  await markNormalizationCommitted(home);
   store = await createFormaStore({ home });
   // Create a product to write artifacts under
   const product = await store.products.createProduct({ name: "Test Product", description: "desc" });

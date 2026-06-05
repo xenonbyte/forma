@@ -9,7 +9,7 @@
  * Both guards run before the save pipeline, so these tests never start a browser.
  */
 
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -17,13 +17,8 @@ import { createFormaStore } from "../src/store.js";
 import { FormaError } from "../src/errors.js";
 import type { ArtifactManifest } from "../src/artifact-manifest.js";
 
-async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
-}
-
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-store-mut-"));
-  await markNormalizationCommitted(home);
   return createFormaStore({
     home,
     bundledStylesDir: resolve("styles"),

@@ -33,7 +33,6 @@ async function seedLegacyArtifact(
 
 async function makeStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-backfill-"));
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
   return createFormaStore({ home });
 }
 

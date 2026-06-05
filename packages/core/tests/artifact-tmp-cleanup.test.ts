@@ -120,7 +120,6 @@ describe("cleanupArtifactTmpDirs", () => {
   });
 
   it("runs startup tmp cleanup under the product mutation lock", async () => {
-    writeFileSync(join(testHome, ".v6-schema-cutover-committed"), "committed\n");
     const productsDir = join(testHome, "data", "products");
     const tmpDir = join(productsDir, "P-abc123", "od-project", "artifacts", ".tmp-startup");
     mkdirSync(tmpDir, { recursive: true });

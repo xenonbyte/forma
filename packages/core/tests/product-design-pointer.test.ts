@@ -6,7 +6,6 @@ import { createFormaStore } from "../src/index.js";
 
 async function makeStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-design-pointer-"));
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
   return createFormaStore({ home });
 }
 

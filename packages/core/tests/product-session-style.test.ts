@@ -121,7 +121,6 @@ function createLateWarningLock(lateWarning: string): ProductMutationLock {
 
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-store-"));
-  await markNormalizationCommitted(home);
   return createFormaStore({ home, bundledStylesDir: resolve("styles") });
 }
 
@@ -139,10 +138,6 @@ function createStoreWithDeletionHooks(home: string, productDeletionHooks: Record
     bundledStylesDir: resolve("styles"),
     productDeletionHooks,
   } as Parameters<typeof createFormaStore>[0] & { productDeletionHooks: Record<string, unknown> });
-}
-
-async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
 }
 
 async function seedReadyProduct(store: Awaited<ReturnType<typeof createTestStore>>, name = "Shop App") {
@@ -283,7 +278,6 @@ async function writeDeletionState(home: string, state: ProductDeletionStateForTe
 describe("product session and style services", () => {
   it("serializes direct product writes with the default home lock", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
-    await markNormalizationCommitted(home);
     const products = new ProductService({ home });
     const release = deferred();
     const events: string[] = [];
@@ -369,7 +363,6 @@ describe("product session and style services", () => {
 
   it("passes a shared product mutation lock and warning sink through the store", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock("lock warning");
     const warnings: string[] = [];
     const store = await createFormaStore({
@@ -396,7 +389,6 @@ describe("product session and style services", () => {
 
   it("flushes lock acquisition warnings to a custom sink when product mutation lock rejects", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
-    await markNormalizationCommitted(home);
     const warnings: string[] = [];
     const productMutationLock: ProductMutationLock = {
       async run(): Promise<never> {
@@ -419,7 +411,6 @@ describe("product session and style services", () => {
 
   it("flushes real lock cleanup warnings to a custom sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
-    await markNormalizationCommitted(home);
     await seedStaleProductMutationLock(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const warnings: string[] = [];
@@ -436,7 +427,6 @@ describe("product session and style services", () => {
 
   it("does not duplicate real lock cleanup warnings with the default warning sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
-    await markNormalizationCommitted(home);
     await seedStaleProductMutationLock(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const products = new ProductService({ home });
@@ -452,7 +442,6 @@ describe("product session and style services", () => {
 
   it("flushes injected lock context warnings to the default warning sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
-    await markNormalizationCommitted(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const products = new ProductService({ home, productMutationLock: createRecordingLock("default service warning") });
 
@@ -466,7 +455,6 @@ describe("product session and style services", () => {
 
   it("flushes service late lock warnings after the mutation callback resolves", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-product-lock-"));
-    await markNormalizationCommitted(home);
     const warnings: string[] = [];
     const products = new ProductService({
       home,
@@ -481,7 +469,6 @@ describe("product session and style services", () => {
 
   it("flushes store runProductMutation callback warnings to the default warning sink", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
-    await markNormalizationCommitted(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
     const store = await createFormaStore({
       home,
@@ -502,7 +489,6 @@ describe("product session and style services", () => {
 
   it("flushes store late lock warnings after the mutation callback resolves", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
-    await markNormalizationCommitted(home);
     const warnings: string[] = [];
     const store = await createFormaStore({
       home,
@@ -781,7 +767,6 @@ describe("product session and style services", () => {
 
   it("rejects mismatched delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
@@ -800,7 +785,6 @@ describe("product session and style services", () => {
 
   it("rejects missing delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
@@ -819,7 +803,6 @@ describe("product session and style services", () => {
 
   it("rejects empty delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
@@ -836,7 +819,6 @@ describe("product session and style services", () => {
 
   it("rejects invalid product ids before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock();
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
@@ -855,7 +837,6 @@ describe("product session and style services", () => {
 
   it("returns product mutation lock context warnings from deleteProduct", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-warning-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock("lock warning");
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     const product = await seedReadyProduct(store);
@@ -909,7 +890,6 @@ describe("product session and style services", () => {
 
   it("returns cleanup_pending after committed cleanup failure and recovery later removes committed staging", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-cleanup-"));
-    await markNormalizationCommitted(home);
     let failCleanup = true;
     let cleanupOperationDir = "";
     const store = await createStoreWithDeletionHooks(home, {
@@ -945,7 +925,6 @@ describe("product session and style services", () => {
 
   it("reports both original deletion error and rollback error when rollback fails", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-rollback-failure-"));
-    await markNormalizationCommitted(home);
     const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state: ProductDeletionStateForTest) => {
         if (state.phase === "index_written") {
@@ -1042,7 +1021,6 @@ describe("product session and style services", () => {
 
   it("returns product mutation lock context warnings from recoverPendingProductDeletes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-recover-warning-"));
-    await markNormalizationCommitted(home);
     const productMutationLock = createRecordingLock("recover lock warning");
     const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock });
     await mkdir(join(home, "tmp", "deletions", "missing-state"), { recursive: true });
@@ -1112,7 +1090,6 @@ describe("product session and style services", () => {
 
   it("persists full moved_paths and missing_paths while phase is backed_up before moving active paths", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-plan-"));
-    await markNormalizationCommitted(home);
     const snapshots: ProductDeletionStateForTest[] = [];
     const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state: ProductDeletionStateForTest) => {
@@ -1174,7 +1151,6 @@ describe("product session and style services", () => {
 
   it("keeps product reads consistent after backed_up, session_written, index_written, and before first move", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-consistency-"));
-    await markNormalizationCommitted(home);
     const observations: string[] = [];
     const assertConsistent = async (label: string, productId: string) => {
       const session = await readYaml<{ current_product: string | null }>(join(home, "session.yaml"));

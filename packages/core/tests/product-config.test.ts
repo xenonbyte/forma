@@ -1,19 +1,14 @@
 // D1-04: verify that initProductConfig writes platform, brand_style, and language
 // fields to product.yaml after a product is created.
 
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFormaStore, readYaml } from "../src/index.js";
 
-async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
-}
-
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-product-config-"));
-  await markNormalizationCommitted(home);
   return createFormaStore({ home, bundledStylesDir: resolve("styles") });
 }
 
