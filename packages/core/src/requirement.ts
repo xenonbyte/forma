@@ -18,8 +18,17 @@ import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 // Minimal stubs for deleted Pencil-era schemas — replaced in v8 artifact model
 const designStatuses = ["pending", "done", "expired"] as const;
-const semanticContractSchema = z.unknown().optional();
-const semanticContractCoverageSchema = z.unknown().optional();
+const semanticContractItemSchema = z.object({ key: z.string().min(1), label: z.string().min(1) }).strict();
+const semanticContractSchema = z
+  .object({
+    actions: z.array(semanticContractItemSchema),
+    allowed_copy: z.array(z.string()),
+    component_keys: z.array(z.string().min(1)),
+    fields: z.array(semanticContractItemSchema),
+    navigation: z.array(z.object({ target_page_id: z.string().min(1), label: z.string().optional() }).strict()),
+  })
+  .strict();
+const semanticContractCoverageSchema = z.enum(["explicit", "minimal"]);
 export const baselineNavigationSchema = z
   .object({
     from: z.string().min(1),
@@ -31,10 +40,36 @@ function buildSemanticContractForPage(input: {
   page: {
     semantic_contract?: unknown;
     semantic_contract_coverage?: unknown;
+    copy?: Array<{ text?: string }>;
+    declared_actions?: z.infer<typeof semanticContractItemSchema>[];
+    declared_component_keys?: string[];
+    declared_fields?: z.infer<typeof semanticContractItemSchema>[];
   };
-}): { semantic_contract: undefined; semantic_contract_coverage: undefined } {
-  void input;
-  return { semantic_contract: undefined, semantic_contract_coverage: undefined };
+}): { semantic_contract: z.infer<typeof semanticContractSchema>; semantic_contract_coverage: "explicit" | "minimal" } {
+  if (input.page.semantic_contract !== undefined) {
+    return {
+      semantic_contract: semanticContractSchema.parse(input.page.semantic_contract),
+      semantic_contract_coverage:
+        input.page.semantic_contract_coverage === undefined
+          ? "explicit"
+          : semanticContractCoverageSchema.parse(input.page.semantic_contract_coverage),
+    };
+  }
+
+  return {
+    semantic_contract: semanticContractSchema.parse({
+      actions: input.page.declared_actions ?? [],
+      allowed_copy: uniqueStrings((input.page.copy ?? []).map((item) => item.text)),
+      component_keys: input.page.declared_component_keys ?? [],
+      fields: input.page.declared_fields ?? [],
+      navigation: [],
+    }),
+    semantic_contract_coverage: "minimal",
+  };
+}
+
+function uniqueStrings(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => value !== undefined))];
 }
 
 export const requirementIdSchema = z.string().regex(/^R-[a-f0-9]{8}$/);
@@ -762,7 +797,10 @@ function resolveSavedPage(
   currentPage?: RequirementPage,
 ): RequirementPage {
   if (page.change_type === "new") {
-    return resolveSubmittedPage({ ...currentPage, ...page, design_status: "pending" }, currentPage);
+    return resolveSubmittedPage(
+      { ...withoutSemanticContract(currentPage), ...page, design_status: "pending" },
+      currentPage,
+    );
   }
 
   if (currentPage?.design_status !== "done") {
@@ -776,12 +814,20 @@ function resolveSavedPage(
 
   return resolveSubmittedPage(
     {
-      ...currentPage,
+      ...withoutSemanticContract(currentPage),
       ...page,
       design_status: "expired",
     },
     currentPage,
   );
+}
+
+function withoutSemanticContract(page: RequirementPage | undefined): Partial<RequirementPage> {
+  if (!page) {
+    return {};
+  }
+  const { semantic_contract: _semanticContract, semantic_contract_coverage: _semanticContractCoverage, ...rest } = page;
+  return rest;
 }
 
 function resolveSubmittedPage(
@@ -798,8 +844,8 @@ function resolveSubmittedPage(
   const built = buildSemanticContractForPage({
     page: {
       ...page,
-      semantic_contract: page.semantic_contract ?? currentPage?.semantic_contract,
-      semantic_contract_coverage: page.semantic_contract_coverage ?? currentPage?.semantic_contract_coverage,
+      semantic_contract: page.semantic_contract,
+      semantic_contract_coverage: page.semantic_contract_coverage,
     },
   });
   return requirementPageSchema.parse({

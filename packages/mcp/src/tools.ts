@@ -169,6 +169,9 @@ const requirementPageInputSchema = z
     copy: z.array(copyItemSchema).optional(),
     fields: z.string().optional(),
     interactions: z.string().optional(),
+    declared_fields: z.array(semanticContractItemSchema).optional(),
+    declared_actions: z.array(semanticContractItemSchema).optional(),
+    declared_component_keys: z.array(z.string().min(1)).optional(),
     change_type: z.enum(["new", "patch", "rebuild"]),
     change_summary: z.string().optional(),
   })

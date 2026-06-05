@@ -182,6 +182,9 @@ export interface SaveRequirementPageInput {
   change_summary?: string;
   change_type: RequirementChangeType;
   copy?: CopyItem[];
+  declared_actions?: SemanticContractItem[];
+  declared_component_keys?: string[];
+  declared_fields?: SemanticContractItem[];
   features?: string;
   fields?: string;
   interactions?: string;
@@ -837,6 +840,15 @@ function normalizeCreateRequirementPage(page: CreateRequirementPageInput): SaveR
   }
   if (page.copy !== undefined) {
     next.copy = page.copy;
+  }
+  if (page.declared_actions !== undefined) {
+    next.declared_actions = page.declared_actions;
+  }
+  if (page.declared_component_keys !== undefined) {
+    next.declared_component_keys = page.declared_component_keys;
+  }
+  if (page.declared_fields !== undefined) {
+    next.declared_fields = page.declared_fields;
   }
   if (page.features !== undefined) {
     next.features = page.features;
