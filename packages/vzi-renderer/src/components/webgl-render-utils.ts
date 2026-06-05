@@ -1,5 +1,5 @@
-import type { IRElement } from '@vzi-core/types';
-import { normalizeColor, parseBorderWidth, parseOpacity } from '../utils/style-utils';
+import type { IRElement } from "@vzi-core/types";
+import { normalizeColor, parseBorderWidth, parseOpacity } from "../utils/style-utils";
 
 const DEFAULT_TEXT_COLOR: [number, number, number, number] = [0.11, 0.11, 0.13, 0.95];
 const DEFAULT_IMAGE_COLOR: [number, number, number, number] = [0.82, 0.84, 0.88, 0.85];
@@ -14,17 +14,14 @@ function parseHexChannel(hex: string): number {
   return Number.parseInt(hex, 16) / 255;
 }
 
-function withOpacity(
-  color: [number, number, number, number],
-  opacity: number
-): [number, number, number, number] {
+function withOpacity(color: [number, number, number, number], opacity: number): [number, number, number, number] {
   return [color[0], color[1], color[2], clamp01(color[3] * opacity)];
 }
 
 export function parseWebGLColor(
   color: string | number | undefined,
   opacity = 1,
-  fallback?: [number, number, number, number]
+  fallback?: [number, number, number, number],
 ): [number, number, number, number] | null {
   const normalized = normalizeColor(color);
   const clampedOpacity = clamp01(opacity);
@@ -33,11 +30,11 @@ export function parseWebGLColor(
     return fallback ? withOpacity(fallback, clampedOpacity) : null;
   }
 
-  if (normalized === 'transparent') {
+  if (normalized === "transparent") {
     return [0, 0, 0, 0];
   }
 
-  if (normalized.startsWith('#')) {
+  if (normalized.startsWith("#")) {
     const hex = normalized.slice(1);
     if (hex.length === 3) {
       const r = parseHexChannel(`${hex[0]}${hex[0]}`);
@@ -66,7 +63,7 @@ export function parseWebGLColor(
   const rgbMatch = normalized.match(/^rgba?\(([^)]+)\)$/i);
   if (rgbMatch) {
     const parts = rgbMatch[1]
-      .split(',')
+      .split(",")
       .map((segment) => segment.trim())
       .map((segment) => Number.parseFloat(segment));
 
@@ -87,47 +84,47 @@ export function parseWebGLColor(
 function resolveElementColor(element: IRElement): [number, number, number, number] | null {
   const opacity = parseOpacity(element.styles.opacity);
   const backgroundColor = parseWebGLColor(
-    typeof element.styles.backgroundColor === 'string' || typeof element.styles.backgroundColor === 'number'
+    typeof element.styles.backgroundColor === "string" || typeof element.styles.backgroundColor === "number"
       ? element.styles.backgroundColor
       : undefined,
-    opacity
+    opacity,
   );
 
   if (backgroundColor && backgroundColor[3] > 0) {
     return backgroundColor;
   }
 
-  if (typeof element.textContent === 'string' && element.textContent.trim().length > 0) {
+  if (typeof element.textContent === "string" && element.textContent.trim().length > 0) {
     return parseWebGLColor(
-      typeof element.styles.color === 'string' || typeof element.styles.color === 'number'
+      typeof element.styles.color === "string" || typeof element.styles.color === "number"
         ? element.styles.color
         : undefined,
       opacity,
-      DEFAULT_TEXT_COLOR
+      DEFAULT_TEXT_COLOR,
     );
   }
 
   const borderWidth = parseBorderWidth(
-    typeof element.styles.borderWidth === 'string' || typeof element.styles.borderWidth === 'number'
+    typeof element.styles.borderWidth === "string" || typeof element.styles.borderWidth === "number"
       ? element.styles.borderWidth
-      : undefined
+      : undefined,
   );
 
   if (borderWidth > 0) {
     return parseWebGLColor(
-      typeof element.styles.borderColor === 'string' || typeof element.styles.borderColor === 'number'
+      typeof element.styles.borderColor === "string" || typeof element.styles.borderColor === "number"
         ? element.styles.borderColor
         : undefined,
       opacity,
-      DEFAULT_BORDER_COLOR
+      DEFAULT_BORDER_COLOR,
     );
   }
 
-  if (element.type === 'image') {
+  if (element.type === "image") {
     return withOpacity(DEFAULT_IMAGE_COLOR, opacity);
   }
 
-  if (element.type === 'button') {
+  if (element.type === "button") {
     return withOpacity(DEFAULT_BUTTON_COLOR, opacity);
   }
 
@@ -140,19 +137,49 @@ function pushRectVertices(
   y: number,
   width: number,
   height: number,
-  color: [number, number, number, number]
+  color: [number, number, number, number],
 ): void {
   const x2 = x + width;
   const y2 = y + height;
   const [r, g, b, a] = color;
 
   target.push(
-    x, y, r, g, b, a,
-    x2, y, r, g, b, a,
-    x, y2, r, g, b, a,
-    x, y2, r, g, b, a,
-    x2, y, r, g, b, a,
-    x2, y2, r, g, b, a,
+    x,
+    y,
+    r,
+    g,
+    b,
+    a,
+    x2,
+    y,
+    r,
+    g,
+    b,
+    a,
+    x,
+    y2,
+    r,
+    g,
+    b,
+    a,
+    x,
+    y2,
+    r,
+    g,
+    b,
+    a,
+    x2,
+    y,
+    r,
+    g,
+    b,
+    a,
+    x2,
+    y2,
+    r,
+    g,
+    b,
+    a,
   );
 }
 

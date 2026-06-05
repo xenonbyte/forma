@@ -1,12 +1,12 @@
-import type { LiveArtifactRefreshStatus } from '../api/live-artifacts.js';
-import type { SseErrorPayload } from '../errors.js';
-import type { SseTransportEvent } from './common.js';
+import type { LiveArtifactRefreshStatus } from "../api/live-artifacts.js";
+import type { SseErrorPayload } from "../errors.js";
+import type { SseTransportEvent } from "./common.js";
 
-export type LiveArtifactSseAction = 'created' | 'updated' | 'deleted';
-export type LiveArtifactRefreshSsePhase = 'started' | 'succeeded' | 'failed';
+export type LiveArtifactSseAction = "created" | "updated" | "deleted";
+export type LiveArtifactRefreshSsePhase = "started" | "succeeded" | "failed";
 
 export interface LiveArtifactSsePayload {
-  type: 'live_artifact';
+  type: "live_artifact";
   action: LiveArtifactSseAction;
   projectId: string;
   artifactId: string;
@@ -22,7 +22,7 @@ export interface LiveArtifactSsePayload {
 }
 
 export interface LiveArtifactRefreshSsePayload {
-  type: 'live_artifact_refresh';
+  type: "live_artifact_refresh";
   phase: LiveArtifactRefreshSsePhase;
   projectId: string;
   artifactId: string;
@@ -42,7 +42,7 @@ export interface LiveArtifactRefreshSsePayload {
  * consumer share one type and can't drift as the stream grows.
  */
 export interface ProjectConversationCreatedSsePayload {
-  type: 'conversation-created';
+  type: "conversation-created";
   projectId: string;
   conversationId: string;
   title: string | null;
@@ -70,25 +70,25 @@ export interface ChatSseChunkPayload {
 export interface ChatSseEndPayload {
   code: number | null;
   signal?: string | null;
-  status?: 'succeeded' | 'failed' | 'canceled';
+  status?: "succeeded" | "failed" | "canceled";
 }
 
 export type DaemonAgentPayload =
-  | { type: 'status'; label: string; model?: string; ttftMs?: number; detail?: string }
-  | { type: 'text_delta'; delta: string }
-  | { type: 'thinking_delta'; delta: string }
-  | { type: 'thinking_start' }
+  | { type: "status"; label: string; model?: string; ttftMs?: number; detail?: string }
+  | { type: "text_delta"; delta: string }
+  | { type: "thinking_delta"; delta: string }
+  | { type: "thinking_start" }
   | LiveArtifactSsePayload
   | LiveArtifactRefreshSsePayload
-  | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; toolUseId: string; content: string; isError?: boolean }
-  | { type: 'usage'; usage?: { input_tokens?: number; output_tokens?: number }; costUsd?: number; durationMs?: number }
-  | { type: 'raw'; line: string };
+  | { type: "tool_use"; id: string; name: string; input: unknown }
+  | { type: "tool_result"; toolUseId: string; content: string; isError?: boolean }
+  | { type: "usage"; usage?: { input_tokens?: number; output_tokens?: number }; costUsd?: number; durationMs?: number }
+  | { type: "raw"; line: string };
 
 export type ChatSseEvent =
-  | SseTransportEvent<'start', ChatSseStartPayload>
-  | SseTransportEvent<'agent', DaemonAgentPayload>
-  | SseTransportEvent<'stdout', ChatSseChunkPayload>
-  | SseTransportEvent<'stderr', ChatSseChunkPayload>
-  | SseTransportEvent<'error', SseErrorPayload>
-  | SseTransportEvent<'end', ChatSseEndPayload>;
+  | SseTransportEvent<"start", ChatSseStartPayload>
+  | SseTransportEvent<"agent", DaemonAgentPayload>
+  | SseTransportEvent<"stdout", ChatSseChunkPayload>
+  | SseTransportEvent<"stderr", ChatSseChunkPayload>
+  | SseTransportEvent<"error", SseErrorPayload>
+  | SseTransportEvent<"end", ChatSseEndPayload>;

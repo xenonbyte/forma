@@ -28,14 +28,14 @@ export function ViewerPage({ client, params, entry }: ViewerPageProps): React.Re
         const [product, requirement, artifactList] = await Promise.all([
           client.getProduct(productId),
           client.getRequirement(productId, reqId),
-          client.listProductArtifacts(productId)
+          client.listProductArtifacts(productId),
         ]);
         const reqArtifacts = artifactList.artifacts.filter((a) => a.requirement_id === reqId);
         const scoped = entry === "page" ? reqArtifacts.filter((a) => a.page_id === pageId) : reqArtifacts;
         const inputs = mapArtifactsToViewerInputs({
           artifacts: scoped,
           pages: requirement.pages.map((p) => ({ page_id: p.page_id, name: p.name })),
-          platform: product.platform
+          platform: product.platform,
         });
         const model = buildViewerModel({ entry, artifacts: inputs });
         if (!cancelled) setState({ status: "ready", model });
@@ -64,10 +64,10 @@ const viewerSurfaceStyle = {
   position: "relative",
   height: "calc(100vh - 9rem)",
   minHeight: "32rem",
-  overflow: "hidden"
+  overflow: "hidden",
 } satisfies CSSProperties;
 
 const viewerFrameStyle = {
   position: "absolute",
-  inset: 0
+  inset: 0,
 } satisfies CSSProperties;

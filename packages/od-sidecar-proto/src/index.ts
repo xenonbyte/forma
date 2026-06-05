@@ -354,10 +354,7 @@ export type RegisterDesktopAuthResult = {
   accepted: true;
 };
 
-export type DaemonSidecarMessage =
-  | SidecarStatusMessage
-  | SidecarShutdownMessage
-  | RegisterDesktopAuthMessage;
+export type DaemonSidecarMessage = SidecarStatusMessage | SidecarShutdownMessage | RegisterDesktopAuthMessage;
 export type WebSidecarMessage = SidecarStatusMessage | SidecarShutdownMessage;
 export type DesktopSidecarMessage =
   | SidecarStatusMessage
@@ -558,7 +555,9 @@ function normalizeDesktopExportPdfInput(input: unknown): DesktopExportPdfInput {
   const value = assertObject(input, "desktop PDF export input");
   assertKnownKeys(value, ["baseHref", "deck", "defaultFilename", "html", "title"], "desktop PDF export input");
   return {
-    ...(value.baseHref == null ? {} : { baseHref: normalizeNonEmptyString(value.baseHref, "desktop PDF export baseHref") }),
+    ...(value.baseHref == null
+      ? {}
+      : { baseHref: normalizeNonEmptyString(value.baseHref, "desktop PDF export baseHref") }),
     deck: normalizeBoolean(value.deck, "desktop PDF export deck"),
     defaultFilename: normalizeNonEmptyString(value.defaultFilename, "desktop PDF export defaultFilename"),
     html: normalizeNonEmptyString(value.html, "desktop PDF export html"),

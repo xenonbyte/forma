@@ -19,25 +19,30 @@
  *   which is a recoverable state.
  */
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import type { ArtifactStore } from './artifact-store.js';
-import type { ArtifactCraftCheck, ArtifactFormaExtension, ArtifactManifest, ArtifactProvenance } from './artifact-manifest.js';
-import { localizeArtifactAssets } from './artifact-asset-pipeline.js';
-import { validateStaticArtifact } from './artifact-static-validation.js';
-import { renderArtifactPreview } from './preview-renderer.js';
-import { lintCraft } from './quality/craft-lint.js';
-import type { ProductService } from './product.js';
-import type { ProductMutationContext } from './product-mutation-lock.js';
-import { FormaError } from './errors.js';
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import type { ArtifactStore } from "./artifact-store.js";
+import type {
+  ArtifactCraftCheck,
+  ArtifactFormaExtension,
+  ArtifactManifest,
+  ArtifactProvenance,
+} from "./artifact-manifest.js";
+import { localizeArtifactAssets } from "./artifact-asset-pipeline.js";
+import { validateStaticArtifact } from "./artifact-static-validation.js";
+import { renderArtifactPreview } from "./preview-renderer.js";
+import { lintCraft } from "./quality/craft-lint.js";
+import type { ProductService } from "./product.js";
+import type { ProductMutationContext } from "./product-mutation-lock.js";
+import { FormaError } from "./errors.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
 export interface SaveDesignInput {
   productId: string;
-  kind: 'design-page' | 'component-library';
+  kind: "design-page" | "component-library";
   html: string;
   title: string;
   forma: {
@@ -57,7 +62,7 @@ export interface SaveDesignInput {
 export interface SaveDesignResult {
   artifactId: string;
   version: number;
-  previewStatus: 'ready' | 'failed';
+  previewStatus: "ready" | "failed";
 }
 
 export interface SaveDesignDeps {
@@ -74,29 +79,22 @@ export interface SaveDesignDeps {
 
 /** Generate a 16-char alphanumeric artifact ID matching /^[a-zA-Z0-9]{16}$/ */
 function generateArtifactId(): string {
-  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  return Array.from(randomBytes(16), (byte) => alphabet[byte % alphabet.length]).join('');
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  return Array.from(randomBytes(16), (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 /** Safely decode a Buffer as UTF-8; throw a clear error if invalid. */
 function decodeUtf8(buf: Buffer, path: string): string {
   try {
-    return buf.toString('utf8');
+    return buf.toString("utf8");
   } catch (err) {
-    throw new FormaError(
-      'ARTIFACT_INVALID_INPUT',
-      `Failed to decode ${path} as UTF-8`,
-      { path, cause: String(err) },
-    );
+    throw new FormaError("ARTIFACT_INVALID_INPUT", `Failed to decode ${path} as UTF-8`, { path, cause: String(err) });
   }
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
-export async function saveDesignArtifact(
-  deps: SaveDesignDeps,
-  input: SaveDesignInput,
-): Promise<SaveDesignResult> {
+export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesignInput): Promise<SaveDesignResult> {
   const { artifacts, products, runProductMutation } = deps;
   const { productId, kind, html, title, forma } = input;
 
@@ -107,9 +105,9 @@ export async function saveDesignArtifact(
   const svgFiles = new Map<string, string>();
   const cssFiles = new Map<string, string>();
   for (const [path, buf] of files) {
-    if (path.endsWith('.svg')) {
+    if (path.endsWith(".svg")) {
       svgFiles.set(path, decodeUtf8(buf, path));
-    } else if (path.endsWith('.css')) {
+    } else if (path.endsWith(".css")) {
       cssFiles.set(path, decodeUtf8(buf, path));
     }
   }
@@ -120,16 +118,14 @@ export async function saveDesignArtifact(
     cssFiles,
   });
   if (!validationResult.ok) {
-    throw new FormaError(
-      'ARTIFACT_NOT_STATIC',
-      'Artifact is not pure-static',
-      { violations: validationResult.violations },
-    );
+    throw new FormaError("ARTIFACT_NOT_STATIC", "Artifact is not pure-static", {
+      violations: validationResult.violations,
+    });
   }
 
   // ── Step 3: Render preview to a temp dir (no lock, browser render) ───────────
-  const tempDir = join(tmpdir(), `forma-save-${randomBytes(8).toString('hex')}`);
-  let previewStatus: 'ready' | 'failed' = 'failed';
+  const tempDir = join(tmpdir(), `forma-save-${randomBytes(8).toString("hex")}`);
+  let previewStatus: "ready" | "failed" = "failed";
   let previewError: string | undefined;
   let preview1xBuf: Buffer | undefined;
   let preview2xBuf: Buffer | undefined;
@@ -137,32 +133,40 @@ export async function saveDesignArtifact(
 
   try {
     await mkdir(tempDir, { recursive: true });
-    await writeFile(join(tempDir, 'index.html'), Buffer.from(localizedHtml, 'utf8'));
+    await writeFile(join(tempDir, "index.html"), Buffer.from(localizedHtml, "utf8"));
     for (const [relativePath, buf] of files) {
       const destPath = join(tempDir, relativePath);
       await mkdir(dirname(destPath), { recursive: true });
       await writeFile(destPath, buf);
     }
 
-    const previewOutDir = join(tempDir, 'preview');
+    const previewOutDir = join(tempDir, "preview");
     try {
       const renderResult = await renderArtifactPreview({ bundleDir: tempDir, outDir: previewOutDir, extractDom: true });
-      preview1xBuf = await readFile(join(previewOutDir, '1x.png'));
-      preview2xBuf = await readFile(join(previewOutDir, '2x.png'));
-      previewStatus = 'ready';
+      preview1xBuf = await readFile(join(previewOutDir, "1x.png"));
+      preview2xBuf = await readFile(join(previewOutDir, "2x.png"));
+      previewStatus = "ready";
       if (renderResult.snapshotError) {
-        craftChecks = [{ id: 'craft-lint', passed: false, detail: `snapshot extraction failed: ${renderResult.snapshotError}` }];
+        craftChecks = [
+          { id: "craft-lint", passed: false, detail: `snapshot extraction failed: ${renderResult.snapshotError}` },
+        ];
       } else if (renderResult.snapshot) {
         try {
           craftChecks = lintCraft(renderResult.snapshot);
         } catch (err) {
           // Lint is observable but non-blocking: record a single failed check.
-          craftChecks = [{ id: 'craft-lint', passed: false, detail: `lint failed: ${err instanceof Error ? err.message : String(err)}` }];
+          craftChecks = [
+            {
+              id: "craft-lint",
+              passed: false,
+              detail: `lint failed: ${err instanceof Error ? err.message : String(err)}`,
+            },
+          ];
         }
       }
     } catch (err) {
       previewError = err instanceof FormaError ? err.message : String(err);
-      previewStatus = 'failed';
+      previewStatus = "failed";
     }
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
@@ -181,13 +185,13 @@ export async function saveDesignArtifact(
 
   // ── Step 5: Build final file set ──────────────────────────────────────────────
   const finalFiles = new Map<string, Buffer>();
-  finalFiles.set('index.html', Buffer.from(localizedHtml, 'utf8'));
+  finalFiles.set("index.html", Buffer.from(localizedHtml, "utf8"));
   for (const [path, buf] of files) {
     finalFiles.set(path, buf);
   }
-  if (finalPreviewStatus === 'ready' && finalPreview1x && finalPreview2x) {
-    finalFiles.set('preview/1x.png', finalPreview1x);
-    finalFiles.set('preview/2x.png', finalPreview2x);
+  if (finalPreviewStatus === "ready" && finalPreview1x && finalPreview2x) {
+    finalFiles.set("preview/1x.png", finalPreview1x);
+    finalFiles.set("preview/2x.png", finalPreview2x);
   }
 
   // ── Step 6: Build ArtifactManifest ────────────────────────────────────────────
@@ -196,7 +200,7 @@ export async function saveDesignArtifact(
 
   const formaExtension: ArtifactFormaExtension = {
     ...forma,
-    ...(kind === 'design-page' ? { variant: forma.variant ?? 'default' } : {}),
+    ...(kind === "design-page" ? { variant: forma.variant ?? "default" } : {}),
     assets,
     preview: {
       status: finalPreviewStatus,
@@ -210,11 +214,11 @@ export async function saveDesignArtifact(
     version: 1,
     id: artifactId,
     kind,
-    renderer: 'html',
+    renderer: "html",
     title,
-    entry: 'index.html',
-    status: 'complete',
-    exports: ['index.html'],
+    entry: "index.html",
+    status: "complete",
+    exports: ["index.html"],
     supportingFiles,
     createdAt: now,
     updatedAt: now,
@@ -230,21 +234,18 @@ export async function saveDesignArtifact(
   });
 
   // ── Step 8: Update design pointer (design-page only, separate runProductMutation)
-  if (kind === 'design-page' && forma.requirementId && forma.pageId) {
-    const variant = forma.variant ?? 'default';
-    await runProductMutation(
-      { operation: 'save_design_pointer', product_id: productId },
-      async () => {
-        await products.setDesignPointerLocked(productId, {
-          requirementId: forma.requirementId!,
-          pageId: forma.pageId!,
-          variant,
-          artifactId,
-          version,
-          designStatus: 'active',
-        });
-      },
-    );
+  if (kind === "design-page" && forma.requirementId && forma.pageId) {
+    const variant = forma.variant ?? "default";
+    await runProductMutation({ operation: "save_design_pointer", product_id: productId }, async () => {
+      await products.setDesignPointerLocked(productId, {
+        requirementId: forma.requirementId!,
+        pageId: forma.pageId!,
+        variant,
+        artifactId,
+        version,
+        designStatus: "active",
+      });
+    });
   }
 
   return { artifactId, version, previewStatus: finalPreviewStatus };

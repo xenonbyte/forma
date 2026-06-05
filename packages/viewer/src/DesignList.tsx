@@ -31,7 +31,7 @@ export function DesignList({ model, onLocate }: DesignListProps): React.ReactEle
                       border: "none",
                       background: "transparent",
                       cursor: "pointer",
-                      fontSize: 12
+                      fontSize: 12,
                     }}
                   >
                     {tile?.variant ?? tileId}

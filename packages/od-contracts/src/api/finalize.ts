@@ -1,4 +1,4 @@
-import type { ConnectionTestProtocol } from './connectionTest';
+import type { ConnectionTestProtocol } from "./connectionTest";
 
 // Shared DTOs for the `/api/projects/:id/finalize/<provider>` family of
 // synthesis endpoints. `/finalize/anthropic` was introduced first; the

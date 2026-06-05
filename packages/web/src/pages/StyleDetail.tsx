@@ -63,14 +63,22 @@ export function StyleDetail({ client = apiClient, params }: StyleDetailProps) {
     <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
         <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold tracking-normal text-zinc-950">{state.style.metadata.name}</h2>
+          <h2 className="truncate text-base font-semibold tracking-normal text-zinc-950">
+            {state.style.metadata.name}
+          </h2>
         </div>
-        <div className="inline-flex shrink-0 rounded-md border border-zinc-200 bg-zinc-50 p-1" role="tablist" aria-label={tx("style.detail.contentTabs")}>
+        <div
+          className="inline-flex shrink-0 rounded-md border border-zinc-200 bg-zinc-50 p-1"
+          role="tablist"
+          aria-label={tx("style.detail.contentTabs")}
+        >
           {(["components", "tokens", "design"] as StyleDetailTab[]).map((tab) => (
             <button
               aria-selected={activeTab === tab}
               className={`rounded px-3 py-1.5 text-sm font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 ${
-                activeTab === tab ? "bg-white text-zinc-950 shadow-sm" : "text-zinc-600 hover:bg-white/70 hover:text-zinc-950"
+                activeTab === tab
+                  ? "bg-white text-zinc-950 shadow-sm"
+                  : "text-zinc-600 hover:bg-white/70 hover:text-zinc-950"
               }`}
               key={tab}
               onClick={() => setActiveTab(tab)}

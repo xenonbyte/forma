@@ -121,7 +121,7 @@ function createMockPage() {
     waitForFunction: vi.fn(async () => undefined),
     waitForSelector: vi.fn(async () => undefined),
     evaluate: vi.fn(async (pageFunction: (...args: unknown[]) => unknown, ...args: unknown[]) =>
-      withDomGlobals(() => pageFunction(...args))
+      withDomGlobals(() => pageFunction(...args)),
     ),
     on: vi.fn(),
     off: vi.fn(),
@@ -214,15 +214,18 @@ describe("PuppeteerParser SVG visibility filtering", () => {
 
 describe("PuppeteerParser viewport geometry", () => {
   it("keeps viewport-unit element bounds tied to the configured viewport on long pages", async () => {
-    const ir = await parseWithMockPage(`<!DOCTYPE html>
+    const ir = await parseWithMockPage(
+      `<!DOCTYPE html>
 <html>
   <body data-mock-scroll-height="2400" style="margin:0">
     <main id="hero" style="height:100vh;width:320px">Hero</main>
   </body>
-</html>`, {
-      viewportWidth: 390,
-      viewportHeight: 884,
-    });
+</html>`,
+      {
+        viewportWidth: 390,
+        viewportHeight: 884,
+      },
+    );
 
     const hero = ir.elements.hero;
     expect(hero?.bounds.height).toBe(884);

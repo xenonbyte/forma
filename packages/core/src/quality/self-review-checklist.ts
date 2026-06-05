@@ -15,43 +15,45 @@ export interface SelfReviewItem {
 
 export const SELF_REVIEW_CHECKLIST: SelfReviewItem[] = [
   {
-    id: 'no-ai-slop',
-    craftDoc: 'anti-ai-slop',
-    prompt: 'Does the design avoid generic AI-slop patterns (centered everything, default purple gradients, equal-weight cards, emoji bullets)?',
+    id: "no-ai-slop",
+    craftDoc: "anti-ai-slop",
+    prompt:
+      "Does the design avoid generic AI-slop patterns (centered everything, default purple gradients, equal-weight cards, emoji bullets)?",
   },
   {
-    id: 'type-hierarchy',
-    craftDoc: 'typography-hierarchy',
-    prompt: 'Is there a clear typographic hierarchy with a small, consistent type scale rather than many ad-hoc sizes?',
+    id: "type-hierarchy",
+    craftDoc: "typography-hierarchy",
+    prompt: "Is there a clear typographic hierarchy with a small, consistent type scale rather than many ad-hoc sizes?",
   },
   {
-    id: 'color-restraint',
-    craftDoc: 'color',
-    prompt: 'Is color used with restraint — a small palette, accent reserved for primary actions, neutrals carrying most surfaces?',
+    id: "color-restraint",
+    craftDoc: "color",
+    prompt:
+      "Is color used with restraint — a small palette, accent reserved for primary actions, neutrals carrying most surfaces?",
   },
   {
-    id: 'contrast-accessible',
-    craftDoc: 'accessibility-baseline',
-    prompt: 'Does every text/control meet WCAG AA contrast against its actual background?',
+    id: "contrast-accessible",
+    craftDoc: "accessibility-baseline",
+    prompt: "Does every text/control meet WCAG AA contrast against its actual background?",
   },
   {
-    id: 'state-coverage',
-    craftDoc: 'state-coverage',
-    prompt: 'Are empty, loading, error, and edge states represented rather than only the happy path?',
+    id: "state-coverage",
+    craftDoc: "state-coverage",
+    prompt: "Are empty, loading, error, and edge states represented rather than only the happy path?",
   },
   {
-    id: 'form-validation',
-    craftDoc: 'form-validation',
-    prompt: 'Do forms show inline validation, clear required/optional cues, and accessible error messaging?',
+    id: "form-validation",
+    craftDoc: "form-validation",
+    prompt: "Do forms show inline validation, clear required/optional cues, and accessible error messaging?",
   },
   {
-    id: 'motion-discipline',
-    craftDoc: 'animation-discipline',
-    prompt: 'Is motion purposeful and restrained (no gratuitous animation), respecting reduced-motion intent?',
+    id: "motion-discipline",
+    craftDoc: "animation-discipline",
+    prompt: "Is motion purposeful and restrained (no gratuitous animation), respecting reduced-motion intent?",
   },
   {
-    id: 'ux-laws',
-    craftDoc: 'laws-of-ux',
-    prompt: 'Does the layout honor core UX laws (Fitts, Hick, proximity, consistent affordances)?',
+    id: "ux-laws",
+    craftDoc: "laws-of-ux",
+    prompt: "Does the layout honor core UX laws (Fitts, Hick, proximity, consistent affordances)?",
   },
 ];

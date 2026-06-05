@@ -1,6 +1,6 @@
-import Ajv from 'ajv';
-import { irElementSchema, irSchema } from './schema';
-import type { IRElement, IntermediateRepresentation } from './types';
+import Ajv from "ajv";
+import { irElementSchema, irSchema } from "./schema";
+import type { IRElement, IntermediateRepresentation } from "./types";
 
 const ajv = new Ajv({ allErrors: true, strict: false });
 const validateElement = ajv.compile(irElementSchema);
@@ -25,7 +25,7 @@ export function getIRElementValidationErrors(value?: unknown): string[] {
   if (!validateElement.errors) {
     return [];
   }
-  return validateElement.errors.map((error) => `${error.instancePath || '/'} ${error.message}`);
+  return validateElement.errors.map((error) => `${error.instancePath || "/"} ${error.message}`);
 }
 
 /**
@@ -39,5 +39,5 @@ export function getIRValidationErrors(value?: unknown): string[] {
   if (!validateIRSchema.errors) {
     return [];
   }
-  return validateIRSchema.errors.map((error) => `${error.instancePath || '/'} ${error.message}`);
+  return validateIRSchema.errors.map((error) => `${error.instancePath || "/"} ${error.message}`);
 }

@@ -4,6 +4,6 @@
  * 主导出文件
  */
 
-export { VZITransformer, transform } from './transformer';
-export type { TransformOptions, TransformResult } from './transformer';
-export * from './mcp';
+export { VZITransformer, transform } from "./transformer";
+export type { TransformOptions, TransformResult } from "./transformer";
+export * from "./mcp";

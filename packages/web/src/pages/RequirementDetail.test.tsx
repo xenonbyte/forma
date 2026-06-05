@@ -25,10 +25,10 @@ const noUiRequirement: RequirementWithDocument = {
       baseline_page: "checkout",
       name: "Checkout",
       design_status: "done",
-      copy: []
-    }
+      copy: [],
+    },
   ],
-  navigation: [{ from: "policy", to: "checkout", label: "applies to" }]
+  navigation: [{ from: "policy", to: "checkout", label: "applies to" }],
 };
 
 const uiRequirementWithLegacyDesignId: RequirementWithDocument = {
@@ -42,10 +42,10 @@ const uiRequirementWithLegacyDesignId: RequirementWithDocument = {
       baseline_page: "checkout",
       name: "Checkout",
       design_status: "done",
-      copy: []
-    }
+      copy: [],
+    },
   ],
-  navigation: []
+  navigation: [],
 };
 
 const roots: Root[] = [];
@@ -66,7 +66,7 @@ afterEach(() => {
 describe("RequirementDetail", () => {
   it("shows no-UI state while hiding design actions and history", async () => {
     const client = {
-      getRequirement: vi.fn(async () => noUiRequirement)
+      getRequirement: vi.fn(async () => noUiRequirement),
     } satisfies Pick<FormaApiClient, "getRequirement">;
     const { container, root } = createTestRoot();
 
@@ -85,7 +85,7 @@ describe("RequirementDetail", () => {
 
   it("links UI-affecting pages to the requirement-level design view without legacy design ids", async () => {
     const client = {
-      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId)
+      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
     } satisfies Pick<FormaApiClient, "getRequirement">;
     const { container, root } = createTestRoot();
 
@@ -96,7 +96,9 @@ describe("RequirementDetail", () => {
 
     expect(container.textContent).toContain("Checkout UI update");
     expect(container.textContent).toContain("Open design");
-    expect(container.querySelector('a[href="/products/P-123abc/requirements/R-12345678/design?page_id=checkout"]')).not.toBeNull();
+    expect(
+      container.querySelector('a[href="/products/P-123abc/requirements/R-12345678/design?page_id=checkout"]'),
+    ).not.toBeNull();
     expect(container.querySelector('a[href*="/designs/"]')).toBeNull();
     expect(container.innerHTML).not.toContain("/products/P-123abc/requirements/R-12345678/designs/D-12345678");
   });
@@ -107,11 +109,11 @@ describe("RequirementDetail", () => {
       kind: "page_design",
       title: "Checkout design",
       requirement_id: "R-12345678",
-      updated_at: "2026-05-28T00:00:00.000Z"
+      updated_at: "2026-05-28T00:00:00.000Z",
     };
     const client = {
       getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      listProductArtifacts: vi.fn(async () => ({ artifacts: [artifact] }))
+      listProductArtifacts: vi.fn(async () => ({ artifacts: [artifact] })),
     };
     const { container, root } = createTestRoot();
 
@@ -133,25 +135,25 @@ describe("RequirementDetail", () => {
         kind: "html",
         requirement_id: "R-other",
         title: "Other requirement design",
-        updated_at: "2026-05-28T00:00:00.000Z"
+        updated_at: "2026-05-28T00:00:00.000Z",
       },
       {
         id: "A-current",
         kind: "html",
         requirement_id: "R-12345678",
         title: "Current requirement design",
-        updated_at: "2026-05-28T00:00:00.000Z"
+        updated_at: "2026-05-28T00:00:00.000Z",
       },
       {
         id: "A-design-system",
         kind: "design-system",
         title: "Product baseline",
-        updated_at: "2026-05-28T00:00:00.000Z"
-      }
+        updated_at: "2026-05-28T00:00:00.000Z",
+      },
     ];
     const client = {
       getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      listProductArtifacts: vi.fn(async () => ({ artifacts }))
+      listProductArtifacts: vi.fn(async () => ({ artifacts })),
     };
     const { container, root } = createTestRoot();
 
@@ -168,7 +170,7 @@ describe("RequirementDetail", () => {
   it("shows deep-link button for UI-affecting requirements", async () => {
     const client = {
       getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      listProductArtifacts: vi.fn(async () => ({ artifacts: [] }))
+      listProductArtifacts: vi.fn(async () => ({ artifacts: [] })),
     };
     const { container, root } = createTestRoot();
 

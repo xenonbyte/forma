@@ -4,10 +4,10 @@
  * 渲染文本元素
  */
 
-import type { CanvasKit, Canvas, Font, Paint, TextAlign, LineMetrics } from 'canvaskit-wasm';
-import type { IElementRenderer, IRElement } from './types';
-import { mapFontWeight, parseTextStyle } from '../converters/TextStyleConverter';
-import { FontManager } from '../FontManager';
+import type { CanvasKit, Canvas, Font, Paint, TextAlign, LineMetrics } from "canvaskit-wasm";
+import type { IElementRenderer, IRElement } from "./types";
+import { mapFontWeight, parseTextStyle } from "../converters/TextStyleConverter";
+import { FontManager } from "../FontManager";
 
 function isRendererDebugEnabled(): boolean {
   const globalConfig = globalThis as typeof globalThis & {
@@ -32,41 +32,39 @@ function rendererDebugLog(message: string, payload?: unknown): void {
 /**
  * 文本类型列表
  */
-const TEXT_TYPES = ['text', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'label'];
+const TEXT_TYPES = ["text", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "label"];
 
 /**
  * 文本渲染器
  */
 export class TextRenderer implements IElementRenderer {
   private static readonly LOGGED_TEXT_KEYS = new Set<string>();
-  private static readonly ICON_FONT_KEYWORDS = ['material symbols', 'material icons'];
-  private static readonly MATERIAL_ICONS_FAMILY = 'material icons';
-  private static readonly ICON_FALLBACK_FAMILIES = [
-    'material icons',
-  ];
+  private static readonly ICON_FONT_KEYWORDS = ["material symbols", "material icons"];
+  private static readonly MATERIAL_ICONS_FAMILY = "material icons";
+  private static readonly ICON_FALLBACK_FAMILIES = ["material icons"];
   private static readonly ICON_LIGATURE_CODEPOINTS: Record<string, string> = {
-    alternate_email: 'e0e6',
-    arrow_back: 'e5c4',
-    arrow_back_ios: 'e5e0',
-    arrow_back_ios_new: 'e2ea',
-    arrow_forward: 'e5c8',
-    auto_fix_high: 'e663',
-    chevron_left: 'e5cb',
-    check_circle: 'e86c',
-    content_copy: 'e14d',
-    design_services: 'f10a',
-    language: 'e894',
-    lock_reset: 'eade',
-    sync: 'e627',
-    open_in_new: 'e89e',
-    mail: 'e158',
-    public: 'e80b',
-    refresh: 'e5d5',
-    share: 'e80d',
-    terminal: 'eb8e',
-    token: 'ea25',
-    translate: 'e8e2',
-    upload_file: 'e9fc',
+    alternate_email: "e0e6",
+    arrow_back: "e5c4",
+    arrow_back_ios: "e5e0",
+    arrow_back_ios_new: "e2ea",
+    arrow_forward: "e5c8",
+    auto_fix_high: "e663",
+    chevron_left: "e5cb",
+    check_circle: "e86c",
+    content_copy: "e14d",
+    design_services: "f10a",
+    language: "e894",
+    lock_reset: "eade",
+    sync: "e627",
+    open_in_new: "e89e",
+    mail: "e158",
+    public: "e80b",
+    refresh: "e5d5",
+    share: "e80d",
+    terminal: "eb8e",
+    token: "ea25",
+    translate: "e8e2",
+    upload_file: "e9fc",
   };
 
   canRender(type: string): boolean {
@@ -74,7 +72,7 @@ export class TextRenderer implements IElementRenderer {
   }
 
   render(canvas: Canvas, element: IRElement, CanvasKit: CanvasKit): void {
-    const { bounds, styles, textContent = '' } = element;
+    const { bounds, styles, textContent = "" } = element;
 
     if (!textContent) {
       return;
@@ -86,13 +84,11 @@ export class TextRenderer implements IElementRenderer {
     const textStyle = parseTextStyle(styles as Record<string, string | number>);
     const normalizedFamilies = this.normalizeFontFamilies(textStyle.fontFamily);
     const usesIconFontByFamily = normalizedFamilies.some((family) =>
-      TextRenderer.ICON_FONT_KEYWORDS.some((keyword) => family.includes(keyword))
+      TextRenderer.ICON_FONT_KEYWORDS.some((keyword) => family.includes(keyword)),
     );
     const usesIconFontByLigature = this.isLikelyIconLigature(textContent, bounds, textStyle.fontSize);
     const usesIconFont = usesIconFontByFamily || usesIconFontByLigature;
-    const transformedText = usesIconFont
-      ? textContent
-      : this.applyTextTransform(textContent, styles.textTransform);
+    const transformedText = usesIconFont ? textContent : this.applyTextTransform(textContent, styles.textTransform);
     const paragraphFamilies = [...normalizedFamilies];
     if (usesIconFont) {
       for (const family of TextRenderer.ICON_FALLBACK_FAMILIES) {
@@ -101,8 +97,8 @@ export class TextRenderer implements IElementRenderer {
         }
       }
     }
-    if (!paragraphFamilies.includes('defaultfont')) {
-      paragraphFamilies.push('defaultfont');
+    if (!paragraphFamilies.includes("defaultfont")) {
+      paragraphFamilies.push("defaultfont");
     }
 
     // 获取全局 FontProvider（所有文本共享，不删除）
@@ -110,8 +106,8 @@ export class TextRenderer implements IElementRenderer {
     const fontProvider = fontManager.getGlobalFontProvider();
 
     if (!fontProvider) {
-      console.error('[TextRenderer] 全局 FontProvider 未初始化');
-      rendererDebugLog('font provider missing', {
+      console.error("[TextRenderer] 全局 FontProvider 未初始化");
+      rendererDebugLog("font provider missing", {
         elementId: element.id,
         text: textContent,
         fontFamily: textStyle.fontFamily,
@@ -125,12 +121,10 @@ export class TextRenderer implements IElementRenderer {
       normalizedFamilies,
       usesIconFontByFamily,
       usesIconFont,
-      fontManager
+      fontManager,
     );
     if (shouldUseCodepoint) {
-      const prefersMaterialIcons = normalizedFamilies.some((family) =>
-        family.includes('material icons')
-      );
+      const prefersMaterialIcons = normalizedFamilies.some((family) => family.includes("material icons"));
       if (prefersMaterialIcons) {
         const materialIconsIndex = paragraphFamilies.indexOf(TextRenderer.MATERIAL_ICONS_FAMILY);
         if (materialIconsIndex > 0) {
@@ -141,7 +135,7 @@ export class TextRenderer implements IElementRenderer {
     }
     const resolvedParagraphFamilies = this.prioritizeRegisteredFamilies(paragraphFamilies, fontManager);
     if (usesIconFont) {
-      rendererDebugLog('icon text render decision', {
+      rendererDebugLog("icon text render decision", {
         elementId: element.id,
         text: textContent,
         normalizedFamilies,
@@ -158,9 +152,7 @@ export class TextRenderer implements IElementRenderer {
       : textStyle.fontSize;
 
     // 使用 ParagraphBuilder 支持中文
-    const effectiveTextAlign: 'left' | 'center' | 'right' = usesIconFont
-      ? 'center'
-      : textStyle.textAlign;
+    const effectiveTextAlign: "left" | "center" | "right" = usesIconFont ? "center" : textStyle.textAlign;
 
     const paraStyle = new CanvasKit.ParagraphStyle({
       textStyle: {
@@ -168,25 +160,20 @@ export class TextRenderer implements IElementRenderer {
         fontSize: effectiveIconFontSize,
         fontStyle: {
           weight: mapFontWeight(textStyle.fontWeight, CanvasKit),
-          slant:
-            textStyle.fontStyle === 'italic'
-              ? CanvasKit.FontSlant.Italic
-              : CanvasKit.FontSlant.Upright,
+          slant: textStyle.fontStyle === "italic" ? CanvasKit.FontSlant.Italic : CanvasKit.FontSlant.Upright,
         },
         // 按元素 fontFamily 渲染，并回退到默认字体
         fontFamilies: resolvedParagraphFamilies,
         ...(usesIconFont
           ? {
               // 已转换为 codepoint 时不再依赖 liga，避免 CanvasKit/WebGL 在图标整形阶段崩溃。
-                ...(!shouldUseCodepoint
-                  ? { fontFeatures: [{ name: 'liga', value: 1 }] }
-                  : {}),
-                fontVariations: [
-                  { axis: 'wght', value: typeof textStyle.fontWeight === 'number' ? textStyle.fontWeight : 400 },
-                  // 与浏览器更接近：opsz 以字号为主并限制在常见区间，避免大图标下沉/小图标过小。
-                  { axis: 'opsz', value: Math.max(20, Math.min(48, effectiveIconFontSize)) },
-                ],
-              }
+              ...(!shouldUseCodepoint ? { fontFeatures: [{ name: "liga", value: 1 }] } : {}),
+              fontVariations: [
+                { axis: "wght", value: typeof textStyle.fontWeight === "number" ? textStyle.fontWeight : 400 },
+                // 与浏览器更接近：opsz 以字号为主并限制在常见区间，避免大图标下沉/小图标过小。
+                { axis: "opsz", value: Math.max(20, Math.min(48, effectiveIconFontSize)) },
+              ],
+            }
           : {}),
       },
       textAlign: this.mapTextAlign(effectiveTextAlign, CanvasKit),
@@ -196,7 +183,7 @@ export class TextRenderer implements IElementRenderer {
     const builder = CanvasKit.ParagraphBuilder.MakeFromFontProvider(paraStyle, fontProvider);
     const renderText = this.resolveIconText(transformedText, usesIconFont, shouldUseCodepoint);
     if (renderText !== textContent) {
-      rendererDebugLog('icon ligature converted to codepoint', {
+      rendererDebugLog("icon ligature converted to codepoint", {
         elementId: element.id,
         original: textContent,
         resolved: renderText,
@@ -216,13 +203,12 @@ export class TextRenderer implements IElementRenderer {
       effectiveIconFontSize,
       textStyle.lineHeight,
       availableHeight,
-      usesIconFont
+      usesIconFont,
     );
     const shouldStretchLayoutForSingleLine =
-      !usesIconFont && (
-        effectiveTextAlign === 'left' ||
-        (isSingleTokenText && (effectiveTextAlign === 'center' || effectiveTextAlign === 'right'))
-      );
+      !usesIconFont &&
+      (effectiveTextAlign === "left" ||
+        (isSingleTokenText && (effectiveTextAlign === "center" || effectiveTextAlign === "right")));
     const layoutWidth = shouldStretchLayoutForSingleLine
       ? Math.max(availableWidth, minLayoutWidth, singleLineWidthHint)
       : Math.max(availableWidth, minLayoutWidth);
@@ -237,10 +223,10 @@ export class TextRenderer implements IElementRenderer {
       bounds.y,
       bounds.width,
       bounds.height,
-    ].join('|');
+    ].join("|");
     if (isRendererDebugEnabled() && !TextRenderer.LOGGED_TEXT_KEYS.has(textLogKey)) {
       TextRenderer.LOGGED_TEXT_KEYS.add(textLogKey);
-      rendererDebugLog('text draw', {
+      rendererDebugLog("text draw", {
         elementId: element.id,
         text: textContent,
         resolvedText: renderText,
@@ -259,17 +245,15 @@ export class TextRenderer implements IElementRenderer {
     const extraLayoutWidth = Math.max(0, layoutWidth - availableWidth);
     let x = contentX;
     if (extraLayoutWidth > 0) {
-      if (effectiveTextAlign === 'center') {
+      if (effectiveTextAlign === "center") {
         x -= extraLayoutWidth * 0.5;
-      } else if (effectiveTextAlign === 'right') {
+      } else if (effectiveTextAlign === "right") {
         x -= extraLayoutWidth;
       }
     }
     let y = contentY;
     if (usesIconFont) {
-      const lineHeight = Number.isFinite(textStyle.lineHeight)
-        ? textStyle.lineHeight
-        : effectiveIconFontSize;
+      const lineHeight = Number.isFinite(textStyle.lineHeight) ? textStyle.lineHeight : effectiveIconFontSize;
       if (lineHeight > effectiveIconFontSize) {
         y += (lineHeight - effectiveIconFontSize) * 0.3;
       } else if (effectiveIconFontSize >= 32 && bounds.height <= effectiveIconFontSize + 0.5) {
@@ -302,7 +286,7 @@ export class TextRenderer implements IElementRenderer {
       textDecoration: string[];
     },
     color: string,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     if (!textStyle.textDecoration || textStyle.textDecoration.length === 0) {
       return;
@@ -325,17 +309,17 @@ export class TextRenderer implements IElementRenderer {
         const lineEndX = lineStartX + line.width;
         const baselineY = y + line.baseline;
 
-        if (textStyle.textDecoration.includes('underline')) {
+        if (textStyle.textDecoration.includes("underline")) {
           const underlineY = baselineY + Math.max(1, textStyle.fontSize * 0.08);
           canvas.drawLine(lineStartX, underlineY, lineEndX, underlineY, paint);
         }
 
-        if (textStyle.textDecoration.includes('line-through')) {
+        if (textStyle.textDecoration.includes("line-through")) {
           const strikeY = baselineY - textStyle.fontSize * 0.3;
           canvas.drawLine(lineStartX, strikeY, lineEndX, strikeY, paint);
         }
 
-        if (textStyle.textDecoration.includes('overline')) {
+        if (textStyle.textDecoration.includes("overline")) {
           const overlineY = baselineY + line.ascent + Math.max(1, textStyle.fontSize * 0.06);
           canvas.drawLine(lineStartX, overlineY, lineEndX, overlineY, paint);
         }
@@ -345,13 +329,13 @@ export class TextRenderer implements IElementRenderer {
     }
   }
 
-  private isLikelyIconLigature(text: string, bounds: IRElement['bounds'], fontSize: number): boolean {
+  private isLikelyIconLigature(text: string, bounds: IRElement["bounds"], fontSize: number): boolean {
     const normalized = text.trim().toLowerCase();
     if (!normalized) {
       return false;
     }
 
-    if (!/^[a-z0-9_]+$/.test(normalized) || !normalized.includes('_')) {
+    if (!/^[a-z0-9_]+$/.test(normalized) || !normalized.includes("_")) {
       return false;
     }
 
@@ -366,15 +350,15 @@ export class TextRenderer implements IElementRenderer {
 
   private normalizeFontFamilies(fontFamily: string): string[] {
     return fontFamily
-      .split(',')
-      .map((family) => family.trim().toLowerCase().replace(/['"]/g, ''))
+      .split(",")
+      .map((family) => family.trim().toLowerCase().replace(/['"]/g, ""))
       .filter((family) => family.length > 0);
   }
 
   private prioritizeRegisteredFamilies(families: string[], fontManager: FontManager): string[] {
     const uniqueFamilies = [...new Set(families.filter((family) => family.length > 0))];
     if (uniqueFamilies.length === 0) {
-      return ['defaultfont'];
+      return ["defaultfont"];
     }
 
     const registered: string[] = [];
@@ -399,7 +383,7 @@ export class TextRenderer implements IElementRenderer {
     normalizedFamilies: string[],
     usesIconFontByFamily: boolean,
     usesIconFont: boolean,
-    fontManager: FontManager
+    fontManager: FontManager,
   ): boolean {
     if (!usesIconFont) {
       return false;
@@ -411,8 +395,8 @@ export class TextRenderer implements IElementRenderer {
     }
 
     const hasMaterialIconsRegistered = fontManager.isFontRegistered(TextRenderer.MATERIAL_ICONS_FAMILY);
-    const symbolFamilies = normalizedFamilies.filter((family) =>
-      family.includes('material symbols') || family.includes('material-symbols')
+    const symbolFamilies = normalizedFamilies.filter(
+      (family) => family.includes("material symbols") || family.includes("material-symbols"),
     );
     const hasAnySymbolRegistered = symbolFamilies.some((family) => fontManager.isFontRegistered(family));
 
@@ -452,27 +436,15 @@ export class TextRenderer implements IElementRenderer {
     return String.fromCodePoint(codepoint);
   }
 
-  private resolveEffectiveTextColor(
-    styles: IRElement['styles'],
-    defaultColor: string
-  ): string {
-    const color =
-      typeof styles.color === 'string'
-        ? styles.color
-        : defaultColor;
+  private resolveEffectiveTextColor(styles: IRElement["styles"], defaultColor: string): string {
+    const color = typeof styles.color === "string" ? styles.color : defaultColor;
     if (!this.isTransparentColor(color)) {
       return color;
     }
 
-    const backgroundClip =
-      typeof styles.backgroundClip === 'string'
-        ? styles.backgroundClip.toLowerCase()
-        : '';
-    const backgroundImage =
-      typeof styles.backgroundImage === 'string'
-        ? styles.backgroundImage
-        : '';
-    if (backgroundClip !== 'text' || !backgroundImage || backgroundImage === 'none') {
+    const backgroundClip = typeof styles.backgroundClip === "string" ? styles.backgroundClip.toLowerCase() : "";
+    const backgroundImage = typeof styles.backgroundImage === "string" ? styles.backgroundImage : "";
+    if (backgroundClip !== "text" || !backgroundImage || backgroundImage === "none") {
       return color;
     }
 
@@ -483,22 +455,19 @@ export class TextRenderer implements IElementRenderer {
     return color;
   }
 
-  private applyTextTransform(
-    text: string,
-    textTransform: string | number | undefined
-  ): string {
-    if (typeof textTransform !== 'string') {
+  private applyTextTransform(text: string, textTransform: string | number | undefined): string {
+    if (typeof textTransform !== "string") {
       return text;
     }
 
     const normalized = textTransform.trim().toLowerCase();
-    if (normalized === 'uppercase') {
+    if (normalized === "uppercase") {
       return text.toLocaleUpperCase();
     }
-    if (normalized === 'lowercase') {
+    if (normalized === "lowercase") {
       return text.toLocaleLowerCase();
     }
-    if (normalized === 'capitalize') {
+    if (normalized === "capitalize") {
       return text.replace(/\b([^\s])/g, (match) => match.toLocaleUpperCase());
     }
     return text;
@@ -506,7 +475,7 @@ export class TextRenderer implements IElementRenderer {
 
   private isTransparentColor(color: string): boolean {
     const normalized = color.trim().toLowerCase();
-    if (normalized === 'transparent') {
+    if (normalized === "transparent") {
       return true;
     }
     const rgbaMatch = normalized.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)$/);
@@ -518,17 +487,16 @@ export class TextRenderer implements IElementRenderer {
       return Number.parseFloat(hslaMatch[1]) <= 0.001;
     }
     if (/^#[0-9a-f]{4}$/i.test(normalized)) {
-      return normalized[4] === '0';
+      return normalized[4] === "0";
     }
     if (/^#[0-9a-f]{8}$/i.test(normalized)) {
-      return normalized.slice(7, 9) === '00';
+      return normalized.slice(7, 9) === "00";
     }
     return false;
   }
 
   private extractFirstColorToken(backgroundImage: string): string | undefined {
-    const colorTokenRegex =
-      /(rgba?\([^)]*\)|hsla?\([^)]*\)|#[0-9a-fA-F]{3,8})/g;
+    const colorTokenRegex = /(rgba?\([^)]*\)|hsla?\([^)]*\)|#[0-9a-fA-F]{3,8})/g;
     const matched = backgroundImage.match(colorTokenRegex);
     if (!matched || matched.length === 0) {
       return undefined;
@@ -536,10 +504,13 @@ export class TextRenderer implements IElementRenderer {
     return matched[0];
   }
 
-  private parsePadding(
-    padding: string | number | undefined
-  ): { top: number; right: number; bottom: number; left: number } {
-    if (typeof padding === 'number') {
+  private parsePadding(padding: string | number | undefined): {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  } {
+    if (typeof padding === "number") {
       const value = Number.isFinite(padding) ? padding : 0;
       return {
         top: value,
@@ -549,7 +520,7 @@ export class TextRenderer implements IElementRenderer {
       };
     }
 
-    if (typeof padding !== 'string' || padding.trim().length === 0) {
+    if (typeof padding !== "string" || padding.trim().length === 0) {
       return { top: 0, right: 0, bottom: 0, left: 0 };
     }
 
@@ -591,16 +562,13 @@ export class TextRenderer implements IElementRenderer {
     fontSize: number,
     lineHeight: number,
     availableHeight: number,
-    usesIconFont: boolean
+    usesIconFont: boolean,
   ): number {
-    if (!text || text.includes('\n')) {
+    if (!text || text.includes("\n")) {
       return 0;
     }
 
-    const normalizedLineHeight =
-      Number.isFinite(lineHeight) && lineHeight > 0
-        ? lineHeight
-        : fontSize * 1.2;
+    const normalizedLineHeight = Number.isFinite(lineHeight) && lineHeight > 0 ? lineHeight : fontSize * 1.2;
     const singleLineThreshold = Math.max(normalizedLineHeight * 1.3, fontSize * 1.6);
     if (availableHeight > singleLineThreshold) {
       return 0;
@@ -651,11 +619,11 @@ export class TextRenderer implements IElementRenderer {
   /**
    * 映射文本对齐方式
    */
-  private mapTextAlign(align: 'left' | 'center' | 'right', CanvasKit: CanvasKit): TextAlign {
+  private mapTextAlign(align: "left" | "center" | "right", CanvasKit: CanvasKit): TextAlign {
     switch (align) {
-      case 'center':
+      case "center":
         return CanvasKit.TextAlign.Center;
-      case 'right':
+      case "right":
         return CanvasKit.TextAlign.Right;
       default:
         return CanvasKit.TextAlign.Left;

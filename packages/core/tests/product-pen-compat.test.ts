@@ -1,22 +1,22 @@
-import { describe, it, expect } from 'vitest';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomBytes } from 'node:crypto';
+import { describe, it, expect } from "vitest";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { randomBytes } from "node:crypto";
 
 // Import the ProductService to load products from disk
 // We need to test that product.yaml with .pen fields loads without error
 // and without console output.
 
-describe('SPEC-PLAN-017: product.yaml unknown field backward compat', () => {
-  it('loads product.yaml with unknown legacy fields, drops them silently, no console output', async () => {
+describe("SPEC-PLAN-017: product.yaml unknown field backward compat", () => {
+  it("loads product.yaml with unknown legacy fields, drops them silently, no console output", async () => {
     // Find and import ProductService
-    const { ProductService } = await import('../src/product.js');
-    const { getProductMutationLock } = await import('../src/product-mutation-lock.js');
+    const { ProductService } = await import("../src/product.js");
+    const { getProductMutationLock } = await import("../src/product-mutation-lock.js");
 
-    const testHome = join(tmpdir(), `pen-compat-${randomBytes(4).toString('hex')}`);
-    const dataDir = join(testHome, 'data');
-    const productId = 'P-abc123';
+    const testHome = join(tmpdir(), `pen-compat-${randomBytes(4).toString("hex")}`);
+    const dataDir = join(testHome, "data");
+    const productId = "P-abc123";
     const productDir = join(dataDir, productId);
 
     await mkdir(productDir, { recursive: true });
@@ -46,13 +46,13 @@ legacy_integration_id: some-old-integration-id
 legacy_canvas_path: /old/integration/path
 `.trim();
 
-    await writeFile(join(productDir, 'product.yaml'), productYaml, 'utf8');
+    await writeFile(join(productDir, "product.yaml"), productYaml, "utf8");
 
     // Create product index (at data/products.yaml per ProductService impl)
     await writeFile(
-      join(dataDir, 'products.yaml'),
+      join(dataDir, "products.yaml"),
       `products:\n  - id: ${productId}\n    name: Test Product\n    description: A test product\n`,
-      'utf8'
+      "utf8",
     );
 
     const lock = getProductMutationLock(testHome);
@@ -66,9 +66,9 @@ legacy_canvas_path: /old/integration/path
     const origLog = console.log;
     const origWarn = console.warn;
     const origError = console.error;
-    console.log = (...args: unknown[]) => consoleLogs.push(args.join(' '));
-    console.warn = (...args: unknown[]) => consoleLogs.push(args.join(' '));
-    console.error = (...args: unknown[]) => consoleLogs.push(args.join(' '));
+    console.log = (...args: unknown[]) => consoleLogs.push(args.join(" "));
+    console.warn = (...args: unknown[]) => consoleLogs.push(args.join(" "));
+    console.error = (...args: unknown[]) => consoleLogs.push(args.join(" "));
 
     try {
       const product = await service.getProduct(productId);
@@ -78,7 +78,9 @@ legacy_canvas_path: /old/integration/path
       expect((product as unknown as Record<string, unknown>).legacy_canvas_path).toBeUndefined();
 
       // No console output related to unknown fields
-      const unknownRelated = consoleLogs.filter(l => l.includes('legacy_integration_id') || l.includes('legacy_canvas_path'));
+      const unknownRelated = consoleLogs.filter(
+        (l) => l.includes("legacy_integration_id") || l.includes("legacy_canvas_path"),
+      );
       expect(unknownRelated).toHaveLength(0);
     } finally {
       console.log = origLog;

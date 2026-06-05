@@ -4,13 +4,13 @@
  * 渲染图片元素，支持 URL 和 base64
  */
 
-import type { CanvasKit, Canvas, Image } from 'canvaskit-wasm';
-import type { IElementRenderer, IRElement, Bounds } from './types';
+import type { CanvasKit, Canvas, Image } from "canvaskit-wasm";
+import type { IElementRenderer, IRElement, Bounds } from "./types";
 
 /**
  * 图片类型列表
  */
-const IMAGE_TYPES = ['image', 'img'];
+const IMAGE_TYPES = ["image", "img"];
 const MAX_IMAGE_CACHE_ENTRIES = 128;
 const IMAGE_FETCH_TIMEOUT_MS = 15000;
 /** 失败图片缓存过期时间（ms）：到期后允许重试 */
@@ -21,7 +21,7 @@ const FAILED_IMAGE_MAX_RETRIES = 3;
 /**
  * object-fit 类型
  */
-type ObjectFit = 'fill' | 'contain' | 'cover' | 'none' | 'scale-down';
+type ObjectFit = "fill" | "contain" | "cover" | "none" | "scale-down";
 
 interface ParsedDataUrl {
   mimeType: string;
@@ -104,8 +104,8 @@ export class ImageRenderer implements IElementRenderer {
       image,
       bounds,
       element.styles,
-      (element.styles.objectFit || 'cover') as ObjectFit,
-      CanvasKit
+      (element.styles.objectFit || "cover") as ObjectFit,
+      CanvasKit,
     );
   }
 
@@ -153,7 +153,7 @@ export class ImageRenderer implements IElementRenderer {
       return null;
     } catch (error) {
       this.markImageFailure(src);
-      console.error('Failed to load image:', src, error);
+      console.error("Failed to load image:", src, error);
       return null;
     } finally {
       loadingPromises.delete(src);
@@ -167,7 +167,7 @@ export class ImageRenderer implements IElementRenderer {
     try {
       let imageData: ArrayBuffer;
 
-      if (src.startsWith('data:')) {
+      if (src.startsWith("data:")) {
         const parsed = this.parseDataUrl(src);
         if (this.isSvgMimeType(parsed.mimeType)) {
           return await this.decodeSvgDataUrl(parsed, src, CanvasKit);
@@ -176,11 +176,11 @@ export class ImageRenderer implements IElementRenderer {
       } else {
         const response = await this.fetchWithTimeout(src);
         if (!response.ok) {
-          console.error('Failed to fetch image:', src, new Error(`HTTP ${response.status}`));
+          console.error("Failed to fetch image:", src, new Error(`HTTP ${response.status}`));
           return null;
         }
 
-        const contentType = response.headers.get('content-type');
+        const contentType = response.headers.get("content-type");
         if (this.isSvgMimeType(contentType) || this.isSvgSource(src)) {
           return await this.decodeSvgResponse(response, src, CanvasKit);
         }
@@ -190,13 +190,13 @@ export class ImageRenderer implements IElementRenderer {
 
       const image = CanvasKit.MakeImageFromEncoded(imageData);
       if (!image) {
-        console.error('Failed to decode image:', src);
+        console.error("Failed to decode image:", src);
         return null;
       }
 
       return image;
     } catch (error) {
-      console.error('Failed to fetch image:', src, error);
+      console.error("Failed to fetch image:", src, error);
       return null;
     }
   }
@@ -212,21 +212,21 @@ export class ImageRenderer implements IElementRenderer {
   private parseDataUrl(dataUrl: string): ParsedDataUrl {
     const matches = dataUrl.match(/^data:([^,]*?),(.*)$/s);
     if (!matches) {
-      throw new Error('Invalid data URL');
+      throw new Error("Invalid data URL");
     }
 
-    const meta = matches[1] ?? '';
-    const data = matches[2] ?? '';
+    const meta = matches[1] ?? "";
+    const data = matches[2] ?? "";
     const metaParts = meta
-      .split(';')
+      .split(";")
       .map((part) => part.trim().toLowerCase())
       .filter(Boolean);
-    const mimeType = metaParts.find((part) => part.includes('/')) || 'text/plain';
+    const mimeType = metaParts.find((part) => part.includes("/")) || "text/plain";
 
     return {
       mimeType,
       data,
-      isBase64: metaParts.includes('base64'),
+      isBase64: metaParts.includes("base64"),
     };
   }
 
@@ -248,8 +248,8 @@ export class ImageRenderer implements IElementRenderer {
   }
 
   private base64ToUint8Array(base64: string): Uint8Array {
-    if (typeof Buffer !== 'undefined') {
-      return Uint8Array.from(Buffer.from(base64, 'base64'));
+    if (typeof Buffer !== "undefined") {
+      return Uint8Array.from(Buffer.from(base64, "base64"));
     }
 
     const binaryString = atob(base64);
@@ -261,10 +261,10 @@ export class ImageRenderer implements IElementRenderer {
   }
 
   private isSvgMimeType(contentType: string | null | undefined): boolean {
-    if (typeof contentType !== 'string') {
+    if (typeof contentType !== "string") {
       return false;
     }
-    return contentType.trim().toLowerCase().startsWith('image/svg+xml');
+    return contentType.trim().toLowerCase().startsWith("image/svg+xml");
   }
 
   private isSvgSource(src: string): boolean {
@@ -273,32 +273,30 @@ export class ImageRenderer implements IElementRenderer {
 
   private async decodeSvgResponse(response: Response, src: string, CanvasKit: CanvasKit): Promise<Image | null> {
     const blob = await response.blob();
-    const svgBlob = this.isSvgMimeType(blob.type)
-      ? blob
-      : new Blob([blob], { type: 'image/svg+xml' });
+    const svgBlob = this.isSvgMimeType(blob.type) ? blob : new Blob([blob], { type: "image/svg+xml" });
     return this.decodeSvgBlob(svgBlob, src, CanvasKit);
   }
 
   private async decodeSvgDataUrl(parsed: ParsedDataUrl, src: string, CanvasKit: CanvasKit): Promise<Image | null> {
     const svgBlob = new Blob([this.decodeDataUrlToBytes(parsed)], {
-      type: parsed.mimeType || 'image/svg+xml',
+      type: parsed.mimeType || "image/svg+xml",
     });
     return this.decodeSvgBlob(svgBlob, src, CanvasKit);
   }
 
   private async decodeSvgBlob(blob: Blob, src: string, CanvasKit: CanvasKit): Promise<Image | null> {
-    if (typeof CanvasKit.MakeImageFromCanvasImageSource !== 'function') {
-      console.error('Failed to decode image:', src, new Error('CanvasKit SVG rasterization is unavailable'));
+    if (typeof CanvasKit.MakeImageFromCanvasImageSource !== "function") {
+      console.error("Failed to decode image:", src, new Error("CanvasKit SVG rasterization is unavailable"));
       return null;
     }
 
-    if (typeof createImageBitmap === 'function') {
+    if (typeof createImageBitmap === "function") {
       try {
         const bitmap = await createImageBitmap(blob);
         try {
           return CanvasKit.MakeImageFromCanvasImageSource(bitmap);
         } finally {
-          if (typeof bitmap.close === 'function') {
+          if (typeof bitmap.close === "function") {
             bitmap.close();
           }
         }
@@ -307,12 +305,8 @@ export class ImageRenderer implements IElementRenderer {
       }
     }
 
-    if (
-      typeof Image === 'undefined' ||
-      typeof URL === 'undefined' ||
-      typeof URL.createObjectURL !== 'function'
-    ) {
-      console.error('Failed to decode image:', src, new Error('SVG rasterization is unsupported in this runtime'));
+    if (typeof Image === "undefined" || typeof URL === "undefined" || typeof URL.createObjectURL !== "function") {
+      console.error("Failed to decode image:", src, new Error("SVG rasterization is unsupported in this runtime"));
       return null;
     }
 
@@ -327,13 +321,13 @@ export class ImageRenderer implements IElementRenderer {
 
   private async loadHtmlImage(src: string): Promise<HTMLImageElement> {
     const imageElement = new Image();
-    imageElement.decoding = 'async';
+    imageElement.decoding = "async";
 
     await new Promise<void>((resolve, reject) => {
       const timeoutId = globalThis.setTimeout(() => {
         imageElement.onload = null;
         imageElement.onerror = null;
-        reject(new Error('Timed out while decoding SVG image element'));
+        reject(new Error("Timed out while decoding SVG image element"));
       }, IMAGE_FETCH_TIMEOUT_MS);
       imageElement.onload = () => {
         globalThis.clearTimeout(timeoutId);
@@ -341,12 +335,12 @@ export class ImageRenderer implements IElementRenderer {
       };
       imageElement.onerror = () => {
         globalThis.clearTimeout(timeoutId);
-        reject(new Error('Failed to decode SVG image element'));
+        reject(new Error("Failed to decode SVG image element"));
       };
       imageElement.src = src;
     });
 
-    if (typeof imageElement.decode === 'function') {
+    if (typeof imageElement.decode === "function") {
       await imageElement.decode().catch(() => undefined);
     }
 
@@ -360,30 +354,27 @@ export class ImageRenderer implements IElementRenderer {
     canvas: Canvas,
     image: Image,
     bounds: Bounds,
-    styles: IRElement['styles'],
+    styles: IRElement["styles"],
     objectFit: ObjectFit,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     const imageWidth = image.width();
     const imageHeight = image.height();
 
-    let srcX = 0;
-    let srcY = 0;
-    let srcWidth = imageWidth;
-    let srcHeight = imageHeight;
+    const srcX = 0;
+    const srcY = 0;
+    const srcWidth = imageWidth;
+    const srcHeight = imageHeight;
     let dstX = bounds.x;
     let dstY = bounds.y;
     let dstWidth = bounds.width;
     let dstHeight = bounds.height;
 
     switch (objectFit) {
-      case 'contain':
+      case "contain":
         // 保持比例，完整显示
         {
-          const scale = Math.min(
-            bounds.width / imageWidth,
-            bounds.height / imageHeight
-          );
+          const scale = Math.min(bounds.width / imageWidth, bounds.height / imageHeight);
           dstWidth = imageWidth * scale;
           dstHeight = imageHeight * scale;
           dstX = bounds.x + (bounds.width - dstWidth) / 2;
@@ -391,13 +382,10 @@ export class ImageRenderer implements IElementRenderer {
         }
         break;
 
-      case 'cover':
+      case "cover":
         // 保持比例，填充容器
         {
-          const scale = Math.max(
-            bounds.width / imageWidth,
-            bounds.height / imageHeight
-          );
+          const scale = Math.max(bounds.width / imageWidth, bounds.height / imageHeight);
           dstWidth = imageWidth * scale;
           dstHeight = imageHeight * scale;
           dstX = bounds.x + (bounds.width - dstWidth) / 2;
@@ -405,24 +393,21 @@ export class ImageRenderer implements IElementRenderer {
         }
         break;
 
-      case 'fill':
+      case "fill":
         // 拉伸填充
         // 使用默认的 bounds
         break;
 
-      case 'none':
+      case "none":
         // 不缩放，使用原始尺寸
         dstWidth = imageWidth;
         dstHeight = imageHeight;
         break;
 
-      case 'scale-down':
+      case "scale-down":
         // 缩小或保持原始尺寸
         {
-          const scale = Math.min(
-            Math.min(bounds.width / imageWidth, bounds.height / imageHeight),
-            1
-          );
+          const scale = Math.min(Math.min(bounds.width / imageWidth, bounds.height / imageHeight), 1);
           dstWidth = imageWidth * scale;
           dstHeight = imageHeight * scale;
           dstX = bounds.x + (bounds.width - dstWidth) / 2;
@@ -432,22 +417,38 @@ export class ImageRenderer implements IElementRenderer {
     }
 
     const paint = new CanvasKit.Paint();
-    let colorFilter: ReturnType<CanvasKit['ColorFilter']['MakeMatrix']> | null = null;
+    let colorFilter: ReturnType<CanvasKit["ColorFilter"]["MakeMatrix"]> | null = null;
     try {
       paint.setAntiAlias(true);
       const brightness = this.parseBrightness(styles.filter);
       if (
-        Number.isFinite(brightness)
-        && brightness > 0
-        && Math.abs(brightness - 1) > 0.001
-        && CanvasKit.ColorFilter
-        && typeof CanvasKit.ColorFilter.MakeMatrix === 'function'
+        Number.isFinite(brightness) &&
+        brightness > 0 &&
+        Math.abs(brightness - 1) > 0.001 &&
+        CanvasKit.ColorFilter &&
+        typeof CanvasKit.ColorFilter.MakeMatrix === "function"
       ) {
         colorFilter = CanvasKit.ColorFilter.MakeMatrix([
-          brightness, 0, 0, 0, 0,
-          0, brightness, 0, 0, 0,
-          0, 0, brightness, 0, 0,
-          0, 0, 0, 1, 0,
+          brightness,
+          0,
+          0,
+          0,
+          0,
+          0,
+          brightness,
+          0,
+          0,
+          0,
+          0,
+          0,
+          brightness,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
         ]);
         if (colorFilter) {
           paint.setColorFilter(colorFilter);
@@ -468,7 +469,7 @@ export class ImageRenderer implements IElementRenderer {
   }
 
   private parseBrightness(filter: string | number | undefined): number {
-    if (typeof filter !== 'string' || filter.trim().length === 0 || filter === 'none') {
+    if (typeof filter !== "string" || filter.trim().length === 0 || filter === "none") {
       return 1;
     }
     const match = filter.match(/brightness\(([^)]+)\)/i);
@@ -476,7 +477,7 @@ export class ImageRenderer implements IElementRenderer {
       return 1;
     }
     const raw = match[1].trim();
-    if (raw.endsWith('%')) {
+    if (raw.endsWith("%")) {
       const percent = Number.parseFloat(raw.slice(0, -1));
       if (Number.isFinite(percent) && percent > 0) {
         return percent / 100;
@@ -518,12 +519,8 @@ export class ImageRenderer implements IElementRenderer {
   }
 
   private async fetchWithTimeout(src: string): Promise<Response> {
-    const controller = typeof AbortController !== 'undefined'
-      ? new AbortController()
-      : null;
-    const timeoutId = controller
-      ? globalThis.setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS)
-      : null;
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeoutId = controller ? globalThis.setTimeout(() => controller.abort(), IMAGE_FETCH_TIMEOUT_MS) : null;
 
     try {
       return await fetch(src, controller ? { signal: controller.signal } : undefined);

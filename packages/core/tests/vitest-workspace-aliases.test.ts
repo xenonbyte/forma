@@ -11,9 +11,7 @@ describe("Vitest workspace aliases", () => {
 
   it("resolves VZI workspace packages to source files during clean test runs", () => {
     for (const [packageName, relativePath] of Object.entries(expectedVziAliases)) {
-      expect(workspaceAliases[packageName], packageName).toBe(
-        new URL(relativePath, import.meta.url).pathname,
-      );
+      expect(workspaceAliases[packageName], packageName).toBe(new URL(relativePath, import.meta.url).pathname);
       expect(workspaceAliases[packageName], packageName).not.toContain("/dist/");
     }
   });

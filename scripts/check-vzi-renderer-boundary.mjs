@@ -18,23 +18,18 @@
  * which mentions @vzi-core/renderer inside a JSDoc block comment.
  */
 
-import { readdir, readFile } from 'node:fs/promises';
-import { join, extname } from 'node:path';
+import { readdir, readFile } from "node:fs/promises";
+import { join, extname } from "node:path";
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
-const WORKSPACE_ROOT = new URL('..', import.meta.url).pathname;
+const WORKSPACE_ROOT = new URL("..", import.meta.url).pathname;
 
-const SCAN_DIRS = [
-  'packages/core/src',
-  'packages/server/src',
-  'packages/cli/src',
-  'packages/mcp/src',
-];
+const SCAN_DIRS = ["packages/core/src", "packages/server/src", "packages/cli/src", "packages/mcp/src"];
 
-const FORBIDDEN_MODULES = ['@vzi-core/renderer', 'canvaskit-wasm'];
+const FORBIDDEN_MODULES = ["@vzi-core/renderer", "canvaskit-wasm"];
 
-const SOURCE_EXTENSIONS = new Set(['.ts', '.mts', '.js', '.mjs']);
+const SOURCE_EXTENSIONS = new Set([".ts", ".mts", ".js", ".mjs"]);
 
 // ── Comment stripping ─────────────────────────────────────────────────────────
 
@@ -54,28 +49,28 @@ function stripBlockComments(src) {
     const next = src[i + 1];
 
     // Enter block comment
-    if (c === '/' && next === '*') {
-      out.push(' ', ' '); // preserve positions
+    if (c === "/" && next === "*") {
+      out.push(" ", " "); // preserve positions
       i += 2;
       while (i < len) {
         const bc = src[i];
         const bn = src[i + 1];
-        if (bc === '*' && bn === '/') {
-          out.push(' ', ' ');
+        if (bc === "*" && bn === "/") {
+          out.push(" ", " ");
           i += 2;
           break;
         }
         // Preserve newlines for line number accuracy
-        out.push(bc === '\n' ? '\n' : ' ');
+        out.push(bc === "\n" ? "\n" : " ");
         i++;
       }
       continue;
     }
 
     // Skip line comments as-is (we'll strip them per-line later)
-    if (c === '/' && next === '/') {
+    if (c === "/" && next === "/") {
       // Copy until end of line
-      while (i < len && src[i] !== '\n') {
+      while (i < len && src[i] !== "\n") {
         out.push(src[i]);
         i++;
       }
@@ -87,11 +82,17 @@ function stripBlockComments(src) {
       out.push(c);
       i++;
       while (i < len && src[i] !== "'") {
-        if (src[i] === '\\') { out.push(src[i]); i++; }
-        out.push(src[i] ?? '');
+        if (src[i] === "\\") {
+          out.push(src[i]);
+          i++;
+        }
+        out.push(src[i] ?? "");
         i++;
       }
-      if (i < len) { out.push(src[i]); i++; }
+      if (i < len) {
+        out.push(src[i]);
+        i++;
+      }
       continue;
     }
 
@@ -100,24 +101,36 @@ function stripBlockComments(src) {
       out.push(c);
       i++;
       while (i < len && src[i] !== '"') {
-        if (src[i] === '\\') { out.push(src[i]); i++; }
-        out.push(src[i] ?? '');
+        if (src[i] === "\\") {
+          out.push(src[i]);
+          i++;
+        }
+        out.push(src[i] ?? "");
         i++;
       }
-      if (i < len) { out.push(src[i]); i++; }
+      if (i < len) {
+        out.push(src[i]);
+        i++;
+      }
       continue;
     }
 
     // Template literal string
-    if (c === '`') {
+    if (c === "`") {
       out.push(c);
       i++;
-      while (i < len && src[i] !== '`') {
-        if (src[i] === '\\') { out.push(src[i]); i++; }
-        out.push(src[i] ?? '');
+      while (i < len && src[i] !== "`") {
+        if (src[i] === "\\") {
+          out.push(src[i]);
+          i++;
+        }
+        out.push(src[i] ?? "");
         i++;
       }
-      if (i < len) { out.push(src[i]); i++; }
+      if (i < len) {
+        out.push(src[i]);
+        i++;
+      }
       continue;
     }
 
@@ -125,7 +138,7 @@ function stripBlockComments(src) {
     i++;
   }
 
-  return out.join('');
+  return out.join("");
 }
 
 /**
@@ -143,11 +156,17 @@ function stripLineComment(line) {
   for (let i = 0; i < line.length - 1; i++) {
     const c = line[i];
     if (inStr) {
-      if (c === '\\') { i++; continue; } // skip escaped char
+      if (c === "\\") {
+        i++;
+        continue;
+      } // skip escaped char
       if (c === inStr) inStr = null;
     } else {
-      if (c === "'" || c === '"' || c === '`') { inStr = c; continue; }
-      if (c === '/' && line[i + 1] === '/') return line.slice(0, i);
+      if (c === "'" || c === '"' || c === "`") {
+        inStr = c;
+        continue;
+      }
+      if (c === "/" && line[i + 1] === "/") return line.slice(0, i);
     }
   }
   return line;
@@ -164,9 +183,9 @@ function lineImportsModule(line, mod) {
   // ESM side-effect:   import 'mod'  (no `from`)
   // ESM dynamic:       import('mod') or import("mod")
   // CJS:               require('mod') or require("mod")
-  const esc = mod.replace(/[.*+?^${}()|[\]\\@/]/g, '\\$&');
+  const esc = mod.replace(/[.*+?^${}()|[\]\\@/]/g, "\\$&");
   const pattern = new RegExp(
-    `(?:from\\s*['"]\`?${esc}['"]\`?|import\\s*\\(['"]\`?${esc}['"]\`?\\)|require\\s*\\(['"]\`?${esc}['"]\`?\\)|import\\s+['"]\`?${esc}['"]\`?)`
+    `(?:from\\s*['"]\`?${esc}['"]\`?|import\\s*\\(['"]\`?${esc}['"]\`?\\)|require\\s*\\(['"]\`?${esc}['"]\`?\\)|import\\s+['"]\`?${esc}['"]\`?)`,
   );
   return pattern.test(line);
 }
@@ -189,12 +208,13 @@ async function collectSourceFiles(dir) {
     const fullPath = join(entry.parentPath ?? entry.path ?? dir, entry.name);
     // Exclude tests, dist, node_modules
     if (
-      fullPath.includes('/node_modules/') ||
-      fullPath.includes('/dist/') ||
-      fullPath.includes('/tests/') ||
-      fullPath.includes('.test.') ||
-      fullPath.includes('.spec.')
-    ) continue;
+      fullPath.includes("/node_modules/") ||
+      fullPath.includes("/dist/") ||
+      fullPath.includes("/tests/") ||
+      fullPath.includes(".test.") ||
+      fullPath.includes(".spec.")
+    )
+      continue;
     files.push(fullPath);
   }
   return files;
@@ -214,13 +234,13 @@ async function main() {
     totalFiles += files.length;
 
     for (const filePath of files) {
-      const raw = await readFile(filePath, 'utf8');
+      const raw = await readFile(filePath, "utf8");
 
       // Step 1: strip block comments (preserves line count)
       const noBlockComments = stripBlockComments(raw);
 
       // Step 2: check line by line (strip line comments per line)
-      const lines = noBlockComments.split('\n');
+      const lines = noBlockComments.split("\n");
       for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
         const strippedLine = stripLineComment(lines[lineIdx]);
         for (const mod of FORBIDDEN_MODULES) {
@@ -233,25 +253,25 @@ async function main() {
   }
 
   if (violations.length > 0) {
-    console.error('\n✗ VZI renderer boundary VIOLATED — forbidden imports found:\n');
+    console.error("\n✗ VZI renderer boundary VIOLATED — forbidden imports found:\n");
     for (const v of violations) {
       console.error(`  ${v.file}:${v.line}  [imports ${v.mod}]`);
     }
-    console.error('\nThe renderer (@vzi-core/renderer) and canvaskit-wasm must NOT');
-    console.error('be imported by core / server / cli / mcp backend packages.');
-    console.error('These are vendored for web/desktop rendering only.\n');
+    console.error("\nThe renderer (@vzi-core/renderer) and canvaskit-wasm must NOT");
+    console.error("be imported by core / server / cli / mcp backend packages.");
+    console.error("These are vendored for web/desktop rendering only.\n");
     process.exit(1);
   }
 
-  console.log('\n✓ VZI renderer import-boundary check PASSED');
+  console.log("\n✓ VZI renderer import-boundary check PASSED");
   console.log(`  Scanned ${totalFiles} source files across:`);
   for (const d of scannedDirs) {
     console.log(`    ${d}`);
   }
-  console.log('  No forbidden imports of @vzi-core/renderer or canvaskit-wasm found.\n');
+  console.log("  No forbidden imports of @vzi-core/renderer or canvaskit-wasm found.\n");
 }
 
 main().catch((err) => {
-  console.error('check-vzi-renderer-boundary: unexpected error:', err);
+  console.error("check-vzi-renderer-boundary: unexpected error:", err);
   process.exit(1);
 });

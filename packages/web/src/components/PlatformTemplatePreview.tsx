@@ -165,7 +165,7 @@ const brand = {
   success: "#22C55E",
   surface: "#FFFFFF",
   textPrimary: "#18181B",
-  textSecondary: "#71717A"
+  textSecondary: "#71717A",
 };
 
 export function PlatformTemplatePreview(props: PlatformTemplatePreviewProps) {
@@ -233,7 +233,15 @@ function DesignSpecPreview({ metadata }: { metadata: SystemStyleMetadata }) {
   );
 }
 
-function ProductStylePreviewCard({ children, styleItem, title }: { children: ReactNode; styleItem: ProductStyleTemplate; title: string }) {
+function ProductStylePreviewCard({
+  children,
+  styleItem,
+  title,
+}: {
+  children: ReactNode;
+  styleItem: ProductStyleTemplate;
+  title: string;
+}) {
   const colors = styleItem.tokens.colors;
 
   return (
@@ -242,10 +250,13 @@ function ProductStylePreviewCard({ children, styleItem, title }: { children: Rea
       style={{
         background: colors.surface,
         borderColor: colors.border,
-        boxShadow: styleItem.tokens.shadow.card
+        boxShadow: styleItem.tokens.shadow.card,
       }}
     >
-      <div className="border-b px-4 py-3 text-sm font-semibold" style={{ borderColor: colors.border, color: colors.textPrimary }}>
+      <div
+        className="border-b px-4 py-3 text-sm font-semibold"
+        style={{ borderColor: colors.border, color: colors.textPrimary }}
+      >
         {title}
       </div>
       <div className="p-3" style={{ background: colors.background }}>
@@ -258,7 +269,10 @@ function ProductStylePreviewCard({ children, styleItem, title }: { children: Rea
 function SpecPreviewCard({ children, title }: { children: ReactNode; title: string }) {
   return (
     <div className="overflow-hidden rounded-xl border bg-white" style={{ borderColor: brand.border }}>
-      <div className="border-b px-4 py-3 text-sm font-semibold" style={{ borderColor: brand.border, color: brand.textPrimary }}>
+      <div
+        className="border-b px-4 py-3 text-sm font-semibold"
+        style={{ borderColor: brand.border, color: brand.textPrimary }}
+      >
         {title}
       </div>
       <div className="p-3" style={{ background: brand.bg }}>
@@ -280,7 +294,7 @@ function TokenBar({ styleItem }: { styleItem: ProductStyleTemplate }) {
     { label: "Muted", value: colors.surfaceMuted },
     { label: "Border", value: colors.border },
     { label: "Text 2", value: colors.textSecondary },
-    { label: "Text 1", value: colors.textPrimary }
+    { label: "Text 1", value: colors.textPrimary },
   ];
 
   return (
@@ -298,7 +312,10 @@ function TokenBar({ styleItem }: { styleItem: ProductStyleTemplate }) {
       <div className="flex max-w-[34rem] flex-wrap gap-3">
         {colorItems.map((item) => (
           <div className="flex items-center gap-2" key={item.label}>
-            <span className="block h-5 w-5 rounded-md border" style={{ background: item.value, borderColor: "#D4D4D8" }} />
+            <span
+              className="block h-5 w-5 rounded-md border"
+              style={{ background: item.value, borderColor: "#D4D4D8" }}
+            />
             <div className="text-xs text-zinc-500">
               <div className="font-medium text-zinc-700">{item.label}</div>
               <div>{item.value}</div>
@@ -326,12 +343,15 @@ function CommonStyleBlocks({ styleItem }: { styleItem: ProductStyleTemplate }) {
           style={{
             color: colors.textPrimary,
             fontFamily: typography.fontHeading,
-            fontSize: typography.titleSize
+            fontSize: typography.titleSize,
           }}
         >
           Inter Heading
         </div>
-        <div className="mt-1" style={{ color: colors.textSecondary, fontFamily: typography.fontBody, fontSize: typography.bodySize }}>
+        <div
+          className="mt-1"
+          style={{ color: colors.textSecondary, fontFamily: typography.fontBody, fontSize: typography.bodySize }}
+        >
           Body 14px / Caption 12px
         </div>
       </div>
@@ -390,7 +410,10 @@ function RulesSummary({ spec }: { spec: DesignSpecTemplate }) {
           {global.minTouchTarget} / {global.contrast}
         </div>
         <div className="mt-1 text-sm text-zinc-500">
-          {global.keyboardAccessible ? t("templatePreview.keyboardSupported") : t("templatePreview.keyboardUnsupported")} · {global.focusRing}
+          {global.keyboardAccessible
+            ? t("templatePreview.keyboardSupported")
+            : t("templatePreview.keyboardUnsupported")}{" "}
+          · {global.focusRing}
         </div>
       </div>
       <div className="rounded-xl border bg-white p-4" style={{ borderColor: brand.border }}>
@@ -434,7 +457,11 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
   const activeText = resolveToken(styleItem.components.nav.activeTextColor, styleItem);
 
   return (
-    <div className="rounded-lg border" data-preview-mock="web" style={{ background: colors.surface, borderColor: colors.border, color: colors.textPrimary }}>
+    <div
+      className="rounded-lg border"
+      data-preview-mock="web"
+      style={{ background: colors.surface, borderColor: colors.border, color: colors.textPrimary }}
+    >
       <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: colors.border }}>
         <div className="flex items-center gap-2 text-xs">
           <span className="font-semibold">{styleItem.displayName}</span>
@@ -442,7 +469,11 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
         </div>
         <div className="flex items-center gap-2 text-xs" style={{ color: text2 }}>
           {["概览", "项目", "任务", "报表"].map((item, index) => (
-            <span className="rounded px-2 py-1" key={item} style={index === 0 ? { background: navBg, color: activeText } : undefined}>
+            <span
+              className="rounded px-2 py-1"
+              key={item}
+              style={index === 0 ? { background: navBg, color: activeText } : undefined}
+            >
               {item}
             </span>
           ))}
@@ -457,7 +488,11 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
               表格化、轻量、适合运营和数据管理
             </div>
           </div>
-          <button className="px-3 text-xs font-medium" style={{ ...buttonStyle(styleItem), background: primaryBg, height: 32 }} type="button">
+          <button
+            className="px-3 text-xs font-medium"
+            style={{ ...buttonStyle(styleItem), background: primaryBg, height: 32 }}
+            type="button"
+          >
             + 新建记录
           </button>
         </div>
@@ -471,7 +506,7 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
             ["客户总数", "256", "↑ 12.4%", colors.success],
             ["活跃项目", "142", "↑ 12.4%", colors.success],
             ["待跟进", "68", "↑ 12.4%", colors.success],
-            ["异常项", "12", "↓ 3.1%", colors.danger]
+            ["异常项", "12", "↓ 3.1%", colors.danger],
           ]}
         />
 
@@ -483,7 +518,7 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
               border: `1px solid ${inputBorder}`,
               borderRadius: inputRadius,
               color: text2,
-              height: 32
+              height: 32,
             }}
             value="搜索客户名称、负责人、标签"
           />
@@ -494,7 +529,7 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
               style={{
                 border: `1px solid ${inputBorder}`,
                 borderRadius: inputRadius,
-                color: text2
+                color: text2,
               }}
             >
               {item}
@@ -509,7 +544,7 @@ function ProductStyleWebPreview({ styleItem }: { styleItem: ProductStyleTemplate
           rows={[
             ["极光科技", "互联网", "张三", "合作中", "¥120,000", "5 分钟前"],
             ["云途数据", "企业服务", "李四", "跟进中", "¥85,000", "1 天前"],
-            ["星图传媒", "内容", "王五", "合作中", "¥56,000", "2 天前"]
+            ["星图传媒", "内容", "王五", "合作中", "¥56,000", "2 天前"],
           ]}
           statusIndex={3}
           templateColumns="2fr 1fr 1fr 1fr 1fr 1fr"
@@ -525,7 +560,10 @@ function ProductStyleMobilePreview({ styleItem }: { styleItem: ProductStyleTempl
 
   return (
     <div className="flex justify-center" data-preview-mock="mobile">
-      <div className="w-[220px] overflow-hidden rounded-[24px] border-[6px]" style={{ background: colors.surface, borderColor: "#111827" }}>
+      <div
+        className="w-[220px] overflow-hidden rounded-[24px] border-[6px]"
+        style={{ background: colors.surface, borderColor: "#111827" }}
+      >
         <div className="px-4 pt-3 text-[10px] font-medium">9:41</div>
         <div className="px-4 pb-3">
           <div className="mb-3 flex items-center justify-between">
@@ -543,12 +581,15 @@ function ProductStyleMobilePreview({ styleItem }: { styleItem: ProductStyleTempl
               border: `1px solid ${resolveToken(styleItem.components.input.borderColor, styleItem)}`,
               borderRadius: resolveToken(styleItem.components.input.borderRadius, styleItem),
               color: colors.textSecondary,
-              height: 34
+              height: 34,
             }}
             value="搜索项目"
           />
           <div className="mb-3 flex gap-2 text-[11px]" style={{ color: colors.textSecondary }}>
-            <span className="rounded-full px-2 py-1" style={{ background: colors.surfaceMuted, color: colors.textPrimary }}>
+            <span
+              className="rounded-full px-2 py-1"
+              style={{ background: colors.surfaceMuted, color: colors.textPrimary }}
+            >
               全部
             </span>
             <span>进行中</span>
@@ -558,9 +599,13 @@ function ProductStyleMobilePreview({ styleItem }: { styleItem: ProductStyleTempl
             {[
               ["官网改版", "进行中", "65%"],
               ["移动端重构", "已发布", "100%"],
-              ["数据看板", "待跟进", "20%"]
+              ["数据看板", "待跟进", "20%"],
             ].map((item) => (
-              <div className="rounded-lg border p-3" key={item[0]} style={{ background: colors.surface, borderColor: colors.border }}>
+              <div
+                className="rounded-lg border p-3"
+                key={item[0]}
+                style={{ background: colors.surface, borderColor: colors.border }}
+              >
                 <div className="flex items-center justify-between">
                   <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
                     {item[0]}
@@ -586,7 +631,11 @@ function ProductStyleTabletPreview({ styleItem }: { styleItem: ProductStyleTempl
   const colors = styleItem.tokens.colors;
 
   return (
-    <div className="overflow-hidden rounded-lg border" data-preview-mock="tablet" style={{ background: colors.surface, borderColor: colors.border }}>
+    <div
+      className="overflow-hidden rounded-lg border"
+      data-preview-mock="tablet"
+      style={{ background: colors.surface, borderColor: colors.border }}
+    >
       <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: colors.border }}>
         <div className="text-sm font-semibold" style={{ color: colors.textPrimary }}>
           产品
@@ -602,7 +651,11 @@ function ProductStyleTabletPreview({ styleItem }: { styleItem: ProductStyleTempl
           </div>
           <div className="space-y-2">
             {["智能门锁 Pro", "无线摄像头 2K", "人体传感器", "智能插座"].map((item, index) => (
-              <div className="rounded-lg border p-2" key={item} style={{ background: index === 0 ? colors.surfaceMuted : colors.surface, borderColor: colors.border }}>
+              <div
+                className="rounded-lg border p-2"
+                key={item}
+                style={{ background: index === 0 ? colors.surfaceMuted : colors.surface, borderColor: colors.border }}
+              >
                 <div className="text-[12px] font-medium" style={{ color: colors.textPrimary }}>
                   {item}
                 </div>
@@ -627,7 +680,11 @@ function ProductStyleTabletPreview({ styleItem }: { styleItem: ProductStyleTempl
           </div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             {["负责人", "品牌", "创建时间", "可用库存"].map((item, index) => (
-              <div className="rounded-lg border p-2" key={item} style={{ background: colors.surface, borderColor: colors.border }}>
+              <div
+                className="rounded-lg border p-2"
+                key={item}
+                style={{ background: colors.surface, borderColor: colors.border }}
+              >
                 <div className="text-[10px]" style={{ color: colors.textSecondary }}>
                   {item}
                 </div>
@@ -637,7 +694,10 @@ function ProductStyleTabletPreview({ styleItem }: { styleItem: ProductStyleTempl
               </div>
             ))}
           </div>
-          <div className="mt-3 rounded-lg border p-3" style={{ background: colors.surface, borderColor: colors.border }}>
+          <div
+            className="mt-3 rounded-lg border p-3"
+            style={{ background: colors.surface, borderColor: colors.border }}
+          >
             <div className="text-[11px] font-medium" style={{ color: colors.textPrimary }}>
               描述
             </div>
@@ -655,7 +715,11 @@ function ProductStyleDesktopPreview({ styleItem }: { styleItem: ProductStyleTemp
   const colors = styleItem.tokens.colors;
 
   return (
-    <div className="overflow-hidden rounded-lg border" data-preview-mock="desktop" style={{ background: colors.surface, borderColor: colors.border }}>
+    <div
+      className="overflow-hidden rounded-lg border"
+      data-preview-mock="desktop"
+      style={{ background: colors.surface, borderColor: colors.border }}
+    >
       <div className="grid grid-cols-[72px_1fr]">
         <div className="border-r p-2" style={{ background: colors.surface, borderColor: colors.border }}>
           <div className="mb-2 text-center text-[10px] font-semibold" style={{ color: colors.textPrimary }}>
@@ -667,7 +731,7 @@ function ProductStyleDesktopPreview({ styleItem }: { styleItem: ProductStyleTemp
               key={item}
               style={{
                 background: index === 1 ? colors.surfaceMuted : "transparent",
-                color: index === 1 ? colors.textPrimary : colors.textSecondary
+                color: index === 1 ? colors.textPrimary : colors.textSecondary,
               }}
             >
               {item}
@@ -679,7 +743,11 @@ function ProductStyleDesktopPreview({ styleItem }: { styleItem: ProductStyleTemp
             <div className="text-sm font-semibold" style={{ color: colors.textPrimary }}>
               客户列表
             </div>
-            <button className="px-3 text-[11px] font-medium" style={{ ...buttonStyle(styleItem), height: 28 }} type="button">
+            <button
+              className="px-3 text-[11px] font-medium"
+              style={{ ...buttonStyle(styleItem), height: 28 }}
+              type="button"
+            >
               + 新建记录
             </button>
           </div>
@@ -693,7 +761,7 @@ function ProductStyleDesktopPreview({ styleItem }: { styleItem: ProductStyleTemp
                 ["客户总数", "256", "", colors.success],
                 ["合作中", "142", "", colors.success],
                 ["跟进中", "68", "", colors.success],
-                ["异常", "12", "", colors.danger]
+                ["异常", "12", "", colors.danger],
               ]}
             />
             <DataTable
@@ -703,7 +771,7 @@ function ProductStyleDesktopPreview({ styleItem }: { styleItem: ProductStyleTemp
               rows={[
                 ["极光科技", "张三", "合作中", "¥120,000", "5 分钟前"],
                 ["云途数据", "李四", "跟进中", "¥85,000", "1 天前"],
-                ["星图传媒", "王五", "合作中", "¥56,000", "2 天前"]
+                ["星图传媒", "王五", "合作中", "¥56,000", "2 天前"],
               ]}
               statusIndex={2}
               templateColumns="2fr 1fr 1fr 1fr 1fr"
@@ -720,7 +788,12 @@ function WebSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
   const rules = spec.rules.web.rules;
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-white" data-preview-mock="web" data-spec-preview-mock="web" style={{ borderColor: brand.border }}>
+    <div
+      className="overflow-hidden rounded-lg border bg-white"
+      data-preview-mock="web"
+      data-spec-preview-mock="web"
+      style={{ borderColor: brand.border }}
+    >
       <div className="grid grid-cols-[220px_1fr]">
         <div className="border-r p-3" style={{ borderColor: brand.border }}>
           <div className="mb-3 text-sm font-semibold text-zinc-900">侧边导航</div>
@@ -730,7 +803,7 @@ function WebSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
               key={item}
               style={{
                 background: index === 1 ? brand.primarySoft : "transparent",
-                color: index === 1 ? brand.textPrimary : brand.textSecondary
+                color: index === 1 ? brand.textPrimary : brand.textSecondary,
               }}
             >
               {item}
@@ -782,9 +855,13 @@ function MobileSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
           <div className="space-y-2">
             {[
               ["总产品", "980"],
-              ["库存不足", "68"]
+              ["库存不足", "68"],
             ].map((row) => (
-              <div className="rounded-lg border bg-white p-3" key={row[0]} style={{ borderColor: brand.border, padding: rules.cardPadding }}>
+              <div
+                className="rounded-lg border bg-white p-3"
+                key={row[0]}
+                style={{ borderColor: brand.border, padding: rules.cardPadding }}
+              >
                 <div className="text-[10px] text-zinc-500">{row[0]}</div>
                 <div className="mt-1 text-base font-semibold text-zinc-900">{row[1]}</div>
               </div>
@@ -792,14 +869,21 @@ function MobileSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
           </div>
           <div className="mt-3 space-y-2">
             {["智能门锁 Pro", "无线摄像头 2K", "人体传感器"].map((item) => (
-              <div className="rounded-lg border bg-white p-3" key={item} style={{ borderColor: brand.border, padding: rules.cardPadding }}>
+              <div
+                className="rounded-lg border bg-white p-3"
+                key={item}
+                style={{ borderColor: brand.border, padding: rules.cardPadding }}
+              >
                 <div className="text-[12px] font-medium text-zinc-900">{item}</div>
                 <div className="mt-1 text-[10px] text-zinc-500">单列卡片布局 · 避免密集表格</div>
               </div>
             ))}
           </div>
           {rules.bottomAction ? (
-            <button className="mt-4 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-zinc-950" type="button">
+            <button
+              className="mt-4 w-full rounded-lg bg-amber-500 py-2 text-sm font-medium text-zinc-950"
+              type="button"
+            >
               底部主操作
             </button>
           ) : null}
@@ -813,7 +897,12 @@ function TabletSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
   const rules = spec.rules.tablet.rules;
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-white" data-preview-mock="tablet" data-spec-preview-mock="tablet" style={{ borderColor: brand.border }}>
+    <div
+      className="overflow-hidden rounded-lg border bg-white"
+      data-preview-mock="tablet"
+      data-spec-preview-mock="tablet"
+      style={{ borderColor: brand.border }}
+    >
       <div className="flex items-center justify-between border-b px-3 py-2" style={{ borderColor: brand.border }}>
         <div className="text-sm font-semibold text-zinc-900">平板分栏视图</div>
         <div className="text-[11px] text-zinc-500">
@@ -824,7 +913,11 @@ function TabletSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
         <div className="border-r p-3" style={{ borderColor: brand.border }}>
           <div className="mb-2 text-[11px] font-medium text-zinc-500">左侧列表面板</div>
           {["智能门锁 Pro", "无线摄像头 2K", "人体传感器"].map((item, index) => (
-            <div className="mb-2 rounded-lg border p-3" key={item} style={{ background: index === 0 ? "#FFF7ED" : "#FFFFFF", borderColor: brand.border }}>
+            <div
+              className="mb-2 rounded-lg border p-3"
+              key={item}
+              style={{ background: index === 0 ? "#FFF7ED" : "#FFFFFF", borderColor: brand.border }}
+            >
               <div className="text-[12px] font-medium text-zinc-900">{item}</div>
               <div className="mt-1 text-[10px] text-zinc-500">列表层级清晰</div>
             </div>
@@ -854,7 +947,12 @@ function DesktopSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
   const rules = spec.rules.desktop.rules;
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-white" data-preview-mock="desktop" data-spec-preview-mock="desktop" style={{ borderColor: brand.border }}>
+    <div
+      className="overflow-hidden rounded-lg border bg-white"
+      data-preview-mock="desktop"
+      data-spec-preview-mock="desktop"
+      style={{ borderColor: brand.border }}
+    >
       <div className="grid grid-cols-[72px_1fr]">
         <div className="border-r p-2" style={{ borderColor: brand.border }}>
           <div className="mb-2 text-center text-[10px] font-semibold text-zinc-900">导航</div>
@@ -864,7 +962,7 @@ function DesktopSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
               key={item}
               style={{
                 background: index === 1 ? "#FEF3C7" : "transparent",
-                color: index === 1 ? "#18181B" : "#71717A"
+                color: index === 1 ? "#18181B" : "#71717A",
               }}
             >
               {item}
@@ -895,7 +993,7 @@ function DesktopSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
               rows={[
                 ["智能门锁 Pro", "PLS-001", "智能家居", "1230", "在售", "查看"],
                 ["无线摄像头 2K", "CAM-002", "安防", "856", "在售", "查看"],
-                ["人体传感器", "SEN-003", "传感器", "324", "库存不足", "查看"]
+                ["人体传感器", "SEN-003", "传感器", "324", "库存不足", "查看"],
               ]}
               statusIndex={4}
               templateColumns="2fr 1fr 1fr 1fr 1fr 1fr"
@@ -916,7 +1014,7 @@ function MetricCards({
   surface,
   textPrimary,
   textSecondary,
-  values
+  values,
 }: {
   border: string;
   surface: string;
@@ -952,7 +1050,7 @@ function DataTable({
   rows,
   statusIndex,
   templateColumns,
-  textColor
+  textColor,
 }: {
   border: string;
   headerBackground: string;
@@ -962,21 +1060,29 @@ function DataTable({
   templateColumns: string;
   textColor: string;
 }) {
-  const headers = rows[0]?.length === 6 ? ["名称", "类型", "负责人", "状态", "金额", "更新"] : ["名称", "负责人", "状态", "金额", "更新"];
+  const headers =
+    rows[0]?.length === 6
+      ? ["名称", "类型", "负责人", "状态", "金额", "更新"]
+      : ["名称", "负责人", "状态", "金额", "更新"];
 
   return (
     <div className="mt-3 overflow-hidden rounded-lg border" style={{ borderColor: border }}>
-      <div className="grid px-3 py-2 text-[10px]" style={{ background: headerBackground, color: headerColor, gridTemplateColumns: templateColumns }}>
+      <div
+        className="grid px-3 py-2 text-[10px]"
+        style={{ background: headerBackground, color: headerColor, gridTemplateColumns: templateColumns }}
+      >
         {headers.map((header) => (
           <div key={header}>{header}</div>
         ))}
       </div>
       {rows.map((row, rowIndex) => (
-        <div className="grid border-t px-3 py-2 text-[10px]" key={`${row[0]}-${rowIndex}`} style={{ borderColor: border, color: textColor, gridTemplateColumns: templateColumns }}>
+        <div
+          className="grid border-t px-3 py-2 text-[10px]"
+          key={`${row[0]}-${rowIndex}`}
+          style={{ borderColor: border, color: textColor, gridTemplateColumns: templateColumns }}
+        >
           {row.map((cell, cellIndex) => (
-            <div key={`${cell}-${cellIndex}`}>
-              {cellIndex === statusIndex ? <StatusPill status={cell} /> : cell}
-            </div>
+            <div key={`${cell}-${cellIndex}`}>{cellIndex === statusIndex ? <StatusPill status={cell} /> : cell}</div>
           ))}
         </div>
       ))}
@@ -989,7 +1095,11 @@ function SimpleProductRows() {
     <>
       <div className="grid grid-cols-3 gap-2">
         {["产品名称", "状态", "操作"].map((item) => (
-          <div className="rounded-md px-3 py-2 text-[11px] font-medium" key={item} style={{ background: "#F4F4F5", color: "#71717A" }}>
+          <div
+            className="rounded-md px-3 py-2 text-[11px] font-medium"
+            key={item}
+            style={{ background: "#F4F4F5", color: "#71717A" }}
+          >
             {item}
           </div>
         ))}
@@ -997,9 +1107,13 @@ function SimpleProductRows() {
       {[
         ["智能门锁 Pro", "在售", "查看"],
         ["无线摄像头 2K", "在售", "查看"],
-        ["人体传感器", "库存不足", "查看"]
+        ["人体传感器", "库存不足", "查看"],
       ].map((row) => (
-        <div className="mt-2 grid grid-cols-3 gap-2 rounded-lg border p-2" key={row[0]} style={{ borderColor: brand.border }}>
+        <div
+          className="mt-2 grid grid-cols-3 gap-2 rounded-lg border p-2"
+          key={row[0]}
+          style={{ borderColor: brand.border }}
+        >
           <div className="text-[11px] text-zinc-900">{row[0]}</div>
           <div>
             <StatusPill status={row[1]!} />
@@ -1020,7 +1134,7 @@ function StatusPill({ status }: { status: string }) {
       className="rounded-full px-2 py-0.5 text-[10px]"
       style={{
         background: isDanger ? "#FEE2E2" : isWarning ? "#FEF3C7" : "#DCFCE7",
-        color: isDanger ? "#991B1B" : isWarning ? "#92400E" : "#166534"
+        color: isDanger ? "#991B1B" : isWarning ? "#92400E" : "#166534",
       }}
     >
       {status}
@@ -1033,7 +1147,7 @@ function buttonStyle(styleItem: ProductStyleTemplate): CSSProperties {
     background: resolveToken(styleItem.components.buttonPrimary.background, styleItem),
     borderRadius: resolveToken(styleItem.components.buttonPrimary.borderRadius, styleItem),
     color: resolveToken(styleItem.components.buttonPrimary.textColor, styleItem),
-    height: resolveToken(styleItem.components.buttonPrimary.height, styleItem)
+    height: resolveToken(styleItem.components.buttonPrimary.height, styleItem),
   };
 }
 
@@ -1063,14 +1177,16 @@ function productStyleFromMetadata(metadata: StyleMetadata, designMd?: string): P
         success: colors.success ?? preset.tokens.colors.success,
         surface: colors.surface ?? colors.card ?? preset.tokens.colors.surface,
         surfaceMuted: colors["surface-muted"] ?? colors.muted ?? colors.subtle ?? preset.tokens.colors.surfaceMuted,
-        textPrimary: colors["text-primary"] ?? colors.text ?? colors.foreground ?? colors.ink ?? preset.tokens.colors.textPrimary,
-        textSecondary: colors["text-secondary"] ?? colors.mutedText ?? colors.secondary ?? preset.tokens.colors.textSecondary
+        textPrimary:
+          colors["text-primary"] ?? colors.text ?? colors.foreground ?? colors.ink ?? preset.tokens.colors.textPrimary,
+        textSecondary:
+          colors["text-secondary"] ?? colors.mutedText ?? colors.secondary ?? preset.tokens.colors.textSecondary,
       },
       radius: {
         ...preset.tokens.radius,
         lg: cssLength(rounded.lg ?? rounded.card ?? preset.tokens.radius.lg),
         md: cssLength(rounded.md ?? rounded.radius ?? rounded["border-radius"] ?? preset.tokens.radius.md),
-        sm: cssLength(rounded.sm ?? preset.tokens.radius.sm)
+        sm: cssLength(rounded.sm ?? preset.tokens.radius.sm),
       },
       spacing: {
         ...preset.tokens.spacing,
@@ -1078,14 +1194,20 @@ function productStyleFromMetadata(metadata: StyleMetadata, designMd?: string): P
         md: cssLength(spacing.md ?? spacing.base ?? spacing["spacing-unit"] ?? preset.tokens.spacing.md),
         sm: cssLength(spacing.sm ?? preset.tokens.spacing.sm),
         xl: cssLength(spacing.xl ?? preset.tokens.spacing.xl),
-        xs: cssLength(spacing.xs ?? preset.tokens.spacing.xs)
+        xs: cssLength(spacing.xs ?? preset.tokens.spacing.xs),
       },
       typography: {
         ...preset.tokens.typography,
-        fontBody: typography["font-body"] ?? typography.body ?? typography["body-md"] ?? preset.tokens.typography.fontBody,
-        fontHeading: typography["font-heading"] ?? typography.heading ?? typography.display ?? typography["display-lg"] ?? preset.tokens.typography.fontHeading
-      }
-    }
+        fontBody:
+          typography["font-body"] ?? typography.body ?? typography["body-md"] ?? preset.tokens.typography.fontBody,
+        fontHeading:
+          typography["font-heading"] ??
+          typography.heading ??
+          typography.display ??
+          typography["display-lg"] ??
+          preset.tokens.typography.fontHeading,
+      },
+    },
   };
 }
 
@@ -1096,7 +1218,7 @@ function designSpecFromMetadata(metadata: SystemStyleMetadata): DesignSpecTempla
     ...preset,
     description: metadata.description || preset.description,
     displayName: formatDisplayName(metadata.name),
-    name: metadata.name
+    name: metadata.name,
   };
 }
 
@@ -1111,7 +1233,8 @@ function productStylePreset(name: string): ProductStyleTemplate {
 function designSpecPreset(name: string): DesignSpecTemplate {
   const lower = name.toLowerCase();
   if (lower.includes("mobile")) return designSpecPresets.mobileFirst;
-  if (lower.includes("creative") || lower.includes("brand") || lower.includes("brainstorm")) return designSpecPresets.creative;
+  if (lower.includes("creative") || lower.includes("brand") || lower.includes("brainstorm"))
+    return designSpecPresets.creative;
   return designSpecPresets.platform;
 }
 
@@ -1122,27 +1245,27 @@ const baseProductStyle: Omit<ProductStyleTemplate, "description" | "displayName"
       borderRadius: "{radius.md}",
       height: "36px",
       paddingX: "12px",
-      textColor: "{colors.textPrimary}"
+      textColor: "{colors.textPrimary}",
     },
     card: {
       background: "{colors.surface}",
       borderColor: "{colors.border}",
       borderRadius: "{radius.lg}",
-      shadow: "{shadow.card}"
+      shadow: "{shadow.card}",
     },
     input: {
       background: "{colors.surface}",
       borderColor: "{colors.border}",
       borderRadius: "{radius.md}",
       height: "36px",
-      textColor: "{colors.textPrimary}"
+      textColor: "{colors.textPrimary}",
     },
     nav: {
       activeBackground: "{colors.surfaceMuted}",
       activeTextColor: "{colors.textPrimary}",
       background: "{colors.surface}",
-      textColor: "{colors.textSecondary}"
-    }
+      textColor: "{colors.textSecondary}",
+    },
   },
   tokens: {
     colors: {
@@ -1155,12 +1278,12 @@ const baseProductStyle: Omit<ProductStyleTemplate, "description" | "displayName"
       surface: "#FFFFFF",
       surfaceMuted: "#F4F4F5",
       textPrimary: "#18181B",
-      textSecondary: "#71717A"
+      textSecondary: "#71717A",
     },
     radius: { lg: "8px", md: "6px", sm: "4px" },
     shadow: {
       card: "0 1px 2px rgba(24, 24, 27, 0.06)",
-      panel: "0 12px 32px rgba(24, 24, 27, 0.12)"
+      panel: "0 12px 32px rgba(24, 24, 27, 0.12)",
     },
     spacing: { lg: "16px", md: "12px", sm: "8px", xl: "24px", xs: "4px" },
     typography: {
@@ -1171,9 +1294,9 @@ const baseProductStyle: Omit<ProductStyleTemplate, "description" | "displayName"
       fontWeightMedium: 500,
       fontWeightNormal: 400,
       fontWeightSemibold: 600,
-      titleSize: "16px"
-    }
-  }
+      titleSize: "16px",
+    },
+  },
 };
 
 const productStylePresets: Record<string, ProductStyleTemplate> = {
@@ -1181,7 +1304,7 @@ const productStylePresets: Record<string, ProductStyleTemplate> = {
     ...baseProductStyle,
     description: "清爽、轻量、表格化的生产力工具风格，适合后台、SaaS、运营工具和数据管理产品。",
     displayName: "Airtable",
-    name: "airtable"
+    name: "airtable",
   },
   airbnb: {
     ...baseProductStyle,
@@ -1196,9 +1319,9 @@ const productStylePresets: Record<string, ProductStyleTemplate> = {
         danger: "#DC2626",
         primary: "#FF5A5F",
         primaryHover: "#E14C50",
-        surfaceMuted: "#FFE8E6"
-      }
-    }
+        surfaceMuted: "#FFE8E6",
+      },
+    },
   },
   enterprise: {
     ...baseProductStyle,
@@ -1217,9 +1340,9 @@ const productStylePresets: Record<string, ProductStyleTemplate> = {
         success: "#16A34A",
         surfaceMuted: "#EEF2F7",
         textPrimary: "#0F172A",
-        textSecondary: "#64748B"
-      }
-    }
+        textSecondary: "#64748B",
+      },
+    },
   },
   minimal: {
     ...baseProductStyle,
@@ -1227,8 +1350,8 @@ const productStylePresets: Record<string, ProductStyleTemplate> = {
       ...baseProductStyle.components,
       buttonPrimary: {
         ...baseProductStyle.components.buttonPrimary,
-        textColor: "#FFFFFF"
-      }
+        textColor: "#FFFFFF",
+      },
     },
     description: "极简、纯净、留白优先的界面风格。",
     displayName: "Minimal",
@@ -1244,15 +1367,15 @@ const productStylePresets: Record<string, ProductStyleTemplate> = {
         success: "#10B981",
         surfaceMuted: "#F5F5F5",
         textPrimary: "#111827",
-        textSecondary: "#6B7280"
+        textSecondary: "#6B7280",
       },
       radius: { lg: "12px", md: "8px", sm: "4px" },
       shadow: {
         card: "0 1px 2px rgba(17, 24, 39, 0.04)",
-        panel: "0 12px 32px rgba(17, 24, 39, 0.10)"
-      }
-    }
-  }
+        panel: "0 12px 32px rgba(17, 24, 39, 0.10)",
+      },
+    },
+  },
 };
 
 const platformRules: DesignSpecTemplate["rules"] = {
@@ -1262,10 +1385,10 @@ const platformRules: DesignSpecTemplate["rules"] = {
       commandBarHeight: "48px",
       leftRailWidth: "72px",
       preferredColumns: 3,
-      primaryActionPlacement: "top command bar"
+      primaryActionPlacement: "top command bar",
     },
     structure: ["left rail navigation", "top command bar", "multi-column workspace", "status cards", "data table"],
-    template: "desktop-command-center"
+    template: "desktop-command-center",
   },
   global: {
     contrast: "WCAG AA",
@@ -1273,7 +1396,7 @@ const platformRules: DesignSpecTemplate["rules"] = {
     focusRing: "2px amber outline",
     keyboardAccessible: true,
     layoutPrinciple: "信息优先，减少装饰，保持后台工具的扫描效率",
-    minTouchTarget: "44px"
+    minTouchTarget: "44px",
   },
   mobile: {
     rules: {
@@ -1281,20 +1404,20 @@ const platformRules: DesignSpecTemplate["rules"] = {
       bottomAction: true,
       cardPadding: "16px",
       navigation: "top bar + optional bottom action",
-      singleColumn: true
+      singleColumn: true,
     },
     structure: ["top app bar", "stacked cards", "list rows", "bottom primary action"],
-    template: "mobile-product-shell"
+    template: "mobile-product-shell",
   },
   tablet: {
     rules: {
       detailPanelVisible: true,
       preferredColumns: 2,
       splitRatio: "40/60",
-      toolbarHeight: "48px"
+      toolbarHeight: "48px",
     },
     structure: ["top toolbar", "left list panel", "right detail panel", "secondary cards"],
-    template: "tablet-split-view"
+    template: "tablet-split-view",
   },
   web: {
     rules: {
@@ -1302,11 +1425,18 @@ const platformRules: DesignSpecTemplate["rules"] = {
       contentMaxWidth: "none",
       formLayout: "label above input",
       preferredColumns: 3,
-      sidebarWidth: "220px"
+      sidebarWidth: "220px",
     },
-    structure: ["top navigation", "left sidebar", "main content", "data cards", "table/list rows", "primary action button"],
-    template: "admin-workspace"
-  }
+    structure: [
+      "top navigation",
+      "left sidebar",
+      "main content",
+      "data cards",
+      "table/list rows",
+      "primary action button",
+    ],
+    template: "admin-workspace",
+  },
 };
 
 const designSpecPresets: Record<string, DesignSpecTemplate> = {
@@ -1320,17 +1450,17 @@ const designSpecPresets: Record<string, DesignSpecTemplate> = {
         ...platformRules.global,
         density: "comfortable",
         focusRing: "2px amber outline",
-        layoutPrinciple: "让内容创作流程保持清晰，突出预览、版本和主操作"
+        layoutPrinciple: "让内容创作流程保持清晰，突出预览、版本和主操作",
       },
       web: {
         ...platformRules.web,
         rules: {
           ...platformRules.web.rules,
           preferredColumns: 2,
-          sidebarWidth: "240px"
-        }
-      }
-    }
+          sidebarWidth: "240px",
+        },
+      },
+    },
   },
   mobileFirst: {
     description: "优先从移动端交互出发，强调单手操作与关键行为收敛。",
@@ -1343,38 +1473,38 @@ const designSpecPresets: Record<string, DesignSpecTemplate> = {
         rules: {
           ...platformRules.desktop.rules,
           allowDenseData: false,
-          preferredColumns: 2
-        }
+          preferredColumns: 2,
+        },
       },
       global: {
         ...platformRules.global,
         density: "comfortable",
         focusRing: "2px blue outline",
-        layoutPrinciple: "从小屏优先组织信息，再扩展到大屏"
+        layoutPrinciple: "从小屏优先组织信息，再扩展到大屏",
       },
       tablet: {
         ...platformRules.tablet,
         rules: {
           ...platformRules.tablet.rules,
-          splitRatio: "45/55"
-        }
+          splitRatio: "45/55",
+        },
       },
       web: {
         ...platformRules.web,
         rules: {
           ...platformRules.web.rules,
           contentMaxWidth: "1280px",
-          preferredColumns: 2
-        }
-      }
-    }
+          preferredColumns: 2,
+        },
+      },
+    },
   },
   platform: {
     description: "跨 Web、Mobile、Tablet、Desktop 的平台化设计规范，强调控件尺寸、导航结构、信息密度和可访问性。",
     displayName: "Platform Design",
     name: "platform-design",
-    rules: platformRules
-  }
+    rules: platformRules,
+  },
 };
 
 function resolveToken(input: string, style: ProductStyleTemplate): string {
@@ -1387,7 +1517,7 @@ function resolveToken(input: string, style: ProductStyleTemplate): string {
     "{radius.lg}": style.tokens.radius.lg,
     "{radius.md}": style.tokens.radius.md,
     "{radius.sm}": style.tokens.radius.sm,
-    "{shadow.card}": style.tokens.shadow.card
+    "{shadow.card}": style.tokens.shadow.card,
   };
 
   return map[input] ?? input;

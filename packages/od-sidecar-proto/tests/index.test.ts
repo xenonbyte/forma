@@ -105,7 +105,9 @@ describe("open-design sidecar contract", () => {
   });
 
   it("validates desktop IPC message inputs", () => {
-    expect(normalizeDesktopSidecarMessage({ input: { expression: "location.href" }, type: SIDECAR_MESSAGES.EVAL })).toEqual({
+    expect(
+      normalizeDesktopSidecarMessage({ input: { expression: "location.href" }, type: SIDECAR_MESSAGES.EVAL }),
+    ).toEqual({
       input: { expression: "location.href" },
       type: "eval",
     });
@@ -141,7 +143,7 @@ describe("open-design sidecar contract", () => {
           baseHref: "http://127.0.0.1:7456/api/projects/proj/raw/deck/",
           deck: true,
           defaultFilename: "Seed Deck.pdf",
-          html: "<!doctype html><section class=\"slide\">One</section>",
+          html: '<!doctype html><section class="slide">One</section>',
           title: "Seed Deck",
         },
         type: SIDECAR_MESSAGES.EXPORT_PDF,
@@ -151,7 +153,7 @@ describe("open-design sidecar contract", () => {
         baseHref: "http://127.0.0.1:7456/api/projects/proj/raw/deck/",
         deck: true,
         defaultFilename: "Seed Deck.pdf",
-        html: "<!doctype html><section class=\"slide\">One</section>",
+        html: '<!doctype html><section class="slide">One</section>',
         title: "Seed Deck",
       },
       type: "export-pdf",

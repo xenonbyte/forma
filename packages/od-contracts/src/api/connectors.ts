@@ -1,12 +1,12 @@
-import type { BoundedJsonObject, BoundedJsonValue } from './live-artifacts';
+import type { BoundedJsonObject, BoundedJsonValue } from "./live-artifacts";
 
-export type ConnectorStatus = 'available' | 'connected' | 'error' | 'disabled';
+export type ConnectorStatus = "available" | "connected" | "error" | "disabled";
 
-export type ConnectorToolSideEffect = 'read' | 'write' | 'destructive' | 'unknown';
+export type ConnectorToolSideEffect = "read" | "write" | "destructive" | "unknown";
 
-export type ConnectorToolApproval = 'auto' | 'confirm' | 'disabled';
+export type ConnectorToolApproval = "auto" | "confirm" | "disabled";
 
-export type ConnectorToolUseCase = 'personal_daily_digest';
+export type ConnectorToolUseCase = "personal_daily_digest";
 
 export interface ConnectorToolSafety {
   sideEffect: ConnectorToolSideEffect;
@@ -75,7 +75,7 @@ export interface ConnectorDetail {
 }
 
 export interface ConnectorAuthDetail {
-  provider: 'local' | 'none' | 'oauth' | 'composio';
+  provider: "local" | "none" | "oauth" | "composio";
   configured: boolean;
 }
 
@@ -94,7 +94,7 @@ export interface ConnectorStatusResponse {
 }
 
 export interface ConnectorDiscoveryMeta {
-  provider: 'composio';
+  provider: "composio";
   refreshRequested?: boolean;
 }
 
@@ -108,7 +108,7 @@ export interface ConnectorDetailResponse {
 
 export interface ConnectorConnectResponse extends ConnectorDetailResponse {
   auth?: {
-    kind: 'redirect_required' | 'pending' | 'connected';
+    kind: "redirect_required" | "pending" | "connected";
     redirectUrl?: string;
     providerConnectionId?: string;
     expiresAt?: string;
@@ -120,9 +120,9 @@ export interface ConnectorAuthConfigPrepareRequest {
 }
 
 export type ConnectorAuthConfigPrepareResult =
-  | { status: 'ready'; authConfigId: string }
-  | { status: 'custom_required'; message: string }
-  | { status: 'error'; message: string };
+  | { status: "ready"; authConfigId: string }
+  | { status: "custom_required"; message: string }
+  | { status: "error"; message: string };
 
 export interface ConnectorAuthConfigPrepareResponse {
   results: Record<string, ConnectorAuthConfigPrepareResult>;

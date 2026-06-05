@@ -1,8 +1,20 @@
 import JSZip from "jszip";
 
 import { redactJsonValue, type RedactionOptions } from "./redaction.js";
-import { buildManifest, buildMachineInfo, type DiagnosticsContext, type DiagnosticsManifest, type MachineInfo } from "./manifest.js";
-import { collectLogSources, findMacOSCrashReports, type CollectedFile, type CrashReportLookup, type LogSource } from "./sources.js";
+import {
+  buildManifest,
+  buildMachineInfo,
+  type DiagnosticsContext,
+  type DiagnosticsManifest,
+  type MachineInfo,
+} from "./manifest.js";
+import {
+  collectLogSources,
+  findMacOSCrashReports,
+  type CollectedFile,
+  type CrashReportLookup,
+  type LogSource,
+} from "./sources.js";
 
 const PLACEHOLDER_PREFIX = "; file unavailable: ";
 

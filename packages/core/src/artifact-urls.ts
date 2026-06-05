@@ -8,13 +8,8 @@
  * Build the URL for a file inside an artifact bundle.
  * e.g. /api/products/P-aabbcc/artifacts/<aid>/versions/3/bundle/index.html
  */
-export function artifactBundleUrl(
-  productId: string,
-  artifactId: string,
-  version: number,
-  relPath: string,
-): string {
-  const encodedSegments = relPath.split('/').map(encodeURIComponent).join('/');
+export function artifactBundleUrl(productId: string, artifactId: string, version: number, relPath: string): string {
+  const encodedSegments = relPath.split("/").map(encodeURIComponent).join("/");
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/bundle/${encodedSegments}`;
 }
 
@@ -22,12 +17,7 @@ export function artifactBundleUrl(
  * Build the URL for an artifact preview image.
  * e.g. /api/products/P-aabbcc/artifacts/<aid>/versions/3/preview/2x.png
  */
-export function artifactPreviewUrl(
-  productId: string,
-  artifactId: string,
-  version: number,
-  res: '1x' | '2x',
-): string {
+export function artifactPreviewUrl(productId: string, artifactId: string, version: number, res: "1x" | "2x"): string {
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/preview/${res}.png`;
 }
 
@@ -41,8 +31,8 @@ export function artifactPreviewUrl(
  *   path unchanged for all densities.
  */
 export function assetDensityPath(canonicalPath: string, density: number): string {
-  if (canonicalPath.includes('@1x.')) {
-    return canonicalPath.replace('@1x.', `@${density}x.`);
+  if (canonicalPath.includes("@1x.")) {
+    return canonicalPath.replace("@1x.", `@${density}x.`);
   }
   return canonicalPath;
 }

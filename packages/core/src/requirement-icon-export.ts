@@ -10,25 +10,22 @@
  * implementations via ExportRequirementIconsDeps.
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { randomBytes } from 'node:crypto';
-import { VIEWPORT_PRESETS } from '@vzi-core/parser';
-import type { DesignPointer } from './product.js';
-import type { IconManifest } from './artifact-icon-extraction.js';
-import { extractIconAssets } from './artifact-icon-extraction.js';
-import {
-  getArtifactIconsDir,
-  getArtifactVersionDir,
-} from './artifact-paths.js';
-import { FormaError } from './errors.js';
-import type { IconGeneratedFrom } from './artifact-icon-extraction.js';
-import type { Platform } from './schemas.js';
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { randomBytes } from "node:crypto";
+import { VIEWPORT_PRESETS } from "@vzi-core/parser";
+import type { DesignPointer } from "./product.js";
+import type { IconManifest } from "./artifact-icon-extraction.js";
+import { extractIconAssets } from "./artifact-icon-extraction.js";
+import { getArtifactIconsDir, getArtifactVersionDir } from "./artifact-paths.js";
+import { FormaError } from "./errors.js";
+import type { IconGeneratedFrom } from "./artifact-icon-extraction.js";
+import type { Platform } from "./schemas.js";
 import {
   listCurrentRequirementDesignPointers,
   type GetRequirementPageIds,
-} from './requirement-design-pointer-filter.js';
+} from "./requirement-design-pointer-filter.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -77,7 +74,7 @@ export interface ExportRequirementIconsResult {
 
 /** Derive a temp sibling path for atomic writes. */
 function tmpSiblingDir(iconsDir: string): string {
-  const suffix = randomBytes(4).toString('hex');
+  const suffix = randomBytes(4).toString("hex");
   return `${iconsDir}.tmp-${suffix}`;
 }
 
@@ -86,18 +83,18 @@ function resolveIconExtractionViewport(platform: Platform | undefined): {
   viewportHeight: number;
 } {
   switch (platform) {
-    case 'mobile':
+    case "mobile":
       return {
         viewportWidth: VIEWPORT_PRESETS.mobile.width,
         viewportHeight: VIEWPORT_PRESETS.mobile.height,
       };
-    case 'tablet':
+    case "tablet":
       return {
         viewportWidth: VIEWPORT_PRESETS.tablet.width,
         viewportHeight: VIEWPORT_PRESETS.tablet.height,
       };
-    case 'desktop':
-    case 'web':
+    case "desktop":
+    case "web":
     default:
       return {
         viewportWidth: VIEWPORT_PRESETS.desktop.width,
@@ -124,9 +121,7 @@ export async function exportRequirementIcons(
   const { productsRoot, getProductPlatform } = deps;
   const { productId, requirementId, generatedFrom } = input;
   const platform = getProductPlatform ? await getProductPlatform(productId) : undefined;
-  const viewport = getProductPlatform
-    ? resolveIconExtractionViewport(platform)
-    : undefined;
+  const viewport = getProductPlatform ? resolveIconExtractionViewport(platform) : undefined;
 
   const pointers = await listCurrentRequirementDesignPointers(deps, productId, requirementId);
 
@@ -137,7 +132,7 @@ export async function exportRequirementIcons(
 
     // Resolve paths
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
-    const htmlPath = join(versionDir, 'index.html');
+    const htmlPath = join(versionDir, "index.html");
     const iconsDir = getArtifactIconsDir(productsRoot, productId, artifactId);
     const tmpDir = tmpSiblingDir(iconsDir);
 
@@ -147,14 +142,16 @@ export async function exportRequirementIcons(
       try {
         htmlBuf = await deps.readFile(htmlPath);
       } catch (err) {
-        throw new FormaError(
-          'ARTIFACT_NOT_FOUND',
-          `Could not read index.html for artifact ${artifactId} v${version}`,
-          { productId, artifactId, version, path: htmlPath, cause: String(err) },
-        );
+        throw new FormaError("ARTIFACT_NOT_FOUND", `Could not read index.html for artifact ${artifactId} v${version}`, {
+          productId,
+          artifactId,
+          version,
+          path: htmlPath,
+          cause: String(err),
+        });
       }
 
-      const html = htmlBuf.toString('utf8');
+      const html = htmlBuf.toString("utf8");
 
       // Extract icons (no disk writes here — may throw FormaError)
       const { files, manifest } = await extractIconAssets(
@@ -184,9 +181,7 @@ export async function exportRequirementIcons(
       for (const [relativePath, buf] of files) {
         // relativePath starts with "icons/…", we strip that prefix since
         // we're writing directly into tmpDir (which will become icons/).
-        const strippedPath = relativePath.startsWith('icons/')
-          ? relativePath.slice('icons/'.length)
-          : relativePath;
+        const strippedPath = relativePath.startsWith("icons/") ? relativePath.slice("icons/".length) : relativePath;
         const destPath = join(tmpDir, strippedPath);
         const destDir = dirname(destPath);
         if (destDir !== tmpDir) {
@@ -197,7 +192,7 @@ export async function exportRequirementIcons(
 
       // Write icons.json
       const manifestJson = JSON.stringify(manifest, null, 2);
-      await deps.writeFile(join(tmpDir, 'icons.json'), manifestJson);
+      await deps.writeFile(join(tmpDir, "icons.json"), manifestJson);
 
       // Remove stale icons/ (if any), then atomic rename
       await deps.rmDir(iconsDir);
@@ -216,7 +211,7 @@ export async function exportRequirementIcons(
       // Re-wrap non-FormaError as FormaError
       if (err instanceof FormaError) throw err;
       throw new FormaError(
-        'ARTIFACT_WRITE_FAIL',
+        "ARTIFACT_WRITE_FAIL",
         `Icon export failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
         { productId, artifactId, pageId, cause: String(err) },
       );
@@ -251,6 +246,8 @@ export function makeExportRequirementIconsDeps(
     },
     rmDir: (path) => rm(path, { recursive: true, force: true }),
     rename: (src, dest) => rename(src, dest),
-    mkdir: async (path) => { await mkdir(path, { recursive: true }); },
+    mkdir: async (path) => {
+      await mkdir(path, { recursive: true });
+    },
   };
 }

@@ -1,7 +1,7 @@
-import { createRoot } from 'react-dom/client';
-import './theme.css';
-import { ConnectionGate } from './ConnectionGate.js';
-import { AppShell } from './AppShell.js';
+import { createRoot } from "react-dom/client";
+import "./theme.css";
+import { ConnectionGate } from "./ConnectionGate.js";
+import { AppShell } from "./AppShell.js";
 
 export function App() {
   return (
@@ -11,7 +11,7 @@ export function App() {
   );
 }
 
-const container = document.getElementById('root');
+const container = document.getElementById("root");
 if (container) {
   createRoot(container).render(<App />);
 }

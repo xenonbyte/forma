@@ -9,7 +9,7 @@
 // every event inherits it.
 export const EVENT_SCHEMA_VERSION = 2;
 
-export type AnalyticsClientType = 'web' | 'desktop';
+export type AnalyticsClientType = "web" | "desktop";
 
 export interface AnalyticsPublicParams {
   event_id: string;
@@ -31,17 +31,9 @@ export interface AnalyticsPublicParams {
 // re-registered when the user's execution-mode config changes (mode switch,
 // BYOK key save, CLI rescan). Lives here, not in per-event prop types, so
 // every event automatically inherits the latest state.
-export type TrackingConfigureType =
-  | 'local_cli'
-  | 'byok'
-  | 'both'
-  | 'none'
-  | 'unknown';
+export type TrackingConfigureType = "local_cli" | "byok" | "both" | "none" | "unknown";
 
-export type TrackingConfigureAvailability =
-  | 'available'
-  | 'unavailable'
-  | 'unknown';
+export type TrackingConfigureAvailability = "available" | "unavailable" | "unknown";
 
 export interface AnalyticsConfigureGlobals {
   has_available_configure_cli: boolean;
@@ -52,11 +44,11 @@ export interface AnalyticsConfigureGlobals {
 // Wire format used between web and daemon to bridge identity. Web sets these
 // on every fetch/SSE request; daemon reads them off req.headers when emitting
 // server-side events so the distinct_id matches.
-export const ANALYTICS_HEADER_DEVICE_ID = 'x-od-analytics-device-id';
-export const ANALYTICS_HEADER_SESSION_ID = 'x-od-analytics-session-id';
-export const ANALYTICS_HEADER_CLIENT_TYPE = 'x-od-analytics-client-type';
-export const ANALYTICS_HEADER_LOCALE = 'x-od-analytics-locale';
-export const ANALYTICS_HEADER_REQUEST_ID = 'x-od-analytics-request-id';
+export const ANALYTICS_HEADER_DEVICE_ID = "x-od-analytics-device-id";
+export const ANALYTICS_HEADER_SESSION_ID = "x-od-analytics-session-id";
+export const ANALYTICS_HEADER_CLIENT_TYPE = "x-od-analytics-client-type";
+export const ANALYTICS_HEADER_LOCALE = "x-od-analytics-locale";
+export const ANALYTICS_HEADER_REQUEST_ID = "x-od-analytics-request-id";
 
 // Daemon serves the PostHog public config so the web bundle never embeds the
 // key at build time; loading via /api/analytics/config keeps POSTHOG_KEY /

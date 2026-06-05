@@ -32,12 +32,10 @@ export type {
   // 边界类型
   ElementBounds,
   PageRect,
-
   // 计算结果类型
   DistanceData,
   RulerData,
   CalculationResult,
-
   // 样式类型
   DistanceStyle,
   RulerStyle,
@@ -46,16 +44,14 @@ export type {
   AnnotationStyleConfig,
   PartialAnnotationStyleConfig,
   AnnotationTheme,
-
   // 视口类型
   ViewportConfig,
   ViewportState,
-
   // 渲染器类型
   AnnotationElement,
   AnnotationRendererOptions,
   AnnotationRenderContext,
-} from './types';
+} from "./types";
 
 // ============================================
 // 距离计算器导出
@@ -68,7 +64,7 @@ export {
   getSortedNumbers,
   getMidNumbers,
   getAverage,
-} from './DistanceCalculator';
+} from "./DistanceCalculator";
 
 // ============================================
 // 样式系统导出
@@ -79,26 +75,26 @@ export {
   DEFAULT_ANNOTATION_STYLES,
   buildAnnotationStylesFromTheme,
   resolveAnnotationStyleConfig,
-} from './AnnotationStyles';
+} from "./AnnotationStyles";
 
 // ============================================
 // 视口管理导出
 // ============================================
 
-export { ViewportManager } from './ViewportManager';
+export { ViewportManager } from "./ViewportManager";
 
 // ============================================
 // 标注渲染器导出
 // ============================================
 
-export { CanvasAnnotationRenderer } from './AnnotationRenderer';
+export { CanvasAnnotationRenderer } from "./AnnotationRenderer";
 // 兼容性别名
-export { CanvasAnnotationRenderer as AnnotationRenderer } from './AnnotationRenderer';
+export { CanvasAnnotationRenderer as AnnotationRenderer } from "./AnnotationRenderer";
 
 // ============================================
 // 子渲染器导出
 // ============================================
 
-export { DistanceRenderer } from './renderers/DistanceRenderer';
-export { DimensionRenderer } from './renderers/DimensionRenderer';
-export { RulerRenderer } from './renderers/RulerRenderer';
+export { DistanceRenderer } from "./renderers/DistanceRenderer";
+export { DimensionRenderer } from "./renderers/DimensionRenderer";
+export { RulerRenderer } from "./renderers/RulerRenderer";

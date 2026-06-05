@@ -10,7 +10,7 @@ export type {
   DeleteProductResult,
   ProductDeletionPhase,
   ProductDeletionRecoveryResult,
-  ProductDeletionState
+  ProductDeletionState,
 } from "./product-deletion.js";
 export * from "./product-mutation-lock.js";
 export * from "./copy.js";

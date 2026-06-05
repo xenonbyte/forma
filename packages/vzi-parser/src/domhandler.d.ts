@@ -1,4 +1,4 @@
-declare module 'domhandler' {
+declare module "domhandler" {
   export interface AnyNode {
     type?: string;
     parent?: AnyNode | null;

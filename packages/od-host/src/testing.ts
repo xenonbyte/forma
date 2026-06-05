@@ -6,7 +6,9 @@ import {
   type OpenDesignHostUpdaterStatusSnapshot,
 } from "./index.js";
 
-export type MockOpenDesignHost = Partial<Omit<OpenDesignHostBridge, "client" | "pdf" | "pet" | "project" | "shell" | "updater">> & {
+export type MockOpenDesignHost = Partial<
+  Omit<OpenDesignHostBridge, "client" | "pdf" | "pet" | "project" | "shell" | "updater">
+> & {
   client?: Partial<OpenDesignHostBridge["client"]>;
   pdf?: Partial<OpenDesignHostBridge["pdf"]>;
   pet?: Partial<OpenDesignHostBridge["pet"]>;
@@ -102,7 +104,7 @@ export function installMockOpenDesignHost(options: MockOpenDesignHostOptions = {
       : []),
   ];
   const previous = targets.map((target) => ({
-    had: Object.prototype.hasOwnProperty.call(target, OPEN_DESIGN_HOST_GLOBAL),
+    had: Object.hasOwn(target, OPEN_DESIGN_HOST_GLOBAL),
     target,
     value: target[OPEN_DESIGN_HOST_GLOBAL],
   }));

@@ -11,9 +11,9 @@
  * - 效果（阴影、滤镜等）
  */
 
-import { memo } from 'react';
-import type { JSX } from 'react';
-import type { IRElement, IRStyles, IRSource, IREffects, IRTransform } from '@vzi-core/types';
+import { memo } from "react";
+import type { JSX } from "react";
+import type { IRElement, IRStyles, IRSource, IREffects, IRTransform } from "@vzi-core/types";
 
 /**
  * 属性面板属性
@@ -35,47 +35,47 @@ export interface PropertyPanelProps {
  * 面板样式常量
  */
 const PANEL_STYLES = {
-  headerBg: '#f5f5f5',
-  headerColor: '#333333',
-  borderColor: '#e0e0e0',
-  labelColor: '#666666',
-  valueColor: '#333333',
-  sectionTitleColor: '#888888',
+  headerBg: "#f5f5f5",
+  headerColor: "#333333",
+  borderColor: "#e0e0e0",
+  labelColor: "#666666",
+  valueColor: "#333333",
+  sectionTitleColor: "#888888",
   fontSize: 12,
   lineHeight: 1.5,
-  rowPadding: '6px 12px',
+  rowPadding: "6px 12px",
 };
 
 /**
  * 元素类型中文映射
  */
 const ELEMENT_TYPE_NAMES: Record<string, string> = {
-  container: '容器',
-  text: '文本',
-  image: '图片',
-  button: '按钮',
-  input: '输入框',
-  link: '链接',
+  container: "容器",
+  text: "文本",
+  image: "图片",
+  button: "按钮",
+  input: "输入框",
+  link: "链接",
 };
 
 /**
  * 元素类型图标
  */
 const ELEMENT_TYPE_ICONS: Record<string, string> = {
-  container: '📦',
-  text: '📝',
-  image: '🖼️',
-  button: '🔘',
-  input: '✏️',
-  link: '🔗',
+  container: "📦",
+  text: "📝",
+  image: "🖼️",
+  button: "🔘",
+  input: "✏️",
+  link: "🔗",
 };
 
 /**
  * 格式化像素值
  */
 function formatPixel(value: number | string | undefined | null): string {
-  if (value === undefined || value === null) return '-';
-  if (typeof value === 'number') return `${Math.round(value * 100) / 100}px`;
+  if (value === undefined || value === null) return "-";
+  if (typeof value === "number") return `${Math.round(value * 100) / 100}px`;
   const num = parseFloat(value);
   if (isNaN(num)) return String(value);
   return `${Math.round(num * 100) / 100}px`;
@@ -85,7 +85,7 @@ function formatPixel(value: number | string | undefined | null): string {
  * 格式化颜色值（截断过长的颜色）
  */
 function formatColor(color: string | undefined | null): string {
-  if (!color) return '-';
+  if (!color) return "-";
   // 保留颜色格式但截断过长的值
   if (color.length > 30) {
     return `${color.slice(0, 27)}...`;
@@ -97,8 +97,8 @@ function formatColor(color: string | undefined | null): string {
  * 格式化透明度
  */
 function formatOpacity(value: string | number | undefined | null): string {
-  if (value === undefined || value === null) return '-';
-  const num = typeof value === 'string' ? parseFloat(value) : value;
+  if (value === undefined || value === null) return "-";
+  const num = typeof value === "string" ? parseFloat(value) : value;
   if (isNaN(num)) return String(value);
   return `${Math.round(num * 100)}%`;
 }
@@ -128,24 +128,18 @@ interface PropertyRowProps {
   mono?: boolean;
 }
 
-const PropertyRow = memo<PropertyRowProps>(({
-  label,
-  value,
-  valueColor,
-  onClick,
-  mono = false,
-}) => (
+const PropertyRow = memo<PropertyRowProps>(({ label, value, valueColor, onClick, mono = false }) => (
   <div
     style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'flex-start',
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
       padding: PANEL_STYLES.rowPadding,
       borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-      cursor: onClick ? 'pointer' : 'default',
+      cursor: onClick ? "pointer" : "default",
     }}
     onClick={onClick}
-    title={onClick ? '点击复制' : undefined}
+    title={onClick ? "点击复制" : undefined}
   >
     <span
       style={{
@@ -160,9 +154,9 @@ const PropertyRow = memo<PropertyRowProps>(({
       style={{
         color: valueColor || PANEL_STYLES.valueColor,
         fontSize: PANEL_STYLES.fontSize,
-        fontFamily: mono ? 'monospace' : undefined,
-        wordBreak: 'break-all',
-        textAlign: 'right',
+        fontFamily: mono ? "monospace" : undefined,
+        wordBreak: "break-all",
+        textAlign: "right",
         marginLeft: 12,
       }}
     >
@@ -171,7 +165,7 @@ const PropertyRow = memo<PropertyRowProps>(({
   </div>
 ));
 
-PropertyRow.displayName = 'PropertyRow';
+PropertyRow.displayName = "PropertyRow";
 
 /**
  * 分隔标题组件
@@ -180,24 +174,24 @@ interface SectionTitleProps {
   title: string;
 }
 
-const SectionTitle = memo<SectionTitleProps>((({ title }) => (
+const SectionTitle = memo<SectionTitleProps>(({ title }) => (
   <div
     style={{
-      padding: '8px 12px 4px',
+      padding: "8px 12px 4px",
       fontSize: 11,
       fontWeight: 600,
       color: PANEL_STYLES.sectionTitleColor,
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
+      textTransform: "uppercase",
+      letterSpacing: "0.5px",
       borderTop: `1px solid ${PANEL_STYLES.borderColor}`,
       marginTop: 4,
     }}
   >
     {title}
   </div>
-)));
+));
 
-SectionTitle.displayName = 'SectionTitle';
+SectionTitle.displayName = "SectionTitle";
 
 /**
  * 颜色预览组件
@@ -208,45 +202,43 @@ interface ColorPreviewProps {
   onClick?: () => void;
 }
 
-const ColorPreview = memo<ColorPreviewProps>((({ color, label, onClick }) => (
+const ColorPreview = memo<ColorPreviewProps>(({ color, label, onClick }) => (
   <div
     style={{
-      display: 'flex',
-      alignItems: 'center',
+      display: "flex",
+      alignItems: "center",
       gap: 8,
       padding: PANEL_STYLES.rowPadding,
       borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-      cursor: onClick ? 'pointer' : 'default',
+      cursor: onClick ? "pointer" : "default",
     }}
     onClick={onClick}
-    title={onClick ? '点击复制' : undefined}
+    title={onClick ? "点击复制" : undefined}
   >
     <div
       style={{
         width: 16,
         height: 16,
-        backgroundColor: color || 'transparent',
+        backgroundColor: color || "transparent",
         border: `1px solid ${PANEL_STYLES.borderColor}`,
         borderRadius: 2,
         flexShrink: 0,
       }}
     />
-    <span style={{ color: PANEL_STYLES.labelColor, fontSize: PANEL_STYLES.fontSize, flex: 1 }}>
-      {label}
-    </span>
+    <span style={{ color: PANEL_STYLES.labelColor, fontSize: PANEL_STYLES.fontSize, flex: 1 }}>{label}</span>
     <span
       style={{
         color: PANEL_STYLES.valueColor,
         fontSize: PANEL_STYLES.fontSize,
-        fontFamily: 'monospace',
+        fontFamily: "monospace",
       }}
     >
       {formatColor(color)}
     </span>
   </div>
-)));
+));
 
-ColorPreview.displayName = 'ColorPreview';
+ColorPreview.displayName = "ColorPreview";
 
 /**
  * 空状态组件
@@ -254,15 +246,15 @@ ColorPreview.displayName = 'ColorPreview';
 const EmptyState = memo(() => (
   <div
     style={{
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      height: '100%',
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      height: "100%",
       color: PANEL_STYLES.labelColor,
       fontSize: PANEL_STYLES.fontSize,
       padding: 24,
-      textAlign: 'center',
+      textAlign: "center",
     }}
   >
     <div style={{ fontSize: 32, marginBottom: 12 }}>👆</div>
@@ -271,32 +263,21 @@ const EmptyState = memo(() => (
   </div>
 ));
 
-EmptyState.displayName = 'EmptyState';
+EmptyState.displayName = "EmptyState";
 
 /**
  * 渲染基本信息区域
  */
-function renderBasicInfo(
-  element: IRElement,
-  onPropertyValueClick?: (key: string, value: string) => void
-): JSX.Element {
+function renderBasicInfo(element: IRElement, onPropertyValueClick?: (key: string, value: string) => void): JSX.Element {
   const { id, type, source } = element;
 
   return (
     <>
       {/* 类型 */}
-      <PropertyRow
-        label="类型"
-        value={`${ELEMENT_TYPE_ICONS[type] || '📦'} ${ELEMENT_TYPE_NAMES[type] || type}`}
-      />
+      <PropertyRow label="类型" value={`${ELEMENT_TYPE_ICONS[type] || "📦"} ${ELEMENT_TYPE_NAMES[type] || type}`} />
 
       {/* ID */}
-      <PropertyRow
-        label="ID"
-        value={id}
-        mono
-        onClick={() => onPropertyValueClick?.('id', id)}
-      />
+      <PropertyRow label="ID" value={id} mono onClick={() => onPropertyValueClick?.("id", id)} />
 
       {/* 标签名 */}
       {source?.tagName && (
@@ -304,7 +285,7 @@ function renderBasicInfo(
           label="标签"
           value={source.tagName.toLowerCase()}
           mono
-          onClick={() => onPropertyValueClick?.('tagName', source.tagName!)}
+          onClick={() => onPropertyValueClick?.("tagName", source.tagName!)}
         />
       )}
 
@@ -314,7 +295,7 @@ function renderBasicInfo(
           label="类名"
           value={source.className}
           mono
-          onClick={() => onPropertyValueClick?.('className', source.className!)}
+          onClick={() => onPropertyValueClick?.("className", source.className!)}
         />
       )}
 
@@ -324,25 +305,15 @@ function renderBasicInfo(
           label="DOM ID"
           value={`#${source.id}`}
           mono
-          onClick={() => onPropertyValueClick?.('domId', source.id!)}
+          onClick={() => onPropertyValueClick?.("domId", source.id!)}
         />
       )}
 
       {/* 语义角色 */}
-      {source?.ariaAttributes?.role && (
-        <PropertyRow
-          label="角色"
-          value={source.ariaAttributes.role}
-        />
-      )}
+      {source?.ariaAttributes?.role && <PropertyRow label="角色" value={source.ariaAttributes.role} />}
 
       {/* 组件名（如果有） */}
-      {element.metadata?.componentName && (
-        <PropertyRow
-          label="组件"
-          value={String(element.metadata.componentName)}
-        />
-      )}
+      {element.metadata?.componentName && <PropertyRow label="组件" value={String(element.metadata.componentName)} />}
     </>
   );
 }
@@ -352,7 +323,7 @@ function renderBasicInfo(
  */
 function renderPositionAndSize(
   element: IRElement,
-  onPropertyValueClick?: (key: string, value: string) => void
+  onPropertyValueClick?: (key: string, value: string) => void,
 ): JSX.Element {
   const { bounds } = element;
 
@@ -363,25 +334,25 @@ function renderPositionAndSize(
       <PropertyRow
         label="X"
         value={formatPixel(bounds.x)}
-        onClick={() => onPropertyValueClick?.('x', String(bounds.x))}
+        onClick={() => onPropertyValueClick?.("x", String(bounds.x))}
       />
 
       <PropertyRow
         label="Y"
         value={formatPixel(bounds.y)}
-        onClick={() => onPropertyValueClick?.('y', String(bounds.y))}
+        onClick={() => onPropertyValueClick?.("y", String(bounds.y))}
       />
 
       <PropertyRow
         label="宽度"
         value={formatPixel(bounds.width)}
-        onClick={() => onPropertyValueClick?.('width', String(bounds.width))}
+        onClick={() => onPropertyValueClick?.("width", String(bounds.width))}
       />
 
       <PropertyRow
         label="高度"
         value={formatPixel(bounds.height)}
-        onClick={() => onPropertyValueClick?.('height', String(bounds.height))}
+        onClick={() => onPropertyValueClick?.("height", String(bounds.height))}
       />
     </>
   );
@@ -392,9 +363,9 @@ function renderPositionAndSize(
  */
 function renderStyles(
   styles: IRStyles,
-  onPropertyValueClick?: (key: string, value: string) => void
+  onPropertyValueClick?: (key: string, value: string) => void,
 ): JSX.Element | null {
-  const hasStyles = Object.keys(styles).some(key => styles[key] !== undefined && styles[key] !== null);
+  const hasStyles = Object.keys(styles).some((key) => styles[key] !== undefined && styles[key] !== null);
   if (!hasStyles) return null;
 
   return (
@@ -406,7 +377,7 @@ function renderStyles(
         <ColorPreview
           color={styles.backgroundColor as string}
           label="背景色"
-          onClick={() => onPropertyValueClick?.('backgroundColor', styles.backgroundColor as string)}
+          onClick={() => onPropertyValueClick?.("backgroundColor", styles.backgroundColor as string)}
         />
       )}
 
@@ -415,7 +386,7 @@ function renderStyles(
         <PropertyRow
           label="背景"
           value={formatColor(styles.background as string)}
-          onClick={() => onPropertyValueClick?.('background', styles.background as string)}
+          onClick={() => onPropertyValueClick?.("background", styles.background as string)}
         />
       )}
 
@@ -424,7 +395,7 @@ function renderStyles(
         <PropertyRow
           label="透明度"
           value={formatOpacity(styles.opacity)}
-          onClick={() => onPropertyValueClick?.('opacity', String(styles.opacity))}
+          onClick={() => onPropertyValueClick?.("opacity", String(styles.opacity))}
         />
       )}
 
@@ -433,7 +404,7 @@ function renderStyles(
         <PropertyRow
           label="边框"
           value={styles.border as string}
-          onClick={() => onPropertyValueClick?.('border', styles.border as string)}
+          onClick={() => onPropertyValueClick?.("border", styles.border as string)}
         />
       )}
 
@@ -442,24 +413,19 @@ function renderStyles(
         <ColorPreview
           color={styles.borderColor as string}
           label="边框颜色"
-          onClick={() => onPropertyValueClick?.('borderColor', styles.borderColor as string)}
+          onClick={() => onPropertyValueClick?.("borderColor", styles.borderColor as string)}
         />
       )}
 
       {/* 边框宽度 */}
-      {styles.borderWidth && (
-        <PropertyRow
-          label="边框宽度"
-          value={formatPixel(styles.borderWidth)}
-        />
-      )}
+      {styles.borderWidth && <PropertyRow label="边框宽度" value={formatPixel(styles.borderWidth)} />}
 
       {/* 边框圆角 */}
       {styles.borderRadius && (
         <PropertyRow
           label="圆角"
           value={formatBorderRadius(styles.borderRadius)}
-          onClick={() => onPropertyValueClick?.('borderRadius', styles.borderRadius as string)}
+          onClick={() => onPropertyValueClick?.("borderRadius", styles.borderRadius as string)}
         />
       )}
 
@@ -468,7 +434,7 @@ function renderStyles(
         <PropertyRow
           label="阴影"
           value={styles.boxShadow as string}
-          onClick={() => onPropertyValueClick?.('boxShadow', styles.boxShadow as string)}
+          onClick={() => onPropertyValueClick?.("boxShadow", styles.boxShadow as string)}
         />
       )}
 
@@ -479,7 +445,7 @@ function renderStyles(
             <PropertyRow
               label="字号"
               value={formatFontSize(styles.fontSize)}
-              onClick={() => onPropertyValueClick?.('fontSize', String(styles.fontSize))}
+              onClick={() => onPropertyValueClick?.("fontSize", String(styles.fontSize))}
             />
           )}
 
@@ -487,16 +453,11 @@ function renderStyles(
             <PropertyRow
               label="字重"
               value={String(styles.fontWeight)}
-              onClick={() => onPropertyValueClick?.('fontWeight', String(styles.fontWeight))}
+              onClick={() => onPropertyValueClick?.("fontWeight", String(styles.fontWeight))}
             />
           )}
 
-          {styles.fontFamily && (
-            <PropertyRow
-              label="字体"
-              value={styles.fontFamily as string}
-            />
-          )}
+          {styles.fontFamily && <PropertyRow label="字体" value={styles.fontFamily as string} />}
         </>
       )}
 
@@ -505,49 +466,24 @@ function renderStyles(
         <ColorPreview
           color={styles.color as string}
           label="文本颜色"
-          onClick={() => onPropertyValueClick?.('color', styles.color as string)}
+          onClick={() => onPropertyValueClick?.("color", styles.color as string)}
         />
       )}
 
       {/* 行高 */}
-      {styles.lineHeight && (
-        <PropertyRow
-          label="行高"
-          value={String(styles.lineHeight)}
-        />
-      )}
+      {styles.lineHeight && <PropertyRow label="行高" value={String(styles.lineHeight)} />}
 
       {/* 文本对齐 */}
-      {styles.textAlign && (
-        <PropertyRow
-          label="对齐"
-          value={String(styles.textAlign)}
-        />
-      )}
+      {styles.textAlign && <PropertyRow label="对齐" value={String(styles.textAlign)} />}
 
       {/* 显示类型 */}
-      {styles.display && (
-        <PropertyRow
-          label="Display"
-          value={String(styles.display)}
-        />
-      )}
+      {styles.display && <PropertyRow label="Display" value={String(styles.display)} />}
 
       {/* 定位 */}
-      {styles.position && (
-        <PropertyRow
-          label="Position"
-          value={String(styles.position)}
-        />
-      )}
+      {styles.position && <PropertyRow label="Position" value={String(styles.position)} />}
 
       {/* 层级 */}
-      {styles.zIndex && (
-        <PropertyRow
-          label="层级"
-          value={String(styles.zIndex)}
-        />
-      )}
+      {styles.zIndex && <PropertyRow label="层级" value={String(styles.zIndex)} />}
     </>
   );
 }
@@ -557,14 +493,12 @@ function renderStyles(
  */
 function renderTextContent(
   textContent: string | undefined,
-  onPropertyValueClick?: (key: string, value: string) => void
+  onPropertyValueClick?: (key: string, value: string) => void,
 ): JSX.Element | null {
   if (!textContent) return null;
 
   // 截断过长的文本
-  const displayText = textContent.length > 100
-    ? `${textContent.slice(0, 100)}...`
-    : textContent;
+  const displayText = textContent.length > 100 ? `${textContent.slice(0, 100)}...` : textContent;
 
   return (
     <>
@@ -573,9 +507,9 @@ function renderTextContent(
         style={{
           padding: PANEL_STYLES.rowPadding,
           borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-          cursor: 'pointer',
+          cursor: "pointer",
         }}
-        onClick={() => onPropertyValueClick?.('textContent', textContent)}
+        onClick={() => onPropertyValueClick?.("textContent", textContent)}
         title="点击复制完整内容"
       >
         <div
@@ -583,8 +517,8 @@ function renderTextContent(
             fontSize: PANEL_STYLES.fontSize,
             color: PANEL_STYLES.valueColor,
             lineHeight: PANEL_STYLES.lineHeight,
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
           }}
         >
           {displayText}
@@ -610,7 +544,7 @@ function renderTextContent(
  */
 function renderEffects(
   effects: IREffects | undefined,
-  onPropertyValueClick?: (key: string, value: string) => void
+  onPropertyValueClick?: (key: string, value: string) => void,
 ): JSX.Element | null {
   if (!effects) return null;
 
@@ -649,7 +583,7 @@ function renderEffects(
  */
 function renderTransform(
   transform: IRTransform | undefined,
-  onPropertyValueClick?: (key: string, value: string) => void
+  onPropertyValueClick?: (key: string, value: string) => void,
 ): JSX.Element | null {
   if (!transform) return null;
 
@@ -663,8 +597,8 @@ function renderTransform(
       {translate && (
         <PropertyRow
           label="位移"
-          value={`(${translate.x}, ${translate.y}${translate.z !== undefined ? `, ${translate.z}` : ''})`}
-          onClick={() => onPropertyValueClick?.('translate', JSON.stringify(translate))}
+          value={`(${translate.x}, ${translate.y}${translate.z !== undefined ? `, ${translate.z}` : ""})`}
+          onClick={() => onPropertyValueClick?.("translate", JSON.stringify(translate))}
         />
       )}
 
@@ -672,15 +606,15 @@ function renderTransform(
         <PropertyRow
           label="旋转"
           value={`(${rotate.x ?? 0}°, ${rotate.y ?? 0}°, ${rotate.z ?? 0}°)`}
-          onClick={() => onPropertyValueClick?.('rotate', JSON.stringify(rotate))}
+          onClick={() => onPropertyValueClick?.("rotate", JSON.stringify(rotate))}
         />
       )}
 
       {scale && (
         <PropertyRow
           label="缩放"
-          value={`(${scale.x}, ${scale.y}${scale.z !== undefined ? `, ${scale.z}` : ''})`}
-          onClick={() => onPropertyValueClick?.('scale', JSON.stringify(scale))}
+          value={`(${scale.x}, ${scale.y}${scale.z !== undefined ? `, ${scale.z}` : ""})`}
+          onClick={() => onPropertyValueClick?.("scale", JSON.stringify(scale))}
         />
       )}
     </>
@@ -692,7 +626,7 @@ function renderTransform(
  */
 function renderLinkProps(
   source: IRSource | undefined,
-  onPropertyValueClick?: (key: string, value: string) => void
+  onPropertyValueClick?: (key: string, value: string) => void,
 ): JSX.Element | null {
   if (!source) return null;
 
@@ -703,36 +637,19 @@ function renderLinkProps(
     <>
       <SectionTitle title="链接属性" />
 
-      {href && (
-        <PropertyRow
-          label="链接"
-          value={href}
-          onClick={() => onPropertyValueClick?.('href', href)}
-        />
-      )}
+      {href && <PropertyRow label="链接" value={href} onClick={() => onPropertyValueClick?.("href", href)} />}
 
-      {target && (
-        <PropertyRow
-          label="目标"
-          value={target}
-        />
-      )}
+      {target && <PropertyRow label="目标" value={target} />}
 
       {src && (
         <PropertyRow
           label="资源"
           value={src.length > 50 ? `${src.slice(0, 50)}...` : src}
-          onClick={() => onPropertyValueClick?.('src', src)}
+          onClick={() => onPropertyValueClick?.("src", src)}
         />
       )}
 
-      {alt && (
-        <PropertyRow
-          label="替代文本"
-          value={alt}
-          onClick={() => onPropertyValueClick?.('alt', alt)}
-        />
-      )}
+      {alt && <PropertyRow label="替代文本" value={alt} onClick={() => onPropertyValueClick?.("alt", alt)} />}
     </>
   );
 }
@@ -740,100 +657,96 @@ function renderLinkProps(
 /**
  * 属性面板主组件
  */
-export const PropertyPanel: React.FC<PropertyPanelProps> = memo(({
-  element,
-  className,
-  style,
-  detailed = false,
-  onPropertyValueClick,
-}) => {
-  // 如果没有选中元素，显示空状态
-  if (!element) {
+export const PropertyPanel: React.FC<PropertyPanelProps> = memo(
+  ({ element, className, style, detailed = false, onPropertyValueClick }) => {
+    // 如果没有选中元素，显示空状态
+    if (!element) {
+      return (
+        <div
+          className={className}
+          style={{
+            width: "100%",
+            height: "100%",
+            backgroundColor: "#ffffff",
+            border: `1px solid ${PANEL_STYLES.borderColor}`,
+            borderRadius: 4,
+            overflow: "hidden",
+            ...style,
+          }}
+        >
+          <EmptyState />
+        </div>
+      );
+    }
+
+    const { styles, textContent, source, effects, transform } = element;
+
     return (
       <div
         className={className}
         style={{
-          width: '100%',
-          height: '100%',
-          backgroundColor: '#ffffff',
+          width: "100%",
+          height: "100%",
+          backgroundColor: "#ffffff",
           border: `1px solid ${PANEL_STYLES.borderColor}`,
           borderRadius: 4,
-          overflow: 'hidden',
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
           ...style,
         }}
       >
-        <EmptyState />
+        {/* 头部 */}
+        <div
+          style={{
+            padding: "10px 12px",
+            borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
+            backgroundColor: PANEL_STYLES.headerBg,
+            fontWeight: 600,
+            fontSize: 13,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+          }}
+        >
+          <span>{ELEMENT_TYPE_ICONS[element.type] || "📦"}</span>
+          <span>属性</span>
+        </div>
+
+        {/* 内容区域 */}
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+          }}
+        >
+          {/* 基本信息 */}
+          {renderBasicInfo(element, onPropertyValueClick)}
+
+          {/* 位置和尺寸 */}
+          {renderPositionAndSize(element, onPropertyValueClick)}
+
+          {/* 样式 */}
+          {renderStyles(styles, onPropertyValueClick)}
+
+          {/* 文本内容 */}
+          {renderTextContent(textContent, onPropertyValueClick)}
+
+          {/* 链接属性 */}
+          {renderLinkProps(source, onPropertyValueClick)}
+
+          {/* 效果 */}
+          {renderEffects(effects, onPropertyValueClick)}
+
+          {/* 变换 */}
+          {detailed && renderTransform(transform, onPropertyValueClick)}
+
+          {/* 底部空白 */}
+          <div style={{ height: 12 }} />
+        </div>
       </div>
     );
-  }
+  },
+);
 
-  const { styles, textContent, source, effects, transform } = element;
-
-  return (
-    <div
-      className={className}
-      style={{
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#ffffff',
-        border: `1px solid ${PANEL_STYLES.borderColor}`,
-        borderRadius: 4,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        ...style,
-      }}
-    >
-      {/* 头部 */}
-      <div
-        style={{
-          padding: '10px 12px',
-          borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-          backgroundColor: PANEL_STYLES.headerBg,
-          fontWeight: 600,
-          fontSize: 13,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-        }}
-      >
-        <span>{ELEMENT_TYPE_ICONS[element.type] || '📦'}</span>
-        <span>属性</span>
-      </div>
-
-      {/* 内容区域 */}
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-        }}
-      >
-        {/* 基本信息 */}
-        {renderBasicInfo(element, onPropertyValueClick)}
-
-        {/* 位置和尺寸 */}
-        {renderPositionAndSize(element, onPropertyValueClick)}
-
-        {/* 样式 */}
-        {renderStyles(styles, onPropertyValueClick)}
-
-        {/* 文本内容 */}
-        {renderTextContent(textContent, onPropertyValueClick)}
-
-        {/* 链接属性 */}
-        {renderLinkProps(source, onPropertyValueClick)}
-
-        {/* 效果 */}
-        {renderEffects(effects, onPropertyValueClick)}
-
-        {/* 变换 */}
-        {detailed && renderTransform(transform, onPropertyValueClick)}
-
-        {/* 底部空白 */}
-        <div style={{ height: 12 }} />
-      </div>
-    </div>
-  );
-});
-
-PropertyPanel.displayName = 'PropertyPanel';
+PropertyPanel.displayName = "PropertyPanel";

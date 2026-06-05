@@ -4,28 +4,28 @@
  * 将 CSS 边框样式转换为 CanvasKit Path 和 Paint
  */
 
-import type { CanvasKit, Path, Paint } from 'canvaskit-wasm';
-import { toCanvasKitColor } from './ColorConverter';
+import type { CanvasKit, Path, Paint } from "canvaskit-wasm";
+import { toCanvasKitColor } from "./ColorConverter";
 
 export interface BorderStyle {
   width: number;
   color: string;
-  style: 'solid' | 'dashed' | 'dotted';
+  style: "solid" | "dashed" | "dotted";
   radius: number[];
 }
 
 function splitTokensOutsideParens(input: string): string[] {
   const tokens: string[] = [];
-  let current = '';
+  let current = "";
   let depth = 0;
 
   for (const char of input) {
-    if (char === '(') {
+    if (char === "(") {
       depth += 1;
       current += char;
       continue;
     }
-    if (char === ')') {
+    if (char === ")") {
       if (depth > 0) {
         depth -= 1;
       }
@@ -37,7 +37,7 @@ function splitTokensOutsideParens(input: string): string[] {
       if (trimmed.length > 0) {
         tokens.push(trimmed);
       }
-      current = '';
+      current = "";
       continue;
     }
     current += char;
@@ -54,9 +54,9 @@ function splitTokensOutsideParens(input: string): string[] {
 function isWidthToken(token: string): boolean {
   const lower = token.toLowerCase();
   return (
-    lower === 'thin' ||
-    lower === 'medium' ||
-    lower === 'thick' ||
+    lower === "thin" ||
+    lower === "medium" ||
+    lower === "thick" ||
     /^-?\d+(\.\d+)?(px|em|rem|pt|pc|cm|mm|in|q|vh|vw|vmin|vmax|%)?$/.test(lower)
   );
 }
@@ -64,35 +64,35 @@ function isWidthToken(token: string): boolean {
 function isColorToken(token: string): boolean {
   const lower = token.toLowerCase();
   const borderStyleKeywords = new Set([
-    'none',
-    'hidden',
-    'dotted',
-    'dashed',
-    'solid',
-    'double',
-    'groove',
-    'ridge',
-    'inset',
-    'outset',
+    "none",
+    "hidden",
+    "dotted",
+    "dashed",
+    "solid",
+    "double",
+    "groove",
+    "ridge",
+    "inset",
+    "outset",
   ]);
   if (borderStyleKeywords.has(lower)) {
     return false;
   }
   if (
-    lower.startsWith('#') ||
-    lower.startsWith('rgb(') ||
-    lower.startsWith('rgba(') ||
-    lower.startsWith('hsl(') ||
-    lower.startsWith('hsla(') ||
-    lower.startsWith('lab(') ||
-    lower.startsWith('lch(') ||
-    lower.startsWith('oklab(') ||
-    lower.startsWith('oklch(') ||
-    lower.startsWith('color(')
+    lower.startsWith("#") ||
+    lower.startsWith("rgb(") ||
+    lower.startsWith("rgba(") ||
+    lower.startsWith("hsl(") ||
+    lower.startsWith("hsla(") ||
+    lower.startsWith("lab(") ||
+    lower.startsWith("lch(") ||
+    lower.startsWith("oklab(") ||
+    lower.startsWith("oklch(") ||
+    lower.startsWith("color(")
   ) {
     return true;
   }
-  return lower === 'transparent' || lower === 'currentcolor' || /^[a-z-]+$/.test(lower);
+  return lower === "transparent" || lower === "currentcolor" || /^[a-z-]+$/.test(lower);
 }
 
 function extractBorderTokens(border: string): {
@@ -111,13 +111,12 @@ function extractBorderTokens(border: string): {
       width = token;
       continue;
     }
-    if (!style && (lower === 'solid' || lower === 'dashed' || lower === 'dotted' || lower === 'none')) {
+    if (!style && (lower === "solid" || lower === "dashed" || lower === "dotted" || lower === "none")) {
       style = lower;
       continue;
     }
     if (!color && isColorToken(token)) {
       color = token;
-      continue;
     }
   }
 
@@ -128,15 +127,15 @@ function extractBorderTokens(border: string): {
  * 解析边框宽度
  */
 export function parseBorderWidth(borderWidth: string | number): number {
-  if (typeof borderWidth === 'number') {
+  if (typeof borderWidth === "number") {
     return borderWidth;
   }
 
   const trimmed = borderWidth.trim();
-  if (trimmed === 'thin') return 1;
-  if (trimmed === 'medium') return 2;
-  if (trimmed === 'thick') return 4;
-  if (trimmed.endsWith('px')) {
+  if (trimmed === "thin") return 1;
+  if (trimmed === "medium") return 2;
+  if (trimmed === "thick") return 4;
+  if (trimmed.endsWith("px")) {
     return parseFloat(trimmed);
   }
 
@@ -146,24 +145,24 @@ export function parseBorderWidth(borderWidth: string | number): number {
 /**
  * 解析边框样式
  */
-export function parseBorderStyle(borderStyle: string): 'solid' | 'dashed' | 'dotted' {
+export function parseBorderStyle(borderStyle: string): "solid" | "dashed" | "dotted" {
   const style = borderStyle.trim().toLowerCase();
-  if (style === 'dashed') return 'dashed';
-  if (style === 'dotted') return 'dotted';
-  return 'solid';
+  if (style === "dashed") return "dashed";
+  if (style === "dotted") return "dotted";
+  return "solid";
 }
 
 /**
  * 解析边框圆角
  */
 export function parseBorderRadius(borderRadius: string | number): number[] {
-  if (typeof borderRadius === 'number') {
+  if (typeof borderRadius === "number") {
     return [borderRadius, borderRadius, borderRadius, borderRadius];
   }
 
   const trimmed = borderRadius.trim();
   const parts = trimmed.split(/\s+/).map((p) => {
-    return p.endsWith('px') ? parseFloat(p) : parseFloat(p) || 0;
+    return p.endsWith("px") ? parseFloat(p) : parseFloat(p) || 0;
   });
 
   if (parts.length === 1) {
@@ -183,7 +182,7 @@ export function parseBorderRadius(borderRadius: string | number): number[] {
 export function createBorderPath(
   bounds: { x: number; y: number; width: number; height: number },
   borderRadius: number[],
-  CanvasKit: CanvasKit
+  CanvasKit: CanvasKit,
 ): Path {
   const { x, y, width, height } = bounds;
   const [tl, tr, br, bl] = borderRadius;
@@ -201,25 +200,12 @@ export function createBorderPath(
       clamped[3] + clamped[2] > 0 ? width / (clamped[3] + clamped[2]) : 1,
       clamped[0] + clamped[3] > 0 ? height / (clamped[0] + clamped[3]) : 1,
       clamped[1] + clamped[2] > 0 ? height / (clamped[1] + clamped[2]) : 1,
-      1
+      1,
     );
     const scale = Number.isFinite(maxScale) && maxScale > 0 ? maxScale : 1;
     const [ctl, ctr, cbr, cbl] = clamped.map((radius) => radius * scale);
 
-    const rrect = Float32Array.of(
-      x,
-      y,
-      x + width,
-      y + height,
-      ctl,
-      ctl,
-      ctr,
-      ctr,
-      cbr,
-      cbr,
-      cbl,
-      cbl
-    );
+    const rrect = Float32Array.of(x, y, x + width, y + height, ctl, ctl, ctr, ctr, cbr, cbr, cbl, cbl);
     path.addRRect(rrect);
   }
 
@@ -232,8 +218,8 @@ export function createBorderPath(
 export function createBorderPaint(
   borderColor: string,
   borderWidth: number,
-  borderStyle: 'solid' | 'dashed' | 'dotted',
-  CanvasKit: CanvasKit
+  borderStyle: "solid" | "dashed" | "dotted",
+  CanvasKit: CanvasKit,
 ): Paint {
   const paint = new CanvasKit.Paint();
   paint.setColor(toCanvasKitColor(borderColor, CanvasKit));
@@ -242,7 +228,7 @@ export function createBorderPaint(
   paint.setAntiAlias(true);
 
   // 设置虚线样式；effect.delete() 释放 JS 端引用，Skia 层由 paint 持有所有权，paint.delete() 时自动清理
-  if (borderStyle === 'dashed') {
+  if (borderStyle === "dashed") {
     const dashLength = borderWidth * 3;
     const gapLength = borderWidth * 2;
     const effect = CanvasKit.PathEffect.MakeDash([dashLength, gapLength], 0);
@@ -250,7 +236,7 @@ export function createBorderPaint(
       paint.setPathEffect(effect);
       effect.delete();
     }
-  } else if (borderStyle === 'dotted') {
+  } else if (borderStyle === "dotted") {
     const dotLength = borderWidth;
     const gapLength = borderWidth;
     const effect = CanvasKit.PathEffect.MakeDash([dotLength, gapLength], 0);
@@ -267,18 +253,12 @@ export function createBorderPaint(
  * 解析边框样式对象
  */
 export function parseBorder(styles: Record<string, string | number | undefined>): BorderStyle {
-  const borderShorthand = typeof styles.border === 'string' ? styles.border : '';
+  const borderShorthand = typeof styles.border === "string" ? styles.border : "";
   const borderTokens = borderShorthand ? extractBorderTokens(borderShorthand) : {};
 
   const width = parseBorderWidth(styles.borderWidth ?? borderTokens.width ?? styles.border ?? 0);
-  const color = (styles.borderColor ?? borderTokens.color ?? '#000000') as string;
-  const style = parseBorderStyle(
-    (
-      styles.borderStyle ??
-      borderTokens.style ??
-      'solid'
-    ) as string
-  );
+  const color = (styles.borderColor ?? borderTokens.color ?? "#000000") as string;
+  const style = parseBorderStyle((styles.borderStyle ?? borderTokens.style ?? "solid") as string);
   const radius = parseBorderRadius(styles.borderRadius || 0);
 
   return { width, color, style, radius };

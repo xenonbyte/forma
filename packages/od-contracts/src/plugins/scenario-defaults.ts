@@ -21,10 +21,10 @@
 // surface-specific seed. Media kinds keep od-media-generation, which
 // dispatches through the media contract instead of emitting HTML.
 
-import type { ProjectKind, ProjectMetadata } from '../api/projects.js';
-import type { AppliedPluginSnapshot } from './apply.js';
+import type { ProjectKind, ProjectMetadata } from "../api/projects.js";
+import type { AppliedPluginSnapshot } from "./apply.js";
 
-export type TaskKind = AppliedPluginSnapshot['taskKind'];
+export type TaskKind = AppliedPluginSnapshot["taskKind"];
 
 // Plugin ids the kind/task-kind defaults can resolve to. Two tiers:
 //   1. `od-*` scenarios (under `plugins/_official/scenarios/`) — generic
@@ -37,60 +37,55 @@ export type TaskKind = AppliedPluginSnapshot['taskKind'];
 // Kept as a string-literal union so a typo surfaces as a type error in
 // both the web shell and the daemon resolver.
 export type DefaultScenarioPluginId =
-  | 'od-default'
-  | 'od-new-generation'
-  | 'od-media-generation'
-  | 'od-plugin-authoring'
-  | 'od-figma-migration'
-  | 'od-code-migration'
-  | 'od-tune-collab'
-  | 'example-live-artifact'
-  | 'example-simple-deck'
-  | 'example-web-prototype';
+  | "od-default"
+  | "od-new-generation"
+  | "od-media-generation"
+  | "od-plugin-authoring"
+  | "od-figma-migration"
+  | "od-code-migration"
+  | "od-tune-collab"
+  | "example-live-artifact"
+  | "example-simple-deck"
+  | "example-web-prototype";
 
-export const DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID =
-  'od-default' satisfies DefaultScenarioPluginId;
+export const DEFAULT_UNSELECTED_SCENARIO_PLUGIN_ID = "od-default" satisfies DefaultScenarioPluginId;
 
 export const DEFAULT_SCENARIO_PLUGIN_BY_KIND: Record<ProjectKind, DefaultScenarioPluginId> = {
   // Prototypes bind to web-prototype's seed template (single-file HTML,
   // 1280×800 frame, section layouts library, P0 checklist).
-  prototype: 'example-web-prototype',
+  prototype: "example-web-prototype",
   // Decks bind to simple-deck's seed (1920×1080 canvas, 8-pattern
   // layout vocabulary including cover / body / big-stat / pipeline /
   // closing, plus an overflow checklist that catches the
   // "headline + subtitle + absolute footer" collision).
-  deck:      'example-simple-deck',
-  template:  'od-new-generation',
-  image:     'od-media-generation',
-  video:     'od-media-generation',
-  audio:     'od-media-generation',
-  other:     'od-new-generation',
+  deck: "example-simple-deck",
+  template: "od-new-generation",
+  image: "od-media-generation",
+  video: "od-media-generation",
+  audio: "od-media-generation",
+  other: "od-new-generation",
 };
 
 export const DEFAULT_SCENARIO_PLUGIN_BY_TASK_KIND: Record<TaskKind, DefaultScenarioPluginId> = {
-  'new-generation':  'od-new-generation',
-  'figma-migration': 'od-figma-migration',
-  'code-migration':  'od-code-migration',
-  'tune-collab':     'od-tune-collab',
+  "new-generation": "od-new-generation",
+  "figma-migration": "od-figma-migration",
+  "code-migration": "od-code-migration",
+  "tune-collab": "od-tune-collab",
 };
 
-export function defaultScenarioPluginIdForKind(
-  kind: ProjectKind | undefined,
-): DefaultScenarioPluginId | null {
+export function defaultScenarioPluginIdForKind(kind: ProjectKind | undefined): DefaultScenarioPluginId | null {
   if (!kind) return null;
   return DEFAULT_SCENARIO_PLUGIN_BY_KIND[kind] ?? null;
 }
 
 export function defaultScenarioPluginIdForProjectMetadata(
-  metadata: Pick<ProjectMetadata, 'kind' | 'intent'> | null | undefined,
+  metadata: Pick<ProjectMetadata, "kind" | "intent"> | null | undefined,
 ): DefaultScenarioPluginId | null {
-  if (metadata?.intent === 'live-artifact') return 'example-live-artifact';
+  if (metadata?.intent === "live-artifact") return "example-live-artifact";
   return defaultScenarioPluginIdForKind(metadata?.kind);
 }
 
-export function defaultScenarioPluginIdForTaskKind(
-  taskKind: TaskKind | undefined,
-): DefaultScenarioPluginId | null {
+export function defaultScenarioPluginIdForTaskKind(taskKind: TaskKind | undefined): DefaultScenarioPluginId | null {
   if (!taskKind) return null;
   return DEFAULT_SCENARIO_PLUGIN_BY_TASK_KIND[taskKind] ?? null;
 }

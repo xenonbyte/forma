@@ -4,9 +4,9 @@
  * 任务 3.13-3.19: 实现文件写入、块编码、序列化、压缩、加密
  */
 
-import { createHash, createCipheriv, randomBytes } from 'crypto';
-import { brotliCompressSync, constants } from 'zlib';
-import { encode } from 'msgpackr';
+import { createHash, createCipheriv, randomBytes } from "crypto";
+import { brotliCompressSync, constants } from "zlib";
+import { encode } from "msgpackr";
 import type {
   VZIHeader,
   VZIMetadata,
@@ -15,8 +15,8 @@ import type {
   BlockType,
   Layer,
   VersionCompatibility,
-} from './types';
-import { VZI_MAGIC, VZI_VERSION } from './types';
+} from "./types";
+import { VZI_MAGIC, VZI_VERSION } from "./types";
 
 /**
  * 编码器配置
@@ -71,12 +71,12 @@ export class VZIEncoder {
     };
 
     if (!Number.isFinite(resolved.maxBlockSize) || resolved.maxBlockSize <= 0) {
-      throw new Error('VZIEncoder maxBlockSize must be a positive number');
+      throw new Error("VZIEncoder maxBlockSize must be a positive number");
     }
 
     if (resolved.encrypt) {
       if (!resolved.encryptionKey || resolved.encryptionKey.length !== 32) {
-        throw new Error('VZIEncoder requires a 32-byte encryptionKey when encrypt=true');
+        throw new Error("VZIEncoder requires a 32-byte encryptionKey when encrypt=true");
       }
 
       let allZero = true;
@@ -87,7 +87,7 @@ export class VZIEncoder {
         }
       }
       if (allZero) {
-        throw new Error('VZIEncoder encryptionKey must not be an all-zero key when encrypt=true');
+        throw new Error("VZIEncoder encryptionKey must not be an all-zero key when encrypt=true");
       }
     }
 
@@ -150,7 +150,7 @@ export class VZIEncoder {
       layers,
       compatibility,
     };
-    this.pushBlock('metadata', 'metadata', encode(extendedMetadata));
+    this.pushBlock("metadata", "metadata", encode(extendedMetadata));
   }
 
   /**
@@ -166,7 +166,7 @@ export class VZIEncoder {
       const chunkData = Object.fromEntries(chunk);
       const encoded = encode(chunkData);
 
-      this.pushBlock('elements', `elements_${Math.floor(i / chunkSize)}`, encoded);
+      this.pushBlock("elements", `elements_${Math.floor(i / chunkSize)}`, encoded);
     }
   }
 
@@ -179,7 +179,7 @@ export class VZIEncoder {
     const stylesData = Object.fromEntries(styles);
     const encoded = encode(stylesData);
 
-    this.pushBlock('styles', 'shared_styles', encoded);
+    this.pushBlock("styles", "shared_styles", encoded);
   }
 
   /**
@@ -191,7 +191,7 @@ export class VZIEncoder {
     const resourcesData = Object.fromEntries(resources);
     const encoded = encode(resourcesData);
 
-    this.pushBlock('resources', 'images', encoded);
+    this.pushBlock("resources", "images", encoded);
   }
 
   /**
@@ -202,7 +202,7 @@ export class VZIEncoder {
 
     const encoded = encode(annotations);
 
-    this.pushBlock('annotations', 'annotations', encoded);
+    this.pushBlock("annotations", "annotations", encoded);
   }
 
   /**
@@ -222,7 +222,7 @@ export class VZIEncoder {
     };
     const encoded = encode(indexData);
 
-    this.pushBlock('spatial', 'spatial_index', encoded);
+    this.pushBlock("spatial", "spatial_index", encoded);
   }
 
   private pushBlock(type: BlockType, id: string, payload: Uint8Array): void {
@@ -239,9 +239,7 @@ export class VZIEncoder {
 
   private assertBlockSize(blockId: string, size: number): void {
     if (size > this.options.maxBlockSize) {
-      throw new Error(
-        `Block ${blockId} exceeds maxBlockSize (${size} > ${this.options.maxBlockSize})`
-      );
+      throw new Error(`Block ${blockId} exceeds maxBlockSize (${size} > ${this.options.maxBlockSize})`);
     }
   }
 
@@ -263,16 +261,9 @@ export class VZIEncoder {
 
     // AES-256-GCM 加密
     const iv = randomBytes(12);
-    const cipher = createCipheriv(
-      'aes-256-gcm',
-      this.options.encryptionKey!,
-      iv
-    );
+    const cipher = createCipheriv("aes-256-gcm", this.options.encryptionKey!, iv);
 
-    const encrypted = Buffer.concat([
-      cipher.update(compressed),
-      cipher.final(),
-    ]);
+    const encrypted = Buffer.concat([cipher.update(compressed), cipher.final()]);
 
     const authTag = cipher.getAuthTag();
 
@@ -309,21 +300,18 @@ export class VZIEncoder {
    * 计算校验和
    */
   private computeChecksum(data: Uint8Array): Uint8Array {
-    const hash = createHash('sha256').update(data).digest();
+    const hash = createHash("sha256").update(data).digest();
     return hash.slice(0, 16); // 取前 16 字节
   }
 
   /**
    * 构建最终输出
    */
-  private buildFinalOutput(
-    content: VZIContent,
-    blockIndex: BlockIndexEntry[]
-  ): Uint8Array {
+  private buildFinalOutput(content: VZIContent, blockIndex: BlockIndexEntry[]): Uint8Array {
     // 计算各部分大小
     const headerSize = 256;
     const metadataOffset = headerSize;
-    const metadataBlock = this.getBlockData('metadata')!;
+    const metadataBlock = this.getBlockData("metadata")!;
     const encodedBlockIndex = encode(blockIndex);
     const blockIndexOffset = metadataOffset + metadataBlock.data.length;
     const dataOffset = blockIndexOffset + encodedBlockIndex.length;
@@ -331,7 +319,7 @@ export class VZIEncoder {
     // 计算总大小
     let totalSize = dataOffset;
     for (const block of this.blocks) {
-      if (block.type !== 'metadata') {
+      if (block.type !== "metadata") {
         totalSize += block.data.length;
       }
     }
@@ -360,7 +348,7 @@ export class VZIEncoder {
     parts.push(metadataBlock.data);
     parts.push(encodedBlockIndex);
     for (const block of this.blocks) {
-      if (block.type !== 'metadata') {
+      if (block.type !== "metadata") {
         parts.push(block.data);
       }
     }
@@ -373,7 +361,7 @@ export class VZIEncoder {
     const CHECKSUM_SIZE = 32;
     const forChecksumBuffer = Buffer.from(output);
     forChecksumBuffer.fill(0, CHECKSUM_OFFSET, CHECKSUM_OFFSET + CHECKSUM_SIZE);
-    const fileChecksum = createHash('sha256').update(forChecksumBuffer).digest();
+    const fileChecksum = createHash("sha256").update(forChecksumBuffer).digest();
     fileChecksum.copy(output, CHECKSUM_OFFSET, 0, CHECKSUM_SIZE);
 
     return output;

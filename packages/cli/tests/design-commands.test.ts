@@ -158,7 +158,7 @@ describe("fm-rollback-design template", () => {
     for (const body of [t.claude, t.codex, t.gemini]) {
       const lc = body.toLowerCase();
       expect(lc).toContain("include_superseded");
-      expect(lc).toContain("kind: \"design-page\"");
+      expect(lc).toContain('kind: "design-page"');
       expect(lc).not.toContain("get_requirement");
       expect(lc).not.toContain("only present artifacts for that requirement");
       expectOrder(lc, "list_product_artifacts", "rollback_requirement_design");

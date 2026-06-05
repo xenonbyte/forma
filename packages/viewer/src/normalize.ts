@@ -41,7 +41,7 @@ export function buildViewerModel(input: BuildViewerModelInput): ViewerModel {
     width: a.width,
     height: a.height,
     htmlBundle: { artifactId: a.artifactId, version: a.version, kind: "bundle" },
-    previewImages: buildPreviewRefs(a)
+    previewImages: buildPreviewRefs(a),
   }));
 
   const groups = buildGroups(tiles);
@@ -53,7 +53,7 @@ export function buildViewerModel(input: BuildViewerModelInput): ViewerModel {
 function buildPreviewRefs(a: NormalizeArtifactInput): ViewerTile["previewImages"] {
   return {
     "1x": { artifactId: a.artifactId, version: a.version, kind: "preview", density: "1x" },
-    "2x": { artifactId: a.artifactId, version: a.version, kind: "preview", density: "2x" }
+    "2x": { artifactId: a.artifactId, version: a.version, kind: "preview", density: "2x" },
   };
 }
 
@@ -74,7 +74,7 @@ function buildGroups(tiles: ViewerTile[]): ViewerGroup[] {
     return {
       pageId,
       pageName: pageTiles[0].pageName,
-      tileIds: sorted.map((t) => t.id)
+      tileIds: sorted.map((t) => t.id),
     };
   });
 }

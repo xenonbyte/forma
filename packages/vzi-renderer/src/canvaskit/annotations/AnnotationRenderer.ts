@@ -4,7 +4,7 @@
  * 管理标注的生命周期、状态和渲染流程
  */
 
-import type { CanvasKit, Canvas, Paint } from 'canvaskit-wasm';
+import type { CanvasKit, Canvas, Paint } from "canvaskit-wasm";
 import type {
   AnnotationElement,
   AnnotationRendererOptions,
@@ -14,13 +14,13 @@ import type {
   ViewportConfig,
   ViewportState,
   ElementBounds,
-} from './types';
-import { AnnotationStyles } from './AnnotationStyles';
-import { ViewportManager } from './ViewportManager';
-import { calculateMarkData } from './DistanceCalculator';
-import { DistanceRenderer } from './renderers/DistanceRenderer';
-import { DimensionRenderer } from './renderers/DimensionRenderer';
-import { RulerRenderer } from './renderers/RulerRenderer';
+} from "./types";
+import { AnnotationStyles } from "./AnnotationStyles";
+import { ViewportManager } from "./ViewportManager";
+import { calculateMarkData } from "./DistanceCalculator";
+import { DistanceRenderer } from "./renderers/DistanceRenderer";
+import { DimensionRenderer } from "./renderers/DimensionRenderer";
+import { RulerRenderer } from "./renderers/RulerRenderer";
 
 /**
  * 标注渲染器
@@ -302,11 +302,7 @@ export class CanvasAnnotationRenderer {
       return;
     }
 
-    this.cachedDistanceData = calculateMarkData(
-      this.selectedElement.bounds,
-      this.hoveredElement.bounds,
-      this.pageRect
-    );
+    this.cachedDistanceData = calculateMarkData(this.selectedElement.bounds, this.hoveredElement.bounds, this.pageRect);
   }
 
   // ============================================
@@ -329,12 +325,12 @@ export class CanvasAnnotationRenderer {
 
     // 1. 渲染悬停元素框（先渲染，这样选中框在上面）
     if (this.hoveredElement && this.hoveredElement !== this.selectedElement) {
-      this.renderElementBox(canvas, this.hoveredElement.bounds, 'hover');
+      this.renderElementBox(canvas, this.hoveredElement.bounds, "hover");
     }
 
     // 2. 渲染选中元素框
     if (this.selectedElement) {
-      this.renderElementBox(canvas, this.selectedElement.bounds, 'selection');
+      this.renderElementBox(canvas, this.selectedElement.bounds, "selection");
       // 渲染选中元素的尺寸标注
       this.dimensionRenderer?.render(canvas, this.selectedElement.bounds);
     }
@@ -351,11 +347,7 @@ export class CanvasAnnotationRenderer {
   /**
    * 渲染元素边框
    */
-  private renderElementBox(
-    canvas: Canvas,
-    bounds: ElementBounds,
-    type: 'selection' | 'hover'
-  ): void {
+  private renderElementBox(canvas: Canvas, bounds: ElementBounds, type: "selection" | "hover"): void {
     const x = bounds.left;
     const y = bounds.top;
     const width = bounds.width;
@@ -364,7 +356,7 @@ export class CanvasAnnotationRenderer {
     // 创建矩形对象
     const rect = this.canvasKit.LTRBRect(x, y, x + width, y + height);
 
-    if (type === 'hover') {
+    if (type === "hover") {
       // 先绘制填充
       canvas.drawRect(rect, this.hoverFillPaint!);
       // 再绘制边框

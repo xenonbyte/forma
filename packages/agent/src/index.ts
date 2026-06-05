@@ -12,7 +12,7 @@ export const formaAgentCommands = [
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff"
+  "fm-develop-design-handoff",
 ] as const;
 
 export type FormaAgentCommand = (typeof formaAgentCommands)[number];
@@ -31,20 +31,20 @@ export const formaAgentPlatformMetadata = {
     templateFormat: "markdown-frontmatter",
     templateFilePattern: "claude/{command}.md",
     targetFilePattern: "~/.claude/commands/{command}.md",
-    mcpConfigPath: "~/.claude.json"
+    mcpConfigPath: "~/.claude.json",
   },
   codex: {
     templateDir: "codex",
     templateFormat: "codex-skill",
     templateFilePattern: "codex/{command}/SKILL.md",
     targetFilePattern: "~/.codex/skills/{command}/SKILL.md",
-    mcpConfigPath: "~/.codex/config.toml"
+    mcpConfigPath: "~/.codex/config.toml",
   },
   gemini: {
     templateDir: "gemini",
     templateFormat: "toml-prompt",
     templateFilePattern: "gemini/{command}.toml",
     targetFilePattern: "~/.gemini/commands/{command}.toml",
-    mcpConfigPath: "~/.gemini/settings.json"
-  }
+    mcpConfigPath: "~/.gemini/settings.json",
+  },
 } as const satisfies Record<FormaAgentPlatform, FormaAgentPlatformMetadata>;

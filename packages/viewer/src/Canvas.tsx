@@ -6,7 +6,7 @@ import {
   useReactFlow,
   type Node,
   type NodeProps,
-  type NodeTypes
+  type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -56,9 +56,9 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: C
         height: tile.height,
         draggable: false,
         selectable: true,
-        connectable: false
+        connectable: false,
       })),
-    [model.tiles, mode, resolver]
+    [model.tiles, mode, resolver],
   );
 
   useEffect(() => {

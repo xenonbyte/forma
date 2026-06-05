@@ -10,7 +10,7 @@ const focusClasses =
 
 const languageChoices: Array<{ label: string; value: Locale }> = [
   { label: "EN", value: "en" },
-  { label: "中", value: "zh" }
+  { label: "中", value: "zh" },
 ];
 
 export function LanguageSwitcher({ ariaLabel = "Language" }: LanguageSwitcherProps) {

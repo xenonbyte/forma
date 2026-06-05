@@ -2,7 +2,7 @@
 // the Puppeteer path exclusively. Use parseAsync() or PuppeteerParser directly.
 // HTMLParser is kept for internal use but its parse() method throws; downstream
 // callers should use parseAsync(html) or construct PuppeteerParser directly.
-export type { HTMLParserOptions } from './parser';
+export type { HTMLParserOptions } from "./parser";
 
 // 导出计算样式相关功能
 export {
@@ -11,13 +11,13 @@ export {
   computeAllStyles,
   type ComputedStyleOptions,
   type ComputedStyleResult,
-} from './computed-style';
+} from "./computed-style";
 
 // 导出 Tailwind CSS 预处理器
 export {
   preprocessTailwindCSS,
   type TailwindPreprocessResult,
-} from './tailwind-preprocessor';
+} from "./tailwind-preprocessor";
 
 // 导出 Puppeteer 解析器（推荐入口）
 export {
@@ -25,7 +25,7 @@ export {
   VIEWPORT_PRESETS,
   type PuppeteerParserOptions,
   type ViewportPreset,
-} from './puppeteer-parser';
+} from "./puppeteer-parser";
 
 // 导出 CSS 变量解析相关功能
 export {
@@ -33,13 +33,13 @@ export {
   cssVariableParser,
   extractCSSVariableReferences,
   type CSSVariable,
-} from './style';
+} from "./style";
 
 // 导出元素类型和样式解析工具
 export {
   extractElementType,
   parseInlineStyle,
-} from './style';
+} from "./style";
 
 // 导出响应式检测相关功能
 export {
@@ -51,7 +51,7 @@ export {
   type ParsedMediaQuery,
   type MediaQueryCondition,
   type ResponsiveStyleChange,
-} from './responsive';
+} from "./responsive";
 
 // 导出高级解析功能
 export {
@@ -66,7 +66,7 @@ export {
   AnimationExtractor,
   TransformExtractor,
   EffectsExtractor,
-} from './advanced-parsing';
+} from "./advanced-parsing";
 
 /**
  * Async parse via Puppeteer (accurate, Node.js runtime required).
@@ -76,9 +76,9 @@ export {
  */
 export async function parseAsync(
   html: string,
-  options?: import('./parser').HTMLParserOptions
-): Promise<import('@vzi-core/types').IntermediateRepresentation> {
-  const { HTMLParser } = await import('./parser.js');
+  options?: import("./parser").HTMLParserOptions,
+): Promise<import("@vzi-core/types").IntermediateRepresentation> {
+  const { HTMLParser } = await import("./parser.js");
   const parser = new HTMLParser({ ...options, reusePuppeteer: false });
   try {
     return await parser.parseAsync(html);

@@ -15,15 +15,15 @@ const styles: StyleMetadata[] = [
     description: "Focused tool UI",
     design_md_path: "styles/linear/DESIGN.md",
     tokens_css_path: "styles/linear/tokens.css",
-    components_html_path: "styles/linear/components.html"
+    components_html_path: "styles/linear/components.html",
   },
   {
     name: "retail",
     description: "Retail checkout UI",
     design_md_path: "styles/retail/DESIGN.md",
     tokens_css_path: "styles/retail/tokens.css",
-    components_html_path: "styles/retail/components.html"
-  }
+    components_html_path: "styles/retail/components.html",
+  },
 ];
 
 const detailByName: Record<string, BrandStyleContent> = {
@@ -36,7 +36,7 @@ colors:
 ---
 `,
     tokensCss: ":root { --primary: #5E6AD2; }",
-    componentsHtml: "<div>linear</div>"
+    componentsHtml: "<div>linear</div>",
   },
   retail: {
     kind: "brand",
@@ -47,8 +47,8 @@ colors:
 ---
 `,
     tokensCss: ":root { --primary: #14b8a6; }",
-    componentsHtml: "<div>retail</div>"
-  }
+    componentsHtml: "<div>retail</div>",
+  },
 };
 
 const roots: Root[] = [];
@@ -73,11 +73,22 @@ describe("StylePickerDialog", () => {
     const { container, root } = createTestRoot();
 
     await act(async () => {
-      root.render(<StylePickerDialog getStyle={getStyle} onConfirm={onConfirm} platform="" selectedStyleName="" styles={styles} />);
+      root.render(
+        <StylePickerDialog
+          getStyle={getStyle}
+          onConfirm={onConfirm}
+          platform=""
+          selectedStyleName=""
+          styles={styles}
+        />,
+      );
       await flushMicrotasks();
     });
 
-    const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
+    const trigger = required(
+      container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"),
+      "style picker trigger",
+    );
     expect(trigger.disabled).toBe(false);
 
     await act(async () => {
@@ -85,7 +96,10 @@ describe("StylePickerDialog", () => {
       await flushMicrotasks();
     });
 
-    const dialog = required(document.body.querySelector<HTMLElement>('[data-style-picker-dialog="true"]'), "style picker dialog");
+    const dialog = required(
+      document.body.querySelector<HTMLElement>('[data-style-picker-dialog="true"]'),
+      "style picker dialog",
+    );
     expect(container.contains(dialog)).toBe(false);
     expect(getStyle).toHaveBeenCalledWith("linear");
     expect(onConfirm).not.toHaveBeenCalled();
@@ -105,7 +119,10 @@ describe("StylePickerDialog", () => {
     const onConfirm = vi.fn();
     const { container } = await renderOpenPicker({ onConfirm, selectedStyleName: "linear" });
 
-    expect(required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid").dataset.previewTemplateName).toBe("linear");
+    expect(
+      required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid").dataset
+        .previewTemplateName,
+    ).toBe("linear");
     expect(onConfirm).not.toHaveBeenCalled();
 
     await act(async () => {
@@ -121,7 +138,10 @@ describe("StylePickerDialog", () => {
     const getStyle = vi.fn(async (name: string) => detailByName[name]!);
     const { container } = await renderOpenPicker({ getStyle, onConfirm, selectedStyleName: "linear" });
 
-    const previewBefore = required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid");
+    const previewBefore = required(
+      document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'),
+      "preview grid",
+    );
     expect(previewBefore.dataset.previewTemplateName).toBe("linear");
     expect(previewBefore.dataset.primary).toBe("#5E6AD2");
     expect(optionButton(container, "linear").getAttribute("aria-selected")).toBe("true");
@@ -135,7 +155,10 @@ describe("StylePickerDialog", () => {
     expect(getStyle).toHaveBeenCalledWith("retail");
     expect(optionButton(container, "linear").getAttribute("aria-selected")).toBe("false");
     expect(optionButton(container, "retail").getAttribute("aria-selected")).toBe("true");
-    const previewAfter = required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "preview grid");
+    const previewAfter = required(
+      document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'),
+      "preview grid",
+    );
     expect(previewAfter.dataset.previewTemplateName).toBe("retail");
     expect(previewAfter.dataset.primary).toBe("#14b8a6");
 
@@ -213,33 +236,39 @@ describe("StylePickerDialog", () => {
   it("renders all four platform previews regardless of selected platform", async () => {
     const { container } = await renderOpenPicker({ platform: "tablet" });
 
-    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]")).map((mock) => mock.dataset.previewMock).sort()).toEqual([
-      "desktop",
-      "mobile",
-      "tablet",
-      "web"
-    ]);
+    expect(
+      Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]"))
+        .map((mock) => mock.dataset.previewMock)
+        .sort(),
+    ).toEqual(["desktop", "mobile", "tablet", "web"]);
 
     await act(async () => {
       optionButton(container, "retail").click();
       await flushMicrotasks();
     });
 
-    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]")).map((mock) => mock.dataset.previewMock).sort()).toEqual([
-      "desktop",
-      "mobile",
-      "tablet",
-      "web"
-    ]);
+    expect(
+      Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]"))
+        .map((mock) => mock.dataset.previewMock)
+        .sort(),
+    ).toEqual(["desktop", "mobile", "tablet", "web"]);
   });
 
   it("focuses the first option on open and restores focus to the trigger on close", async () => {
     const { container } = await renderPicker({ platform: "web" });
-    const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
+    const trigger = required(
+      container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"),
+      "style picker trigger",
+    );
 
     await openPicker(container);
 
-    expect(document.activeElement).toBe(required(document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'), "first style option"));
+    expect(document.activeElement).toBe(
+      required(
+        document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'),
+        "first style option",
+      ),
+    );
 
     await act(async () => {
       required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-cancel]"), "cancel button").click();
@@ -276,7 +305,7 @@ async function renderPicker(props: Partial<StylePickerProps> = {}) {
         platform={props.platform ?? "web"}
         selectedStyleName={props.selectedStyleName ?? ""}
         styles={styles}
-      />
+      />,
     );
     await flushMicrotasks();
   });
@@ -292,7 +321,10 @@ async function openPicker(container: HTMLElement) {
 }
 
 function optionButton(_container: HTMLElement, name: string): HTMLButtonElement {
-  return required(document.body.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} option`);
+  return required(
+    document.body.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`),
+    `${name} option`,
+  );
 }
 
 function createTestRoot() {

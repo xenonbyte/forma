@@ -1,4 +1,4 @@
-import type { WorkspaceSelection } from './WorkspacePane.js';
+import type { WorkspaceSelection } from "./WorkspacePane.js";
 
 interface SidebarProduct {
   id: string;
@@ -31,7 +31,7 @@ interface SidebarProps {
 }
 
 function itemClass(active: boolean): string {
-  return active ? 'sidebar__item sidebar__item--active' : 'sidebar__item';
+  return active ? "sidebar__item sidebar__item--active" : "sidebar__item";
 }
 
 /**
@@ -50,7 +50,7 @@ export function Sidebar({
   onSelect,
   onSelectProduct,
 }: SidebarProps) {
-  const activeReqId = nav.type === 'requirement' || nav.type === 'page' ? nav.reqId : null;
+  const activeReqId = nav.type === "requirement" || nav.type === "page" ? nav.reqId : null;
 
   return (
     <nav className="sidebar">
@@ -59,7 +59,7 @@ export function Sidebar({
         <select
           className="sidebar__select"
           data-product-switcher
-          value={activeProductId ?? ''}
+          value={activeProductId ?? ""}
           onChange={(e) => onSelectProduct(e.target.value)}
         >
           {products.map((p) => (
@@ -79,9 +79,9 @@ export function Sidebar({
             <button
               key={r.id}
               type="button"
-              className={itemClass(activeReqId === r.id && nav.type === 'requirement')}
+              className={itemClass(activeReqId === r.id && nav.type === "requirement")}
               data-nav-requirement={r.id}
-              onClick={() => onSelect({ type: 'requirement', reqId: r.id })}
+              onClick={() => onSelect({ type: "requirement", reqId: r.id })}
             >
               {r.title}
             </button>
@@ -98,11 +98,11 @@ export function Sidebar({
             <button
               key={pg.page_id}
               type="button"
-              className={itemClass(nav.type === 'page' && nav.pageId === pg.page_id)}
+              className={itemClass(nav.type === "page" && nav.pageId === pg.page_id)}
               data-nav-page={pg.page_id}
               disabled={!activeReqId}
               onClick={() => {
-                if (activeReqId) onSelect({ type: 'page', reqId: activeReqId, pageId: pg.page_id });
+                if (activeReqId) onSelect({ type: "page", reqId: activeReqId, pageId: pg.page_id });
               }}
             >
               {pg.name}
@@ -112,8 +112,8 @@ export function Sidebar({
       </section>
 
       <div className="sidebar__status">
-        <span className={`sidebar__dot ${connected ? 'sidebar__dot--on' : 'sidebar__dot--off'}`} />
-        {connected ? '已连接' : '未连接'}
+        <span className={`sidebar__dot ${connected ? "sidebar__dot--on" : "sidebar__dot--off"}`} />
+        {connected ? "已连接" : "未连接"}
       </div>
     </nav>
   );

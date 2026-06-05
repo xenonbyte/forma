@@ -3,14 +3,14 @@ import type { BuildServerOptions, FormaServer } from "../src/app.js";
 
 const mocks = vi.hoisted(() => ({
   buildServer: vi.fn(),
-  listen: vi.fn()
+  listen: vi.fn(),
 }));
 
 vi.mock("../src/app.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/app.js")>();
   return {
     ...actual,
-    buildServer: mocks.buildServer
+    buildServer: mocks.buildServer,
   };
 });
 
@@ -20,7 +20,7 @@ describe("server startup auth normalization", () => {
   const originalEnv = {
     FORMA_SERVER_HOST: process.env.FORMA_SERVER_HOST,
     FORMA_SERVER_PORT: process.env.FORMA_SERVER_PORT,
-    FORMA_SERVER_TOKEN: process.env.FORMA_SERVER_TOKEN
+    FORMA_SERVER_TOKEN: process.env.FORMA_SERVER_TOKEN,
   };
 
   beforeEach(() => {
@@ -57,7 +57,9 @@ describe("server startup auth normalization", () => {
 
     await main({ host: "127.0.0.1", port: 0 });
 
-    expect(mocks.buildServer).toHaveBeenCalledWith(expect.objectContaining<Partial<BuildServerOptions>>({ authToken: "local-secret" }));
+    expect(mocks.buildServer).toHaveBeenCalledWith(
+      expect.objectContaining<Partial<BuildServerOptions>>({ authToken: "local-secret" }),
+    );
     expect(mocks.listen).toHaveBeenCalledWith({ host: "127.0.0.1", port: 0 });
   });
 });

@@ -3,9 +3,9 @@
  * Read-only module for serving artifact preview PNGs.
  */
 
-import { readFile } from 'node:fs/promises';
-import { getArtifactPreviewPath } from './artifact-paths.js';
-import { FormaError } from './errors.js';
+import { readFile } from "node:fs/promises";
+import { getArtifactPreviewPath } from "./artifact-paths.js";
+import { FormaError } from "./errors.js";
 
 /**
  * Reads a preview PNG for the given artifact and resolution.
@@ -21,23 +21,20 @@ export async function readArtifactPreview(
   productsRoot: string,
   productId: string,
   artifactId: string,
-  resolution: '1x' | '2x',
+  resolution: "1x" | "2x",
 ): Promise<Buffer> {
   const previewPath = getArtifactPreviewPath(productsRoot, productId, artifactId, resolution);
 
   try {
     return await readFile(previewPath);
   } catch (err: unknown) {
-    if (
-      typeof err === 'object' &&
-      err !== null &&
-      (err as NodeJS.ErrnoException).code === 'ENOENT'
-    ) {
-      throw new FormaError(
-        'ARTIFACT_NOT_FOUND',
-        `Preview not found: ${artifactId} @ ${resolution}`,
-        { productsRoot, productId, artifactId, resolution },
-      );
+    if (typeof err === "object" && err !== null && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new FormaError("ARTIFACT_NOT_FOUND", `Preview not found: ${artifactId} @ ${resolution}`, {
+        productsRoot,
+        productId,
+        artifactId,
+        resolution,
+      });
     }
     throw err;
   }

@@ -35,7 +35,12 @@ function buildSemanticContractForPage(input: unknown): {
   mergeSemanticItems(contract.fields, semanticItems(page.declared_fields));
   mergeSemanticItems(contract.actions, semanticItems(page.declared_actions));
   mergeStrings(contract.component_keys, arrayOfStrings(page.declared_component_keys));
-  mergeStrings(contract.allowed_copy, arrayOfRecords(page.copy).map((item) => stringValue(item.text)).filter(isDefinedString));
+  mergeStrings(
+    contract.allowed_copy,
+    arrayOfRecords(page.copy)
+      .map((item) => stringValue(item.text))
+      .filter(isDefinedString),
+  );
 
   for (const rule of arrayOfRecords(record.product_rules)) {
     const rulePageId = stringValue(rule.page_id);
@@ -53,7 +58,7 @@ function buildSemanticContractForPage(input: unknown): {
     if (stringValue(edge.from) === pageId) {
       addNavigationTarget(contract.navigation, {
         target_page_id: stringValue(edge.to) ?? "",
-        label: stringValue(edge.label)
+        label: stringValue(edge.label),
       });
     }
   }
@@ -88,13 +93,18 @@ function buildBaselineSemanticContractCandidate(input: unknown): {
     mergeSemanticItems(contract.fields, semanticItems(page.declared_fields), pageId, conflicts, "field");
     mergeSemanticItems(contract.actions, semanticItems(page.declared_actions), pageId, conflicts, "action");
     mergeStrings(contract.component_keys, arrayOfStrings(page.declared_component_keys));
-    mergeStrings(contract.allowed_copy, arrayOfRecords(page.copy).map((item) => stringValue(item.text)).filter(isDefinedString));
+    mergeStrings(
+      contract.allowed_copy,
+      arrayOfRecords(page.copy)
+        .map((item) => stringValue(item.text))
+        .filter(isDefinedString),
+    );
 
     for (const edge of arrayOfRecords(record.navigation)) {
       if (stringValue(edge.from) === pageId) {
         addNavigationTarget(contract.navigation, {
           target_page_id: stringValue(edge.to) ?? "",
-          label: stringValue(edge.label)
+          label: stringValue(edge.label),
         });
       }
     }
@@ -102,7 +112,7 @@ function buildBaselineSemanticContractCandidate(input: unknown): {
     return {
       id: pageId,
       semantic_contract: contract,
-      semantic_contract_coverage: "minimal" as const
+      semantic_contract_coverage: "minimal" as const,
     };
   });
 
@@ -110,7 +120,7 @@ function buildBaselineSemanticContractCandidate(input: unknown): {
     ok: conflicts.length === 0,
     code: conflicts.length === 0 ? undefined : "BASELINE_SEMANTIC_CONTRACT_CONFLICT",
     conflicts,
-    pages
+    pages,
   };
 }
 
@@ -201,7 +211,10 @@ export function isSchemaNormalizationStartupError(error: unknown): error is Sche
 export class SchemaNormalizationRecoveryError extends Error {
   readonly code = "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED";
 
-  constructor(public readonly result: SchemaNormalizationRecoveryResult, message = "v6 schema normalization recovery is required") {
+  constructor(
+    public readonly result: SchemaNormalizationRecoveryResult,
+    message = "v6 schema normalization recovery is required",
+  ) {
     super(message);
     this.name = "SchemaNormalizationRecoveryError";
   }
@@ -261,7 +274,10 @@ export interface SchemaNormalizationCutoverResult {
   home: string;
   message: string;
   preflight_status?: SchemaNormalizationRecoveryState["preflight_status"];
-  preflight_reason?: SchemaNormalizationRecoveryState["preflight_reason"] | "normalizer_version_mismatch" | "candidate_manifest_mismatch";
+  preflight_reason?:
+    | SchemaNormalizationRecoveryState["preflight_reason"]
+    | "normalizer_version_mismatch"
+    | "candidate_manifest_mismatch";
   strict_schema_status?: SchemaNormalizationStrictSchemaStatus;
   backup_dir?: string;
   journal_path?: string;
@@ -291,7 +307,9 @@ export interface SchemaNormalizationCutoverOptions {
   reportPath?: string;
   hooks?: {
     afterJournalCreated?: () => Promise<void> | void;
-    mutateCandidateBeforeWrite?: (candidate: SchemaNormalizationCandidateManifestEntry) => Record<string, unknown> | undefined;
+    mutateCandidateBeforeWrite?: (
+      candidate: SchemaNormalizationCandidateManifestEntry,
+    ) => Record<string, unknown> | undefined;
   };
 }
 
@@ -334,12 +352,20 @@ type JournalSelection =
       state: SchemaNormalizationRecoveryState;
     };
 
-export function normalizeFormaHomeForV6(home: string, options: SchemaNormalizationPreflightOptions): Promise<SchemaNormalizationPreflightReport>;
-export function normalizeFormaHomeForV6(home: string, options: SchemaNormalizationCutoverOptions): Promise<SchemaNormalizationCutoverResult>;
+export function normalizeFormaHomeForV6(
+  home: string,
+  options: SchemaNormalizationPreflightOptions,
+): Promise<SchemaNormalizationPreflightReport>;
+export function normalizeFormaHomeForV6(
+  home: string,
+  options: SchemaNormalizationCutoverOptions,
+): Promise<SchemaNormalizationCutoverResult>;
 export async function normalizeFormaHomeForV6(
   home: string,
-  options: NormalizeFormaHomeForV6Options
-): Promise<SchemaNormalizationPreflightReport | SchemaNormalizationCutoverResult | SchemaNormalizationUnsupportedModeResult> {
+  options: NormalizeFormaHomeForV6Options,
+): Promise<
+  SchemaNormalizationPreflightReport | SchemaNormalizationCutoverResult | SchemaNormalizationUnsupportedModeResult
+> {
   const resolvedHome = resolve(home);
   if (options.mode === "cutover") {
     const createdAt = options.createdAt ?? new Date().toISOString();
@@ -354,10 +380,17 @@ export async function normalizeFormaHomeForV6(
   return report;
 }
 
-async function buildPreflightReport(resolvedHome: string, createdAt: string): Promise<SchemaNormalizationPreflightReport> {
+async function buildPreflightReport(
+  resolvedHome: string,
+  createdAt: string,
+): Promise<SchemaNormalizationPreflightReport> {
   const reportDir = `normalization-preflight/v6-${createdAt}`;
   const reportFile = `${reportDir}/report.yaml`;
-  assertResolvedPathUnder(join(resolvedHome, reportFile), join(resolvedHome, "normalization-preflight"), "preflight report path");
+  assertResolvedPathUnder(
+    join(resolvedHome, reportFile),
+    join(resolvedHome, "normalization-preflight"),
+    "preflight report path",
+  );
   await assertSafePreflightReportTarget(resolvedHome, reportFile);
   const productIds = await listProductIds(resolvedHome);
   const requirementPagesByBaseline = new Map<string, RequirementPageRef[]>();
@@ -384,9 +417,7 @@ async function buildPreflightReport(resolvedHome: string, createdAt: string): Pr
 
     const baselineFile = `data/${productId}/baseline/baseline.yaml`;
     const baselineAbs = await assertSafeRuntimePath(resolvedHome, baselineFile, "runtime path");
-    const oldBaseline = (await fileExists(baselineAbs))
-      ? asRecord(await readYamlUnknown(baselineAbs))
-      : undefined;
+    const oldBaseline = (await fileExists(baselineAbs)) ? asRecord(await readYamlUnknown(baselineAbs)) : undefined;
     const baselineLabels = baselineLabelsById(oldBaseline);
     const requirementFiles = await listRequirementFiles(resolvedHome, productId);
     for (const requirementFile of requirementFiles) {
@@ -398,7 +429,7 @@ async function buildPreflightReport(resolvedHome: string, createdAt: string): Pr
           const key = `${productId}\u0000${baselinePage}`;
           requirementPagesByBaseline.set(key, [
             ...(requirementPagesByBaseline.get(key) ?? []),
-            { requirementId: stringValue(oldRequirement.id) ?? "", page }
+            { requirementId: stringValue(oldRequirement.id) ?? "", page },
           ]);
         }
       }
@@ -420,7 +451,6 @@ async function buildPreflightReport(resolvedHome: string, createdAt: string): Pr
         diagnostics.push(...translationCandidate.diagnostics);
         candidates.push(await toCandidateEntry(resolvedHome, translationFile, oldTranslations, translationCandidate));
       }
-
     }
 
     if (oldBaseline !== undefined) {
@@ -435,14 +465,18 @@ async function buildPreflightReport(resolvedHome: string, createdAt: string): Pr
     }
   }
 
-  const candidateManifestHash = hashUnknown(candidates.map((candidate) => ({
-    path: candidate.path,
-    candidate_hash: candidate.candidate_hash,
-    validation_status: candidate.validation_status,
-    validator_source: candidate.validator_source
-  })));
+  const candidateManifestHash = hashUnknown(
+    candidates.map((candidate) => ({
+      path: candidate.path,
+      candidate_hash: candidate.candidate_hash,
+      validation_status: candidate.validation_status,
+      validator_source: candidate.validator_source,
+    })),
+  );
   const strictSchemaStatus: SchemaNormalizationStrictSchemaStatus =
-    candidates.every((candidate) => candidate.validation_status === "passed") && diagnostics.length === 0 ? "passed" : "failed";
+    candidates.every((candidate) => candidate.validation_status === "passed") && diagnostics.length === 0
+      ? "passed"
+      : "failed";
   const report: SchemaNormalizationPreflightReport = {
     created_at: createdAt,
     report_dir: reportDir,
@@ -457,7 +491,7 @@ async function buildPreflightReport(resolvedHome: string, createdAt: string): Pr
     generated_requirement_contract_count: generatedRequirementContractCount,
     generated_baseline_contract_count: generatedBaselineContractCount,
     coverage_summaries: coverageSummaries,
-    schema_validation_diagnostics: diagnostics
+    schema_validation_diagnostics: diagnostics,
   };
 
   return report;
@@ -467,11 +501,12 @@ async function runV6SchemaCutover(
   resolvedHome: string,
   createdAt: string,
   reportPath: string | undefined,
-  hooks: SchemaNormalizationCutoverOptions["hooks"] = {}
+  hooks: SchemaNormalizationCutoverOptions["hooks"] = {},
 ): Promise<SchemaNormalizationCutoverResult> {
-  const selected = reportPath === undefined
-    ? await readLatestV6NormalizationPreflightReport(resolvedHome)
-    : await readV6NormalizationPreflightReport(resolvedHome, reportPath);
+  const selected =
+    reportPath === undefined
+      ? await readLatestV6NormalizationPreflightReport(resolvedHome)
+      : await readV6NormalizationPreflightReport(resolvedHome, reportPath);
   if (!selected.ok) {
     return cutoverPreflightFailure(resolvedHome, selected.state);
   }
@@ -481,7 +516,10 @@ async function runV6SchemaCutover(
       return cutoverPreflightFailure(resolvedHome, latest.state);
     }
     if (resolve(latest.report_path) !== resolve(selected.report_path)) {
-      return cutoverPreflightFailure(resolvedHome, preflightRequiredState(resolvedHome, "stale", "explicit_report_not_latest"));
+      return cutoverPreflightFailure(
+        resolvedHome,
+        preflightRequiredState(resolvedHome, "stale", "explicit_report_not_latest"),
+      );
     }
   }
   if (selected.report.status !== "passed" || selected.report.strict_schema_status !== "passed") {
@@ -499,7 +537,9 @@ async function runV6SchemaCutover(
     return cutoverPreflightFailure(resolvedHome, preflightRequiredState(resolvedHome, "stale", "report_stale"));
   }
 
-  const rewrittenCandidates = current.candidates.filter((candidate) => candidate.old_hash !== null && candidate.old_hash !== candidate.candidate_hash);
+  const rewrittenCandidates = current.candidates.filter(
+    (candidate) => candidate.old_hash !== null && candidate.old_hash !== candidate.candidate_hash,
+  );
   const backupDir = `normalization-backups/v6-${createdAt}`;
   const backupAbs = join(resolvedHome, backupDir);
   await assertSafeBackupTarget(resolvedHome, backupAbs);
@@ -520,7 +560,7 @@ async function runV6SchemaCutover(
       file_size: (await stat(backupFile)).size,
       backed_up_at: backedUpAt,
       normalizer_version: V6_SCHEMA_NORMALIZER_VERSION,
-      deleted_field_counts: candidate.deleted_field_counts
+      deleted_field_counts: candidate.deleted_field_counts,
     });
   }
 
@@ -531,7 +571,7 @@ async function runV6SchemaCutover(
     normalizer_version: V6_SCHEMA_NORMALIZER_VERSION,
     backup_dir: backupDir,
     created_at: createdAt,
-    files: manifestFiles
+    files: manifestFiles,
   });
 
   const journalPath = `${backupDir}/normalization-journal.yaml`;
@@ -567,8 +607,8 @@ async function runV6SchemaCutover(
       write_status: "not_started",
       validation_status: "not_started",
       restore_status: "none",
-      last_error: null
-    }))
+      last_error: null,
+    })),
   };
   await writeYamlAtomic(join(resolvedHome, journalPath), journal);
 
@@ -577,7 +617,9 @@ async function runV6SchemaCutover(
   try {
     await hooks.afterJournalCreated?.();
     for (const file of manifestFiles) {
-      const backupHash = hashBuffer(await readFile(assertBackupRelativePath(resolvedHome, backupDir, file.backup_path)));
+      const backupHash = hashBuffer(
+        await readFile(assertBackupRelativePath(resolvedHome, backupDir, file.backup_path)),
+      );
       if (backupHash !== file.sha256) {
         throw new Error(`normalization-backups hash mismatch for ${file.runtime_path}`);
       }
@@ -647,7 +689,7 @@ async function runV6SchemaCutover(
       journal_path: journalPath,
       rewritten_file_count: rewrittenCandidates.length,
       generated_requirement_contract_count: validationReport.generated_requirement_contract_count,
-      generated_baseline_contract_count: validationReport.generated_baseline_contract_count
+      generated_baseline_contract_count: validationReport.generated_baseline_contract_count,
     });
     await rm(activeMarker, { force: true });
     await writeFile(committedMarker, `${createdAt}\n`, "utf8");
@@ -659,7 +701,7 @@ async function runV6SchemaCutover(
       backup_dir: backupDir,
       manifest_path: manifestPath,
       journal_path: journalPath,
-      rewritten_file_count: rewrittenCandidates.length
+      rewritten_file_count: rewrittenCandidates.length,
     };
   } catch (error) {
     if (await fileExists(join(resolvedHome, journalPath))) {
@@ -674,18 +716,23 @@ async function runV6SchemaCutover(
   }
 }
 
-function cutoverPreflightFailure(home: string, state: SchemaNormalizationRecoveryState): SchemaNormalizationCutoverResult {
+function cutoverPreflightFailure(
+  home: string,
+  state: SchemaNormalizationRecoveryState,
+): SchemaNormalizationCutoverResult {
   return {
     status: "failed",
     code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
     home,
     message: state.message,
     preflight_status: state.preflight_status,
-    preflight_reason: state.preflight_reason
+    preflight_reason: state.preflight_reason,
   };
 }
 
-export async function listV6NormalizationPreflightReports(home: string): Promise<Array<{ report: SchemaNormalizationPreflightReport; report_path: string }>> {
+export async function listV6NormalizationPreflightReports(
+  home: string,
+): Promise<Array<{ report: SchemaNormalizationPreflightReport; report_path: string }>> {
   const resolvedHome = resolve(home);
   const preflightDir = join(resolvedHome, "normalization-preflight");
   const entries = await readDirIfExists(preflightDir);
@@ -700,7 +747,9 @@ export async function listV6NormalizationPreflightReports(home: string): Promise
   return sortReports(selected);
 }
 
-export async function readLatestV6NormalizationPreflightReport(home: string): Promise<SchemaNormalizationPreflightResult> {
+export async function readLatestV6NormalizationPreflightReport(
+  home: string,
+): Promise<SchemaNormalizationPreflightResult> {
   const resolvedHome = resolve(home);
   const preflightDir = join(resolvedHome, "normalization-preflight");
   const entries = await readDirIfExists(preflightDir);
@@ -729,7 +778,7 @@ export async function readLatestV6NormalizationPreflightReport(home: string): Pr
 
 export async function readV6NormalizationPreflightReport(
   home: string,
-  reportPath: string
+  reportPath: string,
 ): Promise<SchemaNormalizationPreflightResult> {
   const resolvedHome = resolve(home);
   const resolvedReport = resolve(reportPath);
@@ -777,11 +826,14 @@ export async function readSchemaNormalizationRecoveryState(home: string): Promis
         return recoveryRequiredState(resolvedHome, {
           restore_status: "no_runtime_writes",
           backup_dir: stringValue(journal.backup_dir),
-          journal_path: journalSelection.journal_file === undefined ? undefined : toHomeRelative(resolvedHome, journalSelection.journal_file),
+          journal_path:
+            journalSelection.journal_file === undefined
+              ? undefined
+              : toHomeRelative(resolvedHome, journalSelection.journal_file),
           manifest_path: stringValue(journal.manifest_path),
           manifest_hash: stringValue(journal.manifest_hash),
           normalizer_version: stringValue(journal.normalizer_version),
-          failed_files: []
+          failed_files: [],
         });
       }
     }
@@ -789,11 +841,14 @@ export async function readSchemaNormalizationRecoveryState(home: string): Promis
       return recoveryRequiredState(resolvedHome, {
         restore_status: "restore_failed",
         backup_dir: stringValue(journal.backup_dir),
-        journal_path: journalSelection.journal_file === undefined ? undefined : toHomeRelative(resolvedHome, journalSelection.journal_file),
+        journal_path:
+          journalSelection.journal_file === undefined
+            ? undefined
+            : toHomeRelative(resolvedHome, journalSelection.journal_file),
         manifest_path: stringValue(journal.manifest_path),
         manifest_hash: stringValue(journal.manifest_hash),
         normalizer_version: stringValue(journal.normalizer_version),
-        failed_files: failedFilesFromJournal(journal)
+        failed_files: failedFilesFromJournal(journal),
       });
     }
   }
@@ -802,7 +857,7 @@ export async function readSchemaNormalizationRecoveryState(home: string): Promis
     return recoveryRequiredState(resolvedHome, {
       restore_status: "manifest_unavailable",
       active_marker_file: toHomeRelative(resolvedHome, activeMarker),
-      failed_files: []
+      failed_files: [],
     });
   }
 
@@ -816,7 +871,7 @@ export async function readSchemaNormalizationRecoveryState(home: string): Promis
       restore_status: "none",
       failed_files: [],
       recovery_actions: [],
-      report: normalizationReport
+      report: normalizationReport,
     };
   }
 
@@ -827,8 +882,12 @@ export async function readSchemaNormalizationRecoveryState(home: string): Promis
 
   return preflightRequiredState(
     resolvedHome,
-    latestReport.report.status === "passed" && latestReport.report.strict_schema_status === "passed" ? "passed" : "failed",
-    latestReport.report.status === "passed" && latestReport.report.strict_schema_status === "passed" ? undefined : "report_failed",
+    latestReport.report.status === "passed" && latestReport.report.strict_schema_status === "passed"
+      ? "passed"
+      : "failed",
+    latestReport.report.status === "passed" && latestReport.report.strict_schema_status === "passed"
+      ? undefined
+      : "report_failed",
     {
       preflight_report_file: latestReport.report.report_file,
       report: {
@@ -836,13 +895,16 @@ export async function readSchemaNormalizationRecoveryState(home: string): Promis
         report_file: latestReport.report.report_file,
         generated_requirement_contract_count: latestReport.report.generated_requirement_contract_count,
         generated_baseline_contract_count: latestReport.report.generated_baseline_contract_count,
-        strict_schema_status: latestReport.report.strict_schema_status
-      }
-    }
+        strict_schema_status: latestReport.report.strict_schema_status,
+      },
+    },
   );
 }
 
-export async function recoverV6NormalizationJournal(home: string, backupDir: string): Promise<SchemaNormalizationRecoveryResult> {
+export async function recoverV6NormalizationJournal(
+  home: string,
+  backupDir: string,
+): Promise<SchemaNormalizationRecoveryResult> {
   const resolvedHome = resolve(home);
   const backup = await resolveBackupDirUnderHome(resolvedHome, backupDir);
   const journalFile = join(backup.absolute, "normalization-journal.yaml");
@@ -864,9 +926,16 @@ export async function recoverV6NormalizationJournal(home: string, backupDir: str
       restored_at: new Date().toISOString(),
       backup_dir: backup.relative,
       journal_path: `${backup.relative}/normalization-journal.yaml`,
-      restored_file_count: 0
+      restored_file_count: 0,
     });
-    return { status: "restored", home: resolvedHome, backup_dir: backup.relative, restore_status: "no_runtime_writes", restored_file_count: 0, failed_files: [] };
+    return {
+      status: "restored",
+      home: resolvedHome,
+      backup_dir: backup.relative,
+      restore_status: "no_runtime_writes",
+      restored_file_count: 0,
+      failed_files: [],
+    };
   }
 
   try {
@@ -884,9 +953,16 @@ export async function recoverV6NormalizationJournal(home: string, backupDir: str
       restored_at: new Date().toISOString(),
       backup_dir: backup.relative,
       journal_path: `${backup.relative}/normalization-journal.yaml`,
-      restored_file_count: restored
+      restored_file_count: restored,
     });
-    return { status: "restored", home: resolvedHome, backup_dir: backup.relative, restore_status: "restored", restored_file_count: restored, failed_files: [] };
+    return {
+      status: "restored",
+      home: resolvedHome,
+      backup_dir: backup.relative,
+      restore_status: "restored",
+      restored_file_count: restored,
+      failed_files: [],
+    };
   } catch (error) {
     throw asRecoveryError(resolvedHome, backup.relative, error, "restore_failed", "", undefined);
   }
@@ -895,7 +971,7 @@ export async function recoverV6NormalizationJournal(home: string, backupDir: str
 export async function restoreV6NormalizationBackup(
   home: string,
   backupDir: string,
-  options: { confirm: string }
+  options: { confirm: string },
 ): Promise<SchemaNormalizationRecoveryResult> {
   if (options.confirm !== "restore_v6_backup") {
     throw new Error("restore-v6-normalization-backup requires --confirm restore_v6_backup");
@@ -922,24 +998,45 @@ export async function restoreV6NormalizationBackup(
       status: "restored",
       restored_at: new Date().toISOString(),
       backup_dir: backup.relative,
-      restored_file_count: restored
+      restored_file_count: restored,
     });
     const journalFile = join(backup.absolute, "normalization-journal.yaml");
     if (await fileExists(journalFile)) {
-      const journal = await readRecoveryYaml(resolvedHome, backup.relative, journalFile, "journal", "manifest_unavailable");
+      const journal = await readRecoveryYaml(
+        resolvedHome,
+        backup.relative,
+        journalFile,
+        "journal",
+        "manifest_unavailable",
+      );
       journal.status = "restored";
       await writeYamlAtomic(journalFile, journal);
     }
     await rm(join(resolvedHome, ".v6-schema-cutover-active"), { force: true });
     await rm(join(resolvedHome, ".v6-schema-cutover-committed"), { force: true });
-    return { status: "restored", home: resolvedHome, backup_dir: backup.relative, restore_status: "restored", restored_file_count: restored, failed_files: [] };
+    return {
+      status: "restored",
+      home: resolvedHome,
+      backup_dir: backup.relative,
+      restore_status: "restored",
+      restored_file_count: restored,
+      failed_files: [],
+    };
   } catch (error) {
-    await writeFile(join(resolvedHome, ".v6-schema-cutover-active"), `restore failed: ${errorMessage(error)}\n`, "utf8");
+    await writeFile(
+      join(resolvedHome, ".v6-schema-cutover-active"),
+      `restore failed: ${errorMessage(error)}\n`,
+      "utf8",
+    );
     throw asRecoveryError(resolvedHome, backup.relative, error, "restore_failed", "", undefined);
   }
 }
 
-async function restoreManifestRuntimeFiles(home: string, backup: { absolute: string; relative: string }, files: Record<string, unknown>[]): Promise<number> {
+async function restoreManifestRuntimeFiles(
+  home: string,
+  backup: { absolute: string; relative: string },
+  files: Record<string, unknown>[],
+): Promise<number> {
   let restored = 0;
   for (const file of files) {
     const runtimePath = requiredManifestString(file, "runtime_path");
@@ -949,7 +1046,14 @@ async function restoreManifestRuntimeFiles(home: string, backup: { absolute: str
     const backupFile = await assertSafeBackupFile(home, backup, backupPath);
     const backupHash = hashBuffer(await readFile(backupFile));
     if (backupHash !== expectedHash) {
-      throw recoveryError(home, backup.relative, "backup_hash_mismatch", runtimePath, backupPath, `backup hash mismatch for ${runtimePath}`);
+      throw recoveryError(
+        home,
+        backup.relative,
+        "backup_hash_mismatch",
+        runtimePath,
+        backupPath,
+        `backup hash mismatch for ${runtimePath}`,
+      );
     }
     await mkdir(dirname(runtimeFile), { recursive: true });
     await copyFile(backupFile, runtimeFile);
@@ -958,12 +1062,23 @@ async function restoreManifestRuntimeFiles(home: string, backup: { absolute: str
   return restored;
 }
 
-async function validateOldSchemaSmoke(home: string, backupDir: string, files: Record<string, unknown>[]): Promise<void> {
+async function validateOldSchemaSmoke(
+  home: string,
+  backupDir: string,
+  files: Record<string, unknown>[],
+): Promise<void> {
   for (const file of files) {
     const runtimePath = requiredManifestString(file, "runtime_path");
     const value = asRecord(await readYamlUnknown(assertRuntimeRelativePath(home, runtimePath, "runtime path")));
     const fail = (message: string): never => {
-      throw recoveryError(home, backupDir, "restore_failed", runtimePath, undefined, `old schema smoke check failed for ${runtimePath}: ${message}`);
+      throw recoveryError(
+        home,
+        backupDir,
+        "restore_failed",
+        runtimePath,
+        undefined,
+        `old schema smoke check failed for ${runtimePath}: ${message}`,
+      );
     };
     if (runtimePath.endsWith("/product.yaml")) {
       if (typeof value.id !== "string" || typeof value.name !== "string") {
@@ -994,12 +1109,18 @@ async function validateOldSchemaSmoke(home: string, backupDir: string, files: Re
   }
 }
 
-async function readTrustedManifest(home: string, backup: { absolute: string; relative: string }): Promise<Record<string, unknown>> {
+async function readTrustedManifest(
+  home: string,
+  backup: { absolute: string; relative: string },
+): Promise<Record<string, unknown>> {
   const manifestFile = join(backup.absolute, "manifest.yaml");
   const manifest = await readRecoveryYaml(home, backup.relative, manifestFile, "manifest", "manifest_unavailable");
   const manifestHash = stringValue(manifest.manifest_hash);
   const files = arrayOfRecords(manifest.files);
-  const expectedHash = hashUnknown({ files, normalizer_version: stringValue(manifest.normalizer_version) ?? V6_SCHEMA_NORMALIZER_VERSION });
+  const expectedHash = hashUnknown({
+    files,
+    normalizer_version: stringValue(manifest.normalizer_version) ?? V6_SCHEMA_NORMALIZER_VERSION,
+  });
   if (manifestHash !== expectedHash) {
     throw recoveryError(home, backup.relative, "manifest_unavailable", "", undefined, "manifest hash mismatch");
   }
@@ -1015,12 +1136,19 @@ async function readRecoveryYaml(
   backupDir: string,
   file: string,
   artifact: string,
-  restoreStatus: SchemaNormalizationRestoreStatus
+  restoreStatus: SchemaNormalizationRestoreStatus,
 ): Promise<Record<string, unknown>> {
   try {
     return asRecord(await readYamlUnknown(file));
   } catch (error) {
-    throw recoveryError(home, backupDir, restoreStatus, "", toHomeRelative(home, file), `${artifact} unavailable or corrupt: ${errorMessage(error)}`);
+    throw recoveryError(
+      home,
+      backupDir,
+      restoreStatus,
+      "",
+      toHomeRelative(home, file),
+      `${artifact} unavailable or corrupt: ${errorMessage(error)}`,
+    );
   }
 }
 
@@ -1034,7 +1162,11 @@ async function assertSafeRuntimeRestoreTarget(home: string, backupDir: string, r
   return runtimeFile;
 }
 
-async function assertSafeBackupFile(home: string, backup: { absolute: string; relative: string }, backupPath: string): Promise<string> {
+async function assertSafeBackupFile(
+  home: string,
+  backup: { absolute: string; relative: string },
+  backupPath: string,
+): Promise<string> {
   const backupFile = assertBackupRelativePath(home, backup.relative, backupPath);
   try {
     await assertNoSymlinkPathSegments(backup.absolute, backupFile, "backup path");
@@ -1073,25 +1205,28 @@ function recoveryError(
   restoreStatus: SchemaNormalizationRestoreStatus,
   runtimePath: string,
   backupPath: string | undefined,
-  reason: string
+  reason: string,
 ): SchemaNormalizationRecoveryError {
-  return new SchemaNormalizationRecoveryError({
-    status: "recovery_required",
-    code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
-    home,
-    backup_dir: backupDir,
-    restore_status: restoreStatus,
-    restored_file_count: 0,
-    recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"],
-    failed_files: [
-      {
-        runtime_path: runtimePath,
-        backup_path: backupPath,
-        reason,
-        restore_status: "pending"
-      }
-    ]
-  }, reason);
+  return new SchemaNormalizationRecoveryError(
+    {
+      status: "recovery_required",
+      code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
+      home,
+      backup_dir: backupDir,
+      restore_status: restoreStatus,
+      restored_file_count: 0,
+      recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"],
+      failed_files: [
+        {
+          runtime_path: runtimePath,
+          backup_path: backupPath,
+          reason,
+          restore_status: "pending",
+        },
+      ],
+    },
+    reason,
+  );
 }
 
 function asRecoveryError(
@@ -1100,7 +1235,7 @@ function asRecoveryError(
   error: unknown,
   restoreStatus: SchemaNormalizationRestoreStatus,
   runtimePath: string,
-  backupPath: string | undefined
+  backupPath: string | undefined,
 ): SchemaNormalizationRecoveryError {
   if (error instanceof SchemaNormalizationRecoveryError) {
     return error;
@@ -1117,11 +1252,15 @@ async function readNormalizationReport(home: string): Promise<SchemaNormalizatio
   const status = stringValue(report.status);
   const strictSchemaStatus = stringValue(report.strict_schema_status);
   return {
-    status: status === "passed" || status === "failed" || status === "committed" || status === "restored" ? status : undefined,
+    status:
+      status === "passed" || status === "failed" || status === "committed" || status === "restored"
+        ? status
+        : undefined,
     backup_dir: stringValue(report.backup_dir),
     journal_path: stringValue(report.journal_path),
     rewritten_file_count: numberValue(report.rewritten_file_count),
-    strict_schema_status: strictSchemaStatus === "passed" || strictSchemaStatus === "failed" ? strictSchemaStatus : undefined
+    strict_schema_status:
+      strictSchemaStatus === "passed" || strictSchemaStatus === "failed" ? strictSchemaStatus : undefined,
   };
 }
 
@@ -1146,9 +1285,9 @@ function extractProductRules(product: Record<string, unknown>): ProductRuleRef[]
           fields: semanticItems(rule.semantic.fields),
           actions: semanticItems(rule.semantic.actions),
           component_keys: arrayOfStrings(rule.semantic.component_keys),
-          allowed_copy: arrayOfStrings(rule.semantic.allowed_copy)
+          allowed_copy: arrayOfStrings(rule.semantic.allowed_copy),
         }
-      : undefined
+      : undefined,
   }));
 }
 
@@ -1168,14 +1307,14 @@ function buildRequirementCandidate(
   path: string,
   requirement: Record<string, unknown>,
   productRules: ProductRuleRef[],
-  baselineLabels: Map<string, string>
+  baselineLabels: Map<string, string>,
 ): CandidateBuildResult {
   const diagnostics: SchemaNormalizationDiagnostic[] = [];
   const deletedFieldCounts: Record<string, number> = {};
   const navigation = arrayOfRecords(requirement.navigation).map((edge) => ({
     from: stringValue(edge.from) ?? "",
     to: stringValue(edge.to) ?? "",
-    label: stringValue(edge.label)
+    label: stringValue(edge.label),
   }));
   const pages = arrayOfRecords(requirement.pages).map((page) => {
     const nextPage = { ...page };
@@ -1193,11 +1332,11 @@ function buildRequirementCandidate(
           copy: arrayOfRecords(nextPage.copy).map((item) => ({ text: stringValue(item.text) })),
           declared_fields: semanticItems(nextPage.declared_fields),
           declared_actions: semanticItems(nextPage.declared_actions),
-          declared_component_keys: arrayOfStrings(nextPage.declared_component_keys)
+          declared_component_keys: arrayOfStrings(nextPage.declared_component_keys),
         },
         navigation,
         product_rules: productRules,
-        baseline_label: baselineLabels.get(stringValue(nextPage.baseline_page) ?? "")
+        baseline_label: baselineLabels.get(stringValue(nextPage.baseline_page) ?? ""),
       });
       nextPage.semantic_contract = built.semantic_contract;
       nextPage.semantic_contract_coverage = built.semantic_contract_coverage;
@@ -1217,7 +1356,7 @@ function buildBaselineCandidate(
   productId: string,
   path: string,
   baseline: Record<string, unknown>,
-  requirementPagesByBaseline: Map<string, RequirementPageRef[]>
+  requirementPagesByBaseline: Map<string, RequirementPageRef[]>,
 ): CandidateBuildResult {
   const diagnostics: SchemaNormalizationDiagnostic[] = [];
   const pages = arrayOfRecords(baseline.pages);
@@ -1231,7 +1370,7 @@ function buildBaselineCandidate(
       .map((source) => ({
         source_requirement: source.requirementId,
         page_id: stringValue(source.page.page_id) ?? "",
-        semantic_contract: source.page.semantic_contract as SemanticContract
+        semantic_contract: source.page.semantic_contract as SemanticContract,
       }));
     return { ...page, source_semantic_contracts };
   });
@@ -1248,7 +1387,9 @@ function buildBaselineCandidate(
       id: stringValue(page.id) ?? "",
       name: stringValue(page.name),
       copy: arrayOfRecords(page.copy).map((item) => ({ text: stringValue(item.text) })),
-      semantic_contract: isRecord(page.semantic_contract) ? (page.semantic_contract as unknown as SemanticContract) : undefined,
+      semantic_contract: isRecord(page.semantic_contract)
+        ? (page.semantic_contract as unknown as SemanticContract)
+        : undefined,
       semantic_contract_coverage: semanticCoverageValue(page.semantic_contract_coverage),
       declared_fields: semanticItems(page.declared_fields),
       declared_actions: semanticItems(page.declared_actions),
@@ -1260,13 +1401,13 @@ function buildBaselineCandidate(
             page_id: string;
             semantic_contract: SemanticContract;
           }>)
-        : undefined
+        : undefined,
     })),
     navigation: arrayOfRecords(baseline.navigation).map((edge) => ({
       from: stringValue(edge.from) ?? "",
       to: stringValue(edge.to) ?? "",
-      label: stringValue(edge.label)
-    }))
+      label: stringValue(edge.label),
+    })),
   });
 
   if (!built.ok) {
@@ -1274,7 +1415,7 @@ function buildBaselineCandidate(
       code: built.code ?? "BASELINE_SEMANTIC_CONTRACT_CONFLICT",
       path,
       message: "baseline semantic contract aggregate contains conflicting labels",
-      details: { conflicts: built.conflicts }
+      details: { conflicts: built.conflicts },
     });
   }
 
@@ -1287,7 +1428,7 @@ function buildBaselineCandidate(
     return {
       ...page,
       semantic_contract: generated?.semantic_contract,
-      semantic_contract_coverage: generated?.semantic_contract_coverage
+      semantic_contract_coverage: generated?.semantic_contract_coverage,
     };
   });
   const candidate = { ...baseline, pages: nextPages };
@@ -1301,12 +1442,18 @@ function buildBaselineCandidate(
 
 function buildCopyTranslationsCandidate(path: string, translations: Record<string, unknown>): CandidateBuildResult {
   const diagnostics: SchemaNormalizationDiagnostic[] = [];
-  validateAllowedFields(path, translations, allowedCopyTranslationFields, "COPY_TRANSLATIONS_UNKNOWN_FIELD", diagnostics);
+  validateAllowedFields(
+    path,
+    translations,
+    allowedCopyTranslationFields,
+    "COPY_TRANSLATIONS_UNKNOWN_FIELD",
+    diagnostics,
+  );
   if (!Array.isArray(translations.translations)) {
     diagnostics.push({
       code: "COPY_TRANSLATIONS_INVALID",
       path,
-      message: "copy-translations.yaml must contain translations[]"
+      message: "copy-translations.yaml must contain translations[]",
     });
   }
   for (const [pageIndex, page] of arrayOfRecords(translations.translations).entries()) {
@@ -1314,7 +1461,7 @@ function buildCopyTranslationsCandidate(path: string, translations: Record<strin
       diagnostics.push({
         code: "COPY_TRANSLATIONS_INVALID",
         path,
-        message: `translations[${pageIndex}] must contain page_id and entries[]`
+        message: `translations[${pageIndex}] must contain page_id and entries[]`,
       });
       continue;
     }
@@ -1323,7 +1470,7 @@ function buildCopyTranslationsCandidate(path: string, translations: Record<strin
         diagnostics.push({
           code: "COPY_TRANSLATIONS_INVALID",
           path,
-          message: `translations[${pageIndex}].entries[${entryIndex}] must contain context and texts`
+          message: `translations[${pageIndex}].entries[${entryIndex}] must contain context and texts`,
         });
         continue;
       }
@@ -1332,7 +1479,7 @@ function buildCopyTranslationsCandidate(path: string, translations: Record<strin
           diagnostics.push({
             code: "COPY_TRANSLATIONS_INVALID",
             path,
-            message: `translations[${pageIndex}].entries[${entryIndex}].texts.${language} must be a string`
+            message: `translations[${pageIndex}].entries[${entryIndex}].texts.${language} must be a string`,
           });
         }
       }
@@ -1341,7 +1488,10 @@ function buildCopyTranslationsCandidate(path: string, translations: Record<strin
   return { candidate: translations, deletedFieldCounts: {}, generatedCoverage: [], diagnostics };
 }
 
-function buildPageLevelDesignMetadataCandidate(path: string, designMetadata: Record<string, unknown>): CandidateBuildResult {
+function buildPageLevelDesignMetadataCandidate(
+  path: string,
+  designMetadata: Record<string, unknown>,
+): CandidateBuildResult {
   return {
     candidate: designMetadata,
     deletedFieldCounts: {},
@@ -1350,9 +1500,9 @@ function buildPageLevelDesignMetadataCandidate(path: string, designMetadata: Rec
       {
         code: "PAGE_LEVEL_DESIGN_METADATA_DEPRECATED",
         path,
-        message: "page-level D-* design metadata is deprecated in v6"
-      }
-    ]
+        message: "page-level D-* design metadata is deprecated in v6",
+      },
+    ],
   };
 }
 
@@ -1360,58 +1510,138 @@ async function toCandidateEntry(
   home: string,
   path: string,
   oldObject: Record<string, unknown>,
-  built: CandidateBuildResult
+  built: CandidateBuildResult,
 ): Promise<SchemaNormalizationCandidateManifestEntry> {
   return {
     path,
-    old_hash: await fileExists(join(home, path)) ? hashBuffer(await readFile(join(home, path))) : null,
+    old_hash: (await fileExists(join(home, path))) ? hashBuffer(await readFile(join(home, path))) : null,
     candidate_hash: hashSerializedYaml(built.candidate),
     candidate: built.candidate,
     validator_source: "preflight_candidate_validator",
     validation_status: built.diagnostics.length === 0 ? "passed" : "failed",
     deleted_field_counts: built.deletedFieldCounts,
-    generated_contract_coverage: built.generatedCoverage
+    generated_contract_coverage: built.generatedCoverage,
   };
 }
 
-function validateProductSemantic(path: string, product: Record<string, unknown>, diagnostics: SchemaNormalizationDiagnostic[]): void {
+function validateProductSemantic(
+  path: string,
+  product: Record<string, unknown>,
+  diagnostics: SchemaNormalizationDiagnostic[],
+): void {
   for (const [index, rule] of arrayOfRecords(product.rules).entries()) {
     if (rule.semantic === undefined) {
       continue;
     }
     if (!isRecord(rule.semantic) || !isSemanticRuleShape(rule.semantic)) {
-      diagnostics.push({ code: "PRODUCT_SEMANTIC_INVALID", path, message: `rules[${index}].semantic must contain valid semantic arrays` });
+      diagnostics.push({
+        code: "PRODUCT_SEMANTIC_INVALID",
+        path,
+        message: `rules[${index}].semantic must contain valid semantic arrays`,
+      });
     }
   }
 }
 
-function validateRequirementCandidate(path: string, requirement: Record<string, unknown>, diagnostics: SchemaNormalizationDiagnostic[]): void {
+function validateRequirementCandidate(
+  path: string,
+  requirement: Record<string, unknown>,
+  diagnostics: SchemaNormalizationDiagnostic[],
+): void {
   for (const [index, page] of arrayOfRecords(requirement.pages).entries()) {
-    validateAllowedFields(path, page, allowedRequirementPageFields, "REQUIREMENT_PAGE_UNKNOWN_FIELD", diagnostics, `pages[${index}]`);
-    validateOptionalSemanticItems(path, `pages[${index}].declared_fields`, page.declared_fields, "REQUIREMENT_DECLARED_FIELDS_INVALID", diagnostics);
-    validateOptionalSemanticItems(path, `pages[${index}].declared_actions`, page.declared_actions, "REQUIREMENT_DECLARED_ACTIONS_INVALID", diagnostics);
-    validateOptionalStringArray(path, `pages[${index}].declared_component_keys`, page.declared_component_keys, "REQUIREMENT_DECLARED_COMPONENT_KEYS_INVALID", diagnostics);
+    validateAllowedFields(
+      path,
+      page,
+      allowedRequirementPageFields,
+      "REQUIREMENT_PAGE_UNKNOWN_FIELD",
+      diagnostics,
+      `pages[${index}]`,
+    );
+    validateOptionalSemanticItems(
+      path,
+      `pages[${index}].declared_fields`,
+      page.declared_fields,
+      "REQUIREMENT_DECLARED_FIELDS_INVALID",
+      diagnostics,
+    );
+    validateOptionalSemanticItems(
+      path,
+      `pages[${index}].declared_actions`,
+      page.declared_actions,
+      "REQUIREMENT_DECLARED_ACTIONS_INVALID",
+      diagnostics,
+    );
+    validateOptionalStringArray(
+      path,
+      `pages[${index}].declared_component_keys`,
+      page.declared_component_keys,
+      "REQUIREMENT_DECLARED_COMPONENT_KEYS_INVALID",
+      diagnostics,
+    );
     if (!isRecord(page.semantic_contract)) {
-      diagnostics.push({ code: "REQUIREMENT_PAGE_SEMANTIC_CONTRACT_REQUIRED", path, message: `pages[${index}].semantic_contract is required` });
+      diagnostics.push({
+        code: "REQUIREMENT_PAGE_SEMANTIC_CONTRACT_REQUIRED",
+        path,
+        message: `pages[${index}].semantic_contract is required`,
+      });
     } else if (!isSemanticContractShape(page.semantic_contract)) {
-      diagnostics.push({ code: "REQUIREMENT_PAGE_SEMANTIC_CONTRACT_INVALID", path, message: `pages[${index}].semantic_contract is invalid` });
+      diagnostics.push({
+        code: "REQUIREMENT_PAGE_SEMANTIC_CONTRACT_INVALID",
+        path,
+        message: `pages[${index}].semantic_contract is invalid`,
+      });
     }
-    if (page.semantic_contract_coverage !== undefined && page.semantic_contract_coverage !== "minimal" && page.semantic_contract_coverage !== "explicit") {
-      diagnostics.push({ code: "REQUIREMENT_PAGE_SEMANTIC_CONTRACT_COVERAGE_INVALID", path, message: `pages[${index}].semantic_contract_coverage is invalid` });
+    if (
+      page.semantic_contract_coverage !== undefined &&
+      page.semantic_contract_coverage !== "minimal" &&
+      page.semantic_contract_coverage !== "explicit"
+    ) {
+      diagnostics.push({
+        code: "REQUIREMENT_PAGE_SEMANTIC_CONTRACT_COVERAGE_INVALID",
+        path,
+        message: `pages[${index}].semantic_contract_coverage is invalid`,
+      });
     }
   }
 }
 
-function validateBaselineCandidate(path: string, baseline: Record<string, unknown>, diagnostics: SchemaNormalizationDiagnostic[]): void {
+function validateBaselineCandidate(
+  path: string,
+  baseline: Record<string, unknown>,
+  diagnostics: SchemaNormalizationDiagnostic[],
+): void {
   for (const [index, page] of arrayOfRecords(baseline.pages).entries()) {
-    validateAllowedFields(path, page, allowedBaselinePageFields, "BASELINE_PAGE_UNKNOWN_FIELD", diagnostics, `pages[${index}]`);
+    validateAllowedFields(
+      path,
+      page,
+      allowedBaselinePageFields,
+      "BASELINE_PAGE_UNKNOWN_FIELD",
+      diagnostics,
+      `pages[${index}]`,
+    );
     if (!isRecord(page.semantic_contract)) {
-      diagnostics.push({ code: "BASELINE_PAGE_SEMANTIC_CONTRACT_REQUIRED", path, message: `pages[${index}].semantic_contract is required` });
+      diagnostics.push({
+        code: "BASELINE_PAGE_SEMANTIC_CONTRACT_REQUIRED",
+        path,
+        message: `pages[${index}].semantic_contract is required`,
+      });
     } else if (!isSemanticContractShape(page.semantic_contract)) {
-      diagnostics.push({ code: "BASELINE_SEMANTIC_CONTRACT_INVALID", path, message: `pages[${index}].semantic_contract is invalid` });
+      diagnostics.push({
+        code: "BASELINE_SEMANTIC_CONTRACT_INVALID",
+        path,
+        message: `pages[${index}].semantic_contract is invalid`,
+      });
     }
-    if (page.semantic_contract_coverage !== undefined && page.semantic_contract_coverage !== "minimal" && page.semantic_contract_coverage !== "explicit") {
-      diagnostics.push({ code: "BASELINE_SEMANTIC_CONTRACT_COVERAGE_INVALID", path, message: `pages[${index}].semantic_contract_coverage is invalid` });
+    if (
+      page.semantic_contract_coverage !== undefined &&
+      page.semantic_contract_coverage !== "minimal" &&
+      page.semantic_contract_coverage !== "explicit"
+    ) {
+      diagnostics.push({
+        code: "BASELINE_SEMANTIC_CONTRACT_COVERAGE_INVALID",
+        path,
+        message: `pages[${index}].semantic_contract_coverage is invalid`,
+      });
     }
   }
 }
@@ -1440,7 +1670,7 @@ function validateOptionalSemanticItems(
   fieldPath: string,
   value: unknown,
   code: string,
-  diagnostics: SchemaNormalizationDiagnostic[]
+  diagnostics: SchemaNormalizationDiagnostic[],
 ): void {
   if (value !== undefined && !isSemanticItemsShape(value)) {
     diagnostics.push({ code, path, message: `${fieldPath} must be an array of key/label objects` });
@@ -1452,7 +1682,7 @@ function validateOptionalStringArray(
   fieldPath: string,
   value: unknown,
   code: string,
-  diagnostics: SchemaNormalizationDiagnostic[]
+  diagnostics: SchemaNormalizationDiagnostic[],
 ): void {
   if (value !== undefined && !isStringArrayShape(value)) {
     diagnostics.push({ code, path, message: `${fieldPath} must be an array of strings` });
@@ -1466,7 +1696,7 @@ const allowedProductFields = new Set([
   "platform",
   "style",
   "languages",
-  "default_language"
+  "default_language",
 ]);
 const allowedRequirementFields = new Set([
   "id",
@@ -1477,7 +1707,7 @@ const allowedRequirementFields = new Set([
   "created_at",
   "updated_at",
   "pages",
-  "navigation"
+  "navigation",
 ]);
 const allowedRequirementPageFields = new Set([
   "page_id",
@@ -1494,7 +1724,7 @@ const allowedRequirementPageFields = new Set([
   "declared_actions",
   "declared_component_keys",
   "semantic_contract",
-  "semantic_contract_coverage"
+  "semantic_contract_coverage",
 ]);
 const allowedBaselineFields = new Set(["product_id", "pages", "navigation"]);
 const allowedBaselinePageFields = new Set([
@@ -1506,7 +1736,7 @@ const allowedBaselinePageFields = new Set([
   "interactions",
   "source_requirements",
   "semantic_contract",
-  "semantic_contract_coverage"
+  "semantic_contract_coverage",
 ]);
 const allowedCopyTranslationFields = new Set(["translations"]);
 
@@ -1516,14 +1746,14 @@ function validateAllowedFields(
   allowed: Set<string>,
   code: string,
   diagnostics: SchemaNormalizationDiagnostic[],
-  prefix?: string
+  prefix?: string,
 ): void {
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) {
       diagnostics.push({
         code,
         path,
-        message: `${prefix ? `${prefix}.` : ""}${key} is not a documented v6 runtime field`
+        message: `${prefix ? `${prefix}.` : ""}${key} is not a documented v6 runtime field`,
       });
     }
   }
@@ -1539,7 +1769,7 @@ function emptySemanticContract(): SemanticContract {
     allowed_copy: [],
     component_keys: [],
     fields: [],
-    navigation: []
+    navigation: [],
   };
 }
 
@@ -1547,7 +1777,7 @@ function mergeSemanticContract(
   target: SemanticContract,
   source: SemanticContract,
   pageId: string,
-  conflicts: SemanticContractConflict[]
+  conflicts: SemanticContractConflict[],
 ): void {
   mergeSemanticItems(target.fields, semanticItems(source.fields), pageId, conflicts, "field");
   mergeSemanticItems(target.actions, semanticItems(source.actions), pageId, conflicts, "action");
@@ -1556,7 +1786,7 @@ function mergeSemanticContract(
   for (const item of arrayOfRecords(source.navigation)) {
     addNavigationTarget(target.navigation, {
       target_page_id: stringValue(item.target_page_id) ?? "",
-      label: stringValue(item.label)
+      label: stringValue(item.label),
     });
   }
 }
@@ -1566,7 +1796,7 @@ function mergeSemanticItems(
   items: SemanticContractItem[],
   pageId?: string,
   conflicts?: SemanticContractConflict[],
-  type?: "action" | "field"
+  type?: "action" | "field",
 ): void {
   for (const item of items) {
     const existing = target.find((candidate) => candidate.key === item.key);
@@ -1576,12 +1806,15 @@ function mergeSemanticItems(
     }
     if (existing.label !== item.label && pageId !== undefined && conflicts !== undefined && type !== undefined) {
       const labels = [existing.label, item.label].sort();
-      if (!conflicts.some((conflict) =>
-        conflict.page_id === pageId &&
-        conflict.type === type &&
-        conflict.key === item.key &&
-        conflict.labels.join("\u0000") === labels.join("\u0000")
-      )) {
+      if (
+        !conflicts.some(
+          (conflict) =>
+            conflict.page_id === pageId &&
+            conflict.type === type &&
+            conflict.key === item.key &&
+            conflict.labels.join("\u0000") === labels.join("\u0000"),
+        )
+      ) {
         conflicts.push({ page_id: pageId, type, key: item.key, labels });
       }
     }
@@ -1596,7 +1829,10 @@ function mergeStrings(target: string[], values: string[]): void {
   }
 }
 
-function addNavigationTarget(target: SemanticContract["navigation"], item: { target_page_id: string; label?: string }): void {
+function addNavigationTarget(
+  target: SemanticContract["navigation"],
+  item: { target_page_id: string; label?: string },
+): void {
   if (item.target_page_id.length === 0) {
     return;
   }
@@ -1610,21 +1846,29 @@ function isDefinedString(value: string | undefined): value is string {
 }
 
 function isSemanticItemsShape(value: unknown): boolean {
-  return Array.isArray(value) && value.every((item) =>
-    isRecord(item) &&
-    typeof item.key === "string" &&
-    item.key.length > 0 &&
-    typeof item.label === "string" &&
-    item.label.length > 0
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.key === "string" &&
+        item.key.length > 0 &&
+        typeof item.label === "string" &&
+        item.label.length > 0,
+    )
   );
 }
 
 function isNavigationShape(value: unknown): boolean {
-  return Array.isArray(value) && value.every((item) =>
-    isRecord(item) &&
-    typeof item.target_page_id === "string" &&
-    item.target_page_id.length > 0 &&
-    (item.label === undefined || typeof item.label === "string")
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (item) =>
+        isRecord(item) &&
+        typeof item.target_page_id === "string" &&
+        item.target_page_id.length > 0 &&
+        (item.label === undefined || typeof item.label === "string"),
+    )
   );
 }
 
@@ -1710,7 +1954,10 @@ async function selectLatestJournal(home: string): Promise<JournalSelection> {
   if (await pathExists(backupsDir)) {
     const backupsRoot = await lstat(backupsDir);
     if (backupsRoot.isSymbolicLink() || !backupsRoot.isDirectory()) {
-      return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+      return {
+        ok: false,
+        state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+      };
     }
   }
   const entries = await readDirIfExists(backupsDir);
@@ -1719,7 +1966,10 @@ async function selectLatestJournal(home: string): Promise<JournalSelection> {
     const backupDir = join(backupsDir, entry);
     const backupDirStat = await lstat(backupDir);
     if (backupDirStat.isSymbolicLink() || !backupDirStat.isDirectory()) {
-      return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+      return {
+        ok: false,
+        state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+      };
     }
     const journalFile = join(backupsDir, entry, "normalization-journal.yaml");
     if (!(await pathExists(journalFile))) {
@@ -1727,29 +1977,50 @@ async function selectLatestJournal(home: string): Promise<JournalSelection> {
     }
     const journalFileStat = await lstat(journalFile);
     if (journalFileStat.isSymbolicLink() || !journalFileStat.isFile()) {
-      return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+      return {
+        ok: false,
+        state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+      };
     }
     if (!(await isPathUnderExistingDir(journalFile, backupDir))) {
-      return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+      return {
+        ok: false,
+        state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+      };
     }
     let journal: Record<string, unknown>;
     try {
       journal = asRecord(await readYamlUnknown(journalFile));
     } catch {
-      return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+      return {
+        ok: false,
+        state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+      };
     }
     if (!isSelfConsistentJournal(home, journalFile, journal)) {
-      return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+      return {
+        ok: false,
+        state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+      };
     }
     journals.push({ journal, journal_file: journalFile });
   }
   const nonTerminal = journals.filter((item) =>
-    ["created", "backed_up", "writing", "validating", "recovery_required"].includes(stringValue(item.journal.status) ?? "")
+    ["created", "backed_up", "writing", "validating", "recovery_required"].includes(
+      stringValue(item.journal.status) ?? "",
+    ),
   );
   if (nonTerminal.length > 1) {
-    return { ok: false, state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }) };
+    return {
+      ok: false,
+      state: recoveryRequiredState(home, { restore_status: "journal_selection_ambiguous", failed_files: [] }),
+    };
   }
-  journals.sort((a, b) => compareDesc(stringValue(a.journal.created_at) ?? "", stringValue(b.journal.created_at) ?? "") || compareDesc(stringValue(a.journal.backup_dir) ?? "", stringValue(b.journal.backup_dir) ?? ""));
+  journals.sort(
+    (a, b) =>
+      compareDesc(stringValue(a.journal.created_at) ?? "", stringValue(b.journal.created_at) ?? "") ||
+      compareDesc(stringValue(a.journal.backup_dir) ?? "", stringValue(b.journal.backup_dir) ?? ""),
+  );
   const latest = journals[0];
   return latest === undefined ? { ok: true } : { ok: true, journal: latest.journal, journal_file: latest.journal_file };
 }
@@ -1757,16 +2028,21 @@ async function selectLatestJournal(home: string): Promise<JournalSelection> {
 async function validateJournalArtifacts(
   home: string,
   journal: Record<string, unknown>,
-  journalFile: string | undefined
+  journalFile: string | undefined,
 ): Promise<SchemaNormalizationRecoveryState | undefined> {
   const manifestPath = stringValue(journal.manifest_path);
   const journalManifestHash = stringValue(journal.manifest_hash);
   const backupDir = stringValue(journal.backup_dir);
-  if (manifestPath === undefined || journalManifestHash === undefined || backupDir === undefined || manifestPath !== `${backupDir}/manifest.yaml`) {
+  if (
+    manifestPath === undefined ||
+    journalManifestHash === undefined ||
+    backupDir === undefined ||
+    manifestPath !== `${backupDir}/manifest.yaml`
+  ) {
     return recoveryRequiredState(home, {
       restore_status: "manifest_unavailable",
       ...journalStateFields(home, journal, journalFile),
-      failed_files: []
+      failed_files: [],
     });
   }
 
@@ -1775,14 +2051,14 @@ async function validateJournalArtifacts(
     return recoveryRequiredState(home, {
       restore_status: "manifest_unavailable",
       ...journalStateFields(home, journal, journalFile),
-      failed_files: []
+      failed_files: [],
     });
   }
   if (!(await fileExists(manifestFile))) {
     return recoveryRequiredState(home, {
       restore_status: "manifest_unavailable",
       ...journalStateFields(home, journal, journalFile),
-      failed_files: []
+      failed_files: [],
     });
   }
 
@@ -1791,7 +2067,7 @@ async function validateJournalArtifacts(
     return recoveryRequiredState(home, {
       restore_status: "manifest_unavailable",
       ...journalStateFields(home, journal, journalFile),
-      failed_files: []
+      failed_files: [],
     });
   }
 
@@ -1811,7 +2087,7 @@ async function validateJournalArtifacts(
         runtime_path: stringValue(file.runtime_path) ?? "",
         backup_path: backupPath,
         reason: "backup path is outside normalization-backups",
-        restore_status: "pending"
+        restore_status: "pending",
       });
       continue;
     }
@@ -1822,7 +2098,7 @@ async function validateJournalArtifacts(
           runtime_path: stringValue(file.runtime_path) ?? "",
           backup_path: backupPath,
           reason: "backup hash mismatch",
-          restore_status: "pending"
+          restore_status: "pending",
         });
       }
     } catch {
@@ -1830,7 +2106,7 @@ async function validateJournalArtifacts(
         runtime_path: stringValue(file.runtime_path) ?? "",
         backup_path: backupPath,
         reason: "backup file unavailable",
-        restore_status: "pending"
+        restore_status: "pending",
       });
     }
   }
@@ -1839,7 +2115,7 @@ async function validateJournalArtifacts(
     return recoveryRequiredState(home, {
       restore_status: "backup_hash_mismatch",
       ...journalStateFields(home, journal, journalFile),
-      failed_files: failedBackups
+      failed_files: failedBackups,
     });
   }
 
@@ -1849,14 +2125,14 @@ async function validateJournalArtifacts(
 function journalStateFields(
   home: string,
   journal: Record<string, unknown>,
-  journalFile: string | undefined
+  journalFile: string | undefined,
 ): Partial<SchemaNormalizationRecoveryState> {
   return {
     backup_dir: stringValue(journal.backup_dir),
     journal_path: journalFile === undefined ? undefined : toHomeRelative(home, journalFile),
     manifest_path: stringValue(journal.manifest_path),
     manifest_hash: stringValue(journal.manifest_hash),
-    normalizer_version: stringValue(journal.normalizer_version)
+    normalizer_version: stringValue(journal.normalizer_version),
   };
 }
 
@@ -1865,7 +2141,9 @@ function restoreStatusForJournal(journal: Record<string, unknown>): SchemaNormal
   if (rewrittenFiles.length === 0) {
     return "no_runtime_writes";
   }
-  return rewrittenFiles.every((file) => stringValue(file.write_status) === "not_started" && file.candidate_hash === null)
+  return rewrittenFiles.every(
+    (file) => stringValue(file.write_status) === "not_started" && file.candidate_hash === null,
+  )
     ? "no_runtime_writes"
     : "restore_failed";
 }
@@ -1875,7 +2153,7 @@ function failedFilesFromJournal(journal: Record<string, unknown>): SchemaNormali
     runtime_path: stringValue(file.runtime_path) ?? "",
     backup_path: stringValue(file.backup_path),
     reason: stringValue(file.last_error) ?? "journal requires recovery",
-    restore_status: "pending"
+    restore_status: "pending",
   }));
 }
 
@@ -1885,7 +2163,13 @@ function isSelfConsistentJournal(home: string, journalFile: string, journal: Rec
   const manifestPath = stringValue(journal.manifest_path);
   const manifestHash = stringValue(journal.manifest_hash);
   const normalizerVersion = stringValue(journal.normalizer_version);
-  if (createdAt === undefined || backupDir === undefined || manifestPath === undefined || manifestHash === undefined || normalizerVersion === undefined) {
+  if (
+    createdAt === undefined ||
+    backupDir === undefined ||
+    manifestPath === undefined ||
+    manifestHash === undefined ||
+    normalizerVersion === undefined
+  ) {
     return false;
   }
   if (basename(dirname(journalFile)) !== `v6-${createdAt}` || backupDir !== `normalization-backups/v6-${createdAt}`) {
@@ -1912,7 +2196,11 @@ function asPreflightReport(value: unknown): SchemaNormalizationPreflightReport {
   return report;
 }
 
-async function isSelfConsistentReport(home: string, reportPath: string, report: SchemaNormalizationPreflightReport): Promise<boolean> {
+async function isSelfConsistentReport(
+  home: string,
+  reportPath: string,
+  report: SchemaNormalizationPreflightReport,
+): Promise<boolean> {
   if (basename(dirname(reportPath)) !== `v6-${report.created_at}`) {
     return false;
   }
@@ -1927,33 +2215,40 @@ async function isSelfConsistentReport(home: string, reportPath: string, report: 
   }
   const realReport = await realpath(reportPath);
   const realDeclared = await realpath(join(home, report.report_file));
-  return realReport === realDeclared && (await isPathUnderExistingDir(realReport, join(home, "normalization-preflight")));
+  return (
+    realReport === realDeclared && (await isPathUnderExistingDir(realReport, join(home, "normalization-preflight")))
+  );
 }
 
 function hasReportConflict(reports: SchemaNormalizationPreflightReport[]): boolean {
-  const identities = new Set(reports.map((report) =>
-    stableStringify({
-      status: report.status,
-      strict_schema_status: report.strict_schema_status,
-      home_hash: report.home_hash,
-      candidate_manifest_hash: report.candidate_manifest_hash,
-      validator_identity: report.candidates.map((candidate) => candidate.validator_source).sort()
-    })
-  ));
+  const identities = new Set(
+    reports.map((report) =>
+      stableStringify({
+        status: report.status,
+        strict_schema_status: report.strict_schema_status,
+        home_hash: report.home_hash,
+        candidate_manifest_hash: report.candidate_manifest_hash,
+        validator_identity: report.candidates.map((candidate) => candidate.validator_source).sort(),
+      }),
+    ),
+  );
   return identities.size > 1;
 }
 
 function sortReports(
-  reports: Array<{ report: SchemaNormalizationPreflightReport; report_path: string }>
+  reports: Array<{ report: SchemaNormalizationPreflightReport; report_path: string }>,
 ): Array<{ report: SchemaNormalizationPreflightReport; report_path: string }> {
-  return [...reports].sort((a, b) => compareDesc(a.report.created_at, b.report.created_at) || compareDesc(a.report.report_file, b.report.report_file));
+  return [...reports].sort(
+    (a, b) =>
+      compareDesc(a.report.created_at, b.report.created_at) || compareDesc(a.report.report_file, b.report.report_file),
+  );
 }
 
 function preflightRequiredState(
   home: string,
   preflightStatus: NonNullable<SchemaNormalizationRecoveryState["preflight_status"]>,
   preflightReason?: SchemaNormalizationRecoveryState["preflight_reason"],
-  extra: Partial<SchemaNormalizationRecoveryState> = {}
+  extra: Partial<SchemaNormalizationRecoveryState> = {},
 ): SchemaNormalizationRecoveryState {
   return {
     mode: "preflight_only",
@@ -1966,13 +2261,13 @@ function preflightRequiredState(
     restore_status: "none",
     failed_files: [],
     recovery_actions: ["run_schema_normalization_dry_run", "run_v6_schema_cutover"],
-    ...extra
+    ...extra,
   };
 }
 
 function recoveryRequiredState(
   home: string,
-  extra: Partial<SchemaNormalizationRecoveryState> & { restore_status: SchemaNormalizationRestoreStatus }
+  extra: Partial<SchemaNormalizationRecoveryState> & { restore_status: SchemaNormalizationRestoreStatus },
 ): SchemaNormalizationRecoveryState {
   return {
     mode: "recovery_only",
@@ -1982,7 +2277,7 @@ function recoveryRequiredState(
     home,
     failed_files: extra.failed_files ?? [],
     recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"],
-    ...extra
+    ...extra,
   };
 }
 
@@ -2093,7 +2388,10 @@ function assertBackupFileUnderDir(root: string, relativePath: string): string {
   return resolved;
 }
 
-async function resolveBackupDirUnderHome(home: string, backupDir: string): Promise<{ absolute: string; relative: string }> {
+async function resolveBackupDirUnderHome(
+  home: string,
+  backupDir: string,
+): Promise<{ absolute: string; relative: string }> {
   const requested = isAbsolute(backupDir) ? resolve(backupDir) : resolve(home, backupDir);
   const backupsRoot = join(home, "normalization-backups");
   const realRequested = await realpath(requested);
@@ -2213,7 +2511,10 @@ function stableStringify(value: unknown): string {
     return `[${value.map((item) => stableStringify(item)).join(",")}]`;
   }
   if (isRecord(value)) {
-    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+      .join(",")}}`;
   }
   return JSON.stringify(value);
 }

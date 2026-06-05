@@ -4,8 +4,8 @@
  * 负责加载和初始化 CanvasKit WASM 模块
  */
 
-import CanvasKitInit from 'canvaskit-wasm/full';
-import type { CanvasKit } from 'canvaskit-wasm';
+import CanvasKitInit from "canvaskit-wasm/full";
+import type { CanvasKit } from "canvaskit-wasm";
 
 export interface CanvasKitLoaderOptions {
   /**
@@ -21,7 +21,7 @@ export interface CanvasKitLoaderOptions {
   useWebGL?: boolean;
 }
 
-const CANVASKIT_LOCAL_BASE = '/runtime-assets/canvaskit/';
+const CANVASKIT_LOCAL_BASE = "/runtime-assets/canvaskit/";
 
 /**
  * CanvasKit 加载器单例
@@ -37,22 +37,18 @@ export class CanvasKitLoader {
    * 检测是否为 Node.js 运行时（包含 jsdom 测试环境）
    */
   private isNodeRuntime(): boolean {
-    return (
-      typeof process !== 'undefined' &&
-      !!process.versions &&
-      !!process.versions.node
-    );
+    return typeof process !== "undefined" && !!process.versions && !!process.versions.node;
   }
 
   /**
    * 在 Node.js 中解析 CanvasKit wasm 文件路径
    */
   private resolveNodeWasmPath(file: string): string {
-    if (typeof require === 'function') {
+    if (typeof require === "function") {
       return require.resolve(`canvaskit-wasm/bin/full/${file}`);
     }
 
-    const cwd = typeof process !== 'undefined' ? process.cwd() : '';
+    const cwd = typeof process !== "undefined" ? process.cwd() : "";
     return `${cwd}/node_modules/canvaskit-wasm/bin/full/${file}`;
   }
 
@@ -63,26 +59,24 @@ export class CanvasKitLoader {
     };
 
     const customCanvasKitBase =
-      typeof globalConfig.__VZI_CANVASKIT_BASE_URL__ === 'string'
-        ? globalConfig.__VZI_CANVASKIT_BASE_URL__.trim()
-        : '';
+      typeof globalConfig.__VZI_CANVASKIT_BASE_URL__ === "string" ? globalConfig.__VZI_CANVASKIT_BASE_URL__.trim() : "";
     const runtimeBase =
-      typeof globalConfig.__VZI_RUNTIME_ASSET_BASE_URL__ === 'string'
+      typeof globalConfig.__VZI_RUNTIME_ASSET_BASE_URL__ === "string"
         ? globalConfig.__VZI_RUNTIME_ASSET_BASE_URL__.trim()
-        : '';
+        : "";
 
     const candidates = new Set<string>();
     if (customCanvasKitBase) {
-      candidates.add(customCanvasKitBase.endsWith('/') ? customCanvasKitBase : `${customCanvasKitBase}/`);
+      candidates.add(customCanvasKitBase.endsWith("/") ? customCanvasKitBase : `${customCanvasKitBase}/`);
     }
     if (runtimeBase) {
-      const normalized = runtimeBase.endsWith('/') ? runtimeBase.slice(0, -1) : runtimeBase;
+      const normalized = runtimeBase.endsWith("/") ? runtimeBase.slice(0, -1) : runtimeBase;
       candidates.add(`${normalized}/canvaskit/`);
     }
 
-    if (typeof document !== 'undefined' && typeof document.baseURI === 'string') {
+    if (typeof document !== "undefined" && typeof document.baseURI === "string") {
       try {
-        candidates.add(new URL('runtime-assets/canvaskit/', document.baseURI).toString());
+        candidates.add(new URL("runtime-assets/canvaskit/", document.baseURI).toString());
       } catch {
         // ignore invalid base URI
       }
@@ -167,11 +161,9 @@ export class CanvasKitLoader {
         }
       }
 
-      throw lastError instanceof Error ? lastError : new Error('No available CanvasKit wasm source');
+      throw lastError instanceof Error ? lastError : new Error("No available CanvasKit wasm source");
     } catch (error) {
-      throw new Error(
-        `Failed to load CanvasKit: ${error instanceof Error ? error.message : String(error)}`
-      );
+      throw new Error(`Failed to load CanvasKit: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 

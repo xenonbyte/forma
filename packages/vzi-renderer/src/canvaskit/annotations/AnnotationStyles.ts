@@ -12,7 +12,7 @@ import type {
   RulerStyle,
   SelectionStyle,
   HoverStyle,
-} from './types';
+} from "./types";
 
 // ============================================
 // 默认样式配置
@@ -25,34 +25,34 @@ import type {
  */
 export const DEFAULT_ANNOTATION_STYLES: AnnotationStyleConfig = {
   distance: {
-    strokeColor: '#ff3366', // 红色 - 标注线颜色
+    strokeColor: "#ff3366", // 红色 - 标注线颜色
     strokeWidth: 1,
-    labelBackgroundColor: '#ff3366', // 红色 - 标签背景
-    labelTextColor: '#ffffff',
+    labelBackgroundColor: "#ff3366", // 红色 - 标签背景
+    labelTextColor: "#ffffff",
     labelFontSize: 12,
     labelBorderRadius: 2,
     labelPadding: [6, 2],
   },
   ruler: {
-    strokeColor: '#FF3366', // 粉红色
+    strokeColor: "#FF3366", // 粉红色
     strokeWidth: 1,
     dashArray: [4, 2],
     opacity: 1,
   },
   selection: {
-    strokeColor: '#2ca7fb', // 蓝色 - 选中框
+    strokeColor: "#2ca7fb", // 蓝色 - 选中框
     strokeWidth: 1,
     fillOpacity: 0.1,
     // 尺寸标签配置
-    dimensionLabelBgColor: '#2ca7fb', // 蓝色 - 与选中框边框色一致
-    dimensionLabelTextColor: '#ffffff', // 白色
+    dimensionLabelBgColor: "#2ca7fb", // 蓝色 - 与选中框边框色一致
+    dimensionLabelTextColor: "#ffffff", // 白色
     dimensionLabelFontSize: 12,
     dimensionLabelBorderRadius: 4,
     dimensionLabelPadding: [8, 4],
     showDimensionLabel: true,
   },
   hover: {
-    strokeColor: '#ff3366', // 红色 - 悬停框
+    strokeColor: "#ff3366", // 红色 - 悬停框
     strokeWidth: 1,
     fillOpacity: 0, // 无填充
   },
@@ -110,7 +110,7 @@ export function buildAnnotationStylesFromTheme(theme?: AnnotationTheme): Partial
  * @returns 是否有效
  */
 function isValidColor(color: string): boolean {
-  if (!color || typeof color !== 'string') {
+  if (!color || typeof color !== "string") {
     return false;
   }
 
@@ -184,25 +184,22 @@ function deepMerge<T>(target: T, source: Partial<T>): T {
   const result = { ...target };
 
   for (const key in source) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
+    if (Object.hasOwn(source, key)) {
       const sourceValue = source[key];
       const targetValue = (target as Record<string, unknown>)[key];
 
       if (
         sourceValue !== undefined &&
         sourceValue !== null &&
-        typeof sourceValue === 'object' &&
+        typeof sourceValue === "object" &&
         !Array.isArray(sourceValue) &&
         targetValue !== undefined &&
         targetValue !== null &&
-        typeof targetValue === 'object' &&
+        typeof targetValue === "object" &&
         !Array.isArray(targetValue)
       ) {
         // 递归合并嵌套对象
-        (result as Record<string, unknown>)[key] = deepMerge(
-          targetValue,
-          sourceValue as Partial<typeof targetValue>
-        );
+        (result as Record<string, unknown>)[key] = deepMerge(targetValue, sourceValue as Partial<typeof targetValue>);
       } else if (sourceValue !== undefined) {
         // 直接覆盖
         (result as Record<string, unknown>)[key] = sourceValue;
@@ -215,7 +212,7 @@ function deepMerge<T>(target: T, source: Partial<T>): T {
 
 export function resolveAnnotationStyleConfig(
   theme?: AnnotationTheme,
-  overrides?: PartialAnnotationStyleConfig
+  overrides?: PartialAnnotationStyleConfig,
 ): AnnotationStyleConfig {
   let resolved = deepMerge(DEFAULT_ANNOTATION_STYLES, {});
   const themeStyles = buildAnnotationStylesFromTheme(theme);
@@ -273,7 +270,7 @@ export class AnnotationStyles {
     // 验证颜色
     const warnings = validateStyles(config);
     if (warnings.length > 0) {
-      console.warn('[AnnotationStyles] 样式验证警告:', warnings.join('; '));
+      console.warn("[AnnotationStyles] 样式验证警告:", warnings.join("; "));
     }
 
     // 深度合并配置（使用类型断言处理嵌套 Partial 类型）

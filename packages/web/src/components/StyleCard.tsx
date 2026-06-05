@@ -9,7 +9,8 @@ export interface StyleCardProps {
   visualTokens?: StyleVisualTokens;
 }
 
-const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+const focusClasses =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
 export function StyleCard({ href, style, visualTokens }: StyleCardProps) {
   const cardStyle = styleFromVisualTokens(visualTokens);
@@ -23,12 +24,25 @@ export function StyleCard({ href, style, visualTokens }: StyleCardProps) {
       style={cardStyle}
     >
       {hasColorBars ? (
-        <div aria-label="Style colors" className="absolute right-3 top-3 flex overflow-hidden rounded-full border border-black/10 bg-white/70 shadow-sm">
+        <div
+          aria-label="Style colors"
+          className="absolute right-3 top-3 flex overflow-hidden rounded-full border border-black/10 bg-white/70 shadow-sm"
+        >
           {visualTokens?.primaryColor ? (
-            <span aria-label="Primary" className="block h-3 w-7" data-style-primary-color="true" style={{ backgroundColor: visualTokens.primaryColor }} />
+            <span
+              aria-label="Primary"
+              className="block h-3 w-7"
+              data-style-primary-color="true"
+              style={{ backgroundColor: visualTokens.primaryColor }}
+            />
           ) : null}
           {visualTokens?.secondaryColor ? (
-            <span aria-label="Secondary" className="block h-3 w-7" data-style-secondary-color="true" style={{ backgroundColor: visualTokens.secondaryColor }} />
+            <span
+              aria-label="Secondary"
+              className="block h-3 w-7"
+              data-style-secondary-color="true"
+              style={{ backgroundColor: visualTokens.secondaryColor }}
+            />
           ) : null}
         </div>
       ) : null}
@@ -59,7 +73,7 @@ function styleFromVisualTokens(visualTokens: StyleVisualTokens | undefined): CSS
 
   return {
     ...(visualTokens.backgroundColor ? { backgroundColor: visualTokens.backgroundColor } : {}),
-    ...(visualTokens.fontFamily ? { fontFamily: visualTokens.fontFamily } : {})
+    ...(visualTokens.fontFamily ? { fontFamily: visualTokens.fontFamily } : {}),
   };
 }
 
@@ -70,6 +84,6 @@ function textStyleFromVisualTokens(visualTokens: StyleVisualTokens | undefined):
 
   return {
     ...(visualTokens.fontFamily ? { fontFamily: visualTokens.fontFamily } : {}),
-    ...(visualTokens.textColor ? { color: visualTokens.textColor } : {})
+    ...(visualTokens.textColor ? { color: visualTokens.textColor } : {}),
   };
 }

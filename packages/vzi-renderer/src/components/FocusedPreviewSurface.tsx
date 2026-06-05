@@ -1,4 +1,4 @@
-import { CanvasKitSurface, type CanvasKitSurfaceProps } from './CanvasKitSurface';
+import { CanvasKitSurface, type CanvasKitSurfaceProps } from "./CanvasKitSurface";
 
 export type FocusedPreviewSurfaceProps = CanvasKitSurfaceProps;
 

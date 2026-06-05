@@ -4,9 +4,9 @@
  * 使用 RBush R-tree 实现高效的点击测试，替代 O(n) 线性扫描。
  */
 
-import RBush from 'rbush';
-import type { BBox } from 'rbush';
-import type { IRElement } from './renderers/types';
+import RBush from "rbush";
+import type { BBox } from "rbush";
+import type { IRElement } from "./renderers/types";
 
 /**
  * 空间索引项
@@ -30,10 +30,10 @@ export interface HitTestResult {
  * 解析 zIndex 数值
  */
 function parseZIndex(value: string | number | undefined): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     const parsed = Number.parseFloat(value);
     if (Number.isFinite(parsed)) {
       return parsed;

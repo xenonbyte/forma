@@ -11,7 +11,7 @@ import {
   getProductMutationLock,
   runProductMutationWithWarnings,
   type ProductMutationContext,
-  type ProductMutationLock
+  type ProductMutationLock,
 } from "./product-mutation-lock.js";
 import { requirementStatuses } from "./schemas.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
@@ -20,16 +20,18 @@ import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 const designStatuses = ["pending", "done", "expired"] as const;
 const semanticContractSchema = z.unknown().optional();
 const semanticContractCoverageSchema = z.unknown().optional();
-export const baselineNavigationSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-  label: z.string().optional()
-}).passthrough();
+export const baselineNavigationSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    label: z.string().optional(),
+  })
+  .passthrough();
 function buildSemanticContractForPage(input: {
   page: {
     semantic_contract?: unknown;
     semantic_contract_coverage?: unknown;
-  }
+  };
 }): { semantic_contract: undefined; semantic_contract_coverage: undefined } {
   void input;
   return { semantic_contract: undefined, semantic_contract_coverage: undefined };
@@ -37,115 +39,143 @@ function buildSemanticContractForPage(input: {
 
 export const requirementIdSchema = z.string().regex(/^R-[a-f0-9]{8}$/);
 
-const forbiddenPersistedField = z.unknown().optional().superRefine((value, context) => {
-  if (value !== undefined) {
-    context.addIssue({ code: "custom", message: "field is not supported in v6 runtime schema" });
-  }
-});
-const forbiddenDesignIdField = z.string().optional().superRefine((value, context) => {
-  if (value !== undefined) {
-    context.addIssue({ code: "custom", message: "design_id is not supported in v6 runtime schema" });
-  }
-});
+const forbiddenPersistedField = z
+  .unknown()
+  .optional()
+  .superRefine((value, context) => {
+    if (value !== undefined) {
+      context.addIssue({ code: "custom", message: "field is not supported in v6 runtime schema" });
+    }
+  });
+const forbiddenDesignIdField = z
+  .string()
+  .optional()
+  .superRefine((value, context) => {
+    if (value !== undefined) {
+      context.addIssue({ code: "custom", message: "design_id is not supported in v6 runtime schema" });
+    }
+  });
 
-export const requirementPageSchema = z.object({
-  page_id: z.string().min(1),
-  name: z.string().min(1),
-  baseline_page: z.string().min(1),
-  design_status: z.enum(designStatuses),
-  design_id: forbiddenDesignIdField,
-  design_metadata: forbiddenPersistedField,
-  pen_path: forbiddenPersistedField,
-  preview_path: forbiddenPersistedField,
-  preview_file: forbiddenPersistedField,
-  preview_url: forbiddenPersistedField,
-  change_type: z.enum(["new", "patch", "rebuild"]).optional(),
-  change_summary: z.string().optional(),
-  features: z.string().optional(),
-  copy: z.array(z.lazy(() => copyItemSchema)).optional(),
-  fields: z.string().optional(),
-  interactions: z.string().optional(),
-  declared_fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
-  declared_actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
-  declared_component_keys: z.array(z.string().min(1)).optional(),
-  semantic_contract: semanticContractSchema,
-  semantic_contract_coverage: semanticContractCoverageSchema
-}).strict();
+export const requirementPageSchema = z
+  .object({
+    page_id: z.string().min(1),
+    name: z.string().min(1),
+    baseline_page: z.string().min(1),
+    design_status: z.enum(designStatuses),
+    design_id: forbiddenDesignIdField,
+    design_metadata: forbiddenPersistedField,
+    pen_path: forbiddenPersistedField,
+    preview_path: forbiddenPersistedField,
+    preview_file: forbiddenPersistedField,
+    preview_url: forbiddenPersistedField,
+    change_type: z.enum(["new", "patch", "rebuild"]).optional(),
+    change_summary: z.string().optional(),
+    features: z.string().optional(),
+    copy: z.array(z.lazy(() => copyItemSchema)).optional(),
+    fields: z.string().optional(),
+    interactions: z.string().optional(),
+    declared_fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+    declared_actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+    declared_component_keys: z.array(z.string().min(1)).optional(),
+    semantic_contract: semanticContractSchema,
+    semantic_contract_coverage: semanticContractCoverageSchema,
+  })
+  .strict();
 
-export const requirementSchema = z.object({
-  id: requirementIdSchema,
-  product_id: z.string().regex(/^P-[a-f0-9]{6}$/),
-  title: z.string().min(1),
-  status: z.enum(requirementStatuses),
-  ui_affected: z.boolean().default(true),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-  pages: z.array(requirementPageSchema),
-  navigation: z.array(z.lazy(() => baselineNavigationSchema))
-}).strict();
+export const requirementSchema = z
+  .object({
+    id: requirementIdSchema,
+    product_id: z.string().regex(/^P-[a-f0-9]{6}$/),
+    title: z.string().min(1),
+    status: z.enum(requirementStatuses),
+    ui_affected: z.boolean().default(true),
+    created_at: z.string().datetime(),
+    updated_at: z.string().datetime(),
+    pages: z.array(requirementPageSchema),
+    navigation: z.array(z.lazy(() => baselineNavigationSchema)),
+  })
+  .strict();
 
-const requirementPageInputSchema = z.object({
-  page_id: z.string().min(1),
-  name: z.string().min(1),
-  baseline_page: z.string().min(1),
-  features: z.string().optional(),
-  copy: z.array(z.lazy(() => copyItemSchema)).optional(),
-  fields: z.string().optional(),
-  interactions: z.string().optional(),
-  declared_fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
-  declared_actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
-  declared_component_keys: z.array(z.string().min(1)).optional(),
-  semantic_contract: semanticContractSchema.optional(),
-  semantic_contract_coverage: semanticContractCoverageSchema.optional(),
-  change_type: z.enum(["new", "patch", "rebuild"]),
-  change_summary: z.string().optional()
-}).strict();
+const requirementPageInputSchema = z
+  .object({
+    page_id: z.string().min(1),
+    name: z.string().min(1),
+    baseline_page: z.string().min(1),
+    features: z.string().optional(),
+    copy: z.array(z.lazy(() => copyItemSchema)).optional(),
+    fields: z.string().optional(),
+    interactions: z.string().optional(),
+    declared_fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+    declared_actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+    declared_component_keys: z.array(z.string().min(1)).optional(),
+    semantic_contract: semanticContractSchema.optional(),
+    semantic_contract_coverage: semanticContractCoverageSchema.optional(),
+    change_type: z.enum(["new", "patch", "rebuild"]),
+    change_summary: z.string().optional(),
+  })
+  .strict();
 
-const ruleInputSchema = z.object({
-  id: z.string().min(1),
-  page_id: z.string().min(1).optional(),
-  given: z.string().min(1),
-  when: z.string().min(1),
-  then: z.string().min(1),
-  semantic: z.object({
-    fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
-    actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
-    component_keys: z.array(z.string().min(1)).optional(),
-    allowed_copy: z.array(z.string()).optional()
-  }).strict().optional(),
-  replaces_rule_id: z.string().optional()
-}).strict();
+const ruleInputSchema = z
+  .object({
+    id: z.string().min(1),
+    page_id: z.string().min(1).optional(),
+    given: z.string().min(1),
+    when: z.string().min(1),
+    then: z.string().min(1),
+    semantic: z
+      .object({
+        fields: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+        actions: z.array(z.object({ key: z.string().min(1), label: z.string().min(1) }).strict()).optional(),
+        component_keys: z.array(z.string().min(1)).optional(),
+        allowed_copy: z.array(z.string()).optional(),
+      })
+      .strict()
+      .optional(),
+    replaces_rule_id: z.string().optional(),
+  })
+  .strict();
 
-const storedRuleSchema = ruleInputSchema.omit({ replaces_rule_id: true }).extend({
-  source_requirement: requirementIdSchema
-}).strict();
+const storedRuleSchema = ruleInputSchema
+  .omit({ replaces_rule_id: true })
+  .extend({
+    source_requirement: requirementIdSchema,
+  })
+  .strict();
 
-const rulesFileSchema = z.object({
-  rules: z.array(storedRuleSchema)
-}).strict();
+const rulesFileSchema = z
+  .object({
+    rules: z.array(storedRuleSchema),
+  })
+  .strict();
 
-const translationEntryInputSchema = z.object({
-  context: z.string().min(1),
-  texts: z.record(z.string(), z.string()),
-  outdated: z.boolean().optional()
-}).strict();
+const translationEntryInputSchema = z
+  .object({
+    context: z.string().min(1),
+    texts: z.record(z.string(), z.string()),
+    outdated: z.boolean().optional(),
+  })
+  .strict();
 
-const pageTranslationInputSchema = z.object({
-  page_id: z.string().min(1),
-  entries: z.array(translationEntryInputSchema)
-}).strict();
+const pageTranslationInputSchema = z
+  .object({
+    page_id: z.string().min(1),
+    entries: z.array(translationEntryInputSchema),
+  })
+  .strict();
 
-const saveRequirementInputSchema = z.object({
-  requirement_id: requirementIdSchema,
-  document_md: z.string(),
-  ui_affected: z.boolean().default(true),
-  pages: z.array(requirementPageInputSchema).default([]),
-  navigation: z.array(z.lazy(() => baselineNavigationSchema)).default([]),
-  translations: z.array(pageTranslationInputSchema).default([]),
-  rules: z.array(ruleInputSchema).default([]),
-  remove_rule_ids: z.array(z.string().min(1)).default([]),
-  remove_page_ids: z.array(z.string().min(1)).default([])
-}).strict();
+const saveRequirementInputSchema = z
+  .object({
+    requirement_id: requirementIdSchema,
+    document_md: z.string(),
+    ui_affected: z.boolean().default(true),
+    pages: z.array(requirementPageInputSchema).default([]),
+    navigation: z.array(z.lazy(() => baselineNavigationSchema)).default([]),
+    translations: z.array(pageTranslationInputSchema).default([]),
+    rules: z.array(ruleInputSchema).default([]),
+    remove_rule_ids: z.array(z.string().min(1)).default([]),
+    remove_page_ids: z.array(z.string().min(1)).default([]),
+  })
+  .strict();
 
 export type RequirementPage = z.infer<typeof requirementPageSchema>;
 export type Requirement = z.infer<typeof requirementSchema>;
@@ -219,7 +249,7 @@ export class RequirementService {
 
   async createEmptyRequirement(productId: string, title: string): Promise<Requirement> {
     return this.runProductMutation({ operation: "create_requirement", product_id: productId }, async () =>
-      this.createEmptyRequirementLocked(productId, title)
+      this.createEmptyRequirementLocked(productId, title),
     );
   }
 
@@ -236,7 +266,7 @@ export class RequirementService {
       created_at: now,
       updated_at: now,
       pages: [],
-      navigation: []
+      navigation: [],
     });
 
     await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
@@ -246,7 +276,7 @@ export class RequirementService {
   async saveRequirement(input: SaveRequirementInput): Promise<Requirement> {
     const productId = await this.productIdForRequirement(input.requirement_id);
     return this.runProductMutation({ operation: "save_requirement", product_id: productId }, async () =>
-      this.saveRequirementLocked(input)
+      this.saveRequirementLocked(input),
     );
   }
 
@@ -256,7 +286,7 @@ export class RequirementService {
     if (current.status === "archived") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
         requirement_id: current.id,
-        status: current.status
+        status: current.status,
       });
     }
 
@@ -275,14 +305,14 @@ export class RequirementService {
 
     throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
       requirement_id: current.id,
-      status: current.status
+      status: current.status,
     });
   }
 
   async submitRequirement(input: SubmitRequirementInput): Promise<Requirement> {
     const productId = await this.productIdForRequirement(input.requirement_id);
     return this.runProductMutation({ operation: "submit_requirement", product_id: productId }, async () =>
-      this.submitRequirementLocked(input)
+      this.submitRequirementLocked(input),
     );
   }
 
@@ -291,7 +321,7 @@ export class RequirementService {
     if (current.status !== "empty") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
         requirement_id: input.requirement_id,
-        status: current.status
+        status: current.status,
       });
     }
     assertDocument(input.document_md);
@@ -303,7 +333,7 @@ export class RequirementService {
       status: "submitted",
       updated_at: new Date().toISOString(),
       pages,
-      navigation: input.navigation
+      navigation: input.navigation,
     });
 
     await this.commitRequirementAndBaseline(next, input.document_md);
@@ -313,7 +343,7 @@ export class RequirementService {
   async updateRequirement(input: UpdateRequirementInput): Promise<Requirement> {
     const productId = await this.productIdForRequirement(input.requirement_id);
     return this.runProductMutation({ operation: "update_requirement", product_id: productId }, async () =>
-      this.updateRequirementLocked(input)
+      this.updateRequirementLocked(input),
     );
   }
 
@@ -322,7 +352,7 @@ export class RequirementService {
     if (current.status !== "submitted" && current.status !== "active") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
         requirement_id: input.requirement_id,
-        status: current.status
+        status: current.status,
       });
     }
     assertDocument(input.document_md);
@@ -344,7 +374,7 @@ export class RequirementService {
       ...current,
       updated_at: new Date().toISOString(),
       pages: [...nextActivePages, ...expiredPages],
-      navigation: input.navigation
+      navigation: input.navigation,
     });
 
     await this.commitRequirementAndBaseline(next, input.document_md);
@@ -354,7 +384,7 @@ export class RequirementService {
   async archiveRequirement(requirementId: string): Promise<Requirement> {
     const productId = await this.productIdForRequirement(requirementId);
     return this.runProductMutation({ operation: "archive_requirement", product_id: productId }, async () =>
-      this.archiveRequirementLocked(requirementId)
+      this.archiveRequirementLocked(requirementId),
     );
   }
 
@@ -363,14 +393,12 @@ export class RequirementService {
     if (current.status !== "active") {
       throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
         requirement_id: requirementId,
-        status: current.status
+        status: current.status,
       });
     }
 
     const next = requirementSchema.parse({ ...current, status: "archived", updated_at: new Date().toISOString() });
-    const files = [
-      this.requirementFile(next.product_id, next.id)
-    ];
+    const files = [this.requirementFile(next.product_id, next.id)];
     const snapshots = await snapshotFiles(files);
     try {
       await writeYamlAtomic(this.requirementFile(next.product_id, next.id), next);
@@ -399,7 +427,9 @@ export class RequirementService {
 
   async getLatestRequirement(productId: string): Promise<Requirement> {
     await this.products.getProduct(productId);
-    const requirements = (await this.readProductRequirements(productId)).filter((requirement) => requirement.status !== "archived");
+    const requirements = (await this.readProductRequirements(productId)).filter(
+      (requirement) => requirement.status !== "archived",
+    );
     const latest = requirements.sort(compareUpdatedAtDesc)[0];
     if (!latest) {
       throw new FormaError("REQUIREMENT_NOT_FOUND", "Requirement not found", { product_id: productId });
@@ -446,7 +476,7 @@ export class RequirementService {
         .map(async (entry) => {
           const requirement = await readYamlAs(this.requirementFile(productId, entry.name), requirementSchema);
           return requirement.id === entry.name && requirement.product_id === productId ? requirement : null;
-        })
+        }),
     );
 
     return requirements.filter((requirement): requirement is Requirement => requirement !== null);
@@ -473,7 +503,7 @@ export class RequirementService {
       ui_affected: true,
       updated_at: new Date().toISOString(),
       pages,
-      navigation: filterRemovedNavigation(input.navigation, current.pages, pages, removePageIds)
+      navigation: filterRemovedNavigation(input.navigation, current.pages, pages, removePageIds),
     });
 
     await this.commitWithBaseline(current, next, input);
@@ -490,7 +520,9 @@ export class RequirementService {
         const currentPage = currentPagesById.get(page.page_id);
         return resolveSavedPage(current.id, page, currentPage);
       });
-    const unchangedPages = current.pages.filter((page) => !inputPageIds.has(page.page_id) && !removePageIds.has(page.page_id));
+    const unchangedPages = current.pages.filter(
+      (page) => !inputPageIds.has(page.page_id) && !removePageIds.has(page.page_id),
+    );
     const pages = [...changedPages, ...unchangedPages];
     assertPages(pages);
     const next = requirementSchema.parse({
@@ -499,7 +531,7 @@ export class RequirementService {
       ui_affected: true,
       updated_at: new Date().toISOString(),
       pages,
-      navigation: filterRemovedNavigation(input.navigation, current.pages, pages, removePageIds)
+      navigation: filterRemovedNavigation(input.navigation, current.pages, pages, removePageIds),
     });
 
     await this.commitWithBaseline(current, next, input);
@@ -509,9 +541,12 @@ export class RequirementService {
   private async doLogicOnlyUpdate(current: Requirement, input: ParsedSaveRequirementInput): Promise<Requirement> {
     const next = requirementSchema.parse({
       ...current,
-      status: current.pages.length === 0 || current.pages.every((page) => page.design_status === "done") ? "active" : current.status,
+      status:
+        current.pages.length === 0 || current.pages.every((page) => page.design_status === "done")
+          ? "active"
+          : current.status,
       ui_affected: false,
-      updated_at: new Date().toISOString()
+      updated_at: new Date().toISOString(),
     });
 
     await this.commitLogicOnly(next, input);
@@ -552,12 +587,12 @@ export class RequirementService {
     requirementId: string,
     rules: z.infer<typeof ruleInputSchema>[],
     removeRuleIds: string[],
-    removePageIds: string[]
+    removePageIds: string[],
   ): Promise<void> {
     const parsedRequirementId = requirementIdSchema.parse(requirementId);
     const incomingRules = rules.map((rule) => ruleInputSchema.parse(rule));
     const replacementRuleIds = new Set(
-      incomingRules.flatMap((rule) => rule.replaces_rule_id ? [rule.replaces_rule_id] : [])
+      incomingRules.flatMap((rule) => (rule.replaces_rule_id ? [rule.replaces_rule_id] : [])),
     );
     const explicitRemoveRuleIds = new Set(removeRuleIds);
     const explicitRemovePageIds = new Set(removePageIds);
@@ -582,9 +617,9 @@ export class RequirementService {
         return storedRuleSchema.parse({
           ...storedRule,
           id: `${parsedRequirementId}-${rule.id}`,
-          source_requirement: parsedRequirementId
+          source_requirement: parsedRequirementId,
         });
-      })
+      }),
     ];
 
     await writeYamlAtomic(this.rulesFile(productId), { rules: nextRules });
@@ -593,7 +628,7 @@ export class RequirementService {
   private async commitRequirementAndBaseline(requirement: Requirement, documentMd: string): Promise<void> {
     const files = [
       this.documentFile(requirement.product_id, requirement.id),
-      this.requirementFile(requirement.product_id, requirement.id)
+      this.requirementFile(requirement.product_id, requirement.id),
     ];
     const snapshots = await snapshotFiles(files);
 
@@ -610,16 +645,21 @@ export class RequirementService {
   private async commitWithBaseline(
     current: Requirement,
     requirement: Requirement,
-    input: ParsedSaveRequirementInput
+    input: ParsedSaveRequirementInput,
   ): Promise<void> {
     const files = [
       this.requirementFile(requirement.product_id, requirement.id),
       this.documentFile(requirement.product_id, requirement.id),
       this.translationsFile(requirement.product_id, requirement.id),
-      this.rulesFile(requirement.product_id)
+      this.rulesFile(requirement.product_id),
     ];
     const product = await this.products.getProduct(requirement.product_id);
-    const mergedTranslations = await this.mergedTranslationsForUiSave(current, requirement, input.translations, product.languages?.length === 1);
+    const mergedTranslations = await this.mergedTranslationsForUiSave(
+      current,
+      requirement,
+      input.translations,
+      product.languages?.length === 1,
+    );
     const snapshots = await snapshotFiles(files);
 
     try {
@@ -632,7 +672,7 @@ export class RequirementService {
         requirement.id,
         input.rules,
         input.remove_rule_ids,
-        input.remove_page_ids
+        input.remove_page_ids,
       );
       await this.testHooks.afterRulesWrite?.();
       await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
@@ -646,7 +686,7 @@ export class RequirementService {
     const files = [
       this.requirementFile(requirement.product_id, requirement.id),
       this.documentFile(requirement.product_id, requirement.id),
-      this.rulesFile(requirement.product_id)
+      this.rulesFile(requirement.product_id),
     ];
     const snapshots = await snapshotFiles(files);
 
@@ -658,7 +698,7 @@ export class RequirementService {
         requirement.id,
         input.rules,
         input.remove_rule_ids,
-        []
+        [],
       );
       await this.testHooks.afterRulesWrite?.();
       await writeYamlAtomic(this.requirementFile(requirement.product_id, requirement.id), requirement);
@@ -672,7 +712,7 @@ export class RequirementService {
     current: Requirement,
     requirement: Requirement,
     translations: PageTranslation[],
-    isSingleLanguage: boolean
+    isSingleLanguage: boolean,
   ): Promise<PageTranslation[]> {
     if (isSingleLanguage) {
       return [];
@@ -698,14 +738,9 @@ export class RequirementService {
 
   private async runProductMutation<T>(
     input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T> {
-    return runProductMutationWithWarnings(
-      this.productMutationLock,
-      input,
-      fn,
-      this.onProductMutationWarning
-    );
+    return runProductMutationWithWarnings(this.productMutationLock, input, fn, this.onProductMutationWarning);
   }
 }
 
@@ -724,7 +759,7 @@ function assertPages(pages: unknown[]): void {
 function resolveSavedPage(
   requirementId: string,
   page: z.infer<typeof requirementPageInputSchema>,
-  currentPage?: RequirementPage
+  currentPage?: RequirementPage,
 ): RequirementPage {
   if (page.change_type === "new") {
     return resolveSubmittedPage({ ...currentPage, ...page, design_status: "pending" }, currentPage);
@@ -735,15 +770,18 @@ function resolveSavedPage(
       requirement_id: requirementId,
       page_id: page.page_id,
       change_type: page.change_type,
-      design_status: currentPage?.design_status ?? "missing"
+      design_status: currentPage?.design_status ?? "missing",
     });
   }
 
-  return resolveSubmittedPage({
-    ...currentPage,
-    ...page,
-    design_status: "expired"
-  }, currentPage);
+  return resolveSubmittedPage(
+    {
+      ...currentPage,
+      ...page,
+      design_status: "expired",
+    },
+    currentPage,
+  );
 }
 
 function resolveSubmittedPage(
@@ -755,25 +793,27 @@ function resolveSubmittedPage(
     semantic_contract?: RequirementPage["semantic_contract"];
     semantic_contract_coverage?: RequirementPage["semantic_contract_coverage"];
   },
-  currentPage?: RequirementPage
+  currentPage?: RequirementPage,
 ): RequirementPage {
   const built = buildSemanticContractForPage({
     page: {
       ...page,
       semantic_contract: page.semantic_contract ?? currentPage?.semantic_contract,
-      semantic_contract_coverage: page.semantic_contract_coverage ?? currentPage?.semantic_contract_coverage
-    }
+      semantic_contract_coverage: page.semantic_contract_coverage ?? currentPage?.semantic_contract_coverage,
+    },
   });
   return requirementPageSchema.parse({
     ...page,
     design_status: page.design_status ?? "pending",
     semantic_contract: built.semantic_contract,
-    semantic_contract_coverage: built.semantic_contract_coverage
+    semantic_contract_coverage: built.semantic_contract_coverage,
   });
 }
 
 function resolveRequirementStatus(pages: RequirementPage[]): Requirement["status"] {
-  return pages.some((page) => page.design_status === "pending" || page.design_status === "expired") ? "submitted" : "active";
+  return pages.some((page) => page.design_status === "pending" || page.design_status === "expired")
+    ? "submitted"
+    : "active";
 }
 
 function copyByPageId(pages: RequirementPage[]): CopyByPage {
@@ -784,17 +824,22 @@ function filterRemovedNavigation(
   navigation: z.infer<typeof baselineNavigationSchema>[],
   currentPages: RequirementPage[],
   nextPages: RequirementPage[],
-  removePageIds: Set<string>
+  removePageIds: Set<string>,
 ): z.infer<typeof baselineNavigationSchema>[] {
   const removedBaselineIds = new Set(
     currentPages
       .filter((page) => removePageIds.has(page.page_id))
-      .flatMap((page) => [page.page_id, page.baseline_page])
+      .flatMap((page) => [page.page_id, page.baseline_page]),
   );
   const nextPageIds = new Set(nextPages.flatMap((page) => [page.page_id, page.baseline_page]));
 
   return navigation.filter((item) => {
-    if (removePageIds.has(item.from) || removePageIds.has(item.to) || removedBaselineIds.has(item.from) || removedBaselineIds.has(item.to)) {
+    if (
+      removePageIds.has(item.from) ||
+      removePageIds.has(item.to) ||
+      removedBaselineIds.has(item.from) ||
+      removedBaselineIds.has(item.to)
+    ) {
       return false;
     }
     return nextPageIds.has(item.from) && nextPageIds.has(item.to);
@@ -803,13 +848,13 @@ function filterRemovedNavigation(
 
 function mapNavigationToBaseline(
   pages: RequirementPage[],
-  navigation: z.infer<typeof baselineNavigationSchema>[]
+  navigation: z.infer<typeof baselineNavigationSchema>[],
 ): z.infer<typeof baselineNavigationSchema>[] {
   const pageToBaseline = new Map(
     pages.flatMap((page) => [
       [page.page_id, page.baseline_page],
-      [page.baseline_page, page.baseline_page]
-    ])
+      [page.baseline_page, page.baseline_page],
+    ]),
   );
 
   return navigation.flatMap((item) => {
@@ -852,12 +897,14 @@ interface FileSnapshot {
 }
 
 async function snapshotFiles(files: string[]): Promise<FileSnapshot[]> {
-  return Promise.all(files.map(async (file) => {
-    if (!(await fileExists(file))) {
-      return { file, existed: false };
-    }
-    return { file, existed: true, content: await readFile(file) };
-  }));
+  return Promise.all(
+    files.map(async (file) => {
+      if (!(await fileExists(file))) {
+        return { file, existed: false };
+      }
+      return { file, existed: true, content: await readFile(file) };
+    }),
+  );
 }
 
 async function restoreSnapshots(snapshots: FileSnapshot[]): Promise<void> {

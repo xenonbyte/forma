@@ -4,7 +4,7 @@
  * 提供常用的 CanvasKit 操作辅助函数
  */
 
-import type { CanvasKit, Canvas, Paint, Surface, Font } from 'canvaskit-wasm';
+import type { CanvasKit, Canvas, Paint, Surface, Font } from "canvaskit-wasm";
 
 /**
  * 检测 WebGL 支持
@@ -15,21 +15,19 @@ export function detectWebGLSupport(): {
   renderer?: string;
 } {
   try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
 
     if (!gl) {
       return { supported: false };
     }
 
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    const renderer = debugInfo
-      ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
-      : 'Unknown';
+    const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : "Unknown";
 
     return {
       supported: true,
-      version: gl instanceof WebGL2RenderingContext ? 'WebGL 2.0' : 'WebGL 1.0',
+      version: gl instanceof WebGL2RenderingContext ? "WebGL 2.0" : "WebGL 1.0",
       renderer,
     };
   } catch (_error) {
@@ -42,10 +40,8 @@ export function detectWebGLSupport(): {
  */
 export function detectWebAssemblySupport(): boolean {
   try {
-    if (typeof WebAssembly === 'object' && typeof WebAssembly.instantiate === 'function') {
-      const module = new WebAssembly.Module(
-        Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00)
-      );
+    if (typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function") {
+      const module = new WebAssembly.Module(Uint8Array.of(0x0, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00));
       if (module instanceof WebAssembly.Module) {
         return new WebAssembly.Instance(module) instanceof WebAssembly.Instance;
       }
@@ -60,9 +56,7 @@ export function detectWebAssemblySupport(): boolean {
  * 清空 Canvas
  */
 export function clearCanvas(canvas: Canvas, CanvasKit: CanvasKit, color?: number[]): void {
-  const clearColor = color
-    ? CanvasKit.Color(color[0], color[1], color[2], color[3] ?? 1.0)
-    : CanvasKit.WHITE;
+  const clearColor = color ? CanvasKit.Color(color[0], color[1], color[2], color[3] ?? 1.0) : CanvasKit.WHITE;
   canvas.clear(clearColor);
 }
 
@@ -95,7 +89,7 @@ export function applyTransform(
     scaleX?: number;
     scaleY?: number;
     rotation?: number;
-  }
+  },
 ): void {
   const { translateX = 0, translateY = 0, scaleX = 1, scaleY = 1, rotation = 0 } = transform;
 
@@ -121,7 +115,7 @@ export function setClipRect(
   x: number,
   y: number,
   width: number,
-  height: number
+  height: number,
 ): void {
   const rect = CanvasKit.LTRBRect(x, y, x + width, y + height);
   canvas.clipRect(rect, CanvasKit.ClipOp.Intersect, true);
@@ -154,11 +148,7 @@ export function exportSurfaceToPNG(surface: Surface, CanvasKit: CanvasKit): Uint
 /**
  * 导出 Surface 为 JPEG
  */
-export function exportSurfaceToJPEG(
-  surface: Surface,
-  CanvasKit: CanvasKit,
-  quality: number = 90
-): Uint8Array | null {
+export function exportSurfaceToJPEG(surface: Surface, CanvasKit: CanvasKit, quality: number = 90): Uint8Array | null {
   const image = surface.makeImageSnapshot();
   if (!image) {
     return null;
@@ -173,11 +163,7 @@ export function exportSurfaceToJPEG(
 /**
  * 测量文本尺寸
  */
-export function measureText(
-  text: string,
-  font: Font,
-  _CanvasKit: CanvasKit
-): { width: number; height: number } {
+export function measureText(text: string, font: Font, _CanvasKit: CanvasKit): { width: number; height: number } {
   // 简化实现：使用字体大小估算
   const fontSize = font.getSize() || 16;
   const charWidth = fontSize * 0.6;

@@ -4,44 +4,44 @@
  * 将 IR 样式转换为 Konva 渲染所需的格式
  */
 
-import type { IRStyles } from '@vzi-core/types';
-import type { RenderedElementStyle } from '../types';
+import type { IRStyles } from "@vzi-core/types";
+import type { RenderedElementStyle } from "../types";
 
 /**
  * 颜色映射表（CSS 颜色名到十六进制）
  */
 const CSS_COLOR_MAP: Record<string, string> = {
-  transparent: 'transparent',
-  black: '#000000',
-  white: '#ffffff',
-  red: '#ff0000',
-  green: '#00ff00',
-  blue: '#0000ff',
-  yellow: '#ffff00',
-  cyan: '#00ffff',
-  magenta: '#ff00ff',
-  gray: '#808080',
-  grey: '#808080',
-  silver: '#c0c0c0',
-  maroon: '#800000',
-  olive: '#808000',
-  lime: '#00ff00',
-  aqua: '#00ffff',
-  teal: '#008080',
-  navy: '#000080',
-  fuchsia: '#ff00ff',
-  purple: '#800080',
-  orange: '#ffa500',
-  pink: '#ffc0cb',
+  transparent: "transparent",
+  black: "#000000",
+  white: "#ffffff",
+  red: "#ff0000",
+  green: "#00ff00",
+  blue: "#0000ff",
+  yellow: "#ffff00",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  gray: "#808080",
+  grey: "#808080",
+  silver: "#c0c0c0",
+  maroon: "#800000",
+  olive: "#808000",
+  lime: "#00ff00",
+  aqua: "#00ffff",
+  teal: "#008080",
+  navy: "#000080",
+  fuchsia: "#ff00ff",
+  purple: "#800080",
+  orange: "#ffa500",
+  pink: "#ffc0cb",
   // 添加更多常用颜色
-  primary: '#007bff',
-  secondary: '#6c757d',
-  success: '#28a745',
-  danger: '#dc3545',
-  warning: '#ffc107',
-  info: '#17a2b8',
-  light: '#f8f9fa',
-  dark: '#343a40',
+  primary: "#007bff",
+  secondary: "#6c757d",
+  success: "#28a745",
+  danger: "#dc3545",
+  warning: "#ffc107",
+  info: "#17a2b8",
+  light: "#f8f9fa",
+  dark: "#343a40",
 };
 
 /**
@@ -51,16 +51,16 @@ const CSS_COLOR_MAP: Record<string, string> = {
  * @returns 标准化后的颜色值
  */
 export function normalizeColor(color: string | number | undefined): string | undefined {
-  if (color === undefined || color === null || color === '') {
+  if (color === undefined || color === null || color === "") {
     return undefined;
   }
 
   // 已经是十六进制格式
-  if (typeof color === 'string') {
+  if (typeof color === "string") {
     const trimmed = color.trim().toLowerCase();
 
     // 十六进制格式
-    if (trimmed.startsWith('#')) {
+    if (trimmed.startsWith("#")) {
       // #fff -> #ffffff
       if (trimmed.length === 4) {
         const r = trimmed[1];
@@ -72,7 +72,7 @@ export function normalizeColor(color: string | number | undefined): string | und
     }
 
     // rgb/rgba 格式
-    if (trimmed.startsWith('rgb')) {
+    if (trimmed.startsWith("rgb")) {
       return trimmed;
     }
 
@@ -86,8 +86,8 @@ export function normalizeColor(color: string | number | undefined): string | und
   }
 
   // 数字类型（假设为十六进制数值）
-  if (typeof color === 'number') {
-    return `#${color.toString(16).padStart(6, '0')}`;
+  if (typeof color === "number") {
+    return `#${color.toString(16).padStart(6, "0")}`;
   }
 
   return undefined;
@@ -105,7 +105,7 @@ export function parseBorderRadius(value: string | number | undefined): [number, 
   }
 
   // 数字类型
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Math.max(0, value);
   }
 
@@ -114,7 +114,7 @@ export function parseBorderRadius(value: string | number | undefined): [number, 
 
   // 解析单个值（带单位）
   const parseSingleValue = (v: string): number => {
-    const num = parseFloat(v.replace(/px|em|rem|%/, ''));
+    const num = parseFloat(v.replace(/px|em|rem|%/, ""));
     return isNaN(num) ? 0 : Math.max(0, num);
   };
 
@@ -149,19 +149,19 @@ export function parseBorderWidth(value: string | number | undefined): number {
     return 0;
   }
 
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Math.max(0, value);
   }
 
   const str = String(value).trim().toLowerCase();
 
   // 命名值
-  if (str === 'thin') return 1;
-  if (str === 'medium') return 2;
-  if (str === 'thick') return 4;
+  if (str === "thin") return 1;
+  if (str === "medium") return 2;
+  if (str === "thick") return 4;
 
   // 数值
-  return Math.max(0, parseFloat(str.replace(/px|em|rem/, '')) || 0);
+  return Math.max(0, parseFloat(str.replace(/px|em|rem/, "")) || 0);
 }
 
 /**
@@ -170,23 +170,23 @@ export function parseBorderWidth(value: string | number | undefined): number {
  * @param value - 边框样式值
  * @returns 边框样式
  */
-export function parseBorderStyle(value: string | undefined): 'solid' | 'dashed' | 'dotted' | 'none' {
+export function parseBorderStyle(value: string | undefined): "solid" | "dashed" | "dotted" | "none" {
   if (!value) {
-    return 'none';
+    return "none";
   }
 
   const str = value.trim().toLowerCase();
 
-  if (str === 'solid' || str === 'dashed' || str === 'dotted') {
+  if (str === "solid" || str === "dashed" || str === "dotted") {
     return str;
   }
 
   // double, groove, ridge, inset, outset 等当作 solid 处理
-  if (str !== 'none' && str !== 'hidden') {
-    return 'solid';
+  if (str !== "none" && str !== "hidden") {
+    return "solid";
   }
 
-  return 'none';
+  return "none";
 }
 
 /**
@@ -200,7 +200,7 @@ export function parseFontSize(value: string | number | undefined): number {
     return 14; // 默认字体大小
   }
 
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Math.max(1, value);
   }
 
@@ -208,13 +208,13 @@ export function parseFontSize(value: string | number | undefined): number {
 
   // 命名值
   const namedSizes: Record<string, number> = {
-    'xx-small': 9,
-    'x-small': 10,
-    'small': 13,
-    'medium': 16,
-    'large': 18,
-    'x-large': 24,
-    'xx-large': 32,
+    "xx-small": 9,
+    "x-small": 10,
+    small: 13,
+    medium: 16,
+    large: 18,
+    "x-large": 24,
+    "xx-large": 32,
   };
 
   if (namedSizes[str]) {
@@ -222,23 +222,23 @@ export function parseFontSize(value: string | number | undefined): number {
   }
 
   // 相对单位（基于默认 16px）
-  if (str.endsWith('em')) {
+  if (str.endsWith("em")) {
     const num = parseFloat(str);
     return isNaN(num) ? 14 : Math.max(1, num * 16);
   }
 
-  if (str.endsWith('rem')) {
+  if (str.endsWith("rem")) {
     const num = parseFloat(str);
     return isNaN(num) ? 14 : Math.max(1, num * 16);
   }
 
-  if (str.endsWith('%')) {
+  if (str.endsWith("%")) {
     const num = parseFloat(str);
     return isNaN(num) ? 14 : Math.max(1, (num / 100) * 16);
   }
 
   // 像素值
-  if (str.endsWith('px')) {
+  if (str.endsWith("px")) {
     const num = parseFloat(str);
     return isNaN(num) ? 14 : Math.max(1, num);
   }
@@ -259,7 +259,7 @@ export function parseFontWeight(value: string | number | undefined): number {
     return 400; // 默认字重
   }
 
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Math.min(900, Math.max(100, value));
   }
 
@@ -267,21 +267,21 @@ export function parseFontWeight(value: string | number | undefined): number {
 
   // 命名值
   const namedWeights: Record<string, number> = {
-    'thin': 100,
-    'hairline': 100,
-    'extralight': 200,
-    'ultralight': 200,
-    'light': 300,
-    'normal': 400,
-    'regular': 400,
-    'medium': 500,
-    'semibold': 600,
-    'demibold': 600,
-    'bold': 700,
-    'extrabold': 800,
-    'ultrabold': 800,
-    'black': 900,
-    'heavy': 900,
+    thin: 100,
+    hairline: 100,
+    extralight: 200,
+    ultralight: 200,
+    light: 300,
+    normal: 400,
+    regular: 400,
+    medium: 500,
+    semibold: 600,
+    demibold: 600,
+    bold: 700,
+    extrabold: 800,
+    ultrabold: 800,
+    black: 900,
+    heavy: 900,
   };
 
   if (namedWeights[str]) {
@@ -304,7 +304,7 @@ export function parseOpacity(value: string | number | null | undefined): number 
     return 1;
   }
 
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Math.min(1, Math.max(0, value));
   }
 
@@ -318,18 +318,18 @@ export function parseOpacity(value: string | number | null | undefined): number 
  * @param value - 文本对齐值
  * @returns 文本对齐方式
  */
-export function parseTextAlign(value: string | undefined): 'left' | 'center' | 'right' {
+export function parseTextAlign(value: string | undefined): "left" | "center" | "right" {
   if (!value) {
-    return 'left';
+    return "left";
   }
 
   const str = value.trim().toLowerCase();
 
-  if (str === 'center' || str === 'right') {
+  if (str === "center" || str === "right") {
     return str;
   }
 
-  return 'left';
+  return "left";
 }
 
 /**
@@ -338,22 +338,22 @@ export function parseTextAlign(value: string | undefined): 'left' | 'center' | '
  * @param value - 垂直对齐值
  * @returns 垂直对齐方式
  */
-export function parseVerticalAlign(value: string | undefined): 'top' | 'middle' | 'bottom' {
+export function parseVerticalAlign(value: string | undefined): "top" | "middle" | "bottom" {
   if (!value) {
-    return 'top';
+    return "top";
   }
 
   const str = value.trim().toLowerCase();
 
-  if (str === 'middle' || str === 'center') {
-    return 'middle';
+  if (str === "middle" || str === "center") {
+    return "middle";
   }
 
-  if (str === 'bottom' || str === 'baseline' || str === 'sub' || str === 'super') {
-    return 'bottom';
+  if (str === "bottom" || str === "baseline" || str === "sub" || str === "super") {
+    return "bottom";
   }
 
-  return 'top';
+  return "top";
 }
 
 /**
@@ -413,7 +413,7 @@ export function convertStyles(styles: IRStyles | undefined): RenderedElementStyl
   }
 
   if (styles.fontFamily) {
-    result.fontFamily = String(styles.fontFamily).split(',')[0].replace(/['"]/g, '').trim();
+    result.fontFamily = String(styles.fontFamily).split(",")[0].replace(/['"]/g, "").trim();
   }
 
   if (styles.fontSize) {
@@ -425,7 +425,7 @@ export function convertStyles(styles: IRStyles | undefined): RenderedElementStyl
   }
 
   if (styles.fontStyle) {
-    result.fontStyle = styles.fontStyle === 'italic' ? 'italic' : 'normal';
+    result.fontStyle = styles.fontStyle === "italic" ? "italic" : "normal";
   }
 
   if (styles.lineHeight) {
@@ -463,13 +463,15 @@ function parseBoxShadow(value: string): {
   offsetX: number;
   offsetY: number;
 } | null {
-  if (!value || value === 'none') {
+  if (!value || value === "none") {
     return null;
   }
 
   // 使用正则表达式匹配 box-shadow 格式：offset-x offset-y blur-radius spread-radius color
   // 支持 rgba(r, g, b, a) 格式（内部可以有空格）
-  const match = value.match(/^([-\d.]+px)\s+([-\d.]+px)(?:\s+([-\d.]+px))?(?:\s+([-\d.]+px))?\s+(rgba?\([^)]+\)|hsla?\([^)]+\)|#[0-9a-fA-F]+|\w+)$/);
+  const match = value.match(
+    /^([-\d.]+px)\s+([-\d.]+px)(?:\s+([-\d.]+px))?(?:\s+([-\d.]+px))?\s+(rgba?\([^)]+\)|hsla?\([^)]+\)|#[0-9a-fA-F]+|\w+)$/,
+  );
 
   if (!match) {
     return null;
@@ -479,9 +481,9 @@ function parseBoxShadow(value: string): {
   const offsetY = parseFloat(match[2]);
   const blur = match[3] ? parseFloat(match[3]) : 0;
   // spread-radius (match[4]) 在 canvas 中不支持，忽略
-  const colorStr = match[5] || match[4] || 'rgba(0,0,0,0.25)';
+  const colorStr = match[5] || match[4] || "rgba(0,0,0,0.25)";
 
-  const color = normalizeColor(colorStr) || 'rgba(0,0,0,0.25)';
+  const color = normalizeColor(colorStr) || "rgba(0,0,0,0.25)";
 
   return { color, blur, offsetX, offsetY };
 }
@@ -497,7 +499,7 @@ function parseLineHeight(value: string | number | undefined): number {
     return 1.5;
   }
 
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return value;
   }
 
@@ -509,7 +511,7 @@ function parseLineHeight(value: string | number | undefined): number {
   }
 
   // 百分比
-  if (str.endsWith('%')) {
+  if (str.endsWith("%")) {
     return parseFloat(str) / 100;
   }
 
@@ -525,13 +527,13 @@ function parseLineHeight(value: string | number | undefined): number {
  */
 export function getDefaultTextStyle(): RenderedElementStyle {
   return {
-    fontFamily: 'Arial, sans-serif',
+    fontFamily: "Arial, sans-serif",
     fontSize: 14,
     fontWeight: 400,
     lineHeight: 1.5,
-    color: '#333333',
-    textAlign: 'left',
-    verticalAlign: 'top',
+    color: "#333333",
+    textAlign: "left",
+    verticalAlign: "top",
   };
 }
 
@@ -548,29 +550,29 @@ export function parseLinearGradient(value: string): {
   const match = value.match(/linear-gradient\(([^)]+)\)/);
   if (!match) return null;
 
-  const parts = match[1].split(',').map(s => s.trim());
+  const parts = match[1].split(",").map((s) => s.trim());
   let angle = 180; // 默认从上到下
   let startIndex = 0;
 
   // 检查第一个参数是否是角度或方向
-  if (parts[0].includes('deg')) {
+  if (parts[0].includes("deg")) {
     angle = parseFloat(parts[0]);
     startIndex = 1;
-  } else if (parts[0].startsWith('to ')) {
-    const direction = parts[0].replace('to ', '');
+  } else if (parts[0].startsWith("to ")) {
+    const direction = parts[0].replace("to ", "");
     const angleMap: Record<string, number> = {
-      'top': 0,
-      'right': 90,
-      'bottom': 180,
-      'left': 270,
-      'top right': 45,
-      'right top': 45,
-      'bottom right': 135,
-      'right bottom': 135,
-      'bottom left': 225,
-      'left bottom': 225,
-      'top left': 315,
-      'left top': 315,
+      top: 0,
+      right: 90,
+      bottom: 180,
+      left: 270,
+      "top right": 45,
+      "right top": 45,
+      "bottom right": 135,
+      "right bottom": 135,
+      "bottom left": 225,
+      "left bottom": 225,
+      "top left": 315,
+      "left top": 315,
     };
     angle = angleMap[direction] || 180;
     startIndex = 1;
@@ -601,18 +603,18 @@ export function parseLinearGradient(value: string): {
  * @returns 渐变参数或 null
  */
 export function parseRadialGradient(value: string): {
-  shape: 'circle' | 'ellipse';
+  shape: "circle" | "ellipse";
   colorStops: Array<{ offset: number; color: string }>;
 } | null {
   const match = value.match(/radial-gradient\(([^)]+)\)/);
   if (!match) return null;
 
-  const parts = match[1].split(',').map(s => s.trim());
-  let shape: 'circle' | 'ellipse' = 'ellipse';
+  const parts = match[1].split(",").map((s) => s.trim());
+  let shape: "circle" | "ellipse" = "ellipse";
   let startIndex = 0;
 
   // 检查第一个参数是否是形状
-  if (parts[0] === 'circle' || parts[0] === 'ellipse') {
+  if (parts[0] === "circle" || parts[0] === "ellipse") {
     shape = parts[0];
     startIndex = 1;
   }
@@ -641,10 +643,7 @@ export function parseRadialGradient(value: string): {
  * @param override - 覆盖样式
  * @returns 合并后的样式
  */
-export function mergeStyles(
-  base: RenderedElementStyle,
-  override: RenderedElementStyle
-): RenderedElementStyle {
+export function mergeStyles(base: RenderedElementStyle, override: RenderedElementStyle): RenderedElementStyle {
   const result = { ...base };
 
   for (const key of Object.keys(override) as (keyof RenderedElementStyle)[]) {

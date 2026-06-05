@@ -4,7 +4,7 @@
  * 将 CSS 颜色格式转换为 CanvasKit Color
  */
 
-import type { CanvasKit } from 'canvaskit-wasm';
+import type { CanvasKit } from "canvaskit-wasm";
 
 export interface RGBA {
   r: number;
@@ -20,17 +20,17 @@ export function parseColor(color: string): RGBA {
   const trimmed = color.trim().toLowerCase();
 
   // hex 格式
-  if (trimmed.startsWith('#')) {
+  if (trimmed.startsWith("#")) {
     return parseHexColor(trimmed);
   }
 
   // rgb/rgba 格式
-  if (trimmed.startsWith('rgb')) {
+  if (trimmed.startsWith("rgb")) {
     return parseRGBColor(trimmed);
   }
 
   // hsl/hsla 格式
-  if (trimmed.startsWith('hsl')) {
+  if (trimmed.startsWith("hsl")) {
     return parseHSLColor(trimmed);
   }
 
@@ -48,22 +48,22 @@ export function parseColor(color: string): RGBA {
  */
 function parseHexColor(hex: string): RGBA {
   // 移除 #
-  hex = hex.replace('#', '');
+  hex = hex.replace("#", "");
 
   // 3 位 hex (#RGB)
   if (hex.length === 3) {
     hex = hex
-      .split('')
+      .split("")
       .map((c) => c + c)
-      .join('');
+      .join("");
   }
 
   // 4 位 hex (#RGBA)
   if (hex.length === 4) {
     hex = hex
-      .split('')
+      .split("")
       .map((c) => c + c)
-      .join('');
+      .join("");
   }
 
   const r = parseInt(hex.substring(0, 2), 16);
@@ -83,7 +83,7 @@ function parseRGBColor(rgb: string): RGBA {
     return { r: 0, g: 0, b: 0, a: 1.0 };
   }
 
-  const parts = match[1].split(',').map((s) => s.trim());
+  const parts = match[1].split(",").map((s) => s.trim());
   const r = parseFloat(parts[0]);
   const g = parseFloat(parts[1]);
   const b = parseFloat(parts[2]);
@@ -101,10 +101,10 @@ function parseHSLColor(hsl: string): RGBA {
     return { r: 0, g: 0, b: 0, a: 1.0 };
   }
 
-  const parts = match[1].split(',').map((s) => s.trim());
+  const parts = match[1].split(",").map((s) => s.trim());
   const h = parseFloat(parts[0]) / 360;
-  const s = parseFloat(parts[1].replace('%', '')) / 100;
-  const l = parseFloat(parts[2].replace('%', '')) / 100;
+  const s = parseFloat(parts[1].replace("%", "")) / 100;
+  const l = parseFloat(parts[2].replace("%", "")) / 100;
   const a = parts[3] ? parseFloat(parts[3]) : 1.0;
 
   return { ...hslToRgb(h, s, l), a };
@@ -147,7 +147,7 @@ function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: n
  * 转换为 CanvasKit Color
  */
 export function toCanvasKitColor(color: string | RGBA, CanvasKit: CanvasKit): Float32Array {
-  const rgba = typeof color === 'string' ? parseColor(color) : color;
+  const rgba = typeof color === "string" ? parseColor(color) : color;
   return CanvasKit.Color(rgba.r, rgba.g, rgba.b, rgba.a);
 }
 
@@ -155,24 +155,24 @@ export function toCanvasKitColor(color: string | RGBA, CanvasKit: CanvasKit): Fl
  * 常用命名颜色
  */
 const NAMED_COLORS: Record<string, string> = {
-  transparent: '#00000000',
-  black: '#000000',
-  white: '#ffffff',
-  red: '#ff0000',
-  green: '#008000',
-  blue: '#0000ff',
-  yellow: '#ffff00',
-  cyan: '#00ffff',
-  magenta: '#ff00ff',
-  gray: '#808080',
-  grey: '#808080',
-  silver: '#c0c0c0',
-  maroon: '#800000',
-  olive: '#808000',
-  lime: '#00ff00',
-  aqua: '#00ffff',
-  teal: '#008080',
-  navy: '#000080',
-  fuchsia: '#ff00ff',
-  purple: '#800080',
+  transparent: "#00000000",
+  black: "#000000",
+  white: "#ffffff",
+  red: "#ff0000",
+  green: "#008000",
+  blue: "#0000ff",
+  yellow: "#ffff00",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  gray: "#808080",
+  grey: "#808080",
+  silver: "#c0c0c0",
+  maroon: "#800000",
+  olive: "#808000",
+  lime: "#00ff00",
+  aqua: "#00ffff",
+  teal: "#008080",
+  navy: "#000080",
+  fuchsia: "#ff00ff",
+  purple: "#800080",
 };

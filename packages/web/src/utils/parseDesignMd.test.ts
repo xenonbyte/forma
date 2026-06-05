@@ -10,7 +10,7 @@ describe("parseDesignMd", () => {
       rounded: {},
       spacing: {},
       components: {},
-      warnings: []
+      warnings: [],
     });
   });
 
@@ -43,22 +43,22 @@ components:
       background: "#ffffff",
       "primary-1": "#111827",
       "text_primary.2": "{colors.primary-1}",
-      overlay: "transparent"
+      overlay: "transparent",
     });
     expect(parsed.typography).toEqual({
       "heading-lg": "Acme Display",
-      "body_md.1": "system-ui"
+      "body_md.1": "system-ui",
     });
     expect(parsed.rounded).toEqual({ lg: "12px" });
     expect(parsed.spacing).toEqual({ "0": "0", unit_2: "8" });
     expect(parsed.components).toEqual({
       "button-primary": {
         background: "{colors.primary-1}",
-        color: "{colors.text_primary.2}"
+        color: "{colors.text_primary.2}",
       },
       "nav.main": {
-        height: "48px"
-      }
+        height: "48px",
+      },
     });
     expect(parsed.warnings).toEqual([]);
   });
@@ -80,7 +80,7 @@ typography:
 
     expect(parsed.typography).toEqual({
       "display-lg": "'CursorGothic', sans-serif",
-      "body-md": "Inter, system-ui, sans-serif"
+      "body-md": "Inter, system-ui, sans-serif",
     });
     expect(parsed.warnings).toEqual([]);
   });
@@ -105,11 +105,11 @@ components:
       backgroundColor: "{colors.primary}",
       textColor: "{colors.on-primary}",
       typography: "{typography.button}",
-      rounded: "{rounded.md}"
+      rounded: "{rounded.md}",
     });
     expect(parsed.components["top-nav"]).toMatchObject({
       backgroundColor: "{colors.canvas}",
-      textColor: "{colors.ink}"
+      textColor: "{colors.ink}",
     });
     expect(parsed.warnings).toEqual([]);
   });

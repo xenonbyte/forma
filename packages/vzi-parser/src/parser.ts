@@ -6,8 +6,8 @@
  * and all helpers that were only used by the removed paths have been removed too.
  */
 
-import type { IntermediateRepresentation } from '@vzi-core/types';
-import { type ComputedStyleOptions } from './computed-style';
+import type { IntermediateRepresentation } from "@vzi-core/types";
+import type { ComputedStyleOptions } from "./computed-style";
 
 const DEFAULT_MAX_INPUT_SIZE = 100 * 1024 * 1024;
 const DEFAULT_PUPPETEER_VIEWPORT = { width: 1024, height: 1280 };
@@ -108,13 +108,13 @@ export class HTMLParser {
 
   constructor(options: HTMLParserOptions = {}) {
     this.maxInputBytes = options.maxInputBytes ?? DEFAULT_MAX_INPUT_SIZE;
-    this.irVersion = options.irVersion ?? '1.0.0';
+    this.irVersion = options.irVersion ?? "1.0.0";
     this.baseUrl = options.baseUrl;
     this.computedStyleOptions = options.computedStyleOptions;
     this.puppeteerWaitTime = options.puppeteerWaitTime ?? 2000;
     this.puppeteerWaitForSelector = options.puppeteerWaitForSelector;
     this.puppeteerWaitForPageReadyMarker = options.puppeteerWaitForPageReadyMarker ?? true;
-    this.puppeteerPageReadyMarkerSelector = options.puppeteerPageReadyMarkerSelector ?? '[data-page-ready]';
+    this.puppeteerPageReadyMarkerSelector = options.puppeteerPageReadyMarkerSelector ?? "[data-page-ready]";
     this.puppeteerPageReadyDoneSelector = options.puppeteerPageReadyDoneSelector ?? '[data-page-ready="true"]';
     this.puppeteerMaxWaitTime = options.puppeteerMaxWaitTime ?? 30000;
     this.puppeteerWaitForFonts = options.puppeteerWaitForFonts ?? true;
@@ -131,7 +131,7 @@ export class HTMLParser {
 
   private isNodeRuntime(): boolean {
     const maybeProcess = (globalThis as { process?: { versions?: { node?: string } } }).process;
-    return typeof maybeProcess?.versions?.node === 'string';
+    return typeof maybeProcess?.versions?.node === "string";
   }
 
   private async getPuppeteerParser(): Promise<PuppeteerParserInstance> {
@@ -140,7 +140,7 @@ export class HTMLParser {
     }
 
     this.puppeteerParserPromise = (async () => {
-      const puppeteerModule = await import('./puppeteer-parser.js') as {
+      const puppeteerModule = (await import("./puppeteer-parser.js")) as {
         PuppeteerParser: new (options: {
           viewportWidth: number;
           viewportHeight: number;
@@ -208,9 +208,7 @@ export class HTMLParser {
    * @deprecated Sync (cheerio) parse has been removed. Use parseAsync() — Puppeteer-only.
    */
   parse(_html: string): IntermediateRepresentation {
-    throw new Error(
-      'sync parse() has been removed from HTMLParser. Use parseAsync() (Puppeteer-only) instead.'
-    );
+    throw new Error("sync parse() has been removed from HTMLParser. Use parseAsync() (Puppeteer-only) instead.");
   }
 
   /**
@@ -223,21 +221,21 @@ export class HTMLParser {
    * @returns IR 文档
    */
   async parseAsync(html: string): Promise<IntermediateRepresentation> {
-    if (typeof html !== 'string') {
-      throw new Error('Invalid HTML input: expected string');
+    if (typeof html !== "string") {
+      throw new Error("Invalid HTML input: expected string");
     }
 
     if (!html.trim()) {
-      throw new Error('Invalid HTML input: content is empty');
+      throw new Error("Invalid HTML input: content is empty");
     }
 
-    const inputBytes = Buffer.byteLength(html, 'utf-8');
+    const inputBytes = Buffer.byteLength(html, "utf-8");
     if (inputBytes > this.maxInputBytes) {
       throw new Error(`Invalid HTML input: exceeds max size ${this.maxInputBytes} bytes`);
     }
 
     if (!this.isNodeRuntime()) {
-      throw new Error('parseAsync requires a Node.js runtime (Puppeteer is not available in browser environments).');
+      throw new Error("parseAsync requires a Node.js runtime (Puppeteer is not available in browser environments).");
     }
 
     // Puppeteer-only path (JSDOM / sync-cheerio fallback removed in Forma fork)
@@ -260,8 +258,8 @@ export class HTMLParser {
    * 从本地文件读取并解析 HTML。
    */
   async parseFromFile(filePath: string): Promise<IntermediateRepresentation> {
-    const fsModule = await import('node:fs/promises');
-    const html = await fsModule.readFile(filePath, 'utf-8');
+    const fsModule = await import("node:fs/promises");
+    const html = await fsModule.readFile(filePath, "utf-8");
     return this.parseAsync(html);
   }
 }

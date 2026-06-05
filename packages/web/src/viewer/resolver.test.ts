@@ -16,13 +16,15 @@ describe("createWebResourceResolver", () => {
   });
 
   it("resolves a bundle asset by path", () => {
-    expect(r.resolve({ artifactId: "a", version: 3, kind: "asset", path: "assets/logo.png" })).toBe(`${base}/bundle/assets/logo.png`);
+    expect(r.resolve({ artifactId: "a", version: 3, kind: "asset", path: "assets/logo.png" })).toBe(
+      `${base}/bundle/assets/logo.png`,
+    );
   });
 
   it("url-encodes product and artifact ids", () => {
     const enc = createWebResourceResolver("p/1");
     expect(enc.resolve({ artifactId: "a b", version: 1, kind: "bundle" })).toBe(
-      "/api/products/p%2F1/artifacts/a%20b/versions/1/bundle/index.html"
+      "/api/products/p%2F1/artifacts/a%20b/versions/1/bundle/index.html",
     );
   });
 });

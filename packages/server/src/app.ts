@@ -3,14 +3,19 @@ import { timingSafeEqual } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
-import { createFormaStore, FormaError, isSchemaNormalizationStartupError, type SchemaNormalizationRecoveryState } from "@xenonbyte/forma-core";
+import {
+  createFormaStore,
+  FormaError,
+  isSchemaNormalizationStartupError,
+  type SchemaNormalizationRecoveryState,
+} from "@xenonbyte/forma-core";
 import {
   registerPreflightOnlyRoutes,
   registerRecoveryOnlyRoutes,
   registerRoutes,
   RouteHttpError,
   sendNormalizationBlocked,
-  type FormaRoutesStore
+  type FormaRoutesStore,
 } from "./routes.js";
 
 export interface BuildServerOptions {
@@ -43,7 +48,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
     try {
       store = await createFormaStore({
         home: options.home ?? defaultFormaHome(),
-        bundledStylesDir: options.bundledStylesDir
+        bundledStylesDir: options.bundledStylesDir,
       });
     } catch (error) {
       if (!isSchemaNormalizationStartupError(error)) {
@@ -81,7 +86,7 @@ export async function buildServer(options: BuildServerOptions = {}): Promise<For
     reply.status(404).send({
       error_code: "NOT_FOUND",
       message: "Route not found",
-      details: {}
+      details: {},
     });
   });
 
@@ -127,7 +132,7 @@ function registerApiBearerAuth(app: FastifyInstance, token: string): void {
       reply.status(401).send({
         error_code: "UNAUTHORIZED",
         message: "Missing or invalid bearer token",
-        details: {}
+        details: {},
       });
       return reply;
     }
@@ -187,7 +192,10 @@ function isRemovedLegacyDesignDetailPath(requestPath: string): boolean {
   return /^\/products\/[^/]+\/requirements\/[^/]+\/designs\/[^/]+\/?$/.test(requestPath);
 }
 
-async function readWebAsset(webAssetsDir: string, url: string): Promise<{ content: Buffer; contentType: string } | undefined> {
+async function readWebAsset(
+  webAssetsDir: string,
+  url: string,
+): Promise<{ content: Buffer; contentType: string } | undefined> {
   const root = resolve(webAssetsDir);
   const requestPath = pathname(url);
   const assetPath = requestPath === "/" ? "" : requestPath.replace(/^\/+/, "");

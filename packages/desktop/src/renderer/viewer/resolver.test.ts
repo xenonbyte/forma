@@ -36,8 +36,6 @@ describe("createDesktopResourceResolver", () => {
   it("url-encodes product and artifact ids", () => {
     const rEnc = createDesktopResourceResolver(base, "p/1");
     const ref: ResourceRef = { artifactId: "a b", version: 1, kind: "bundle" };
-    expect(rEnc.resolve(ref)).toBe(
-      `${base}/api/products/p%2F1/artifacts/a%20b/versions/1/bundle/index.html`
-    );
+    expect(rEnc.resolve(ref)).toBe(`${base}/api/products/p%2F1/artifacts/a%20b/versions/1/bundle/index.html`);
   });
 });

@@ -12,9 +12,15 @@ export interface SystemStylePickerDialogProps {
   styles: SystemStyleMetadata[];
 }
 
-const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+const focusClasses =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
-export function SystemStylePickerDialog({ disabledReason, onConfirm, selectedStyleName, styles }: SystemStylePickerDialogProps) {
+export function SystemStylePickerDialog({
+  disabledReason,
+  onConfirm,
+  selectedStyleName,
+  styles,
+}: SystemStylePickerDialogProps) {
   const tx = useT();
   const [candidateStyleName, setCandidateStyleName] = useState("");
   const [open, setOpen] = useState(false);
@@ -101,7 +107,10 @@ export function SystemStylePickerDialog({ disabledReason, onConfirm, selectedSty
           role="dialog"
         >
           <header className="flex items-center justify-between gap-4 border-b border-zinc-200 px-7 py-4">
-            <h2 className="truncate text-[24px] font-semibold tracking-normal text-zinc-900" id="system-style-picker-title">
+            <h2
+              className="truncate text-[24px] font-semibold tracking-normal text-zinc-900"
+              id="system-style-picker-title"
+            >
               {tx("systemStylePicker.title")}
             </h2>
             <button
@@ -117,7 +126,11 @@ export function SystemStylePickerDialog({ disabledReason, onConfirm, selectedSty
 
           <div className="grid min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
             <aside className="min-h-0 border-r border-zinc-200 bg-zinc-50 p-5">
-              <div aria-label={tx("systemStylePicker.candidateList")} className="grid max-h-full content-start gap-3 overflow-y-auto overflow-x-hidden pr-1" role="listbox">
+              <div
+                aria-label={tx("systemStylePicker.candidateList")}
+                className="grid max-h-full content-start gap-3 overflow-y-auto overflow-x-hidden pr-1"
+                role="listbox"
+              >
                 {styles.map((style, index) => (
                   <SystemStyleCandidateButton
                     active={style.name === candidateStyleName}
@@ -136,7 +149,12 @@ export function SystemStylePickerDialog({ disabledReason, onConfirm, selectedSty
           </div>
 
           <footer className="flex justify-end gap-3 border-t border-zinc-200 px-7 py-4">
-            <button className={secondaryButtonClasses} data-system-style-picker-cancel="" onClick={() => setOpen(false)} type="button">
+            <button
+              className={secondaryButtonClasses}
+              data-system-style-picker-cancel=""
+              onClick={() => setOpen(false)}
+              type="button"
+            >
               {tx("action.cancel")}
             </button>
             <button
@@ -177,41 +195,43 @@ interface SystemStyleCandidateButtonProps {
   style: SystemStyleMetadata;
 }
 
-const SystemStyleCandidateButton = forwardRef<HTMLButtonElement, SystemStyleCandidateButtonProps>(function SystemStyleCandidateButton({
-  active,
-  onClick,
-  style
-}, ref) {
-  const tx = useT();
-  return (
-    <button
-      aria-selected={active}
-      className={`w-full rounded-2xl border p-4 text-left transition active:scale-[0.99] ${focusClasses} ${
-        active ? "border-amber-300 bg-amber-50" : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
-      }`}
-      data-system-style-picker-option={style.name}
-      onClick={onClick}
-      ref={ref}
-      role="option"
-      type="button"
-    >
-      <span className="flex items-start justify-between gap-3">
-        <span className="flex min-w-0 gap-3">
-          <span className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-100 bg-amber-100 text-zinc-950">
-            <SpecIcon name={style.name} />
+const SystemStyleCandidateButton = forwardRef<HTMLButtonElement, SystemStyleCandidateButtonProps>(
+  function SystemStyleCandidateButton({ active, onClick, style }, ref) {
+    const tx = useT();
+    return (
+      <button
+        aria-selected={active}
+        className={`w-full rounded-2xl border p-4 text-left transition active:scale-[0.99] ${focusClasses} ${
+          active ? "border-amber-300 bg-amber-50" : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+        }`}
+        data-system-style-picker-option={style.name}
+        onClick={onClick}
+        ref={ref}
+        role="option"
+        type="button"
+      >
+        <span className="flex items-start justify-between gap-3">
+          <span className="flex min-w-0 gap-3">
+            <span className="mt-1 inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-100 bg-amber-100 text-zinc-950">
+              <SpecIcon name={style.name} />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-base font-semibold tracking-normal text-zinc-900">
+                {formatDisplayName(style.name)}
+              </span>
+              <span className="mt-1 block break-words text-sm leading-5 text-zinc-500">{style.description}</span>
+            </span>
           </span>
-          <span className="min-w-0">
-            <span className="block text-base font-semibold tracking-normal text-zinc-900">{formatDisplayName(style.name)}</span>
-            <span className="mt-1 block break-words text-sm leading-5 text-zinc-500">{style.description}</span>
-          </span>
+          {active ? (
+            <span className="shrink-0 rounded-full bg-amber-500 px-2 py-1 text-xs font-semibold text-zinc-950">
+              {tx("action.selected")}
+            </span>
+          ) : null}
         </span>
-        {active ? (
-          <span className="shrink-0 rounded-full bg-amber-500 px-2 py-1 text-xs font-semibold text-zinc-950">{tx("action.selected")}</span>
-        ) : null}
-      </span>
-    </button>
-  );
-});
+      </button>
+    );
+  },
+);
 
 function SpecIcon({ name }: { name: string }) {
   if (name.includes("mobile")) {
@@ -233,14 +253,25 @@ function SpecIcon({ name }: { name: string }) {
     return (
       <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.7" />
-        <path d="M12 7.5v9M8.5 10h7M10 16.5l2-5 2 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        <path
+          d="M12 7.5v9M8.5 10h7M10 16.5l2-5 2 5"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
       </svg>
     );
   }
   if (name.includes("admin") || name.includes("enterprise")) {
     return (
       <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
-        <path d="M5 6.5 12 3l7 3.5v10L12 21l-7-4.5v-10Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+        <path
+          d="M5 6.5 12 3l7 3.5v10L12 21l-7-4.5v-10Z"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
         <path d="M12 3v18M5 6.5l7 4 7-4" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
       </svg>
     );
@@ -248,13 +279,24 @@ function SpecIcon({ name }: { name: string }) {
   if (name.includes("fluent")) {
     return (
       <svg aria-hidden="true" className="h-6 w-6" fill="none" viewBox="0 0 24 24">
-        <path d="m12 3 1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
+        <path
+          d="m12 3 1.7 5.1L19 10l-5.3 1.9L12 17l-1.7-5.1L5 10l5.3-1.9L12 3Z"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
       </svg>
     );
   }
   return (
     <svg aria-hidden="true" className="h-6 w-6 text-amber-600" fill="none" viewBox="0 0 24 24">
-      <path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" fill="#f59e0b" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.2" />
+      <path
+        d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z"
+        fill="#f59e0b"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.2"
+      />
       <path d="m4 12 8 4.5 8-4.5M4 16.5 12 21l8-4.5" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.5" />
     </svg>
   );
@@ -275,8 +317,8 @@ function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null): void
 
   const focusable = Array.from(
     dialog.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    )
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
   ).filter((element) => !element.hasAttribute("hidden"));
   if (focusable.length === 0) {
     event.preventDefault();

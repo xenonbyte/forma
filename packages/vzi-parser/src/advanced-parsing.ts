@@ -9,14 +9,7 @@
  * - 2.17 滤镜效果提取
  */
 
-import type {
-  IRAnimations,
-  IRTransform,
-  IREffects,
-  IRStyles,
-  IRTransition,
-  IRKeyframe,
-} from '@vzi-core/types';
+import type { IRAnimations, IRTransform, IREffects, IRStyles, IRTransition, IRKeyframe } from "@vzi-core/types";
 
 // ============================================
 // 2.13 自定义等待策略
@@ -26,12 +19,12 @@ import type {
  * 等待策略类型
  */
 export type WaitStrategy =
-  | { type: 'none' }
-  | { type: 'selector'; selector: string; timeout?: number }
-  | { type: 'event'; eventName: string; timeout?: number }
-  | { type: 'webComponents'; timeout?: number }
-  | { type: 'networkIdle'; timeout?: number; idleTime?: number }
-  | { type: 'custom'; check: () => Promise<boolean>; timeout?: number };
+  | { type: "none" }
+  | { type: "selector"; selector: string; timeout?: number }
+  | { type: "event"; eventName: string; timeout?: number }
+  | { type: "webComponents"; timeout?: number }
+  | { type: "networkIdle"; timeout?: number; idleTime?: number }
+  | { type: "custom"; check: () => Promise<boolean>; timeout?: number };
 
 /**
  * 等待策略配置
@@ -61,61 +54,61 @@ export class WaitStrategyManager {
    * 解析等待策略配置
    */
   parseStrategy(config: unknown): WaitStrategy {
-    if (!config || typeof config !== 'object') {
-      return { type: 'none' };
+    if (!config || typeof config !== "object") {
+      return { type: "none" };
     }
 
     const c = config as Record<string, unknown>;
 
-    if (c.selector && typeof c.selector === 'string') {
+    if (c.selector && typeof c.selector === "string") {
       return {
-        type: 'selector',
+        type: "selector",
         selector: c.selector,
-        timeout: typeof c.timeout === 'number' ? c.timeout : this.options.defaultTimeout,
+        timeout: typeof c.timeout === "number" ? c.timeout : this.options.defaultTimeout,
       };
     }
 
-    if (c.event && typeof c.event === 'string') {
+    if (c.event && typeof c.event === "string") {
       return {
-        type: 'event',
+        type: "event",
         eventName: c.event,
-        timeout: typeof c.timeout === 'number' ? c.timeout : this.options.defaultTimeout,
+        timeout: typeof c.timeout === "number" ? c.timeout : this.options.defaultTimeout,
       };
     }
 
     if (c.webComponents === true) {
       return {
-        type: 'webComponents',
-        timeout: typeof c.timeout === 'number' ? c.timeout : this.options.defaultTimeout,
+        type: "webComponents",
+        timeout: typeof c.timeout === "number" ? c.timeout : this.options.defaultTimeout,
       };
     }
 
     if (c.networkIdle === true) {
       return {
-        type: 'networkIdle',
-        timeout: typeof c.timeout === 'number' ? c.timeout : this.options.defaultTimeout,
+        type: "networkIdle",
+        timeout: typeof c.timeout === "number" ? c.timeout : this.options.defaultTimeout,
         idleTime: this.options.networkIdleTime,
       };
     }
 
-    return { type: 'none' };
+    return { type: "none" };
   }
 
   /**
    * 从元素属性中提取等待策略
    */
   extractFromAttributes(attributes: Record<string, string>): WaitStrategy | null {
-    if (attributes['data-wait-selector']) {
+    if (attributes["data-wait-selector"]) {
       return this.parseStrategy({
-        selector: attributes['data-wait-selector'],
-        timeout: parseInt(attributes['data-wait-timeout'] || '', 10) || undefined,
+        selector: attributes["data-wait-selector"],
+        timeout: parseInt(attributes["data-wait-timeout"] || "", 10) || undefined,
       });
     }
 
-    if (attributes['data-wait-event']) {
+    if (attributes["data-wait-event"]) {
       return this.parseStrategy({
-        event: attributes['data-wait-event'],
-        timeout: parseInt(attributes['data-wait-timeout'] || '', 10) || undefined,
+        event: attributes["data-wait-event"],
+        timeout: parseInt(attributes["data-wait-timeout"] || "", 10) || undefined,
       });
     }
 
@@ -140,7 +133,7 @@ export interface SlotInfo {
  */
 export interface ShadowDOMInfo {
   hostId: string;
-  mode: 'open' | 'closed';
+  mode: "open" | "closed";
   slots: SlotInfo[];
   internalElementCount: number;
 }
@@ -153,14 +146,14 @@ export class ShadowDOMDetector {
    * 检测元素是否为 Shadow DOM 宿主
    */
   isShadowHost(element: Element): boolean {
-    return 'shadowRoot' in element && (element as Element & { shadowRoot: unknown }).shadowRoot !== null;
+    return "shadowRoot" in element && (element as Element & { shadowRoot: unknown }).shadowRoot !== null;
   }
 
   /**
    * 检测自定义元素
    */
   isCustomElement(tagName: string): boolean {
-    return tagName.includes('-');
+    return tagName.includes("-");
   }
 
   /**
@@ -172,9 +165,9 @@ export class ShadowDOMDetector {
     }
 
     const el = element as Element & { shadowRoot: { mode: string } };
-    const mode: 'open' | 'closed' = el.shadowRoot?.mode === 'closed' ? 'closed' : 'open';
+    const mode: "open" | "closed" = el.shadowRoot?.mode === "closed" ? "closed" : "open";
     return {
-      hostId: element.id || '',
+      hostId: element.id || "",
       mode,
       slots: [],
       internalElementCount: 0,
@@ -212,21 +205,21 @@ export class AnimationExtractor {
    */
   private extractTransitions(computedStyle: CSSStyleDeclaration): IRTransition[] {
     const transitionProperty = computedStyle.transitionProperty;
-    if (!transitionProperty || transitionProperty === 'none' || transitionProperty === 'all') {
+    if (!transitionProperty || transitionProperty === "none" || transitionProperty === "all") {
       // 如果是 'all'，返回空数组，因为无法确定具体属性
       return [];
     }
 
-    const properties = transitionProperty.split(',').map((p) => p.trim());
-    const durations = (computedStyle.transitionDuration || '0s').split(',').map((d) => d.trim());
-    const timingFunctions = (computedStyle.transitionTimingFunction || 'ease').split(',').map((t) => t.trim());
-    const delays = (computedStyle.transitionDelay || '0s').split(',').map((d) => d.trim());
+    const properties = transitionProperty.split(",").map((p) => p.trim());
+    const durations = (computedStyle.transitionDuration || "0s").split(",").map((d) => d.trim());
+    const timingFunctions = (computedStyle.transitionTimingFunction || "ease").split(",").map((t) => t.trim());
+    const delays = (computedStyle.transitionDelay || "0s").split(",").map((d) => d.trim());
 
     return properties.map((property, i) => ({
       property,
-      duration: durations[i] || durations[0] || '0s',
-      timingFunction: timingFunctions[i] || timingFunctions[0] || 'ease',
-      delay: delays[i] || delays[0] || '0s',
+      duration: durations[i] || durations[0] || "0s",
+      timingFunction: timingFunctions[i] || timingFunctions[0] || "ease",
+      delay: delays[i] || delays[0] || "0s",
     }));
   }
 
@@ -235,11 +228,11 @@ export class AnimationExtractor {
    */
   private extractKeyframeAnimations(computedStyle: CSSStyleDeclaration): IRKeyframe[] {
     const animationName = computedStyle.animationName;
-    if (!animationName || animationName === 'none') {
+    if (!animationName || animationName === "none") {
       return [];
     }
 
-    const names = animationName.split(',').map((n) => n.trim());
+    const names = animationName.split(",").map((n) => n.trim());
 
     return names.map((name) => ({
       name,
@@ -251,12 +244,12 @@ export class AnimationExtractor {
    * 提取平衡花括号内容：找到 startIndex 处的 '{' 并返回其配对的 '}' 之前的全部内容
    */
   private extractBalancedBraces(text: string, startIndex: number): string | null {
-    if (text[startIndex] !== '{') return null;
+    if (text[startIndex] !== "{") return null;
     let depth = 0;
     let i = startIndex;
     while (i < text.length) {
-      if (text[i] === '{') depth++;
-      else if (text[i] === '}') {
+      if (text[i] === "{") depth++;
+      else if (text[i] === "}") {
         depth--;
         if (depth === 0) return text.slice(startIndex + 1, i);
       }
@@ -293,8 +286,8 @@ export class AnimationExtractor {
         const styleText = stepMatch[2];
 
         const styles: IRStyles = {};
-        styleText.split(';').forEach((declaration) => {
-          const [prop, value] = declaration.split(':').map((s) => s.trim());
+        styleText.split(";").forEach((declaration) => {
+          const [prop, value] = declaration.split(":").map((s) => s.trim());
           if (prop && value) {
             const camelProp = prop.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
             styles[camelProp] = value;
@@ -324,7 +317,7 @@ export class TransformExtractor {
    */
   extractTransform(computedStyle: CSSStyleDeclaration): IRTransform | undefined {
     const transform = computedStyle.transform;
-    if (!transform || transform === 'none') {
+    if (!transform || transform === "none") {
       return undefined;
     }
 
@@ -333,7 +326,7 @@ export class TransformExtractor {
     // 解析 matrix/matrix3d
     const matrixMatch = transform.match(/matrix(?:3d)?\(([^)]+)\)/);
     if (matrixMatch) {
-      const values = matrixMatch[1].split(',').map((v) => parseFloat(v.trim()));
+      const values = matrixMatch[1].split(",").map((v) => parseFloat(v.trim()));
       if (values.length === 6) {
         result.matrix = [values[0], values[1], values[2], values[3], values[4], values[5]];
       } else if (values.length === 16) {
@@ -344,7 +337,7 @@ export class TransformExtractor {
     // 解析 translate
     const translateMatch = transform.match(/translate(?:3d)?\(([^)]+)\)/);
     if (translateMatch) {
-      const values = translateMatch[1].split(',').map((v) => this.parseLength(v.trim()));
+      const values = translateMatch[1].split(",").map((v) => this.parseLength(v.trim()));
       result.translate = {
         x: values[0] || 0,
         y: values[1] || 0,
@@ -358,16 +351,16 @@ export class TransformExtractor {
       const value = parseFloat(rotateMatch[1]);
       const axis = rotateMatch[0].match(/rotate(X|Y|Z)?/)?.[1];
       result.rotate = {
-        x: axis === 'X' ? value : undefined,
-        y: axis === 'Y' ? value : undefined,
-        z: !axis || axis === 'Z' ? value : undefined,
+        x: axis === "X" ? value : undefined,
+        y: axis === "Y" ? value : undefined,
+        z: !axis || axis === "Z" ? value : undefined,
       };
     }
 
     // 解析 scale
     const scaleMatch = transform.match(/scale(?:X|Y|Z|3d)?\(([^)]+)\)/);
     if (scaleMatch) {
-      const values = scaleMatch[1].split(',').map((v) => parseFloat(v.trim()));
+      const values = scaleMatch[1].split(",").map((v) => parseFloat(v.trim()));
       result.scale = {
         x: values[0] || 1,
         y: values[1] ?? values[0] ?? 1,
@@ -386,10 +379,10 @@ export class TransformExtractor {
     const unit = value.match(/(px|em|rem|%|vw|vh)?$/)?.[1];
 
     switch (unit) {
-      case 'em':
-      case 'rem':
+      case "em":
+      case "rem":
         return num * 16;
-      case '%':
+      case "%":
         return num / 100;
       default:
         return num;
@@ -437,7 +430,7 @@ export class EffectsExtractor {
    */
   private extractFilters(computedStyle: CSSStyleDeclaration): string[] {
     const filter = computedStyle.filter;
-    if (!filter || filter === 'none') {
+    if (!filter || filter === "none") {
       return [];
     }
 
@@ -459,12 +452,12 @@ export class EffectsExtractor {
     const shadows: ShadowData[] = [];
 
     const boxShadow = computedStyle.boxShadow;
-    if (boxShadow && boxShadow !== 'none') {
+    if (boxShadow && boxShadow !== "none") {
       shadows.push(...this.parseShadowString(boxShadow));
     }
 
     const textShadow = computedStyle.textShadow;
-    if (textShadow && textShadow !== 'none') {
+    if (textShadow && textShadow !== "none") {
       shadows.push(...this.parseShadowString(textShadow));
     }
 
@@ -480,7 +473,7 @@ export class EffectsExtractor {
 
     for (const part of shadowParts) {
       const trimmed = part.trim();
-      if (!trimmed || trimmed === 'none') continue;
+      if (!trimmed || trimmed === "none") continue;
 
       const shadow = this.parseSingleShadow(trimmed);
       if (shadow) {
@@ -495,8 +488,8 @@ export class EffectsExtractor {
    * 解析单个阴影
    */
   private parseSingleShadow(str: string): ShadowData | null {
-    const inset = str.includes('inset');
-    const cleaned = str.replace('inset', '').trim();
+    const inset = str.includes("inset");
+    const cleaned = str.replace("inset", "").trim();
 
     const numberRegex = /(-?[\d.]+)(px|em|rem)?/g;
     const numbers: number[] = [];
@@ -505,7 +498,7 @@ export class EffectsExtractor {
     while ((match = numberRegex.exec(cleaned)) !== null) {
       const value = parseFloat(match[1]);
       const unit = match[2];
-      numbers.push(unit === 'em' || unit === 'rem' ? value * 16 : value);
+      numbers.push(unit === "em" || unit === "rem" ? value * 16 : value);
     }
 
     if (numbers.length < 2) {
@@ -513,7 +506,7 @@ export class EffectsExtractor {
     }
 
     const colorMatch = cleaned.match(/(#[a-fA-F0-9]+|rgb\([^)]+\)|rgba\([^)]+\)|[a-zA-Z]+)/);
-    const color = colorMatch ? colorMatch[1] : 'rgba(0, 0, 0, 0.5)';
+    const color = colorMatch ? colorMatch[1] : "rgba(0, 0, 0, 0.5)";
 
     return {
       x: numbers[0] || 0,

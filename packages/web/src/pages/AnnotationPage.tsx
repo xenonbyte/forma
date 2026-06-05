@@ -42,7 +42,12 @@ type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "empty" }
-  | { status: "ready"; pages: AdapterCanvasPageInput[]; pageErrors: PageLoadError[]; missingResources: ResourceError[] };
+  | {
+      status: "ready";
+      pages: AdapterCanvasPageInput[];
+      pageErrors: PageLoadError[];
+      missingResources: ResourceError[];
+    };
 
 const FALLBACK_CANVAS_SIZE = { width: 1200, height: 800 };
 
@@ -229,13 +234,19 @@ export function AnnotationPage({
   // Initial fit-to-content once we have both composed content and a measured size.
   useEffect(() => {
     if (!composed || composed.contentWidth <= 0 || !hasMeasuredSize) return;
-    setViewport((prev) => prev ?? fitViewport(composed.contentWidth, composed.contentHeight, size.width, size.height, dpr));
+    setViewport(
+      (prev) => prev ?? fitViewport(composed.contentWidth, composed.contentHeight, size.width, size.height, dpr),
+    );
   }, [composed, hasMeasuredSize, size.width, size.height, dpr]);
 
   const backLink = `/products/${productId}/requirements/${reqId}`;
 
   if (state.status === "loading") {
-    return <StatePanel state="empty" title={t("annotation.loading")}>…</StatePanel>;
+    return (
+      <StatePanel state="empty" title={t("annotation.loading")}>
+        …
+      </StatePanel>
+    );
   }
   if (state.status === "error") {
     return (
@@ -260,10 +271,7 @@ export function AnnotationPage({
     );
   }
 
-  const resourceErrors: ResourceError[] = [
-    ...(composed?.errors ?? []),
-    ...state.missingResources,
-  ];
+  const resourceErrors: ResourceError[] = [...(composed?.errors ?? []), ...state.missingResources];
   const readyPageCount = state.pages.filter((p) => p.status !== "failed").length;
   const allFailed = readyPageCount === 0 && state.pageErrors.length > 0;
   // Focused pages get a frosted focus frame + a blue title label. Both the
@@ -283,7 +291,9 @@ export function AnnotationPage({
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-2">
       <div className="flex items-center justify-between">
-        <a className="text-sm text-zinc-600 underline" href={backLink}>{t("action.backToProduct")}</a>
+        <a className="text-sm text-zinc-600 underline" href={backLink}>
+          {t("action.backToProduct")}
+        </a>
         <span className="text-xs text-zinc-500">
           {readyPageCount} {t("requirement.pageCount")}
           {selectedId ? ` · ${t("annotation.selected")}: ${selectedId}` : ""}
@@ -350,10 +360,14 @@ export function AnnotationPage({
       {(state.pageErrors.length > 0 || resourceErrors.length > 0) && !allFailed ? (
         <div className="max-h-32 overflow-auto rounded border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
           {state.pageErrors.map((e) => (
-            <p key={`p-${e.artifactId}-${e.pageId}`}>⚠ {e.pageId} ({e.artifactId}): {e.reason}</p>
+            <p key={`p-${e.artifactId}-${e.pageId}`}>
+              ⚠ {e.pageId} ({e.artifactId}): {e.reason}
+            </p>
           ))}
           {resourceErrors.map((e, i) => (
-            <p key={`r-${i}`}>⚠ {e.pageId} ({e.artifactId}) {e.path}: {e.reason}</p>
+            <p key={`r-${i}`}>
+              ⚠ {e.pageId} ({e.artifactId}) {e.path}: {e.reason}
+            </p>
           ))}
         </div>
       ) : null}
@@ -404,15 +418,7 @@ const FOCUS_LABEL_TOP = FOCUS_PAD_TOP - 12;
  * canvas's transparent area around the design; the design itself covers its center.
  * The taller top band wraps the title label.
  */
-function FocusFrame({
-  frame,
-  viewport,
-  dpr,
-}: {
-  frame: PageFrame;
-  viewport: CanvasKitViewportState;
-  dpr: number;
-}) {
+function FocusFrame({ frame, viewport, dpr }: { frame: PageFrame; viewport: CanvasKitViewportState; dpr: number }) {
   const pageLeft = (frame.x * viewport.scale + viewport.offsetX) / dpr;
   const pageTop = viewport.offsetY / dpr;
   const pageWidth = (frame.width * viewport.scale) / dpr;

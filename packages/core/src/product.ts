@@ -8,107 +8,122 @@ import {
   getProductMutationLock,
   runProductMutationWithWarnings,
   type ProductMutationContext,
-  type ProductMutationLock
+  type ProductMutationLock,
 } from "./product-mutation-lock.js";
 import { languages, platforms } from "./schemas.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const productIdSchema = z.string().regex(/^P-[a-f0-9]{6}$/);
 
-const pointerDesignStatuses = ['pending', 'active', 'expired'] as const;
+const pointerDesignStatuses = ["pending", "active", "expired"] as const;
 
-const designPointerSchema = z.object({
-  requirementId: z.string().min(1),
-  pageId: z.string().min(1),
-  variant: z.string().min(1),
-  artifactId: z.string().min(1),
-  version: z.number().int().min(1),
-  designStatus: z.enum(pointerDesignStatuses),
-}).strict();
+const designPointerSchema = z
+  .object({
+    requirementId: z.string().min(1),
+    pageId: z.string().min(1),
+    variant: z.string().min(1),
+    artifactId: z.string().min(1),
+    version: z.number().int().min(1),
+    designStatus: z.enum(pointerDesignStatuses),
+  })
+  .strict();
 
 export type DesignPointer = z.infer<typeof designPointerSchema>;
 
 const productIndexEntrySchema = z.object({
   id: productIdSchema,
   name: z.string().min(1),
-  description: z.string()
+  description: z.string(),
 });
 
 const productIndexSchema = z.object({
-  products: z.array(productIndexEntrySchema)
+  products: z.array(productIndexEntrySchema),
 });
 
-const productSchema = productIndexEntrySchema.extend({
-  platform: z.enum(platforms).optional(),
-  brand_style: z.string().min(1).optional(),
-  system_style: z.string().min(1).optional(),
-  languages: z.array(z.enum(languages)).optional(),
-  default_language: z.enum(languages).optional(),
-  requirements: z.record(z.string(), z.object({
-    latestArtifactId: z.string().optional()
-  })).optional(),
-  designSystemArtifactId: z.string().optional(),
-  designPointers: z.array(designPointerSchema).optional()
-}).superRefine((product, context) => {
-  const hasLanguages = product.languages !== undefined;
-  const hasDefaultLanguage = product.default_language !== undefined;
+const productSchema = productIndexEntrySchema
+  .extend({
+    platform: z.enum(platforms).optional(),
+    brand_style: z.string().min(1).optional(),
+    system_style: z.string().min(1).optional(),
+    languages: z.array(z.enum(languages)).optional(),
+    default_language: z.enum(languages).optional(),
+    requirements: z
+      .record(
+        z.string(),
+        z.object({
+          latestArtifactId: z.string().optional(),
+        }),
+      )
+      .optional(),
+    designSystemArtifactId: z.string().optional(),
+    designPointers: z.array(designPointerSchema).optional(),
+  })
+  .superRefine((product, context) => {
+    const hasLanguages = product.languages !== undefined;
+    const hasDefaultLanguage = product.default_language !== undefined;
 
-  if (hasLanguages !== hasDefaultLanguage) {
-    context.addIssue({
-      code: "custom",
-      message: "languages and default_language must be configured together",
-      path: hasLanguages ? ["default_language"] : ["languages"]
-    });
-    return;
-  }
-
-  if (product.languages !== undefined && product.languages.length === 0) {
-    context.addIssue({
-      code: "custom",
-      message: "languages must not be empty",
-      path: ["languages"]
-    });
-  }
-
-  if (
-    product.languages !== undefined &&
-    product.default_language !== undefined &&
-    !product.languages.includes(product.default_language)
-  ) {
-    context.addIssue({
-      code: "custom",
-      message: "default_language must be included in languages",
-      path: ["default_language"]
-    });
-  }
-
-  if (product.designPointers) {
-    const seen = new Set<string>();
-    for (const ptr of product.designPointers) {
-      const key = JSON.stringify([ptr.requirementId, ptr.pageId, ptr.variant]);
-      if (seen.has(key)) {
-        context.addIssue({ code: 'custom', message: `duplicate design pointer for (${ptr.requirementId},${ptr.pageId},${ptr.variant})`, path: ['designPointers'] });
-      }
-      seen.add(key);
+    if (hasLanguages !== hasDefaultLanguage) {
+      context.addIssue({
+        code: "custom",
+        message: "languages and default_language must be configured together",
+        path: hasLanguages ? ["default_language"] : ["languages"],
+      });
+      return;
     }
-  }
-});
 
-const productConfigSchema = z.object({
-  platform: z.enum(platforms),
-  brand_style: z.string().min(1),
-  system_style: z.string().min(1).optional(),
-  languages: z.array(z.enum(languages)).min(1),
-  default_language: z.enum(languages)
-}).superRefine((config, context) => {
-  if (!config.languages.includes(config.default_language)) {
-    context.addIssue({
-      code: "custom",
-      message: "default_language must be included in languages",
-      path: ["default_language"]
-    });
-  }
-});
+    if (product.languages !== undefined && product.languages.length === 0) {
+      context.addIssue({
+        code: "custom",
+        message: "languages must not be empty",
+        path: ["languages"],
+      });
+    }
+
+    if (
+      product.languages !== undefined &&
+      product.default_language !== undefined &&
+      !product.languages.includes(product.default_language)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "default_language must be included in languages",
+        path: ["default_language"],
+      });
+    }
+
+    if (product.designPointers) {
+      const seen = new Set<string>();
+      for (const ptr of product.designPointers) {
+        const key = JSON.stringify([ptr.requirementId, ptr.pageId, ptr.variant]);
+        if (seen.has(key)) {
+          context.addIssue({
+            code: "custom",
+            message: `duplicate design pointer for (${ptr.requirementId},${ptr.pageId},${ptr.variant})`,
+            path: ["designPointers"],
+          });
+        }
+        seen.add(key);
+      }
+    }
+  });
+
+const productConfigSchema = z
+  .object({
+    platform: z.enum(platforms),
+    brand_style: z.string().min(1),
+    system_style: z.string().min(1).optional(),
+    languages: z.array(z.enum(languages)).min(1),
+    default_language: z.enum(languages),
+  })
+  .superRefine((config, context) => {
+    if (!config.languages.includes(config.default_language)) {
+      context.addIssue({
+        code: "custom",
+        message: "default_language must be included in languages",
+        path: ["default_language"],
+      });
+    }
+  });
 
 export type ProductIndexEntry = z.infer<typeof productIndexEntrySchema>;
 export type Product = z.infer<typeof productSchema>;
@@ -145,13 +160,13 @@ export class ProductService {
     const product = productSchema.parse({
       id: createId("product"),
       name: input.name,
-      description: input.description
+      description: input.description,
     });
     const index = await this.readProductIndex();
 
     await writeYamlAtomic(this.productFile(product.id), product);
     await writeYamlAtomic(this.indexFile, {
-      products: [...index.products, productIndexEntrySchema.parse(product)]
+      products: [...index.products, productIndexEntrySchema.parse(product)],
     });
 
     return product;
@@ -159,7 +174,7 @@ export class ProductService {
 
   async initProductConfig(productId: string, config: ProductConfig): Promise<Product> {
     return this.runProductMutation({ operation: "init_product_config", product_id: productId }, async () =>
-      this.initProductConfigLocked(productId, config)
+      this.initProductConfigLocked(productId, config),
     );
   }
 
@@ -167,7 +182,7 @@ export class ProductService {
     const product = await this.getProduct(productId);
     const next = productSchema.parse({
       ...product,
-      ...productConfigSchema.parse(config)
+      ...productConfigSchema.parse(config),
     });
 
     await writeYamlAtomic(this.productFile(next.id), next);
@@ -200,14 +215,14 @@ export class ProductService {
   async setRequirementArtifactPointerLocked(
     productId: string,
     requirementId: string,
-    artifactId: string
+    artifactId: string,
   ): Promise<string | undefined> {
     const product = await this.getProduct(productId);
     const requirements = product.requirements ?? {};
     const previous = requirements[requirementId]?.latestArtifactId;
     const updatedRequirements = {
       ...requirements,
-      [requirementId]: { latestArtifactId: artifactId }
+      [requirementId]: { latestArtifactId: artifactId },
     };
     const updated = productSchema.parse({ ...product, requirements: updatedRequirements });
     await writeYamlAtomic(this.productFile(productId), updated);
@@ -230,7 +245,12 @@ export class ProductService {
     await writeYamlAtomic(this.productFile(updated.id), updated);
   }
 
-  async getDesignPointer(productId: string, requirementId: string, pageId: string, variant: string): Promise<DesignPointer | undefined> {
+  async getDesignPointer(
+    productId: string,
+    requirementId: string,
+    pageId: string,
+    variant: string,
+  ): Promise<DesignPointer | undefined> {
     const product = await this.getProduct(productId);
     return (product.designPointers ?? []).find(
       (p) => p.requirementId === requirementId && p.pageId === pageId && p.variant === variant,
@@ -241,10 +261,21 @@ export class ProductService {
     return (await this.getProduct(productId)).designPointers ?? [];
   }
 
-  async rollbackDesignPointerLocked(productId: string, requirementId: string, pageId: string, variant: string, targetVersion: number): Promise<void> {
+  async rollbackDesignPointerLocked(
+    productId: string,
+    requirementId: string,
+    pageId: string,
+    variant: string,
+    targetVersion: number,
+  ): Promise<void> {
     const current = await this.getDesignPointer(productId, requirementId, pageId, variant);
     if (!current) {
-      throw new FormaError('ARTIFACT_NOT_FOUND', 'Design pointer not found', { productId, requirementId, pageId, variant });
+      throw new FormaError("ARTIFACT_NOT_FOUND", "Design pointer not found", {
+        productId,
+        requirementId,
+        pageId,
+        variant,
+      });
     }
     await this.setDesignPointerLocked(productId, { ...current, version: targetVersion });
   }
@@ -272,14 +303,9 @@ export class ProductService {
 
   private async runProductMutation<T>(
     input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T> {
-    return runProductMutationWithWarnings(
-      this.productMutationLock,
-      input,
-      fn,
-      this.onProductMutationWarning
-    );
+    return runProductMutationWithWarnings(this.productMutationLock, input, fn, this.onProductMutationWarning);
   }
 }
 
@@ -290,11 +316,16 @@ export async function assertValidComponentLibrary(file: string): Promise<void> {
   } catch (error) {
     throw new FormaError("INVALID_INPUT", "Component library is invalid", {
       file,
-      cause: error instanceof Error ? error.message : String(error)
+      cause: error instanceof Error ? error.message : String(error),
     });
   }
 
-  if (!isRecord(parsed) || !Array.isArray(parsed.children) || parsed.children.length === 0 || containsTruncationMarker(parsed)) {
+  if (
+    !isRecord(parsed) ||
+    !Array.isArray(parsed.children) ||
+    parsed.children.length === 0 ||
+    containsTruncationMarker(parsed)
+  ) {
     throw new FormaError("INVALID_INPUT", "Component library is invalid", { file });
   }
 }
@@ -305,7 +336,7 @@ export function assertProductConfig(product: unknown, productId: string, fields:
   if (missing.length > 0) {
     throw new FormaError("PRODUCT_CONFIG_INCOMPLETE", "Product config incomplete", {
       product_id: productId,
-      missing
+      missing,
     });
   }
 }

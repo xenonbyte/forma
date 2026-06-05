@@ -38,22 +38,23 @@ export interface AtomBodyEntryView {
  *   The trailing `---` separator is omitted after the last atom.
  */
 export function renderActiveStageBlock(args: {
-  stageId:    string;
-  bodies:     ReadonlyArray<AtomBodyEntryView>;
+  stageId: string;
+  bodies: ReadonlyArray<AtomBodyEntryView>;
   iteration?: number;
 }): string {
   const visible = args.bodies.filter((b) => b.body && b.atomId);
-  if (visible.length === 0) return '';
-  const header = args.iteration !== undefined && args.iteration > 0
-    ? `## Active stage: ${args.stageId} (iteration ${args.iteration})`
-    : `## Active stage: ${args.stageId}`;
-  const lines: string[] = ['', '', header];
+  if (visible.length === 0) return "";
+  const header =
+    args.iteration !== undefined && args.iteration > 0
+      ? `## Active stage: ${args.stageId} (iteration ${args.iteration})`
+      : `## Active stage: ${args.stageId}`;
+  const lines: string[] = ["", "", header];
   for (let i = 0; i < visible.length; i++) {
     const entry = visible[i]!;
-    lines.push('', `### ${entry.atomId}`, '', entry.body.trim());
+    lines.push("", `### ${entry.atomId}`, "", entry.body.trim());
     if (i < visible.length - 1) {
-      lines.push('', '---');
+      lines.push("", "---");
     }
   }
-  return lines.join('\n');
+  return lines.join("\n");
 }

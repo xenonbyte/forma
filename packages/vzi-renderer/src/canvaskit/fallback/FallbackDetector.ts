@@ -4,7 +4,7 @@
  * 检测浏览器能力并决定是否降级
  */
 
-import { detectWebGLSupport, detectWebAssemblySupport } from '../utils';
+import { detectWebGLSupport, detectWebAssemblySupport } from "../utils";
 
 /**
  * 能力检测结果
@@ -23,7 +23,7 @@ export interface CapabilityResult {
   /**
    * 推荐使用的渲染器
    */
-  recommendedRenderer: 'canvaskit' | 'cpu' | 'fallback';
+  recommendedRenderer: "canvaskit" | "cpu" | "fallback";
 
   /**
    * 降级原因
@@ -51,17 +51,17 @@ export class FallbackDetector {
     const webglSupported = webglResult.supported;
 
     // 决定推荐渲染器
-    let recommendedRenderer: 'canvaskit' | 'cpu' | 'fallback' = 'fallback';
+    let recommendedRenderer: "canvaskit" | "cpu" | "fallback" = "fallback";
     let reason: string | undefined;
 
     if (!wasmSupported) {
-      recommendedRenderer = 'fallback';
-      reason = 'WebAssembly 不支持';
+      recommendedRenderer = "fallback";
+      reason = "WebAssembly 不支持";
     } else if (!webglSupported) {
-      recommendedRenderer = 'cpu';
-      reason = 'WebGL 不支持，将使用 CPU 渲染';
+      recommendedRenderer = "cpu";
+      reason = "WebGL 不支持，将使用 CPU 渲染";
     } else {
-      recommendedRenderer = 'canvaskit';
+      recommendedRenderer = "canvaskit";
     }
 
     this.cachedResult = {
@@ -86,7 +86,7 @@ export class FallbackDetector {
    */
   shouldUseCanvasKit(): boolean {
     const result = this.detect();
-    return result.recommendedRenderer === 'canvaskit' || result.recommendedRenderer === 'cpu';
+    return result.recommendedRenderer === "canvaskit" || result.recommendedRenderer === "cpu";
   }
 
   /**
@@ -94,7 +94,7 @@ export class FallbackDetector {
    */
   shouldFallback(): boolean {
     const result = this.detect();
-    return result.recommendedRenderer === 'fallback';
+    return result.recommendedRenderer === "fallback";
   }
 
   /**
@@ -114,7 +114,7 @@ export const fallbackDetector = new FallbackDetector();
 /**
  * 检测并返回推荐渲染器
  */
-export function detectRecommendedRenderer(): 'canvaskit' | 'cpu' | 'fallback' {
+export function detectRecommendedRenderer(): "canvaskit" | "cpu" | "fallback" {
   return fallbackDetector.detect().recommendedRenderer;
 }
 

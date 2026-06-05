@@ -4,10 +4,10 @@
  * 使用 R-tree 实现高效的空间查询，用于虚拟化渲染
  */
 
-import RBush from 'rbush';
-import type { BBox } from 'rbush';
-import type { IRElement, IRBounds } from '@vzi-core/types';
-import type { ViewportBounds, VirtualizationConfig } from '../types';
+import RBush from "rbush";
+import type { BBox } from "rbush";
+import type { IRElement, IRBounds } from "@vzi-core/types";
+import type { ViewportBounds, VirtualizationConfig } from "../types";
 
 /**
  * 空间索引项
@@ -140,7 +140,7 @@ export function calculateViewportBounds(
   width: number,
   height: number,
   scale: number,
-  margin: number = 0
+  margin: number = 0,
 ): ViewportBounds {
   // 将屏幕坐标转换为画布坐标
   const canvasX = -x / scale;
@@ -185,12 +185,7 @@ export function isElementInViewport(element: IRElement, viewport: ViewportBounds
 export function isElementContainsPoint(element: IRElement, x: number, y: number): boolean {
   const { bounds } = element;
 
-  return (
-    x >= bounds.x &&
-    x <= bounds.x + bounds.width &&
-    y >= bounds.y &&
-    y <= bounds.y + bounds.height
-  );
+  return x >= bounds.x && x <= bounds.x + bounds.width && y >= bounds.y && y <= bounds.y + bounds.height;
 }
 
 /**
@@ -201,12 +196,7 @@ export function isElementContainsPoint(element: IRElement, x: number, y: number)
  * @returns 是否相交
  */
 export function isRectsIntersect(a: IRBounds, b: IRBounds): boolean {
-  return (
-    a.x + a.width >= b.x &&
-    a.x <= b.x + b.width &&
-    a.y + a.height >= b.y &&
-    a.y <= b.y + b.height
-  );
+  return a.x + a.width >= b.x && a.x <= b.x + b.width && a.y + a.height >= b.y && a.y <= b.y + b.height;
 }
 
 /**
@@ -220,7 +210,7 @@ export function isRectsIntersect(a: IRBounds, b: IRBounds): boolean {
 export function filterVisibleElements(
   elements: Record<string, IRElement>,
   viewport: ViewportBounds,
-  config: VirtualizationConfig
+  config: VirtualizationConfig,
 ): IRElement[] {
   if (!config.enabled) {
     return Object.values(elements);
@@ -228,10 +218,7 @@ export function filterVisibleElements(
 
   return Object.values(elements).filter((element) => {
     // 检查元素尺寸
-    if (
-      element.bounds.width < config.minElementSize ||
-      element.bounds.height < config.minElementSize
-    ) {
+    if (element.bounds.width < config.minElementSize || element.bounds.height < config.minElementSize) {
       return false;
     }
 
@@ -247,10 +234,7 @@ export function filterVisibleElements(
  * @param rootId - 根元素 ID
  * @returns 排序后的元素列表
  */
-export function sortElementsByLayer(
-  elements: Record<string, IRElement>,
-  rootId: string
-): IRElement[] {
+export function sortElementsByLayer(elements: Record<string, IRElement>, rootId: string): IRElement[] {
   const result: IRElement[] = [];
   const visited = new Set<string>();
   const childrenMap = new Map<string, IRElement[]>();
@@ -314,7 +298,7 @@ export function findTopElementAtPoint(
   elements: Record<string, IRElement>,
   x: number,
   y: number,
-  rootId: string
+  rootId: string,
 ): IRElement | null {
   // 按层级排序（从上到下）
   const sortedElements = sortElementsByLayer(elements, rootId).reverse();
@@ -335,10 +319,7 @@ export function findTopElementAtPoint(
  * @param selectionRect - 选择矩形
  * @returns 选中的元素 ID 列表
  */
-export function selectElementsInRect(
-  elements: Record<string, IRElement>,
-  selectionRect: IRBounds
-): string[] {
+export function selectElementsInRect(elements: Record<string, IRElement>, selectionRect: IRBounds): string[] {
   const selectedIds: string[] = [];
 
   Object.entries(elements).forEach(([id, element]) => {
@@ -356,9 +337,12 @@ export function selectElementsInRect(
  * @param elements - 所有元素
  * @returns 内容边界
  */
-export function calculateContentBounds(
-  elements: Record<string, IRElement>
-): { minX: number; minY: number; maxX: number; maxY: number } {
+export function calculateContentBounds(elements: Record<string, IRElement>): {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+} {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -397,7 +381,7 @@ export function calculateFitScale(
   contentHeight: number,
   viewportWidth: number,
   viewportHeight: number,
-  padding: number = 0.1
+  padding: number = 0.1,
 ): number {
   const scaleX = (viewportWidth * (1 - padding)) / contentWidth;
   const scaleY = (viewportHeight * (1 - padding)) / contentHeight;
@@ -420,7 +404,7 @@ export function calculateCenterPosition(
   contentHeight: number,
   viewportWidth: number,
   viewportHeight: number,
-  scale: number
+  scale: number,
 ): { x: number; y: number } {
   const scaledWidth = contentWidth * scale;
   const scaledHeight = contentHeight * scale;

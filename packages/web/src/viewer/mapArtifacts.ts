@@ -6,7 +6,7 @@ const PLATFORM_CANVAS: Record<Platform, { width: number; height: number }> = {
   mobile: { width: 390, height: 844 },
   tablet: { width: 834, height: 1112 },
   desktop: { width: 1280, height: 800 },
-  web: { width: 1280, height: 800 }
+  web: { width: 1280, height: 800 },
 };
 
 export function canvasSizeForPlatform(platform: Platform | undefined): { width: number; height: number } {
@@ -40,7 +40,7 @@ export function mapArtifactsToViewerInputs(input: MapArtifactsInput): NormalizeA
       title: a.title,
       version: a.current_version,
       width,
-      height
+      height,
     });
   }
   return result;

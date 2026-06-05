@@ -9,7 +9,7 @@ const packageJsonPaths = [
   "packages/core/package.json",
   "packages/mcp/package.json",
   "packages/server/package.json",
-  "packages/web/package.json"
+  "packages/web/package.json",
 ];
 
 describe("published version metadata", () => {

@@ -13,13 +13,13 @@
  * ```
  */
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   CollaborationService,
-  CollaborationUser,
-  CollaborationServiceConfig,
-  CollaborationServiceEvents,
-} from '../services/CollaborationService';
+  type CollaborationUser,
+  type CollaborationServiceConfig,
+  type CollaborationServiceEvents,
+} from "../services/CollaborationService";
 
 /**
  * 协作 Hook 配置
@@ -142,10 +142,7 @@ export function useCollaboration(config: UseCollaborationConfig): UseCollaborati
           if (prev.some((u) => u.id === newUser.id)) {
             return prev;
           }
-          return [
-            ...prev,
-            { ...newUser, isCurrentUser: newUser.id === user.id },
-          ];
+          return [...prev, { ...newUser, isCurrentUser: newUser.id === user.id }];
         });
       },
 
@@ -154,19 +151,11 @@ export function useCollaboration(config: UseCollaborationConfig): UseCollaborati
       },
 
       onUserCursorUpdate: (userId, cursor) => {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === userId ? { ...u, cursor } : u
-          )
-        );
+        setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, cursor } : u)));
       },
 
       onUserSelectUpdate: (userId, elementIds) => {
-        setUsers((prev) =>
-          prev.map((u) =>
-            u.id === userId ? { ...u, selectedElementIds: elementIds } : u
-          )
-        );
+        setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, selectedElementIds: elementIds } : u)));
       },
 
       onError: (err) => {
@@ -179,7 +168,7 @@ export function useCollaboration(config: UseCollaborationConfig): UseCollaborati
           updatedUsers.map((u) => ({
             ...u,
             isCurrentUser: u.id === user.id,
-          }))
+          })),
         );
       },
     };
@@ -216,35 +205,38 @@ export function useCollaboration(config: UseCollaborationConfig): UseCollaborati
   }, []);
 
   // 发送光标（带节流）
-  const sendCursor = useCallback((x: number, y: number) => {
-    if (!serviceRef.current || !isConnected) return;
+  const sendCursor = useCallback(
+    (x: number, y: number) => {
+      if (!serviceRef.current || !isConnected) return;
 
-    // 节流：50ms 内只发送一次
-    if (cursorThrottleTimerRef.current) {
-      lastCursorRef.current = { x, y };
-      return;
-    }
-
-    serviceRef.current.sendCursor(x, y);
-    lastCursorRef.current = { x, y };
-
-    cursorThrottleTimerRef.current = setTimeout(() => {
-      cursorThrottleTimerRef.current = null;
-      // 如果位置有变化，发送最新位置
-      if (
-        lastCursorRef.current.x !== x ||
-        lastCursorRef.current.y !== y
-      ) {
-        serviceRef.current?.sendCursor(lastCursorRef.current.x, lastCursorRef.current.y);
+      // 节流：50ms 内只发送一次
+      if (cursorThrottleTimerRef.current) {
+        lastCursorRef.current = { x, y };
+        return;
       }
-    }, 50);
-  }, [isConnected]);
+
+      serviceRef.current.sendCursor(x, y);
+      lastCursorRef.current = { x, y };
+
+      cursorThrottleTimerRef.current = setTimeout(() => {
+        cursorThrottleTimerRef.current = null;
+        // 如果位置有变化，发送最新位置
+        if (lastCursorRef.current.x !== x || lastCursorRef.current.y !== y) {
+          serviceRef.current?.sendCursor(lastCursorRef.current.x, lastCursorRef.current.y);
+        }
+      }, 50);
+    },
+    [isConnected],
+  );
 
   // 发送选择
-  const sendSelection = useCallback((elementIds: string[]) => {
-    if (!serviceRef.current || !isConnected) return;
-    serviceRef.current.sendSelection(elementIds);
-  }, [isConnected]);
+  const sendSelection = useCallback(
+    (elementIds: string[]) => {
+      if (!serviceRef.current || !isConnected) return;
+      serviceRef.current.sendSelection(elementIds);
+    },
+    [isConnected],
+  );
 
   // 发送取消选择
   const sendDeselect = useCallback(() => {
@@ -253,9 +245,12 @@ export function useCollaboration(config: UseCollaborationConfig): UseCollaborati
   }, [isConnected]);
 
   // 获取用户
-  const getUser = useCallback((userId: string): OnlineUser | undefined => {
-    return users.find((u) => u.id === userId);
-  }, [users]);
+  const getUser = useCallback(
+    (userId: string): OnlineUser | undefined => {
+      return users.find((u) => u.id === userId);
+    },
+    [users],
+  );
 
   // 用户数量
   const userCount = useMemo(() => users.length + 1, [users.length]);

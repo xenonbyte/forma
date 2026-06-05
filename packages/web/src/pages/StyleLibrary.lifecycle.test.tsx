@@ -15,8 +15,8 @@ const styles: StyleMetadata[] = [
     description: "Focused tool UI",
     design_md_path: "styles/linear/DESIGN.md",
     tokens_css_path: "styles/linear/tokens.css",
-    components_html_path: "styles/linear/components.html"
-  }
+    components_html_path: "styles/linear/components.html",
+  },
 ];
 
 const styleDetail: BrandStyleContent = {
@@ -32,7 +32,7 @@ typography:
 ---
 `,
   tokensCss: ":root { --secondary: #3b82f6; }",
-  componentsHtml: "<div>components</div>"
+  componentsHtml: "<div>components</div>",
 };
 
 const roots: Root[] = [];
@@ -54,7 +54,7 @@ describe("StyleLibrary read-only mode", () => {
   it("does not render a sync button", async () => {
     const client = {
       getStyle: vi.fn(async () => styleDetail),
-      listStyles: vi.fn(async () => styles)
+      listStyles: vi.fn(async () => styles),
     } satisfies Pick<FormaApiClient, "getStyle" | "listStyles">;
     const { container, root } = createTestRoot();
 
@@ -70,7 +70,7 @@ describe("StyleLibrary read-only mode", () => {
   it("renders styles after loading", async () => {
     const client = {
       getStyle: vi.fn(async () => styleDetail),
-      listStyles: vi.fn(async () => styles)
+      listStyles: vi.fn(async () => styles),
     } satisfies Pick<FormaApiClient, "getStyle" | "listStyles">;
     const { container, root } = createTestRoot();
 
@@ -94,7 +94,7 @@ describe("StyleLibrary read-only mode", () => {
   it("shows empty state when no styles are installed", async () => {
     const client = {
       getStyle: vi.fn(async () => styleDetail),
-      listStyles: vi.fn(async () => [])
+      listStyles: vi.fn(async () => []),
     } satisfies Pick<FormaApiClient, "getStyle" | "listStyles">;
     const { container, root } = createTestRoot();
 
@@ -112,7 +112,7 @@ describe("StyleLibrary read-only mode", () => {
       getStyle: vi.fn(async () => {
         throw new Error("detail unavailable");
       }),
-      listStyles: vi.fn(async () => styles)
+      listStyles: vi.fn(async () => styles),
     } satisfies Pick<FormaApiClient, "getStyle" | "listStyles">;
     const { container, root } = createTestRoot();
 

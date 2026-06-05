@@ -1,114 +1,135 @@
-import type { Annotation, VZIContent } from '@vzi-core/format';
-import type { IRElement, IRStyles } from '@vzi-core/types';
-import {
-  type McpAsset,
-  type McpAnnotationsOutput,
-  type McpElementDetail,
-  type McpElementEntries,
-  type McpElementList,
-  type McpElementNode,
-  type McpOverview,
-  type McpQueryOptions,
-  type McpResponsiveSnapshot,
-  type McpSearchResult,
-  type McpSourceSummary,
-  type McpTokensOutput,
-  type McpUiHints,
-} from './types';
-import { stylesToCss } from './style-to-css';
-import { extractColorVars, extractFontVars, extractGlobalVars } from './global-vars-extractor';
+import type { Annotation, VZIContent } from "@vzi-core/format";
+import type { IRElement, IRStyles } from "@vzi-core/types";
+import type {
+  McpAsset,
+  McpAnnotationsOutput,
+  McpElementDetail,
+  McpElementEntries,
+  McpElementList,
+  McpElementNode,
+  McpOverview,
+  McpQueryOptions,
+  McpResponsiveSnapshot,
+  McpSearchResult,
+  McpSourceSummary,
+  McpTokensOutput,
+  McpUiHints,
+} from "./types";
+import { stylesToCss } from "./style-to-css";
+import { extractColorVars, extractFontVars, extractGlobalVars } from "./global-vars-extractor";
 
-type BreakpointKey = 'sm' | 'md' | 'lg' | 'xl' | '2xl';
-type StateKey = 'hover' | 'focus' | 'active';
+type BreakpointKey = "sm" | "md" | "lg" | "xl" | "2xl";
+type StateKey = "hover" | "focus" | "active";
 
-const BREAKPOINT_KEYS: BreakpointKey[] = ['sm', 'md', 'lg', 'xl', '2xl'];
-const STATE_KEYS: StateKey[] = ['hover', 'focus', 'active'];
+const BREAKPOINT_KEYS: BreakpointKey[] = ["sm", "md", "lg", "xl", "2xl"];
+const STATE_KEYS: StateKey[] = ["hover", "focus", "active"];
 
 const STYLE_PIXEL_PROPERTIES = new Set([
-  'width', 'height', 'minWidth', 'minHeight', 'maxWidth', 'maxHeight',
-  'top', 'right', 'bottom', 'left',
-  'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
-  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-  'borderWidth', 'borderRadius',
-  'fontSize', 'lineHeight', 'letterSpacing',
-  'gap', 'rowGap', 'columnGap',
-  'gridGap',
+  "width",
+  "height",
+  "minWidth",
+  "minHeight",
+  "maxWidth",
+  "maxHeight",
+  "top",
+  "right",
+  "bottom",
+  "left",
+  "margin",
+  "marginTop",
+  "marginRight",
+  "marginBottom",
+  "marginLeft",
+  "padding",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "borderWidth",
+  "borderRadius",
+  "fontSize",
+  "lineHeight",
+  "letterSpacing",
+  "gap",
+  "rowGap",
+  "columnGap",
+  "gridGap",
 ]);
 
 const TAILWIND_MAX_WIDTH: Record<string, string> = {
-  none: 'none',
-  xs: '20rem',
-  sm: '24rem',
-  md: '28rem',
-  lg: '32rem',
-  xl: '36rem',
-  '2xl': '42rem',
-  '3xl': '48rem',
-  '4xl': '56rem',
-  '5xl': '64rem',
-  '6xl': '72rem',
-  '7xl': '80rem',
-  full: '100%',
-  prose: '65ch',
+  none: "none",
+  xs: "20rem",
+  sm: "24rem",
+  md: "28rem",
+  lg: "32rem",
+  xl: "36rem",
+  "2xl": "42rem",
+  "3xl": "48rem",
+  "4xl": "56rem",
+  "5xl": "64rem",
+  "6xl": "72rem",
+  "7xl": "80rem",
+  full: "100%",
+  prose: "65ch",
 };
 
 const TAILWIND_TRACKING: Record<string, string> = {
-  tighter: '-0.05em',
-  tight: '-0.025em',
-  normal: '0',
-  wide: '0.025em',
-  wider: '0.05em',
-  widest: '0.1em',
+  tighter: "-0.05em",
+  tight: "-0.025em",
+  normal: "0",
+  wide: "0.025em",
+  wider: "0.05em",
+  widest: "0.1em",
 };
 
 const TAILWIND_OBJECT_FIT: Record<string, string> = {
-  contain: 'contain',
-  cover: 'cover',
-  fill: 'fill',
-  none: 'none',
-  'scale-down': 'scale-down',
+  contain: "contain",
+  cover: "cover",
+  fill: "fill",
+  none: "none",
+  "scale-down": "scale-down",
 };
 
 const TAILWIND_OBJECT_POSITION: Record<string, string> = {
-  center: 'center',
-  top: 'top',
-  bottom: 'bottom',
-  left: 'left',
-  right: 'right',
-  'left-top': 'left top',
-  'left-bottom': 'left bottom',
-  'right-top': 'right top',
-  'right-bottom': 'right bottom',
+  center: "center",
+  top: "top",
+  bottom: "bottom",
+  left: "left",
+  right: "right",
+  "left-top": "left top",
+  "left-bottom": "left bottom",
+  "right-top": "right top",
+  "right-bottom": "right bottom",
 };
 
 const TAILWIND_ANIMATION: Record<string, string> = {
-  pulse: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-  spin: 'spin 1s linear infinite',
-  ping: 'ping 1s cubic-bezier(0, 0, 0.2, 1) infinite',
-  bounce: 'bounce 1s infinite',
+  pulse: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+  spin: "spin 1s linear infinite",
+  ping: "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
+  bounce: "bounce 1s infinite",
 };
 
 const INHERITABLE_STYLE_KEYS = [
-  'color',
-  'fontFamily',
-  'fontSize',
-  'fontWeight',
-  'lineHeight',
-  'letterSpacing',
-  'textAlign',
-  'whiteSpace',
-  'textTransform',
+  "color",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "lineHeight",
+  "letterSpacing",
+  "textAlign",
+  "whiteSpace",
+  "textTransform",
 ] as const;
 
 function normalizeString(value: string | undefined | null): string | undefined {
-  if (typeof value !== 'string') return undefined;
+  if (typeof value !== "string") return undefined;
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : undefined;
 }
 
 function normalizeSpacingValue(value: string | number | null | undefined): string | undefined {
-  if (value === null || value === undefined || value === '') return undefined;
-  if (typeof value === 'number') {
+  if (value === null || value === undefined || value === "") return undefined;
+  if (typeof value === "number") {
     if (!Number.isFinite(value) || value === 0) return undefined;
     return `${value}px`;
   }
@@ -116,11 +137,11 @@ function normalizeSpacingValue(value: string | number | null | undefined): strin
   const normalized = value.trim();
   if (!normalized) return undefined;
   if (
-    normalized === 'normal' ||
-    normalized === 'none' ||
-    normalized === 'auto' ||
-    normalized === '0' ||
-    normalized === '0px'
+    normalized === "normal" ||
+    normalized === "none" ||
+    normalized === "auto" ||
+    normalized === "0" ||
+    normalized === "0px"
   ) {
     return undefined;
   }
@@ -135,8 +156,8 @@ function normalizeSpacingValue(value: string | number | null | undefined): strin
 }
 
 function normalizeStyleValue(property: string, value: string | number): string {
-  if (typeof value === 'number') {
-    if (value === 0) return '0';
+  if (typeof value === "number") {
+    if (value === 0) return "0";
     if (STYLE_PIXEL_PROPERTIES.has(property)) return `${value}px`;
     return String(value);
   }
@@ -146,30 +167,30 @@ function normalizeStyleValue(property: string, value: string | number): string {
   if (/^-?\d+(\.\d+)?$/.test(normalized) && STYLE_PIXEL_PROPERTIES.has(property)) {
     const numeric = Number(normalized);
     if (Number.isFinite(numeric)) {
-      return numeric === 0 ? '0' : `${numeric}px`;
+      return numeric === 0 ? "0" : `${numeric}px`;
     }
   }
   return normalized;
 }
 
 function normalizeComparable(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function isTransparentColor(value: string): boolean {
   const normalized = normalizeComparable(value);
   return (
-    normalized === 'transparent' ||
-    normalized === 'rgba(0, 0, 0, 0)' ||
-    normalized === 'rgba(0,0,0,0)' ||
-    normalized === 'rgba(255, 255, 255, 0)' ||
-    normalized === 'rgba(255,255,255,0)'
+    normalized === "transparent" ||
+    normalized === "rgba(0, 0, 0, 0)" ||
+    normalized === "rgba(0,0,0,0)" ||
+    normalized === "rgba(255, 255, 255, 0)" ||
+    normalized === "rgba(255,255,255,0)"
   );
 }
 
 function isZeroLike(value: string): boolean {
   const normalized = normalizeComparable(value);
-  return normalized === '0' || normalized === '0px' || normalized === '0%' || normalized === '0rem';
+  return normalized === "0" || normalized === "0px" || normalized === "0%" || normalized === "0rem";
 }
 
 type ClassVariantInfo = {
@@ -191,7 +212,7 @@ function createEmptyVariantInfo(): ClassVariantInfo {
       md: [],
       lg: [],
       xl: [],
-      '2xl': [],
+      "2xl": [],
     },
   };
 }
@@ -209,7 +230,7 @@ function extractClassVariants(className?: string): ClassVariantInfo {
   const tokens = splitClassTokens(className);
 
   for (const token of tokens) {
-    const parts = token.split(':');
+    const parts = token.split(":");
     if (parts.length === 1) {
       info.base.push(parts[0]);
       continue;
@@ -245,18 +266,14 @@ function extractClassVariants(className?: string): ClassVariantInfo {
   return info;
 }
 
-function hasStateClasses(value: McpSourceSummary['stateClasses'] | undefined): boolean {
+function hasStateClasses(value: McpSourceSummary["stateClasses"] | undefined): boolean {
   if (!value) return false;
-  return (
-    (value.hover?.length || 0) > 0 ||
-    (value.focus?.length || 0) > 0 ||
-    (value.active?.length || 0) > 0
-  );
+  return (value.hover?.length || 0) > 0 || (value.focus?.length || 0) > 0 || (value.active?.length || 0) > 0;
 }
 
-function extractStateClasses(className?: string): McpSourceSummary['stateClasses'] | undefined {
+function extractStateClasses(className?: string): McpSourceSummary["stateClasses"] | undefined {
   const variants = extractClassVariants(className);
-  const stateClasses: McpSourceSummary['stateClasses'] = {};
+  const stateClasses: McpSourceSummary["stateClasses"] = {};
   for (const key of STATE_KEYS) {
     const classes = variants.state[key];
     if (classes.length > 0) {
@@ -277,8 +294,8 @@ function inferStylesFromClassName(className?: string): IRStyles {
   const inferred: IRStyles = {};
 
   for (const token of variants.base) {
-    if (token.startsWith('max-w-')) {
-      const raw = token.slice('max-w-'.length);
+    if (token.startsWith("max-w-")) {
+      const raw = token.slice("max-w-".length);
       const arbitrary = parseBracketValue(raw);
       if (arbitrary) {
         inferred.maxWidth = arbitrary;
@@ -288,16 +305,16 @@ function inferStylesFromClassName(className?: string): IRStyles {
       continue;
     }
 
-    if (token.startsWith('tracking-')) {
-      const raw = token.slice('tracking-'.length);
+    if (token.startsWith("tracking-")) {
+      const raw = token.slice("tracking-".length);
       if (TAILWIND_TRACKING[raw]) {
         inferred.letterSpacing = TAILWIND_TRACKING[raw];
       }
       continue;
     }
 
-    if (token.startsWith('object-')) {
-      const raw = token.slice('object-'.length);
+    if (token.startsWith("object-")) {
+      const raw = token.slice("object-".length);
       if (TAILWIND_OBJECT_FIT[raw]) {
         inferred.objectFit = TAILWIND_OBJECT_FIT[raw];
       } else if (TAILWIND_OBJECT_POSITION[raw]) {
@@ -306,12 +323,11 @@ function inferStylesFromClassName(className?: string): IRStyles {
       continue;
     }
 
-    if (token.startsWith('animate-')) {
-      const raw = token.slice('animate-'.length);
+    if (token.startsWith("animate-")) {
+      const raw = token.slice("animate-".length);
       if (TAILWIND_ANIMATION[raw]) {
         inferred.animation = TAILWIND_ANIMATION[raw];
       }
-      continue;
     }
   }
 
@@ -320,73 +336,74 @@ function inferStylesFromClassName(className?: string): IRStyles {
 
 function shouldDropStyle(property: string, value: string, normalizedStyles: Record<string, string>): boolean {
   const normalized = normalizeComparable(value);
-  const position = normalizeComparable(normalizedStyles.position || '');
-  const display = normalizeComparable(normalizedStyles.display || '');
-  const isFlexOrGrid = display === 'flex' || display === 'inline-flex' || display === 'grid' || display === 'inline-grid';
+  const position = normalizeComparable(normalizedStyles.position || "");
+  const display = normalizeComparable(normalizedStyles.display || "");
+  const isFlexOrGrid =
+    display === "flex" || display === "inline-flex" || display === "grid" || display === "inline-grid";
 
   if (normalized.length === 0) return true;
 
   switch (property) {
-    case 'display':
-      return normalized === 'block' || normalized === 'inline';
-    case 'position':
-      return normalized === 'static';
-    case 'top':
-    case 'right':
-    case 'bottom':
-    case 'left':
-      return position === 'static' || normalized === 'auto' || isZeroLike(normalized);
-    case 'width':
-    case 'height':
-      return normalized === 'auto';
-    case 'margin':
-    case 'padding':
-    case 'borderWidth':
-    case 'borderRadius':
-    case 'gap':
-    case 'rowGap':
-    case 'columnGap':
-      return isZeroLike(normalized) || normalized === 'normal';
-    case 'border':
-      return normalized.startsWith('0px ') || normalized === 'none' || normalized === '0';
-    case 'borderStyle':
-      return normalized === 'none' || isZeroLike(normalizedStyles.borderWidth || '0');
-    case 'borderColor':
-      return isTransparentColor(normalized) || isZeroLike(normalizedStyles.borderWidth || '0');
-    case 'backgroundColor':
+    case "display":
+      return normalized === "block" || normalized === "inline";
+    case "position":
+      return normalized === "static";
+    case "top":
+    case "right":
+    case "bottom":
+    case "left":
+      return position === "static" || normalized === "auto" || isZeroLike(normalized);
+    case "width":
+    case "height":
+      return normalized === "auto";
+    case "margin":
+    case "padding":
+    case "borderWidth":
+    case "borderRadius":
+    case "gap":
+    case "rowGap":
+    case "columnGap":
+      return isZeroLike(normalized) || normalized === "normal";
+    case "border":
+      return normalized.startsWith("0px ") || normalized === "none" || normalized === "0";
+    case "borderStyle":
+      return normalized === "none" || isZeroLike(normalizedStyles.borderWidth || "0");
+    case "borderColor":
+      return isTransparentColor(normalized) || isZeroLike(normalizedStyles.borderWidth || "0");
+    case "backgroundColor":
       return isTransparentColor(normalized);
-    case 'opacity':
-      return normalized === '1';
-    case 'zIndex':
-      return normalized === 'auto' || normalized === '0';
-    case 'overflow':
-      return normalized === 'visible';
-    case 'whiteSpace':
-      return normalized === 'normal';
-    case 'textTransform':
-      return normalized === 'none';
-    case 'flexDirection':
-      return !isFlexOrGrid || normalized === 'row' || normalized === 'normal';
-    case 'justifyContent':
-      return !isFlexOrGrid || normalized === 'normal' || normalized === 'flex-start' || normalized === 'start';
-    case 'alignItems':
-      return !isFlexOrGrid || normalized === 'normal' || normalized === 'stretch';
-    case 'boxShadow':
-    case 'transform':
-    case 'filter':
-    case 'backdropFilter':
-    case 'backgroundImage':
-      return normalized === 'none';
-    case 'backgroundRepeat':
-      return normalized === 'repeat';
-    case 'backgroundPosition':
-      return normalized === '0% 0%' || normalized === 'left top';
-    case 'backgroundSize':
-      return normalized === 'auto' || normalized === 'auto auto';
-    case 'backgroundClip':
-      return normalized === 'border-box';
-    case 'backgroundOrigin':
-      return normalized === 'padding-box';
+    case "opacity":
+      return normalized === "1";
+    case "zIndex":
+      return normalized === "auto" || normalized === "0";
+    case "overflow":
+      return normalized === "visible";
+    case "whiteSpace":
+      return normalized === "normal";
+    case "textTransform":
+      return normalized === "none";
+    case "flexDirection":
+      return !isFlexOrGrid || normalized === "row" || normalized === "normal";
+    case "justifyContent":
+      return !isFlexOrGrid || normalized === "normal" || normalized === "flex-start" || normalized === "start";
+    case "alignItems":
+      return !isFlexOrGrid || normalized === "normal" || normalized === "stretch";
+    case "boxShadow":
+    case "transform":
+    case "filter":
+    case "backdropFilter":
+    case "backgroundImage":
+      return normalized === "none";
+    case "backgroundRepeat":
+      return normalized === "repeat";
+    case "backgroundPosition":
+      return normalized === "0% 0%" || normalized === "left top";
+    case "backgroundSize":
+      return normalized === "auto" || normalized === "auto auto";
+    case "backgroundClip":
+      return normalized === "border-box";
+    case "backgroundOrigin":
+      return normalized === "padding-box";
     default:
       return false;
   }
@@ -399,15 +416,15 @@ function normalizeStyles(styles: IRStyles, className?: string): IRStyles {
   };
 
   for (const [property, value] of Object.entries(inferred)) {
-    if (value === undefined || value === null || value === '') continue;
-    if (merged[property] === undefined || merged[property] === null || merged[property] === '') {
+    if (value === undefined || value === null || value === "") continue;
+    if (merged[property] === undefined || merged[property] === null || merged[property] === "") {
       merged[property] = value;
     }
   }
 
   const normalizedMap: Record<string, string> = {};
   for (const [property, value] of Object.entries(merged)) {
-    if (value === undefined || value === null || value === '') continue;
+    if (value === undefined || value === null || value === "") continue;
     normalizedMap[property] = normalizeStyleValue(property, value as string | number);
   }
 
@@ -422,67 +439,67 @@ function normalizeStyles(styles: IRStyles, className?: string): IRStyles {
   return normalized;
 }
 
-function classifyLandmark(tagName?: string, role?: string): McpSourceSummary['landmark'] {
-  const tag = (tagName || '').toLowerCase();
-  const normalizedRole = (role || '').toLowerCase();
-  if (tag === 'header' || normalizedRole === 'banner') return 'header';
-  if (tag === 'main' || normalizedRole === 'main') return 'main';
-  if (tag === 'footer' || normalizedRole === 'contentinfo') return 'footer';
-  if (tag === 'nav' || normalizedRole === 'navigation') return 'navigation';
-  if (tag === 'section' || normalizedRole === 'region') return 'section';
-  if (tag === 'aside' || normalizedRole === 'complementary') return 'aside';
-  return 'none';
+function classifyLandmark(tagName?: string, role?: string): McpSourceSummary["landmark"] {
+  const tag = (tagName || "").toLowerCase();
+  const normalizedRole = (role || "").toLowerCase();
+  if (tag === "header" || normalizedRole === "banner") return "header";
+  if (tag === "main" || normalizedRole === "main") return "main";
+  if (tag === "footer" || normalizedRole === "contentinfo") return "footer";
+  if (tag === "nav" || normalizedRole === "navigation") return "navigation";
+  if (tag === "section" || normalizedRole === "region") return "section";
+  if (tag === "aside" || normalizedRole === "complementary") return "aside";
+  return "none";
 }
 
 function inferRole(element: IRElement): string | undefined {
   const explicit = normalizeString(element.source?.role);
   if (explicit) return explicit;
 
-  const tagName = (element.source?.tagName || '').toLowerCase();
-  if (tagName === 'a') return 'link';
-  if (tagName === 'button') return 'button';
-  if (tagName === 'article') return 'article';
-  if (tagName === 'form') return 'form';
-  if (tagName === 'input') return 'textbox';
-  if (tagName === 'label') return 'label';
-  if (tagName === 'table') return 'table';
-  if (tagName === 'thead') return 'rowgroup';
-  if (tagName === 'tbody') return 'rowgroup';
-  if (tagName === 'tr') return 'row';
-  if (tagName === 'td') return 'cell';
-  if (tagName === 'th') return 'columnheader';
-  if (tagName === 'svg') return 'img';
-  if (tagName === 'nav') return 'navigation';
-  if (tagName === 'main') return 'main';
-  if (tagName === 'header') return 'banner';
-  if (tagName === 'footer') return 'contentinfo';
-  if (tagName === 'section') return 'region';
-  if (tagName === 'aside') return 'complementary';
-  if (tagName === 'img') return 'img';
-  if (tagName === 'p') return 'paragraph';
-  if (tagName === 'span') return 'text';
-  if (tagName === 'div') return 'group';
-  if (tagName === 'ul' || tagName === 'ol') return 'list';
-  if (tagName === 'li') return 'listitem';
-  if (/^h[1-6]$/.test(tagName)) return 'heading';
-  if (element.type === 'button') return 'button';
-  if (element.type === 'image') return 'img';
-  if (element.type === 'text') return 'text';
-  if (element.type === 'container') return 'group';
+  const tagName = (element.source?.tagName || "").toLowerCase();
+  if (tagName === "a") return "link";
+  if (tagName === "button") return "button";
+  if (tagName === "article") return "article";
+  if (tagName === "form") return "form";
+  if (tagName === "input") return "textbox";
+  if (tagName === "label") return "label";
+  if (tagName === "table") return "table";
+  if (tagName === "thead") return "rowgroup";
+  if (tagName === "tbody") return "rowgroup";
+  if (tagName === "tr") return "row";
+  if (tagName === "td") return "cell";
+  if (tagName === "th") return "columnheader";
+  if (tagName === "svg") return "img";
+  if (tagName === "nav") return "navigation";
+  if (tagName === "main") return "main";
+  if (tagName === "header") return "banner";
+  if (tagName === "footer") return "contentinfo";
+  if (tagName === "section") return "region";
+  if (tagName === "aside") return "complementary";
+  if (tagName === "img") return "img";
+  if (tagName === "p") return "paragraph";
+  if (tagName === "span") return "text";
+  if (tagName === "div") return "group";
+  if (tagName === "ul" || tagName === "ol") return "list";
+  if (tagName === "li") return "listitem";
+  if (/^h[1-6]$/.test(tagName)) return "heading";
+  if (element.type === "button") return "button";
+  if (element.type === "image") return "img";
+  if (element.type === "text") return "text";
+  if (element.type === "container") return "group";
   return undefined;
 }
 
 function inferTargetRouteFromText(name: string | undefined, className: string | undefined): string | undefined {
-  const text = `${name || ''} ${className || ''}`.toLowerCase();
+  const text = `${name || ""} ${className || ""}`.toLowerCase();
   if (!text) return undefined;
 
-  if (/login|sign\s?in|登录/.test(text)) return '/auth/login';
-  if (/register|sign\s?up|start|免费|注册|开始|立即/.test(text)) return '/auth/register';
-  if (/feature|功能|能力/.test(text)) return '#features';
-  if (/pricing|price|plan|价格|套餐/.test(text)) return '#pricing';
-  if (/doc|文档|api/.test(text)) return '#docs';
-  if (/community|社区/.test(text)) return '#community';
-  if (/contact|sales|联系/.test(text)) return '#contact';
+  if (/login|sign\s?in|登录/.test(text)) return "/auth/login";
+  if (/register|sign\s?up|start|免费|注册|开始|立即/.test(text)) return "/auth/register";
+  if (/feature|功能|能力/.test(text)) return "#features";
+  if (/pricing|price|plan|价格|套餐/.test(text)) return "#pricing";
+  if (/doc|文档|api/.test(text)) return "#docs";
+  if (/community|社区/.test(text)) return "#community";
+  if (/contact|sales|联系/.test(text)) return "#contact";
   return undefined;
 }
 
@@ -490,104 +507,102 @@ function classifyImportance(
   tagName?: string,
   role?: string,
   className?: string,
-  name?: string
-): McpSourceSummary['importance'] {
-  const cls = (className || '').toLowerCase();
-  const normalizedRole = (role || '').toLowerCase();
-  const lowerTag = (tagName || '').toLowerCase();
-  const text = (name || '').toLowerCase();
+  name?: string,
+): McpSourceSummary["importance"] {
+  const cls = (className || "").toLowerCase();
+  const normalizedRole = (role || "").toLowerCase();
+  const lowerTag = (tagName || "").toLowerCase();
+  const text = (name || "").toLowerCase();
 
   if (
-    lowerTag === 'h1' ||
-    cls.includes('hero') ||
-    cls.includes('headline') ||
-    cls.includes('primary') ||
+    lowerTag === "h1" ||
+    cls.includes("hero") ||
+    cls.includes("headline") ||
+    cls.includes("primary") ||
     /start|register|立即|开始|free/.test(text) ||
-    normalizedRole === 'main'
+    normalizedRole === "main"
   ) {
-    return 'high';
+    return "high";
   }
 
   if (
-    lowerTag === 'h2' ||
-    lowerTag === 'h3' ||
-    lowerTag === 'button' ||
-    lowerTag === 'a' ||
-    lowerTag === 'nav' ||
-    normalizedRole === 'button' ||
-    normalizedRole === 'link'
+    lowerTag === "h2" ||
+    lowerTag === "h3" ||
+    lowerTag === "button" ||
+    lowerTag === "a" ||
+    lowerTag === "nav" ||
+    normalizedRole === "button" ||
+    normalizedRole === "link"
   ) {
-    return 'medium';
+    return "medium";
   }
 
-  return 'low';
+  return "low";
 }
 
 function inferInteraction(
   element: IRElement,
-  resolvedName?: string
-): Pick<McpSourceSummary, 'intent' | 'actionType' | 'targetRoute'> {
+  resolvedName?: string,
+): Pick<McpSourceSummary, "intent" | "actionType" | "targetRoute"> {
   const href = normalizeString(element.source?.href);
   const className = normalizeString(element.source?.className);
-  const tagName = (element.source?.tagName || '').toLowerCase();
-  const text = `${resolvedName || ''} ${className || ''}`.toLowerCase();
+  const tagName = (element.source?.tagName || "").toLowerCase();
+  const text = `${resolvedName || ""} ${className || ""}`.toLowerCase();
 
   if (href) {
-    const inferredRoute = href === '#'
-      ? inferTargetRouteFromText(resolvedName, className) || '#'
-      : href;
+    const inferredRoute = href === "#" ? inferTargetRouteFromText(resolvedName, className) || "#" : href;
     return {
-      intent: 'navigate',
-      actionType: 'link',
+      intent: "navigate",
+      actionType: "link",
       targetRoute: inferredRoute,
     };
   }
 
-  if (tagName === 'button' || element.type === 'button') {
+  if (tagName === "button" || element.type === "button") {
     if (/download|下载/.test(text)) {
-      return { intent: 'download', actionType: 'button' };
+      return { intent: "download", actionType: "button" };
     }
     const inferredRoute = inferTargetRouteFromText(resolvedName, className);
     if (inferredRoute) {
-      return { intent: 'navigate', actionType: 'button', targetRoute: inferredRoute };
+      return { intent: "navigate", actionType: "button", targetRoute: inferredRoute };
     }
     if (/open|view|detail|docs|文档|查看|详情/.test(text)) {
-      return { intent: 'open', actionType: 'button' };
+      return { intent: "open", actionType: "button" };
     }
-    return { intent: 'open', actionType: 'button' };
+    return { intent: "open", actionType: "button" };
   }
 
-  return { intent: 'none', actionType: 'none' };
+  return { intent: "none", actionType: "none" };
 }
 
 function inferComponentRole(
   element: IRElement,
   resolvedName: string | undefined,
-  targetRoute: string | undefined
-): McpSourceSummary['componentRole'] {
-  const tagName = (element.source?.tagName || '').toLowerCase();
-  const className = (element.source?.className || '').toLowerCase();
-  const text = `${resolvedName || ''} ${className}`.toLowerCase();
+  targetRoute: string | undefined,
+): McpSourceSummary["componentRole"] {
+  const tagName = (element.source?.tagName || "").toLowerCase();
+  const className = (element.source?.className || "").toLowerCase();
+  const text = `${resolvedName || ""} ${className}`.toLowerCase();
 
-  if (element.type === 'image' || tagName === 'img') return 'media';
-  if (element.type === 'container') return 'container';
+  if (element.type === "image" || tagName === "img") return "media";
+  if (element.type === "container") return "container";
 
-  if (tagName === 'a' || element.type === 'link') {
-    if (/register|sign\s?up|start|立即|开始|订阅/.test(text) || targetRoute === '/auth/register') {
-      return 'primary-cta';
+  if (tagName === "a" || element.type === "link") {
+    if (/register|sign\s?up|start|立即|开始|订阅/.test(text) || targetRoute === "/auth/register") {
+      return "primary-cta";
     }
-    return 'nav-link';
+    return "nav-link";
   }
 
-  if (tagName === 'button' || element.type === 'button') {
-    if (/primary|cta|register|start|subscribe|立即|开始|订阅/.test(text) || targetRoute === '/auth/register') {
-      return 'primary-cta';
+  if (tagName === "button" || element.type === "button") {
+    if (/primary|cta|register|start|subscribe|立即|开始|订阅/.test(text) || targetRoute === "/auth/register") {
+      return "primary-cta";
     }
-    return 'secondary-cta';
+    return "secondary-cta";
   }
 
-  if (element.type === 'text') return 'body-text';
-  return 'other';
+  if (element.type === "text") return "body-text";
+  return "other";
 }
 
 function hashStable(input: string): string {
@@ -611,13 +626,13 @@ function inferExtensionFromUri(uri: string): string | undefined {
   if (isDataUrl(uri)) {
     const mime = uri.match(/^data:([^;,]+)/i)?.[1];
     if (!mime) return undefined;
-    const extension = mime.split('/')[1];
+    const extension = mime.split("/")[1];
     return extension ? extension.toLowerCase() : undefined;
   }
 
   try {
-    const parsed = new URL(uri, 'https://local.invalid');
-    const pathname = parsed.pathname || '';
+    const parsed = new URL(uri, "https://local.invalid");
+    const pathname = parsed.pathname || "";
     const match = pathname.match(/\.([a-z0-9]+)$/i);
     return match?.[1]?.toLowerCase();
   } catch {
@@ -632,11 +647,11 @@ function inferMimeTypeFromUri(uri: string): string | undefined {
 
   const extension = inferExtensionFromUri(uri);
   if (!extension) return undefined;
-  if (extension === 'png') return 'image/png';
-  if (extension === 'jpg' || extension === 'jpeg') return 'image/jpeg';
-  if (extension === 'webp') return 'image/webp';
-  if (extension === 'gif') return 'image/gif';
-  if (extension === 'svg') return 'image/svg+xml';
+  if (extension === "png") return "image/png";
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "webp") return "image/webp";
+  if (extension === "gif") return "image/gif";
+  if (extension === "svg") return "image/svg+xml";
   return undefined;
 }
 
@@ -644,22 +659,22 @@ function normalizeAssetUri(uri: string): string | undefined {
   if (!uri) return undefined;
   if (isDataUrl(uri)) {
     const match = uri.match(/^data:([^;,]+)/i);
-    return match ? `data:${match[1]};base64,[omitted]` : 'data:[omitted]';
+    return match ? `data:${match[1]};base64,[omitted]` : "data:[omitted]";
   }
   return uri;
 }
 
-function inferAssetType(uri: string, className?: string): McpAsset['type'] {
-  const cls = (className || '').toLowerCase();
-  if (cls.includes('icon') || cls.includes('symbol')) return 'icon';
-  if (/\.(png|jpg|jpeg|webp|gif|svg)(\?|$)/i.test(uri) || isDataUrl(uri)) return 'image';
-  return 'other';
+function inferAssetType(uri: string, className?: string): McpAsset["type"] {
+  const cls = (className || "").toLowerCase();
+  if (cls.includes("icon") || cls.includes("symbol")) return "icon";
+  if (/\.(png|jpg|jpeg|webp|gif|svg)(\?|$)/i.test(uri) || isDataUrl(uri)) return "image";
+  return "other";
 }
 
-function viewportLabel(width: number): McpResponsiveSnapshot['label'] {
-  if (width < 768) return 'mobile';
-  if (width <= 1024) return 'tablet';
-  return 'desktop';
+function viewportLabel(width: number): McpResponsiveSnapshot["label"] {
+  if (width < 768) return "mobile";
+  if (width <= 1024) return "tablet";
+  return "desktop";
 }
 
 function scaledHeight(sourceWidth: number, sourceHeight: number, targetWidth: number): number {
@@ -688,13 +703,13 @@ export class McpQuery {
     md: 0,
     lg: 0,
     xl: 0,
-    '2xl': 0,
+    "2xl": 0,
   };
 
   constructor(content: VZIContent, options: Partial<McpQueryOptions> = {}) {
     this.content = content;
     this.options = {
-      format: options.format || 'json',
+      format: options.format || "json",
       depth: options.depth,
       typeFilter: options.typeFilter,
       includeCss: options.includeCss !== false,
@@ -734,7 +749,7 @@ export class McpQuery {
         for (const key of INHERITABLE_STYLE_KEYS) {
           const current = output[key];
           const parent = parentStyles[key];
-          if (typeof current !== 'string' || typeof parent !== 'string') {
+          if (typeof current !== "string" || typeof parent !== "string") {
             continue;
           }
           if (normalizeComparable(current) === normalizeComparable(parent)) {
@@ -749,7 +764,7 @@ export class McpQuery {
   }
 
   private getCss(elementId: string, element: IRElement): string {
-    if (!this.options.includeCss) return '';
+    if (!this.options.includeCss) return "";
 
     let css = this.cssCache.get(elementId);
     if (!css) {
@@ -784,9 +799,7 @@ export class McpQuery {
     const name = this.inferElementName(elementId, element);
     const interaction = inferInteraction(element, name);
     const rawHref = normalizeString(element.source.href);
-    const resolvedHref = rawHref === '#' && interaction.targetRoute
-      ? interaction.targetRoute
-      : rawHref;
+    const resolvedHref = rawHref === "#" && interaction.targetRoute ? interaction.targetRoute : rawHref;
     const sourceUri = element.source.src || element.source.href;
     const stateClasses = extractStateClasses(element.source.className);
 
@@ -889,20 +902,23 @@ export class McpQuery {
 
   private getStableSeed(id: string, element: IRElement, path: string[]): string {
     const pathTagChain = path
-      .map((pathId) => this.content.elements.get(pathId)?.source?.tagName || this.content.elements.get(pathId)?.type || pathId)
-      .join('/');
+      .map(
+        (pathId) =>
+          this.content.elements.get(pathId)?.source?.tagName || this.content.elements.get(pathId)?.type || pathId,
+      )
+      .join("/");
     const source = element.source;
-    const textSample = (element.textContent || source?.name || '').trim().slice(0, 32);
+    const textSample = (element.textContent || source?.name || "").trim().slice(0, 32);
     return [
       pathTagChain,
-      source?.tagName || '',
-      source?.id || '',
-      source?.className || '',
-      source?.href || '',
-      source?.src || '',
+      source?.tagName || "",
+      source?.id || "",
+      source?.className || "",
+      source?.href || "",
+      source?.src || "",
       textSample,
       this.orderById.get(id) ?? 0,
-    ].join('|');
+    ].join("|");
   }
 
   private buildAssetCatalog(): void {
@@ -912,22 +928,20 @@ export class McpQuery {
       const rawUri = uri.trim();
       if (!rawUri) return;
 
-      const width = Number.isFinite(element.bounds.width) && element.bounds.width > 0
-        ? Math.round(element.bounds.width)
-        : undefined;
-      const height = Number.isFinite(element.bounds.height) && element.bounds.height > 0
-        ? Math.round(element.bounds.height)
-        : undefined;
+      const width =
+        Number.isFinite(element.bounds.width) && element.bounds.width > 0
+          ? Math.round(element.bounds.width)
+          : undefined;
+      const height =
+        Number.isFinite(element.bounds.height) && element.bounds.height > 0
+          ? Math.round(element.bounds.height)
+          : undefined;
 
       let asset = assetMap.get(rawUri);
       if (!asset) {
         const sanitizedUri = normalizeAssetUri(rawUri) || rawUri;
         const id = `asset_${hashStable(rawUri).slice(0, 10)}`;
-        const source: McpAsset['source'] = isHttpUrl(rawUri)
-          ? 'url'
-          : isDataUrl(rawUri)
-            ? 'data-url'
-            : 'unknown';
+        const source: McpAsset["source"] = isHttpUrl(rawUri) ? "url" : isDataUrl(rawUri) ? "data-url" : "unknown";
 
         asset = {
           id,
@@ -968,12 +982,12 @@ export class McpQuery {
 
     for (const [, element] of this.elementEntries) {
       const src = element.source?.src;
-      if (typeof src === 'string') {
+      if (typeof src === "string") {
         ensureAsset(src, element);
       }
 
       const backgroundImage = element.styles.backgroundImage;
-      if (typeof backgroundImage === 'string') {
+      if (typeof backgroundImage === "string") {
         let match: RegExpExecArray | null;
         while ((match = backgroundUrlRegex.exec(backgroundImage)) !== null) {
           const uri = match[2]?.trim();
@@ -989,7 +1003,7 @@ export class McpQuery {
 
   overview(): McpOverview {
     const elementCount = this.content.elements.size;
-    const complexity = elementCount < 20 ? 'simple' : elementCount < 100 ? 'medium' : 'complex';
+    const complexity = elementCount < 20 ? "simple" : elementCount < 100 ? "medium" : "complex";
 
     return {
       title: this.content.metadata.name,
@@ -1064,7 +1078,7 @@ export class McpQuery {
 
   searchElements(query: string, type?: string): McpSearchResult {
     const keyword = query.trim().toLowerCase();
-    const results: McpSearchResult['elements'] = [];
+    const results: McpSearchResult["elements"] = [];
 
     for (const [id, element] of this.elementEntries) {
       if (type && element.type !== type) {
@@ -1075,14 +1089,14 @@ export class McpQuery {
       const searchableParts = [
         id,
         element.type,
-        element.textContent || '',
-        resolvedName || '',
-        element.source?.tagName || '',
-        element.source?.className || '',
-        element.source?.id || '',
+        element.textContent || "",
+        resolvedName || "",
+        element.source?.tagName || "",
+        element.source?.className || "",
+        element.source?.id || "",
       ];
 
-      const searchableText = searchableParts.join(' ').toLowerCase();
+      const searchableText = searchableParts.join(" ").toLowerCase();
       if (!searchableText.includes(keyword)) {
         continue;
       }
@@ -1109,7 +1123,7 @@ export class McpQuery {
     };
   }
 
-  getTokens(type?: 'colors' | 'fonts' | 'all'): McpTokensOutput {
+  getTokens(type?: "colors" | "fonts" | "all"): McpTokensOutput {
     const elements = this.elementEntries.map(([id, el]) => ({
       id,
       styles: this.getNormalizedStyles(id, el.styles, el.source?.className),
@@ -1119,7 +1133,7 @@ export class McpQuery {
       elementCount: this.content.elements.size,
     };
 
-    if (!type || type === 'all') {
+    if (!type || type === "all") {
       const { tokens } = extractGlobalVars(elements);
       result.colors = tokens.colors;
       result.fonts = tokens.fonts;
@@ -1130,11 +1144,11 @@ export class McpQuery {
       return result;
     }
 
-    if (type === 'colors') {
+    if (type === "colors") {
       result.colors = extractColorVars(elements);
     }
 
-    if (type === 'fonts') {
+    if (type === "fonts") {
       result.fonts = extractFontVars(elements);
     }
 
@@ -1209,9 +1223,9 @@ export class McpQuery {
 
     const addSnapshot = (
       viewportWidth: number,
-      label: McpResponsiveSnapshot['label'],
-      derivedFrom: McpResponsiveSnapshot['derivedFrom'],
-      breakpoint?: McpResponsiveSnapshot['breakpoint']
+      label: McpResponsiveSnapshot["label"],
+      derivedFrom: McpResponsiveSnapshot["derivedFrom"],
+      breakpoint?: McpResponsiveSnapshot["breakpoint"],
     ) => {
       if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) {
         return;
@@ -1232,23 +1246,34 @@ export class McpQuery {
       });
     };
 
-    addSnapshot(width, viewportLabel(width), 'source-viewport');
+    addSnapshot(width, viewportLabel(width), "source-viewport");
 
     const hasResponsiveClasses = BREAKPOINT_KEYS.some((key) => this.breakpointUsage[key] > 0);
     if (!hasResponsiveClasses) {
       return snapshots;
     }
 
-    if (this.breakpointUsage.sm > 0 || this.breakpointUsage.md > 0 || this.breakpointUsage.lg > 0 || this.breakpointUsage.xl > 0 || this.breakpointUsage['2xl'] > 0) {
-      addSnapshot(375, 'mobile', 'breakpoint-class', 'sm');
+    if (
+      this.breakpointUsage.sm > 0 ||
+      this.breakpointUsage.md > 0 ||
+      this.breakpointUsage.lg > 0 ||
+      this.breakpointUsage.xl > 0 ||
+      this.breakpointUsage["2xl"] > 0
+    ) {
+      addSnapshot(375, "mobile", "breakpoint-class", "sm");
     }
 
-    if (this.breakpointUsage.md > 0 || this.breakpointUsage.lg > 0 || this.breakpointUsage.xl > 0 || this.breakpointUsage['2xl'] > 0) {
-      addSnapshot(768, 'tablet', 'breakpoint-class', 'md');
+    if (
+      this.breakpointUsage.md > 0 ||
+      this.breakpointUsage.lg > 0 ||
+      this.breakpointUsage.xl > 0 ||
+      this.breakpointUsage["2xl"] > 0
+    ) {
+      addSnapshot(768, "tablet", "breakpoint-class", "md");
     }
 
-    if (this.breakpointUsage.lg > 0 || this.breakpointUsage.xl > 0 || this.breakpointUsage['2xl'] > 0) {
-      addSnapshot(Math.max(1280, width), 'desktop', 'breakpoint-class', 'lg');
+    if (this.breakpointUsage.lg > 0 || this.breakpointUsage.xl > 0 || this.breakpointUsage["2xl"] > 0) {
+      addSnapshot(Math.max(1280, width), "desktop", "breakpoint-class", "lg");
     }
 
     return snapshots;
@@ -1278,7 +1303,7 @@ export class McpQuery {
   }
 
   private collectStyleHints(elementId?: string) {
-    const hints = [] as McpAnnotationsOutput['styleHints'];
+    const hints = [] as McpAnnotationsOutput["styleHints"];
 
     for (const [id, element] of this.elementEntries) {
       if (elementId && id !== elementId) {
@@ -1339,10 +1364,7 @@ export class McpQuery {
     return children;
   }
 
-  private applyDepthLimit(
-    elements: McpElementEntries,
-    maxDepth: number
-  ): McpElementEntries {
+  private applyDepthLimit(elements: McpElementEntries, maxDepth: number): McpElementEntries {
     if (maxDepth < 0) return elements;
 
     return elements.filter(([id]) => {
@@ -1369,9 +1391,6 @@ export class McpQuery {
   }
 }
 
-export function createMcpQuery(
-  content: VZIContent,
-  options?: Partial<McpQueryOptions>
-): McpQuery {
+export function createMcpQuery(content: VZIContent, options?: Partial<McpQueryOptions>): McpQuery {
   return new McpQuery(content, options);
 }

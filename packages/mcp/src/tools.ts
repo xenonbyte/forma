@@ -1,10 +1,4 @@
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  rm,
-  writeFile
-} from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -24,19 +18,14 @@ import {
   platforms,
   type ArtifactManifest,
   type FormaStore,
-  type SchemaNormalizationRecoveryState
+  type SchemaNormalizationRecoveryState,
 } from "@xenonbyte/forma-core";
 import { PuppeteerParser } from "@vzi-core/parser";
 import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
 import { VZIEncoder } from "@vzi-core/format";
 import AdmZip from "adm-zip";
 import * as z from "zod/v4";
-import {
-  toolGetDesignHandoff,
-  toolGetPageUi,
-  toolGetUiNode,
-  toolSearchPageUi,
-} from "./design-handoff.js";
+import { toolGetDesignHandoff, toolGetPageUi, toolGetUiNode, toolSearchPageUi } from "./design-handoff.js";
 import {
   mcpGetDesignHandoffSchema,
   mcpGetPageUiSchema,
@@ -73,7 +62,7 @@ export const formaToolNames = [
   "get_design_handoff",
   "get_page_ui",
   "get_ui_node",
-  "search_page_ui"
+  "search_page_ui",
 ] as const;
 
 export type FormaToolName = (typeof formaToolNames)[number];
@@ -108,168 +97,221 @@ interface BaselinePageRecord {
 }
 
 export interface FormaMcpServerLike {
-  registerTool(name: string, config: { title: string; description: string; inputSchema: z.ZodType }, handler: FormaToolHandler): unknown;
+  registerTool(
+    name: string,
+    config: { title: string; description: string; inputSchema: z.ZodType },
+    handler: FormaToolHandler,
+  ): unknown;
 }
 
 const emptySchema = z.object({}).strict();
 const productIdSchema = z.object({ product_id: z.string().min(1) }).strict();
-const deleteProductSchema = z.object({
-  product_id: z.string().min(1),
-  confirm_product_id: z.string().min(1)
-}).strict().refine((input) => input.confirm_product_id === input.product_id, {
-  message: "confirm_product_id must match product_id",
-  path: ["confirm_product_id"]
-});
+const deleteProductSchema = z
+  .object({
+    product_id: z.string().min(1),
+    confirm_product_id: z.string().min(1),
+  })
+  .strict()
+  .refine((input) => input.confirm_product_id === input.product_id, {
+    message: "confirm_product_id must match product_id",
+    path: ["confirm_product_id"],
+  });
 const baselinePageSchema = z.object({ product_id: z.string().min(1), page_id: z.string().min(1) }).strict();
-const copyItemSchema = z.object({
-  context: z.string().min(1),
-  text: z.string().min(1)
-}).strict();
-const translationEntrySchema = z.object({
-  context: z.string().min(1),
-  texts: z.record(z.string(), z.string()),
-  outdated: z.boolean().optional()
-}).strict();
-const pageTranslationSchema = z.object({
-  page_id: z.string().min(1),
-  entries: z.array(translationEntrySchema)
-}).strict();
-const semanticContractItemSchema = z.object({
-  key: z.string().min(1),
-  label: z.string().min(1)
-}).strict();
-const ruleSemanticSchema = z.object({
-  fields: z.array(semanticContractItemSchema).optional(),
-  actions: z.array(semanticContractItemSchema).optional(),
-  component_keys: z.array(z.string().min(1)).optional(),
-  allowed_copy: z.array(z.string()).optional()
-}).strict();
-const ruleInputSchema = z.object({
-  id: z.string().min(1),
-  page_id: z.string().min(1).optional(),
-  given: z.string().min(1),
-  when: z.string().min(1),
-  then: z.string().min(1),
-  semantic: ruleSemanticSchema.optional(),
-  replaces_rule_id: z.string().optional()
-}).strict();
-const requirementPageInputSchema = z.object({
-  page_id: z.string().min(1),
-  name: z.string().min(1),
-  baseline_page: z.string().min(1),
-  features: z.string().optional(),
-  copy: z.array(copyItemSchema).optional(),
-  fields: z.string().optional(),
-  interactions: z.string().optional(),
-  change_type: z.enum(["new", "patch", "rebuild"]),
-  change_summary: z.string().optional()
-}).strict();
-const navigationInputSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-  label: z.string().optional()
-}).strict();
-const saveRequirementSchema = z.object({
-  requirement_id: z.string().min(1),
-  document_md: z.string(),
-  ui_affected: z.boolean(),
-  pages: z.array(requirementPageInputSchema),
-  navigation: z.array(navigationInputSchema),
-  translations: z.array(pageTranslationSchema).optional(),
-  rules: z.array(ruleInputSchema).optional(),
-  remove_rule_ids: z.array(z.string().min(1)).optional(),
-  remove_page_ids: z.array(z.string().min(1)).optional()
-}).strict();
-const listProductArtifactsSchema = z.object({
-  product_id: z.string().min(1),
-  kind: z.enum(["html", "design-page", "component-library", "markdown-document", "svg", "image", "preview-only"]).optional(),
-  include_superseded: z.boolean().optional()
-}).strict();
+const copyItemSchema = z
+  .object({
+    context: z.string().min(1),
+    text: z.string().min(1),
+  })
+  .strict();
+const translationEntrySchema = z
+  .object({
+    context: z.string().min(1),
+    texts: z.record(z.string(), z.string()),
+    outdated: z.boolean().optional(),
+  })
+  .strict();
+const pageTranslationSchema = z
+  .object({
+    page_id: z.string().min(1),
+    entries: z.array(translationEntrySchema),
+  })
+  .strict();
+const semanticContractItemSchema = z
+  .object({
+    key: z.string().min(1),
+    label: z.string().min(1),
+  })
+  .strict();
+const ruleSemanticSchema = z
+  .object({
+    fields: z.array(semanticContractItemSchema).optional(),
+    actions: z.array(semanticContractItemSchema).optional(),
+    component_keys: z.array(z.string().min(1)).optional(),
+    allowed_copy: z.array(z.string()).optional(),
+  })
+  .strict();
+const ruleInputSchema = z
+  .object({
+    id: z.string().min(1),
+    page_id: z.string().min(1).optional(),
+    given: z.string().min(1),
+    when: z.string().min(1),
+    then: z.string().min(1),
+    semantic: ruleSemanticSchema.optional(),
+    replaces_rule_id: z.string().optional(),
+  })
+  .strict();
+const requirementPageInputSchema = z
+  .object({
+    page_id: z.string().min(1),
+    name: z.string().min(1),
+    baseline_page: z.string().min(1),
+    features: z.string().optional(),
+    copy: z.array(copyItemSchema).optional(),
+    fields: z.string().optional(),
+    interactions: z.string().optional(),
+    change_type: z.enum(["new", "patch", "rebuild"]),
+    change_summary: z.string().optional(),
+  })
+  .strict();
+const navigationInputSchema = z
+  .object({
+    from: z.string().min(1),
+    to: z.string().min(1),
+    label: z.string().optional(),
+  })
+  .strict();
+const saveRequirementSchema = z
+  .object({
+    requirement_id: z.string().min(1),
+    document_md: z.string(),
+    ui_affected: z.boolean(),
+    pages: z.array(requirementPageInputSchema),
+    navigation: z.array(navigationInputSchema),
+    translations: z.array(pageTranslationSchema).optional(),
+    rules: z.array(ruleInputSchema).optional(),
+    remove_rule_ids: z.array(z.string().min(1)).optional(),
+    remove_page_ids: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
+const listProductArtifactsSchema = z
+  .object({
+    product_id: z.string().min(1),
+    kind: z
+      .enum(["html", "design-page", "component-library", "markdown-document", "svg", "image", "preview-only"])
+      .optional(),
+    include_superseded: z.boolean().optional(),
+  })
+  .strict();
 
-const getProductArtifactSchema = z.object({
-  product_id: z.string().min(1),
-  artifact_id: z.string().min(1)
-}).strict();
+const getProductArtifactSchema = z
+  .object({
+    product_id: z.string().min(1),
+    artifact_id: z.string().min(1),
+  })
+  .strict();
 
-const exportArtifactSchema = z.object({
-  product_id: z.string().min(1),
-  artifact_id: z.string().min(1),
-  format: z.enum(["html", "svg", "png", "zip", "icons", "vzi"])
-}).strict();
+const exportArtifactSchema = z
+  .object({
+    product_id: z.string().min(1),
+    artifact_id: z.string().min(1),
+    format: z.enum(["html", "svg", "png", "zip", "icons", "vzi"]),
+  })
+  .strict();
 
-const rollbackRequirementDesignSchema = z.object({
-  product_id: z.string().min(1),
-  requirement_id: z.string().min(1),
-  page_id: z.string().min(1),
-  variant: z.string().min(1).optional(),
-  target_version: z.number().int().min(1)
-}).strict();
+const rollbackRequirementDesignSchema = z
+  .object({
+    product_id: z.string().min(1),
+    requirement_id: z.string().min(1),
+    page_id: z.string().min(1),
+    variant: z.string().min(1).optional(),
+    target_version: z.number().int().min(1),
+  })
+  .strict();
 
-const generateRequirementDesignSchema = z.object({
-  product_id: z.string().min(1),
-  requirement_id: z.string().min(1),
-  page_id: z.string().min(1),
-  html: z.string().min(1),
-  title: z.string().min(1),
-  brand_style: z.string().min(1),
-  system_style: z.string().min(1).optional(),
-  variant: z.string().optional()
-}).strict();
+const generateRequirementDesignSchema = z
+  .object({
+    product_id: z.string().min(1),
+    requirement_id: z.string().min(1),
+    page_id: z.string().min(1),
+    html: z.string().min(1),
+    title: z.string().min(1),
+    brand_style: z.string().min(1),
+    system_style: z.string().min(1).optional(),
+    variant: z.string().optional(),
+  })
+  .strict();
 
-const generateComponentsSchema = z.object({
-  product_id: z.string().min(1),
-  html: z.string().min(1),
-  title: z.string().min(1),
-  brand_style: z.string().min(1),
-  system_style: z.string().min(1).optional()
-}).strict();
+const generateComponentsSchema = z
+  .object({
+    product_id: z.string().min(1),
+    html: z.string().min(1),
+    title: z.string().min(1),
+    brand_style: z.string().min(1),
+    system_style: z.string().min(1).optional(),
+  })
+  .strict();
 
-const changeArtifactStyleSchema = z.object({
-  product_id: z.string().min(1),
-  artifact_id: z.string().min(1),
-  html: z.string().min(1),
-  title: z.string().min(1),
-  brand_style: z.string().min(1),
-  system_style: z.string().min(1).optional()
-}).strict();
+const changeArtifactStyleSchema = z
+  .object({
+    product_id: z.string().min(1),
+    artifact_id: z.string().min(1),
+    html: z.string().min(1),
+    title: z.string().min(1),
+    brand_style: z.string().min(1),
+    system_style: z.string().min(1).optional(),
+  })
+  .strict();
 
-const getDesignContextSchema = z.object({
-  product_id: z.string().min(1),
-  requirement_id: z.string().min(1),
-  page_id: z.string().min(1).optional(),
-  brand_style: z.string().min(1).optional(),
-  system_style: z.string().min(1).optional(),
-  craft_slugs: z.array(z.string().min(1)).optional()
-}).strict();
+const getDesignContextSchema = z
+  .object({
+    product_id: z.string().min(1),
+    requirement_id: z.string().min(1),
+    page_id: z.string().min(1).optional(),
+    brand_style: z.string().min(1).optional(),
+    system_style: z.string().min(1).optional(),
+    craft_slugs: z.array(z.string().min(1)).optional(),
+  })
+  .strict();
 
-const getRequirementSchema = z.object({
-  requirement_id: z.string().min(1).optional(),
-  product_id: z.string().min(1).optional()
-}).strict().superRefine((input, context) => {
-  if (Boolean(input.requirement_id) === Boolean(input.product_id)) {
-    context.addIssue({ code: "custom", message: "provide exactly one of requirement_id or product_id" });
-  }
-});
-const getPageCopySchema = z.object({
-  product_id: z.string().min(1),
-  page_id: z.string().min(1),
-  requirement_id: z.string().min(1).optional()
-}).strict();
-const productConfigSchema = z.object({
-  product_id: z.string().min(1),
-  platform: z.enum(platforms),
-  brand_style: z.string().min(1),
-  system_style: z.string().min(1).optional(),
-  languages: z.array(z.enum(languages)).min(1),
-  default_language: z.enum(languages)
-}).strict().refine((config) => config.languages.includes(config.default_language), {
-  message: "default_language must be included in languages",
-  path: ["default_language"]
-});
-const confirmProductIdSchema = z.object({
-  product_id: z.string().min(1),
-  expected_name: z.string().optional()
-}).strict();
+const getRequirementSchema = z
+  .object({
+    requirement_id: z.string().min(1).optional(),
+    product_id: z.string().min(1).optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (Boolean(input.requirement_id) === Boolean(input.product_id)) {
+      context.addIssue({ code: "custom", message: "provide exactly one of requirement_id or product_id" });
+    }
+  });
+const getPageCopySchema = z
+  .object({
+    product_id: z.string().min(1),
+    page_id: z.string().min(1),
+    requirement_id: z.string().min(1).optional(),
+  })
+  .strict();
+const productConfigSchema = z
+  .object({
+    product_id: z.string().min(1),
+    platform: z.enum(platforms),
+    brand_style: z.string().min(1),
+    system_style: z.string().min(1).optional(),
+    languages: z.array(z.enum(languages)).min(1),
+    default_language: z.enum(languages),
+  })
+  .strict()
+  .refine((config) => config.languages.includes(config.default_language), {
+    message: "default_language must be included in languages",
+    path: ["default_language"],
+  });
+const confirmProductIdSchema = z
+  .object({
+    product_id: z.string().min(1),
+    expected_name: z.string().optional(),
+  })
+  .strict();
 const getStyleSchema = z.object({ name: z.string().min(1) }).strict();
 
 export const formaToolInputSchemas = {
@@ -301,7 +343,7 @@ export const formaToolInputSchemas = {
   get_design_handoff: mcpGetDesignHandoffSchema,
   get_page_ui: mcpGetPageUiSchema,
   get_ui_node: mcpGetUiNodeSchema,
-  search_page_ui: mcpSearchPageUiSchema
+  search_page_ui: mcpSearchPageUiSchema,
 } satisfies Record<FormaToolName, z.ZodType>;
 
 const descriptions = {
@@ -320,20 +362,28 @@ const descriptions = {
   init_product_config: "Write platform, style, and language configuration for an existing product.",
   update_product_config: "Update platform, style, and language configuration for a product.",
   list_styles: "List installed styles.",
-  get_style: "Read a style by name: brand styles return DESIGN.md + tokens.css + components.html; system styles return catalog metadata.",
+  get_style:
+    "Read a style by name: brand styles return DESIGN.md + tokens.css + components.html; system styles return catalog metadata.",
   save_requirement: "Create or update a requirement through the unified state machine.",
   list_product_artifacts: "List open-design artifacts for a product.",
   get_product_artifact: "Read an open-design artifact manifest, bundle_url, per-asset urls, and versions.",
   export_artifact: "Export an open-design artifact to html, svg, png, zip (self-contained bundle), icons, or vzi.",
-  rollback_requirement_design: "Roll back a page/variant's design to a previous version (flips the version pointer; older versions are kept).",
+  rollback_requirement_design:
+    "Roll back a page/variant's design to a previous version (flips the version pointer; older versions are kept).",
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
-  change_artifact_style: "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
-  get_design_context: "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
-  get_design_handoff: "Read the design-handoff entry for an archived requirement: page directory with variant/artifactId, vziPath, indexHtmlPath, iconCount, rules, and copy. Only available after the requirement is archived.",
-  get_page_ui: "Read the full element tree (with tokens, annotations, and resolved asset paths) for one archived requirement page/variant. Supports variant/artifact_id disambiguation plus depth/fields/node_id filtering.",
-  get_ui_node: "Read complete detail for a single UI element node from an archived requirement page/variant: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
-  search_page_ui: "Search an archived requirement page/variant's UI elements by text content or type. Supports variant/artifact_id disambiguation when page IDs are reused."
+  change_artifact_style:
+    "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
+  get_design_context:
+    "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
+  get_design_handoff:
+    "Read the design-handoff entry for an archived requirement: page directory with variant/artifactId, vziPath, indexHtmlPath, iconCount, rules, and copy. Only available after the requirement is archived.",
+  get_page_ui:
+    "Read the full element tree (with tokens, annotations, and resolved asset paths) for one archived requirement page/variant. Supports variant/artifact_id disambiguation plus depth/fields/node_id filtering.",
+  get_ui_node:
+    "Read complete detail for a single UI element node from an archived requirement page/variant: styles, bounds, parent/children, node-scoped annotations, and resolved asset path.",
+  search_page_ui:
+    "Search an archived requirement page/variant's UI elements by text content or type. Supports variant/artifact_id disambiguation when page IDs are reused.",
 } satisfies Record<FormaToolName, string>;
 
 export function createFormaTools(store: FormaStore): FormaTools {
@@ -347,7 +397,7 @@ export function createFormaTools(store: FormaStore): FormaTools {
           "Use get_page_copy to inspect page-level source copy translations.",
           "Use get_product_artifact to read a design — it returns bundle_url, per-asset urls, preview_url, versions, and current_version.",
           "Open a design by fetching bundle_url (self-contained HTML). Load assets from their density-keyed urls.",
-          "Use export_artifact with format=zip to download the complete self-contained bundle (index.html + assets + manifest.json), format=png for the preview image, format=html/svg for the single entry file, format=icons for generated icon assets, or format=vzi for a decodable VZI file."
+          "Use export_artifact with format=zip to download the complete self-contained bundle (index.html + assets + manifest.json), format=png for the preview image, format=html/svg for the single entry file, format=icons for generated icon assets, or format=vzi for a decodable VZI file.",
         ],
         workflows: {
           develop_frontend: [
@@ -356,19 +406,23 @@ export function createFormaTools(store: FormaStore): FormaTools {
             "get_ui_node",
             "search_page_ui",
             "get_requirement",
-            "get_product_rules"
-          ]
-        }
-      }
+            "get_product_rules",
+          ],
+        },
+      },
     })),
     list_products: tool("list_products", async () => store.products.listProducts()),
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),
     confirm_product_id: tool("confirm_product_id", async (input) => confirmProductId(store, input)),
     delete_product: tool("delete_product", async (input) => store.deleteProduct(input)),
     get_product_baseline: tool("get_product_baseline", async (input) => getProductBaseline(store, input.product_id)),
-    get_baseline_page: tool("get_baseline_page", async (input) => getBaselinePage(store, input.product_id, input.page_id)),
+    get_baseline_page: tool("get_baseline_page", async (input) =>
+      getBaselinePage(store, input.product_id, input.page_id),
+    ),
     get_baseline_image: tool("get_baseline_image", async (input) => getBaselineImage(store, input.product_id)),
-    get_requirement_history: tool("get_requirement_history", async (input) => store.requirements.getRequirementHistory(input.product_id)),
+    get_requirement_history: tool("get_requirement_history", async (input) =>
+      store.requirements.getRequirementHistory(input.product_id),
+    ),
     get_requirement: tool("get_requirement", async (input) => getRequirementWithCopy(store, input)),
     get_product_rules: tool("get_product_rules", async (input) => store.requirements.getProductRules(input.product_id)),
     get_page_copy: tool("get_page_copy", async (input) => getPageCopy(store, input)),
@@ -383,14 +437,12 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_styles: tool("list_styles", async () => store.styles.listStyles()),
     get_style: tool("get_style", async (input) => getStyle(store, input.name)),
     save_requirement: tool("save_requirement", async (input) => store.requirements.saveRequirement(input)),
-    list_product_artifacts: tool("list_product_artifacts", async (input) =>
-      listProductArtifacts(store, input)),
-    get_product_artifact: tool("get_product_artifact", async (input) =>
-      getProductArtifact(store, input)),
-    export_artifact: tool("export_artifact", async (input) =>
-      exportArtifact(store, input)),
+    list_product_artifacts: tool("list_product_artifacts", async (input) => listProductArtifacts(store, input)),
+    get_product_artifact: tool("get_product_artifact", async (input) => getProductArtifact(store, input)),
+    export_artifact: tool("export_artifact", async (input) => exportArtifact(store, input)),
     rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
-      rollbackRequirementDesign(store, input)),
+      rollbackRequirementDesign(store, input),
+    ),
     generate_requirement_design: tool("generate_requirement_design", async (input) =>
       store.generateRequirementDesign(input.product_id, input.requirement_id, {
         html: input.html,
@@ -398,22 +450,25 @@ export function createFormaTools(store: FormaStore): FormaTools {
         pageId: input.page_id,
         variant: input.variant,
         brandStyle: input.brand_style,
-        systemStyle: input.system_style
-      })),
+        systemStyle: input.system_style,
+      }),
+    ),
     generate_components: tool("generate_components", async (input) =>
       store.generateComponents(input.product_id, {
         html: input.html,
         title: input.title,
         brandStyle: input.brand_style,
-        systemStyle: input.system_style
-      })),
+        systemStyle: input.system_style,
+      }),
+    ),
     change_artifact_style: tool("change_artifact_style", async (input) =>
       store.changeArtifactStyle(input.product_id, input.artifact_id, {
         html: input.html,
         title: input.title,
         brandStyle: input.brand_style,
-        systemStyle: input.system_style
-      })),
+        systemStyle: input.system_style,
+      }),
+    ),
     get_design_context: tool("get_design_context", async (input) =>
       buildDesignContext(
         { styles: store.styles, requirements: store.requirements, products: store.products },
@@ -423,17 +478,14 @@ export function createFormaTools(store: FormaStore): FormaTools {
           pageId: input.page_id,
           brandStyle: input.brand_style,
           systemStyle: input.system_style,
-          craftSlugs: input.craft_slugs
-        }
-      )),
-    get_design_handoff: tool("get_design_handoff", async (input) =>
-      toolGetDesignHandoff(store, input)),
-    get_page_ui: tool("get_page_ui", async (input) =>
-      toolGetPageUi(store, input)),
-    get_ui_node: tool("get_ui_node", async (input) =>
-      toolGetUiNode(store, input)),
-    search_page_ui: tool("search_page_ui", async (input) =>
-      toolSearchPageUi(store, input))
+          craftSlugs: input.craft_slugs,
+        },
+      ),
+    ),
+    get_design_handoff: tool("get_design_handoff", async (input) => toolGetDesignHandoff(store, input)),
+    get_page_ui: tool("get_page_ui", async (input) => toolGetPageUi(store, input)),
+    get_ui_node: tool("get_ui_node", async (input) => toolGetUiNode(store, input)),
+    search_page_ui: tool("search_page_ui", async (input) => toolSearchPageUi(store, input)),
   };
 }
 
@@ -444,9 +496,9 @@ export function registerFormaTools(server: FormaMcpServerLike, tools: FormaTools
       {
         title: titleFromToolName(name),
         description: descriptions[name],
-        inputSchema: formaToolInputSchemas[name]
+        inputSchema: formaToolInputSchemas[name],
       },
-      tools[name]
+      tools[name],
     );
   }
 }
@@ -457,9 +509,9 @@ export function registerLimitedFormaTools(server: FormaMcpServerLike, state: Sch
     {
       title: "Fm Status",
       description: "Read Forma schema normalization startup status.",
-      inputSchema: emptySchema
+      inputSchema: emptySchema,
     },
-    async () => successResult({ schema_normalization: state })
+    async () => successResult({ schema_normalization: state }),
   );
 
   for (const name of formaToolNames) {
@@ -468,16 +520,16 @@ export function registerLimitedFormaTools(server: FormaMcpServerLike, state: Sch
       {
         title: titleFromToolName(name),
         description: descriptions[name],
-        inputSchema: z.any()
+        inputSchema: z.any(),
       },
-      async () => normalizationBlockedResult(state)
+      async () => normalizationBlockedResult(state),
     );
   }
 }
 
 function tool<Name extends FormaToolName, Input>(
   name: Name,
-  handler: (input: any) => Promise<Input> | Input
+  handler: (input: any) => Promise<Input> | Input,
 ): FormaToolHandler {
   const schema = formaToolInputSchemas[name];
   return async (args) => {
@@ -496,16 +548,15 @@ function tool<Name extends FormaToolName, Input>(
 
 // ─── Artifact tool implementations ───────────────────────────────────────────
 
-async function listProductArtifacts(
-  store: FormaStore,
-  input: z.infer<typeof listProductArtifactsSchema>
-) {
+async function listProductArtifacts(store: FormaStore, input: z.infer<typeof listProductArtifactsSchema>) {
   const { product_id, kind, include_superseded = false } = input;
 
   const product = await store.products.getProduct(product_id);
   const pointers = product.requirements ?? {};
   const currentPointerIds = new Set(
-    Object.values(pointers).map((r) => r.latestArtifactId).filter(Boolean)
+    Object.values(pointers)
+      .map((r) => r.latestArtifactId)
+      .filter(Boolean),
   );
 
   // Build a map of artifactId → version from design pointers for current-version lookup
@@ -571,20 +622,17 @@ async function listProductArtifacts(
       variant: formaExt?.variant,
       versions,
       current_version: currentVersion,
-      preview_url: artifactPreviewUrl(product_id, artifactId, currentVersion, '2x'),
+      preview_url: artifactPreviewUrl(product_id, artifactId, currentVersion, "2x"),
       updated_at: manifest.updatedAt,
       source_skill_id: manifest.sourceSkillId,
-      superseded
+      superseded,
     });
   }
 
   return { artifacts };
 }
 
-async function getProductArtifact(
-  store: FormaStore,
-  input: z.infer<typeof getProductArtifactSchema>
-) {
+async function getProductArtifact(store: FormaStore, input: z.infer<typeof getProductArtifactSchema>) {
   const { product_id, artifact_id } = input;
 
   // Determine available versions
@@ -607,7 +655,7 @@ async function getProductArtifact(
     } catch {
       throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found or has no versions", {
         artifact_id,
-        product_id
+        product_id,
       });
     }
     currentVersion = undefined;
@@ -620,12 +668,10 @@ async function getProductArtifact(
   }
 
   // Build bundle URL and preview URL (versioned only; null for legacy flat artifacts)
-  const bundle_url = currentVersion !== undefined
-    ? artifactBundleUrl(product_id, artifact_id, currentVersion, manifest.entry)
-    : null;
-  const preview_url = currentVersion !== undefined
-    ? artifactPreviewUrl(product_id, artifact_id, currentVersion, '2x')
-    : null;
+  const bundle_url =
+    currentVersion !== undefined ? artifactBundleUrl(product_id, artifact_id, currentVersion, manifest.entry) : null;
+  const preview_url =
+    currentVersion !== undefined ? artifactPreviewUrl(product_id, artifact_id, currentVersion, "2x") : null;
 
   // Build per-asset density URL map
   const assets = (manifest.forma?.assets ?? []).map((entry) => {
@@ -641,7 +687,7 @@ async function getProductArtifact(
       role: entry.role,
       density: entry.density,
       ...(entry.degraded !== undefined ? { degraded: entry.degraded } : {}),
-      urls
+      urls,
     };
   });
 
@@ -651,13 +697,13 @@ async function getProductArtifact(
     assets,
     preview_url,
     versions,
-    current_version: currentVersion ?? null
+    current_version: currentVersion ?? null,
   };
 }
 
 async function exportArtifact(
   store: FormaStore,
-  input: z.infer<typeof exportArtifactSchema>
+  input: z.infer<typeof exportArtifactSchema>,
 ): Promise<{ output_path: string; note?: string }> {
   const { product_id, artifact_id, format } = input;
 
@@ -682,9 +728,10 @@ async function exportArtifact(
   const productsDir = getFormaPaths(store.home).productsDir;
 
   // Use versioned dir when versions exist, otherwise legacy unversioned dir
-  const artifactBase = versions.length > 0
-    ? getArtifactVersionDir(productsDir, product_id, artifact_id, currentVersion)
-    : getArtifactDir(productsDir, product_id, artifact_id);
+  const artifactBase =
+    versions.length > 0
+      ? getArtifactVersionDir(productsDir, product_id, artifact_id, currentVersion)
+      : getArtifactDir(productsDir, product_id, artifact_id);
 
   const exportsDir = join(store.home, "exports", product_id);
   await mkdir(exportsDir, { recursive: true });
@@ -694,7 +741,7 @@ async function exportArtifact(
   if (format === "png") {
     let previewSrc: string;
     if (versions.length > 0) {
-      previewSrc = getArtifactVersionPreviewPath(productsDir, product_id, artifact_id, currentVersion, '2x');
+      previewSrc = getArtifactVersionPreviewPath(productsDir, product_id, artifact_id, currentVersion, "2x");
     } else {
       previewSrc = join(artifactBase, "preview", "2x.png");
     }
@@ -710,7 +757,7 @@ async function exportArtifact(
     if (hasAssets) {
       return {
         output_path: outputPath,
-        note: "Only the single entry file is included. Assets are not exported in html/svg format. Use format=zip for the complete self-contained bundle."
+        note: "Only the single entry file is included. Assets are not exported in html/svg format. Use format=zip for the complete self-contained bundle.",
       };
     }
   } else if (format === "zip") {
@@ -734,7 +781,7 @@ async function exportArtifact(
 
       try {
         if (versions.length > 0) {
-          const previewSrc = getArtifactVersionPreviewPath(productsDir, product_id, artifact_id, currentVersion, '2x');
+          const previewSrc = getArtifactVersionPreviewPath(productsDir, product_id, artifact_id, currentVersion, "2x");
           const previewBuf = await readFile(previewSrc);
           zip.addFile("preview/2x.png", previewBuf);
         } else {
@@ -776,18 +823,18 @@ async function exportArtifactIcons(
   htmlEntry: string,
   artifactId: string,
   productId: string,
-  exportsDir: string
+  exportsDir: string,
 ): Promise<{ output_path: string }> {
   const htmlPath = join(artifactBase, htmlEntry);
   let html: string;
   try {
     html = await readFile(htmlPath, "utf8");
   } catch (err) {
-    throw new FormaError(
-      "ARTIFACT_NOT_FOUND",
-      `Could not read ${htmlEntry} for artifact ${artifactId}`,
-      { artifactId, path: htmlPath, cause: String(err) }
-    );
+    throw new FormaError("ARTIFACT_NOT_FOUND", `Could not read ${htmlEntry} for artifact ${artifactId}`, {
+      artifactId,
+      path: htmlPath,
+      cause: String(err),
+    });
   }
 
   let result: Awaited<ReturnType<typeof extractIconAssets>>;
@@ -798,14 +845,14 @@ async function exportArtifactIcons(
       requirementId: "manual-export",
       pageId: "manual",
       version: "manual",
-      generatedFrom: "manual-export"
+      generatedFrom: "manual-export",
     });
   } catch (err) {
     if (err instanceof FormaError) throw err;
     throw new FormaError(
       "ARTIFACT_WRITE_FAIL",
       `Icon extraction failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
-      { artifactId, productId, cause: String(err) }
+      { artifactId, productId, cause: String(err) },
     );
   }
 
@@ -840,25 +887,25 @@ async function exportArtifactVzi(
   htmlEntry: string,
   artifactId: string,
   productId: string,
-  exportsDir: string
+  exportsDir: string,
 ): Promise<{ output_path: string }> {
   const htmlPath = join(artifactBase, htmlEntry);
   let html: string;
   try {
     html = await readFile(htmlPath, "utf8");
   } catch (err) {
-    throw new FormaError(
-      "ARTIFACT_NOT_FOUND",
-      `Could not read ${htmlEntry} for artifact ${artifactId}`,
-      { artifactId, path: htmlPath, cause: String(err) }
-    );
+    throw new FormaError("ARTIFACT_NOT_FOUND", `Could not read ${htmlEntry} for artifact ${artifactId}`, {
+      artifactId,
+      path: htmlPath,
+      cause: String(err),
+    });
   }
 
   // Parse HTML → IR via Puppeteer
   let ir: import("@vzi-core/types").IntermediateRepresentation;
   const parser = new PuppeteerParser({
     viewportPreset: "desktop",
-    baseUrl: pathToFileURL(`${artifactBase}/`).toString()
+    baseUrl: pathToFileURL(`${artifactBase}/`).toString(),
   });
   try {
     ir = await parser.parse(html);
@@ -866,7 +913,7 @@ async function exportArtifactVzi(
     throw new FormaError(
       "ARTIFACT_WRITE_FAIL",
       `VZI parse failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
-      { artifactId, productId, cause: String(err) }
+      { artifactId, productId, cause: String(err) },
     );
   } finally {
     await parser.dispose().catch(() => undefined);
@@ -898,7 +945,7 @@ async function exportArtifactVzi(
     throw new FormaError(
       "ARTIFACT_WRITE_FAIL",
       `VZI encode failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
-      { artifactId, productId, cause: String(err) }
+      { artifactId, productId, cause: String(err) },
     );
   }
 
@@ -911,7 +958,7 @@ async function exportArtifactVzi(
 function assertArtifactSupportsExportFormat(
   manifest: ArtifactManifest,
   artifactId: string,
-  format: z.infer<typeof exportArtifactSchema>["format"]
+  format: z.infer<typeof exportArtifactSchema>["format"],
 ): void {
   // Formats that are always supported regardless of artifact kind
   if (format === "zip" || format === "png") {
@@ -935,20 +982,17 @@ function assertArtifactSupportsExportFormat(
 function unsupportedArtifactFormatError(
   manifest: ArtifactManifest,
   artifactId: string,
-  format: z.infer<typeof exportArtifactSchema>["format"]
+  format: z.infer<typeof exportArtifactSchema>["format"],
 ): FormaError {
   return new FormaError("ARTIFACT_UNSUPPORTED_FORMAT", "Artifact does not support requested export format", {
     artifact_id: artifactId,
     kind: manifest.kind,
     format,
-    exports: manifest.exports
+    exports: manifest.exports,
   });
 }
 
-function artifactExportEntry(
-  manifest: ArtifactManifest,
-  format: "html" | "svg"
-): string | undefined {
+function artifactExportEntry(manifest: ArtifactManifest, format: "html" | "svg"): string | undefined {
   const extension = `.${format}`;
   if (manifest.kind === format || manifest.entry.toLowerCase().endsWith(extension)) {
     return manifest.entry;
@@ -968,7 +1012,7 @@ function archiveDirname(relPath: string): string {
 
 async function rollbackRequirementDesign(
   store: FormaStore,
-  input: z.infer<typeof rollbackRequirementDesignSchema>
+  input: z.infer<typeof rollbackRequirementDesignSchema>,
 ): Promise<{ requirement_id: string; page_id: string; variant: string; version: number }> {
   const { product_id, requirement_id, page_id, target_version } = input;
   const variant = input.variant ?? "default";
@@ -979,7 +1023,7 @@ async function rollbackRequirementDesign(
       product_id,
       requirement_id,
       page_id,
-      variant
+      variant,
     });
   }
 
@@ -987,12 +1031,12 @@ async function rollbackRequirementDesign(
   if (!versions.includes(target_version)) {
     throw new FormaError("ARTIFACT_NOT_FOUND", "Target version not found", {
       target_version,
-      available: versions
+      available: versions,
     });
   }
 
   await store.runProductMutation({ operation: "rollback_requirement_design", product_id }, () =>
-    store.products.rollbackDesignPointerLocked(product_id, requirement_id, page_id, variant, target_version)
+    store.products.rollbackDesignPointerLocked(product_id, requirement_id, page_id, variant, target_version),
   );
 
   return { requirement_id, page_id, variant, version: target_version };
@@ -1038,14 +1082,18 @@ function normalizationBlockedResult(state: SchemaNormalizationRecoveryState): Fo
         text: JSON.stringify({
           error_code: preflight ? "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED" : "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
           message: preflight ? "Schema normalization preflight required" : "Schema normalization recovery required",
-          details: state
-        })
-      }
-    ]
+          details: state,
+        }),
+      },
+    ],
   };
 }
 
-function toFormaErrorPayload(error: unknown): { error_code: string; message: string; details: Record<string, unknown> } {
+function toFormaErrorPayload(error: unknown): {
+  error_code: string;
+  message: string;
+  details: Record<string, unknown>;
+} {
   if (error instanceof FormaError) {
     return error.toJSON();
   }
@@ -1055,7 +1103,7 @@ function toFormaErrorPayload(error: unknown): { error_code: string; message: str
       return {
         error_code: "FORBIDDEN_PATH_PARAMETER",
         message: "Path parameters are not allowed",
-        details: { parameter: forbiddenPathIssue.path.join(".") }
+        details: { parameter: forbiddenPathIssue.path.join(".") },
       };
     }
     return { error_code: "VALIDATION_ERROR", message: "Invalid tool input", details: { issues: error.issues } };
@@ -1080,7 +1128,7 @@ async function getPageCopy(store: FormaStore, input: z.infer<typeof getPageCopyS
     throw new FormaError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
       product_id: input.product_id,
       requirement_id: requirement.id,
-      page_id: input.page_id
+      page_id: input.page_id,
     });
   }
 
@@ -1090,7 +1138,10 @@ async function getPageCopy(store: FormaStore, input: z.infer<typeof getPageCopyS
     requirement_id: requirement.id,
     page_id: input.page_id,
     copy: page.copy ?? [],
-    translations: translations.find((item) => item.page_id === input.page_id) ?? { page_id: input.page_id, entries: [] }
+    translations: translations.find((item) => item.page_id === input.page_id) ?? {
+      page_id: input.page_id,
+      entries: [],
+    },
   };
 }
 
@@ -1100,7 +1151,7 @@ async function getProductRequirement(store: FormaStore, productId: string, requi
     throw new FormaError("REQUIREMENT_PRODUCT_MISMATCH", "Requirement does not belong to product", {
       product_id: productId,
       requirement_id: requirementId,
-      requirement_product_id: requirement.product_id
+      requirement_product_id: requirement.product_id,
     });
   }
 
@@ -1135,12 +1186,14 @@ async function getProductBaseline(store: FormaStore, productId: string) {
         id: pageId,
         name: stringValue(page.name) ?? existing?.name ?? pageId,
         features: stringValue(page.features) ?? existing?.features ?? "",
-        copy: Array.isArray(page.copy) ? page.copy : existing?.copy ?? [],
+        copy: Array.isArray(page.copy) ? page.copy : (existing?.copy ?? []),
         fields: stringValue(page.fields) ?? existing?.fields ?? "",
         interactions: stringValue(page.interactions) ?? existing?.interactions ?? "",
         ...(page.semantic_contract !== undefined ? { semantic_contract: page.semantic_contract } : {}),
-        ...(page.semantic_contract_coverage !== undefined ? { semantic_contract_coverage: page.semantic_contract_coverage } : {}),
-        source_requirements: uniqueStrings([...(existing?.source_requirements ?? []), requirement.id])
+        ...(page.semantic_contract_coverage !== undefined
+          ? { semantic_contract_coverage: page.semantic_contract_coverage }
+          : {}),
+        source_requirements: uniqueStrings([...(existing?.source_requirements ?? []), requirement.id]),
       });
     }
   }
@@ -1149,15 +1202,12 @@ async function getProductBaseline(store: FormaStore, productId: string) {
     baseline: {
       product_id: productId,
       pages: [...pagesById.values()],
-      navigation
-    }
+      navigation,
+    },
   };
 }
 
-function mapRequirementNavigationToBaseline(
-  pages: RequirementHistoryPageRecord[],
-  navigation: unknown[]
-): unknown[] {
+function mapRequirementNavigationToBaseline(pages: RequirementHistoryPageRecord[], navigation: unknown[]): unknown[] {
   const pageToBaseline = new Map<string, string>();
   for (const page of pages) {
     const pageId = stringValue(page.page_id);
@@ -1178,11 +1228,13 @@ function mapRequirementNavigationToBaseline(
     if (!fromRaw || !toRaw) {
       return [];
     }
-    return [{
-      ...item,
-      from: pageToBaseline.get(fromRaw) ?? fromRaw,
-      to: pageToBaseline.get(toRaw) ?? toRaw
-    }];
+    return [
+      {
+        ...item,
+        from: pageToBaseline.get(fromRaw) ?? fromRaw,
+        to: pageToBaseline.get(toRaw) ?? toRaw,
+      },
+    ];
   });
 }
 
@@ -1237,7 +1289,10 @@ async function getBaselineImage(store: FormaStore, productId: string) {
 }
 
 function titleFromToolName(name: string): string {
-  return name.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
+  return name
+    .split("_")
+    .map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`)
+    .join(" ");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

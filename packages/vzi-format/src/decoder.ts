@@ -4,10 +4,10 @@
  * 任务 3.20-3.24: 实现快速读取、按块读取、块级缓存、增量加载
  */
 
-import { createDecipheriv, createHash } from 'crypto';
-import { brotliDecompressSync } from 'zlib';
-import { decode } from 'msgpackr';
-import type { IRElement } from '@vzi-core/types';
+import { createDecipheriv, createHash } from "crypto";
+import { brotliDecompressSync } from "zlib";
+import { decode } from "msgpackr";
+import type { IRElement } from "@vzi-core/types";
 import type {
   VZIHeader,
   VZIContent,
@@ -26,7 +26,7 @@ import type {
   DecodeResult,
   BlockError,
   BlockErrorType,
-} from './types';
+} from "./types";
 
 /**
  * 解码器配置
@@ -93,20 +93,20 @@ export class VZIDecoder {
       cacheSize: 1000,
       verifyChecksums: true,
       maxMemoryMB: 100,
-      enableErrorRecovery: false,  // 默认禁用错误恢复，保持向后兼容
+      enableErrorRecovery: false, // 默认禁用错误恢复，保持向后兼容
       throwOnFatalError: false,
       maxDecompressedBlockBytes: 256 * 1024 * 1024, // 256MB 防解压炸弹
       ...options,
     };
 
     if (!Number.isFinite(resolved.cacheSize) || resolved.cacheSize < 0) {
-      throw new Error('VZIDecoder cacheSize must be a non-negative number');
+      throw new Error("VZIDecoder cacheSize must be a non-negative number");
     }
     if (!Number.isFinite(resolved.maxMemoryMB) || resolved.maxMemoryMB < 0) {
-      throw new Error('VZIDecoder maxMemoryMB must be a non-negative number');
+      throw new Error("VZIDecoder maxMemoryMB must be a non-negative number");
     }
     if (resolved.decryptionKey && resolved.decryptionKey.length !== 32) {
-      throw new Error('VZIDecoder decryptionKey must be 32 bytes');
+      throw new Error("VZIDecoder decryptionKey must be 32 bytes");
     }
 
     this.options = resolved;
@@ -149,8 +149,13 @@ export class VZIDecoder {
     } catch (error) {
       if (this.options.enableErrorRecovery) {
         // 在错误恢复模式下，记录错误并返回空内容
-        this.recordError('block-index', 'metadata', 'corrupted_data',
-          `Failed to read block index: ${error instanceof Error ? error.message : String(error)}`, true);
+        this.recordError(
+          "block-index",
+          "metadata",
+          "corrupted_data",
+          `Failed to read block index: ${error instanceof Error ? error.message : String(error)}`,
+          true,
+        );
         return {
           content: this.getEmptyContent(),
           errors: this.errors,
@@ -172,8 +177,13 @@ export class VZIDecoder {
       }
       // 使用默认元数据
       metadata = this.getDefaultMetadata();
-      this.recordError('metadata', 'metadata', 'decode_failed',
-        `Failed to read metadata: ${error instanceof Error ? error.message : String(error)}`, true);
+      this.recordError(
+        "metadata",
+        "metadata",
+        "decode_failed",
+        `Failed to read metadata: ${error instanceof Error ? error.message : String(error)}`,
+        true,
+      );
     }
 
     // 4-12. 读取其他块（非致命错误，支持降级）
@@ -216,9 +226,9 @@ export class VZIDecoder {
   decodeContent(buffer: Uint8Array): VZIContent {
     const result = this.decode(buffer);
     if (result.errors.length > 0 && this.options.throwOnFatalError) {
-      const fatalErrors = result.errors.filter(e => e.fatal);
+      const fatalErrors = result.errors.filter((e) => e.fatal);
       if (fatalErrors.length > 0) {
-        throw new Error(`Fatal errors during decoding: ${fatalErrors.map(e => e.message).join('; ')}`);
+        throw new Error(`Fatal errors during decoding: ${fatalErrors.map((e) => e.message).join("; ")}`);
       }
     }
     return result.content;
@@ -236,7 +246,7 @@ export class VZIDecoder {
    */
   private readHeader(buffer: Buffer): VZIHeader {
     if (buffer.length < 256) {
-      throw new Error('Invalid VZI file: too small for header');
+      throw new Error("Invalid VZI file: too small for header");
     }
 
     let offset = 0;
@@ -301,7 +311,7 @@ export class VZIDecoder {
    */
   private readBlockIndex(): BlockIndexEntry[] {
     if (!this.header) {
-      throw new Error('Header not read');
+      throw new Error("Header not read");
     }
 
     const offset = Number(this.header.blockIndexOffset);
@@ -315,9 +325,9 @@ export class VZIDecoder {
    * 读取元数据
    */
   private readMetadata(): VZIMetadata {
-    const block = this.getBlockByType('metadata');
+    const block = this.getBlockByType("metadata");
     if (!block) {
-      throw new Error('Metadata block not found');
+      throw new Error("Metadata block not found");
     }
 
     const decoded = decode(block.data) as VZIMetadata & {
@@ -434,7 +444,7 @@ export class VZIDecoder {
       // metadata 块单独存储在 metadataOffset
       // 其他块存储在 dataOffset，但块索引中的 offset 包含了 metadata 的长度
       let offset: number;
-      if (entry.type === 'metadata') {
+      if (entry.type === "metadata") {
         offset = Number(this.header.metadataOffset) + Number(entry.offset);
       } else {
         // 其他块的 offset 需要减去 metadata 的长度
@@ -444,7 +454,7 @@ export class VZIDecoder {
       // 边界检查：确保偏移量和长度不越界
       if (offset < 0 || entry.compressedSize < 0 || offset + entry.compressedSize > this.buffer.length) {
         throw new Error(
-          `Block ${entry.id} offset ${offset}+${entry.compressedSize} exceeds buffer size ${this.buffer.length}`
+          `Block ${entry.id} offset ${offset}+${entry.compressedSize} exceeds buffer size ${this.buffer.length}`,
         );
       }
 
@@ -455,8 +465,13 @@ export class VZIDecoder {
         const computedChecksum = this.computeChecksum(encryptedData);
         if (!this.checksumEquals(computedChecksum, entry.checksum)) {
           if (this.options.enableErrorRecovery) {
-            this.recordError(entry.id, entry.type, 'checksum_mismatch',
-              `Checksum mismatch for block ${entry.id}`, false);
+            this.recordError(
+              entry.id,
+              entry.type,
+              "checksum_mismatch",
+              `Checksum mismatch for block ${entry.id}`,
+              false,
+            );
             this.failedBlocks++;
             return null;
           }
@@ -482,14 +497,14 @@ export class VZIDecoder {
       if (decompressed.length > this.options.maxDecompressedBlockBytes) {
         throw new Error(
           `Block ${entry.id} decompressed size ${decompressed.length} exceeds limit ` +
-          `${this.options.maxDecompressedBlockBytes} bytes`
+            `${this.options.maxDecompressedBlockBytes} bytes`,
         );
       }
 
       // 如果编码器写入了真实 uncompressedSize，则做一致性校验（0 表示旧版跳过）
       if (entry.uncompressedSize > 0 && decompressed.length !== entry.uncompressedSize) {
         throw new Error(
-          `Block ${entry.id} decompressed size mismatch: expected ${entry.uncompressedSize}, got ${decompressed.length}`
+          `Block ${entry.id} decompressed size mismatch: expected ${entry.uncompressedSize}, got ${decompressed.length}`,
         );
       }
 
@@ -497,16 +512,22 @@ export class VZIDecoder {
       return decompressed;
     } catch (error) {
       if (this.options.enableErrorRecovery) {
-        const errorType: BlockErrorType = error instanceof Error && error.message.includes('checksum')
-          ? 'checksum_mismatch'
-          : error instanceof Error && error.message.includes('decrypt')
-          ? 'decryption_failed'
-          : error instanceof Error && error.message.includes('decompress')
-          ? 'decompression_failed'
-          : 'corrupted_data';
+        const errorType: BlockErrorType =
+          error instanceof Error && error.message.includes("checksum")
+            ? "checksum_mismatch"
+            : error instanceof Error && error.message.includes("decrypt")
+              ? "decryption_failed"
+              : error instanceof Error && error.message.includes("decompress")
+                ? "decompression_failed"
+                : "corrupted_data";
 
-        this.recordError(entry.id, entry.type, errorType,
-          `Failed to read block ${entry.id}: ${error instanceof Error ? error.message : String(error)}`, false);
+        this.recordError(
+          entry.id,
+          entry.type,
+          errorType,
+          `Failed to read block ${entry.id}: ${error instanceof Error ? error.message : String(error)}`,
+          false,
+        );
         this.failedBlocks++;
         return null;
       }
@@ -522,7 +543,7 @@ export class VZIDecoder {
     blockType: BlockType,
     errorType: BlockErrorType,
     message: string,
-    fatal: boolean
+    fatal: boolean,
   ): void {
     this.errors.push({
       blockId,
@@ -538,20 +559,20 @@ export class VZIDecoder {
    */
   private getDefaultMetadata(): VZIMetadata {
     return {
-      name: 'Untitled',
+      name: "Untitled",
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
       viewportWidth: 1920,
       viewportHeight: 1080,
-      minReaderVersion: '2.0.0',
+      minReaderVersion: "2.0.0",
       features: [],
     };
   }
 
   private getDefaultCompatibility(): VersionCompatibility {
     return {
-      minReaderVersion: '2.0.0',
-      formatVersion: '2.0.0',
+      minReaderVersion: "2.0.0",
+      formatVersion: "2.0.0",
       features: [],
     };
   }
@@ -581,7 +602,7 @@ export class VZIDecoder {
       elements: new Map(),
       sharedStyles: new Map(),
       spatialIndex: {
-        rootBlockId: '',
+        rootBlockId: "",
         blocks: new Map(),
         maxDepth: 0,
       },
@@ -601,7 +622,7 @@ export class VZIDecoder {
     const elements = new Map<string, IRElement>();
 
     try {
-      const elementBlocks = this.getBlocksByType('elements');
+      const elementBlocks = this.getBlocksByType("elements");
 
       for (const block of elementBlocks) {
         try {
@@ -611,8 +632,13 @@ export class VZIDecoder {
           }
         } catch (error) {
           if (this.options.enableErrorRecovery) {
-            this.recordError('elements', 'elements', 'decode_failed',
-              `Failed to decode elements block: ${error instanceof Error ? error.message : String(error)}`, false);
+            this.recordError(
+              "elements",
+              "elements",
+              "decode_failed",
+              `Failed to decode elements block: ${error instanceof Error ? error.message : String(error)}`,
+              false,
+            );
           } else {
             throw error;
           }
@@ -634,7 +660,7 @@ export class VZIDecoder {
     const styles = new Map<string, SharedStyle>();
 
     try {
-      const styleBlock = this.getBlockByType('styles');
+      const styleBlock = this.getBlockByType("styles");
       if (styleBlock) {
         const styleData = decode(styleBlock.data) as Record<string, SharedStyle>;
         for (const [id, style] of Object.entries(styleData)) {
@@ -643,8 +669,13 @@ export class VZIDecoder {
       }
     } catch (error) {
       if (this.options.enableErrorRecovery) {
-        this.recordError('styles', 'styles', 'decode_failed',
-          `Failed to decode styles: ${error instanceof Error ? error.message : String(error)}`, false);
+        this.recordError(
+          "styles",
+          "styles",
+          "decode_failed",
+          `Failed to decode styles: ${error instanceof Error ? error.message : String(error)}`,
+          false,
+        );
       } else {
         throw error;
       }
@@ -658,10 +689,10 @@ export class VZIDecoder {
    */
   private readSpatialIndexWithRecovery(): QuadTreeIndex {
     try {
-      const spatialBlock = this.getBlockByType('spatial');
+      const spatialBlock = this.getBlockByType("spatial");
       if (!spatialBlock) {
         return {
-          rootBlockId: '',
+          rootBlockId: "",
           blocks: new Map(),
           maxDepth: 0,
         };
@@ -672,12 +703,9 @@ export class VZIDecoder {
         maxDepth?: unknown;
         blocks: Record<string, unknown>;
       };
-      const rootBlockId = typeof indexData.rootBlockId === 'string'
-        ? indexData.rootBlockId
-        : Object.keys(indexData.blocks)[0] || '';
-      const maxDepth = typeof indexData.maxDepth === 'number'
-        ? indexData.maxDepth
-        : 10;
+      const rootBlockId =
+        typeof indexData.rootBlockId === "string" ? indexData.rootBlockId : Object.keys(indexData.blocks)[0] || "";
+      const maxDepth = typeof indexData.maxDepth === "number" ? indexData.maxDepth : 10;
 
       return {
         rootBlockId,
@@ -686,10 +714,15 @@ export class VZIDecoder {
       };
     } catch (error) {
       if (this.options.enableErrorRecovery) {
-        this.recordError('spatial', 'spatial', 'decode_failed',
-          `Failed to decode spatial index: ${error instanceof Error ? error.message : String(error)}`, false);
+        this.recordError(
+          "spatial",
+          "spatial",
+          "decode_failed",
+          `Failed to decode spatial index: ${error instanceof Error ? error.message : String(error)}`,
+          false,
+        );
         return {
-          rootBlockId: '',
+          rootBlockId: "",
           blocks: new Map(),
           maxDepth: 0,
         };
@@ -719,7 +752,7 @@ export class VZIDecoder {
    */
   private readAnnotationsWithRecovery(): Annotation[] {
     try {
-      const annotationBlock = this.getBlockByType('annotations');
+      const annotationBlock = this.getBlockByType("annotations");
       if (!annotationBlock) {
         return [];
       }
@@ -727,8 +760,13 @@ export class VZIDecoder {
       return decode(annotationBlock.data) as Annotation[];
     } catch (error) {
       if (this.options.enableErrorRecovery) {
-        this.recordError('annotations', 'annotations', 'decode_failed',
-          `Failed to decode annotations: ${error instanceof Error ? error.message : String(error)}`, false);
+        this.recordError(
+          "annotations",
+          "annotations",
+          "decode_failed",
+          `Failed to decode annotations: ${error instanceof Error ? error.message : String(error)}`,
+          false,
+        );
         return [];
       }
       throw error;
@@ -742,7 +780,7 @@ export class VZIDecoder {
     const images = new Map<string, ImageAsset>();
 
     try {
-      const resourceBlock = this.getBlockByType('resources');
+      const resourceBlock = this.getBlockByType("resources");
       if (resourceBlock) {
         const imageData = decode(resourceBlock.data) as Record<string, ImageAsset>;
         for (const [id, asset] of Object.entries(imageData)) {
@@ -751,8 +789,13 @@ export class VZIDecoder {
       }
     } catch (error) {
       if (this.options.enableErrorRecovery) {
-        this.recordError('resources', 'resources', 'decode_failed',
-          `Failed to decode images: ${error instanceof Error ? error.message : String(error)}`, false);
+        this.recordError(
+          "resources",
+          "resources",
+          "decode_failed",
+          `Failed to decode images: ${error instanceof Error ? error.message : String(error)}`,
+          false,
+        );
       } else {
         throw error;
       }
@@ -780,35 +823,28 @@ export class VZIDecoder {
    */
   private decrypt(data: Uint8Array): Uint8Array {
     if (data.length < 28) {
-      throw new Error('Encrypted payload is too short');
+      throw new Error("Encrypted payload is too short");
     }
 
     if (!this.options.decryptionKey) {
-      throw new Error('decryptionKey is required for encrypted payload');
+      throw new Error("decryptionKey is required for encrypted payload");
     }
 
     const iv = data.slice(0, 12);
     const authTag = data.slice(12, 28);
     const encrypted = data.slice(28);
 
-    const decipher = createDecipheriv(
-      'aes-256-gcm',
-      this.options.decryptionKey,
-      iv
-    );
+    const decipher = createDecipheriv("aes-256-gcm", this.options.decryptionKey, iv);
     decipher.setAuthTag(authTag);
 
-    return Buffer.concat([
-      decipher.update(encrypted),
-      decipher.final(),
-    ]);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   }
 
   /**
    * 计算校验和
    */
   private computeChecksum(data: Uint8Array): Uint8Array {
-    const hash = createHash('sha256').update(data).digest();
+    const hash = createHash("sha256").update(data).digest();
     return hash.slice(0, 16);
   }
 
@@ -835,20 +871,20 @@ export class VZIDecoder {
     const isAllZero = storedChecksum.every((b) => b === 0);
     if (isAllZero) {
       // 旧版文件，无文件级 checksum，跳过校验
-      console.warn('[vzi-decoder] File-level checksum is missing (legacy file). Skipping file integrity check.');
+      console.warn("[vzi-decoder] File-level checksum is missing (legacy file). Skipping file integrity check.");
       return;
     }
 
     // 将 checksum 字段本身清零后计算 SHA-256
     const forChecksum = Buffer.from(buffer);
     forChecksum.fill(0, CHECKSUM_OFFSET, CHECKSUM_OFFSET + CHECKSUM_SIZE);
-    const computed = createHash('sha256').update(forChecksum).digest();
+    const computed = createHash("sha256").update(forChecksum).digest();
 
     if (!this.checksumEquals(computed, storedChecksum)) {
-      const msg = 'File integrity check failed: file-level checksum mismatch. File may be corrupted or tampered.';
+      const msg = "File integrity check failed: file-level checksum mismatch. File may be corrupted or tampered.";
       if (this.options.enableErrorRecovery) {
         console.warn(`[vzi-decoder] ${msg}`);
-        this.recordError('file-header', 'metadata', 'checksum_mismatch', msg, false);
+        this.recordError("file-header", "metadata", "checksum_mismatch", msg, false);
       } else {
         throw new Error(msg);
       }
@@ -863,7 +899,7 @@ export class VZIDecoder {
     const metadataEnd = metadataOffset + header.metadataLength;
     if (metadataOffset < 256 || metadataEnd > bufferLength) {
       throw new Error(
-        `Invalid metadataOffset: ${metadataOffset}+${header.metadataLength} out of bounds (buffer: ${bufferLength})`
+        `Invalid metadataOffset: ${metadataOffset}+${header.metadataLength} out of bounds (buffer: ${bufferLength})`,
       );
     }
 
@@ -871,15 +907,13 @@ export class VZIDecoder {
     const blockIndexEnd = blockIndexOffset + header.blockIndexLength;
     if (blockIndexOffset < 256 || blockIndexEnd > bufferLength) {
       throw new Error(
-        `Invalid blockIndexOffset: ${blockIndexOffset}+${header.blockIndexLength} out of bounds (buffer: ${bufferLength})`
+        `Invalid blockIndexOffset: ${blockIndexOffset}+${header.blockIndexLength} out of bounds (buffer: ${bufferLength})`,
       );
     }
 
     const dataOffset = Number(header.dataOffset);
     if (dataOffset < 256 || dataOffset > bufferLength) {
-      throw new Error(
-        `Invalid dataOffset: ${dataOffset} out of bounds (buffer: ${bufferLength})`
-      );
+      throw new Error(`Invalid dataOffset: ${dataOffset} out of bounds (buffer: ${bufferLength})`);
     }
   }
 
@@ -913,10 +947,7 @@ export class VZIDecoder {
       this.cacheOrder = this.cacheOrder.filter((cacheKey) => cacheKey !== key);
     }
 
-    while (
-      this.cache.size >= this.options.cacheSize ||
-      this.cacheBytes + size > maxCacheBytes
-    ) {
+    while (this.cache.size >= this.options.cacheSize || this.cacheBytes + size > maxCacheBytes) {
       const before = this.cache.size;
       this.evictLRU();
       if (this.cache.size === before) {
@@ -925,10 +956,7 @@ export class VZIDecoder {
       }
     }
 
-    if (
-      this.cache.size >= this.options.cacheSize ||
-      this.cacheBytes + size > maxCacheBytes
-    ) {
+    if (this.cache.size >= this.options.cacheSize || this.cacheBytes + size > maxCacheBytes) {
       return;
     }
 
@@ -985,10 +1013,7 @@ export class VZIDecoder {
     maxSize: number;
     hitRate: number;
   } {
-    const totalAccess = Array.from(this.cache.values()).reduce(
-      (sum, item) => sum + item.accessCount,
-      0
-    );
+    const totalAccess = Array.from(this.cache.values()).reduce((sum, item) => sum + item.accessCount, 0);
 
     return {
       size: this.cache.size,

@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { IRElement } from "@vzi-core/types";
-import {
-  getVZIFileInfo,
-  SpatialIndexBuilder,
-  VZIEncoder,
-  VZIDecoder,
-  type VZIContent,
-} from "../src/index.js";
+import { getVZIFileInfo, SpatialIndexBuilder, VZIEncoder, VZIDecoder, type VZIContent } from "../src/index.js";
 
 function makeElement(id: string, x: number, y: number): IRElement {
   return {
@@ -66,12 +60,14 @@ function makeContent(elements: Map<string, IRElement>): VZIContent {
 }
 
 function makeSplitSpatialContent(): VZIContent {
-  return makeContent(new Map([
-    ["top-left", makeElement("top-left", 0, 0)],
-    ["top-right", makeElement("top-right", 200, 0)],
-    ["bottom-left", makeElement("bottom-left", 0, 200)],
-    ["bottom-right", makeElement("bottom-right", 200, 200)],
-  ]));
+  return makeContent(
+    new Map([
+      ["top-left", makeElement("top-left", 0, 0)],
+      ["top-right", makeElement("top-right", 200, 0)],
+      ["bottom-left", makeElement("bottom-left", 0, 200)],
+      ["bottom-right", makeElement("bottom-right", 200, 200)],
+    ]),
+  );
 }
 
 describe("VZI format regressions", () => {

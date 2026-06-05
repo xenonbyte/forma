@@ -35,8 +35,8 @@ describe("matchRoute", () => {
         cleanupPending: true,
         productId: "P-123abc",
         recoveryWarnings: ["Recovered orphaned requirement index"],
-        sessionCleared: true
-      }
+        sessionCleared: true,
+      },
     };
 
     window.history.replaceState({}, "", "/products/P-123abc");

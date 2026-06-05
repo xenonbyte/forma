@@ -17,6 +17,6 @@ export function getFormaPaths(rootDir = join(process.cwd(), ".forma")): FormaPat
     dataDir,
     sessionFile: join(rootDir, "session.yaml"),
     productsDir: join(dataDir, "products"),
-    stylesDir: join(rootDir, "styles")
+    stylesDir: join(rootDir, "styles"),
   };
 }

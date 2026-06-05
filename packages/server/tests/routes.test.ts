@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { createFormaStore, FormaError, getArtifactVersionDir, getArtifactVziPath, type FormaStore, type ProductDeletionState } from "@xenonbyte/forma-core";
+import {
+  createFormaStore,
+  FormaError,
+  getArtifactVersionDir,
+  getArtifactVziPath,
+  type FormaStore,
+  type ProductDeletionState,
+} from "@xenonbyte/forma-core";
 import { SpatialIndexBuilder, VZIEncoder } from "@vzi-core/format";
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -48,9 +55,9 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
           requirementId: "R-12345678",
           supportingFiles: [],
           createdAt: "2026-05-17T00:00:00.000Z",
-          updatedAt: "2026-05-17T00:00:00.000Z"
+          updatedAt: "2026-05-17T00:00:00.000Z",
         } satisfies ArtifactManifest,
-        etag: `"${createHash("sha256").update(artifactId).digest("hex")}"`
+        etag: `"${createHash("sha256").update(artifactId).digest("hex")}"`,
       })),
       readArtifactVersion: vi.fn(async (_productId: string, artifactId: string, version: number) => ({
         manifest: {
@@ -66,22 +73,22 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
           supportingFiles: ["index.html"],
           createdAt: "2026-05-17T00:00:00.000Z",
           updatedAt: "2026-05-17T00:00:00.000Z",
-          forma: { requirementId: "R-12345678", pageId: "checkout-page", variant: "default" }
+          forma: { requirementId: "R-12345678", pageId: "checkout-page", variant: "default" },
         } satisfies ArtifactManifest,
-        etag: `"${createHash("sha256").update(`${artifactId}-v${version}`).digest("hex")}"`
+        etag: `"${createHash("sha256").update(`${artifactId}-v${version}`).digest("hex")}"`,
       })),
       listArtifacts: vi.fn(async () => [{ artifactId: "A-abcdef1234567890" }]),
-      listArtifactVersions: vi.fn(async () => [])
+      listArtifactVersions: vi.fn(async () => []),
     },
     copy: {
-      getTranslations: vi.fn(async () => [])
+      getTranslations: vi.fn(async () => []),
     },
     deleteProduct: vi.fn(async (input: { product_id: string; confirm_product_id: string }) => ({
       product_id: input.product_id,
       deleted: true,
       session_cleared: true,
       cleanup_pending: false,
-      recovery_warnings: []
+      recovery_warnings: [],
     })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
@@ -89,16 +96,26 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
         id: "P-123abc",
         name: "App",
         description: "Demo",
-        requirements: { "R-12345678": { latestArtifactId: "A-abcdef1234567890" } }
+        requirements: { "R-12345678": { latestArtifactId: "A-abcdef1234567890" } },
       })),
-      initProductConfig: vi.fn(async (_productId, config) => ({ id: "P-123abc", name: "App", description: "Demo", ...config })),
+      initProductConfig: vi.fn(async (_productId, config) => ({
+        id: "P-123abc",
+        name: "App",
+        description: "Demo",
+        ...config,
+      })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
-      listDesignPointers: vi.fn(async () => [])
+      listDesignPointers: vi.fn(async () => []),
     },
     requirements: {
       archiveRequirement: vi.fn(async () => ({ id: "R-12345678", status: "archived" })),
       createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" })),
-      getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", pages: [], document_md: "# Requirement" })),
+      getRequirement: vi.fn(async () => ({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        pages: [],
+        document_md: "# Requirement",
+      })),
       getRequirementHistory: vi.fn(async () => [
         {
           id: "R-12345678",
@@ -109,17 +126,23 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
             {
               page_id: "checkout-page",
               baseline_page: "checkout",
-              design_status: "done"
-            }
-          ]
-        }
+              design_status: "done",
+            },
+          ],
+        },
       ]),
-      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({
+        id: input.requirement_id,
+        status: "submitted",
+        ...input,
+      })),
     },
-    exportArchiveAssets: vi.fn(async (): Promise<ExportArchiveAssetsResult> => ({
-      icons: { pages: [], totalIcons: 0 },
-      vzi: { pages: [], totalElements: 0 }
-    })),
+    exportArchiveAssets: vi.fn(
+      async (): Promise<ExportArchiveAssetsResult> => ({
+        icons: { pages: [], totalIcons: 0 },
+        vzi: { pages: [], totalElements: 0 },
+      }),
+    ),
     recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
     styles: {
       getStyle: vi.fn(async () => ({
@@ -129,20 +152,30 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
           description: "Focused tool UI",
           design_md_path: "styles/linear-app/DESIGN.md",
           tokens_css_path: "styles/linear-app/tokens.css",
-          components_html_path: "styles/linear-app/components.html"
+          components_html_path: "styles/linear-app/components.html",
         },
         designMd: "# Linear App",
         tokensCss: ":root {}",
-        componentsHtml: "<div></div>"
+        componentsHtml: "<div></div>",
       })),
-      listStyles: vi.fn(async () => [{ name: "linear-app", description: "Focused tool UI", design_md_path: "styles/linear-app/DESIGN.md", tokens_css_path: "styles/linear-app/tokens.css", components_html_path: "styles/linear-app/components.html" }]),
-      listSystemStyles: vi.fn(async () => [{ name: "material", description: "Material Design", mode: "design-system" as const }])
-    }
+      listStyles: vi.fn(async () => [
+        {
+          name: "linear-app",
+          description: "Focused tool UI",
+          design_md_path: "styles/linear-app/DESIGN.md",
+          tokens_css_path: "styles/linear-app/tokens.css",
+          components_html_path: "styles/linear-app/components.html",
+        },
+      ]),
+      listSystemStyles: vi.fn(async () => [
+        { name: "material", description: "Material Design", mode: "design-system" as const },
+      ]),
+    },
   } satisfies FormaServerStore;
 
   return {
     ...baseStore,
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -155,13 +188,13 @@ async function appWith(store = fakeStore()) {
 
 async function createStoreWithDeletionHooks(
   home: string,
-  productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]>
+  productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]>,
 ) {
   await markNormalizationCommitted(home);
   return createFormaStore({
     home,
     bundledStylesDir: resolve("styles"),
-    productDeletionHooks
+    productDeletionHooks,
   });
 }
 
@@ -171,14 +204,18 @@ async function seedReadyProduct(store: FormaStore, name = "Shop App") {
     platform: "mobile",
     languages: ["en"],
     default_language: "en",
-    brand_style: "linear-app"
+    brand_style: "linear-app",
   });
   return product;
 }
 
 async function writeComponentLibrary(home: string, productId: string) {
   await mkdir(join(home, "library"), { recursive: true });
-  await writeFile(join(home, "library", `${productId}.lib.pen`), JSON.stringify({ children: [{ id: "button", type: "component" }] }), "utf8");
+  await writeFile(
+    join(home, "library", `${productId}.lib.pen`),
+    JSON.stringify({ children: [{ id: "button", type: "component" }] }),
+    "utf8",
+  );
 }
 
 async function pathExists(file: string): Promise<boolean> {
@@ -196,7 +233,7 @@ async function pathExists(file: string): Promise<boolean> {
 async function webAssetsDir() {
   const root = await mkdtemp(join(tmpdir(), "forma-web-assets-"));
   await mkdir(join(root, "assets"), { recursive: true });
-  await writeFile(join(root, "index.html"), "<!doctype html><main id=\"root\">Forma Web</main>", "utf8");
+  await writeFile(join(root, "index.html"), '<!doctype html><main id="root">Forma Web</main>', "utf8");
   await writeFile(join(root, "assets", "app.js"), "console.log('forma');", "utf8");
   return root;
 }
@@ -236,7 +273,7 @@ describe("schema normalization limited startup", () => {
     const blockedDesignMutation = await app.inject({
       method: "POST",
       url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
-      payload: { operation: "generate" }
+      payload: { operation: "generate" },
     });
 
     expect(status.statusCode).toBe(200);
@@ -245,15 +282,15 @@ describe("schema normalization limited startup", () => {
         mode: "preflight_only",
         code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
         preflight_status: "missing",
-        preflight_reason: "report_missing"
-      }
+        preflight_reason: "report_missing",
+      },
     });
     for (const response of [blocked, blockedDesignMutation]) {
       expect(response.statusCode).toBe(409);
       expect(response.json()).toEqual({
         error_code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
         message: "Schema normalization preflight required",
-        details: status.json().schema_normalization
+        details: status.json().schema_normalization,
       });
     }
   });
@@ -267,13 +304,21 @@ describe("schema normalization limited startup", () => {
 
     const status = await app.inject({ method: "GET", url: "/api/status" });
     const recovery = await app.inject({ method: "GET", url: "/api/recovery/schema-normalization" });
-    const recoverJournal = await app.inject({ method: "POST", url: "/api/recovery/schema-normalization/recover-journal", payload: {} });
-    const restoreBackup = await app.inject({ method: "POST", url: "/api/recovery/schema-normalization/restore-backup", payload: {} });
+    const recoverJournal = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/recover-journal",
+      payload: {},
+    });
+    const restoreBackup = await app.inject({
+      method: "POST",
+      url: "/api/recovery/schema-normalization/restore-backup",
+      payload: {},
+    });
     const blocked = await app.inject({ method: "GET", url: "/api/products" });
     const blockedComponentMutation = await app.inject({
       method: "POST",
       url: "/api/products/P-123abc/component-library/session/begin",
-      payload: { operation: "generate", seed_components: [{ component_key: "button-primary" }] }
+      payload: { operation: "generate", seed_components: [{ component_key: "button-primary" }] },
     });
 
     expect(status.statusCode).toBe(200);
@@ -282,8 +327,8 @@ describe("schema normalization limited startup", () => {
         mode: "recovery_only",
         code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
         active_marker_file: ".v6-schema-cutover-active",
-        recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"]
-      }
+        recovery_actions: ["recover_v6_normalization_journal", "restore_v6_normalization_backup"],
+      },
     });
     expect(recovery.statusCode).toBe(200);
     expect(recovery.json()).toEqual(status.json().schema_normalization);
@@ -296,7 +341,7 @@ describe("schema normalization limited startup", () => {
       expect(response.json()).toEqual({
         error_code: "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
         message: "Schema normalization recovery required",
-        details: status.json().schema_normalization
+        details: status.json().schema_normalization,
       });
     }
   });
@@ -319,7 +364,7 @@ describe("Fastify API routes", () => {
     const appRoute = await app.inject({ method: "GET", url: "/products" });
     const removedDesignDetailRoute = await app.inject({
       method: "GET",
-      url: "/products/P-123abc/requirements/R-12345678/designs/D-12345678"
+      url: "/products/P-123abc/requirements/R-12345678/designs/D-12345678",
     });
     const asset = await app.inject({ method: "GET", url: "/assets/app.js" });
     const assetHead = await app.inject({ method: "HEAD", url: "/assets/app.js" });
@@ -340,7 +385,7 @@ describe("Fastify API routes", () => {
     expect(removedDesignDetailRoute.json()).toEqual({
       error_code: "NOT_FOUND",
       message: "Route not found",
-      details: {}
+      details: {},
     });
     expect(asset.statusCode).toBe(200);
     expect(asset.headers["content-type"]).toContain("text/javascript");
@@ -378,7 +423,7 @@ describe("Fastify API routes", () => {
     const created = await app.inject({
       method: "POST",
       url: "/api/products",
-      payload: { name: "App", description: "Demo" }
+      payload: { name: "App", description: "Demo" },
     });
     const style = await app.inject({ method: "GET", url: "/api/styles/linear" });
 
@@ -396,7 +441,7 @@ describe("Fastify API routes", () => {
     const response = await app.inject({
       method: "DELETE",
       url: "/api/products/P-123abc",
-      payload: { confirm_product_id: "P-123abc" }
+      payload: { confirm_product_id: "P-123abc" },
     });
 
     expect(response.statusCode).toBe(200);
@@ -405,7 +450,7 @@ describe("Fastify API routes", () => {
       deleted: true,
       session_cleared: true,
       cleanup_pending: false,
-      recovery_warnings: []
+      recovery_warnings: [],
     });
     expect(store.deleteProduct).toHaveBeenCalledWith({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
   });
@@ -417,7 +462,7 @@ describe("Fastify API routes", () => {
     const response = await app.inject({
       method: "DELETE",
       url: "/api/products/P-123abc",
-      payload: {}
+      payload: {},
     });
 
     expect(response.statusCode).toBe(400);
@@ -430,16 +475,16 @@ describe("Fastify API routes", () => {
       deleteProduct: vi.fn(async () => {
         throw new FormaError("INVALID_INPUT", "confirm_product_id must match product_id", {
           product_id: "P-123abc",
-          confirm_product_id: "P-other1"
+          confirm_product_id: "P-other1",
         });
-      })
+      }),
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "DELETE",
       url: "/api/products/P-123abc",
-      payload: { confirm_product_id: "P-other1" }
+      payload: { confirm_product_id: "P-other1" },
     });
 
     expect(response.statusCode).toBe(400);
@@ -451,14 +496,14 @@ describe("Fastify API routes", () => {
     const store = fakeStore({
       deleteProduct: vi.fn(async () => {
         throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held");
-      })
+      }),
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "DELETE",
       url: "/api/products/P-123abc",
-      payload: { confirm_product_id: "P-123abc" }
+      payload: { confirm_product_id: "P-123abc" },
     });
 
     expect(response.statusCode).toBe(409);
@@ -469,14 +514,14 @@ describe("Fastify API routes", () => {
     const store = fakeStore({
       deleteProduct: vi.fn(async () => {
         throw new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
-      })
+      }),
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "DELETE",
       url: "/api/products/P-123abc",
-      payload: { confirm_product_id: "P-123abc" }
+      payload: { confirm_product_id: "P-123abc" },
     });
 
     expect(response.statusCode).toBe(409);
@@ -494,8 +539,8 @@ describe("Fastify API routes", () => {
         platform: "web",
         brand_style: "linear-app",
         languages: ["zh-CN", "en"],
-        default_language: "zh-CN"
-      }
+        default_language: "zh-CN",
+      },
     });
 
     expect(response.statusCode).toBe(200);
@@ -504,13 +549,13 @@ describe("Fastify API routes", () => {
       platform: "web",
       brand_style: "linear-app",
       languages: ["zh-CN", "en"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
     expect(response.json()).toMatchObject({
       id: "P-123abc",
       platform: "web",
       languages: ["zh-CN", "en"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
   });
 
@@ -526,8 +571,8 @@ describe("Fastify API routes", () => {
         brand_style: "linear-app",
         system_style: "material",
         languages: ["en"],
-        default_language: "en"
-      }
+        default_language: "en",
+      },
     });
 
     expect(response.statusCode).toBe(200);
@@ -536,7 +581,7 @@ describe("Fastify API routes", () => {
       brand_style: "linear-app",
       system_style: "material",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
   });
 
@@ -549,13 +594,13 @@ describe("Fastify API routes", () => {
       app.inject({
         method: "POST",
         url: "/api/products/P-123abc/requirements",
-        payload: { title: "Checkout" }
+        payload: { title: "Checkout" },
       }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678" }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts" }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890" }),
       app.inject({ method: "GET", url: "/api/styles" }),
-      app.inject({ method: "GET", url: "/api/styles/linear" })
+      app.inject({ method: "GET", url: "/api/styles/linear" }),
     ]);
 
     expect(responses.map((response) => response.statusCode)).toEqual(Array(responses.length).fill(200));
@@ -576,7 +621,7 @@ describe("Fastify API routes", () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     let serverResolved = false;
     const store = fakeStore({
-      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise),
     });
     const server = buildServer({ store }).then((app) => {
       serverResolved = true;
@@ -598,7 +643,7 @@ describe("Fastify API routes", () => {
   it("logs pending product delete recovery warnings before serving normal routes", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
-      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise),
     });
     const server = buildServer({ store });
 
@@ -607,7 +652,7 @@ describe("Fastify API routes", () => {
     recovery.resolve({
       recovered: 1,
       cleaned: 0,
-      warnings: ["rolled back pending delete", "cleaned stale operation"]
+      warnings: ["rolled back pending delete", "cleaned stale operation"],
     });
     const app = await server;
     apps.push(app);
@@ -620,7 +665,7 @@ describe("Fastify API routes", () => {
   it("rejects buildServer when pending product delete recovery fails", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
-      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise),
     });
     const error = new FormaError("PRODUCT_DELETION_RECOVERY_FAILED", "Product deletion recovery failed");
     const server = buildServer({ store });
@@ -632,10 +677,12 @@ describe("Fastify API routes", () => {
   });
 
   it("maps requirement archive invalid status to 409 (non-active requirement is rejected before asset generation)", async () => {
-    const exportArchiveAssets = vi.fn(async (): Promise<ExportArchiveAssetsResult> => ({
-      icons: { pages: [], totalIcons: 0 },
-      vzi: { pages: [], totalElements: 0 }
-    }));
+    const exportArchiveAssets = vi.fn(
+      async (): Promise<ExportArchiveAssetsResult> => ({
+        icons: { pages: [], totalIcons: 0 },
+        vzi: { pages: [], totalElements: 0 },
+      }),
+    );
     const app = await appWith(
       fakeStore({
         exportArchiveAssets,
@@ -644,7 +691,7 @@ describe("Fastify API routes", () => {
           archiveRequirement: vi.fn(async () => {
             throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
               requirement_id: "R-12345678",
-              status: "submitted"
+              status: "submitted",
             });
           }),
           getRequirement: vi.fn(async () => ({
@@ -652,17 +699,17 @@ describe("Fastify API routes", () => {
             product_id: "P-123abc",
             pages: [],
             status: "submitted",
-            document_md: ""
-          }))
-        }
-      })
+            document_md: "",
+          })),
+        },
+      }),
     );
 
     const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
 
     expect(response.statusCode).toBe(409);
     expect(response.json()).toMatchObject({
-      error_code: "REQUIREMENT_STATUS_INVALID"
+      error_code: "REQUIREMENT_STATUS_INVALID",
     });
     expect(exportArchiveAssets).not.toHaveBeenCalled();
   });
@@ -678,7 +725,7 @@ describe("Fastify API routes", () => {
         created_at: "2026-05-17T00:00:00.000Z",
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
-        navigation: []
+        navigation: [],
       })),
     };
     const app = await appWith(fakeStore({ requirements }));
@@ -686,7 +733,7 @@ describe("Fastify API routes", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/products/P-123abc/requirements",
-      payload: { title: "Checkout" }
+      payload: { title: "Checkout" },
     });
 
     expect(response.statusCode).toBe(200);
@@ -698,7 +745,7 @@ describe("Fastify API routes", () => {
   it("rejects legacy submit payload fields on the title-only create requirement route", async () => {
     const requirements = {
       ...fakeStore().requirements,
-      createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" }))
+      createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" })),
     };
     const app = await appWith(fakeStore({ requirements }));
 
@@ -709,8 +756,8 @@ describe("Fastify API routes", () => {
         title: "Checkout",
         document_md: "# Checkout",
         pages: [{ page_id: "checkout-page", name: "Checkout", baseline_page: "checkout" }],
-        navigation: []
-      }
+        navigation: [],
+      },
     });
 
     expect(response.statusCode).toBe(400);
@@ -727,22 +774,26 @@ describe("Fastify API routes", () => {
           name: "Checkout",
           baseline_page: "checkout",
           copy: [{ context: "title", text: "结账" }],
-          change_type: "patch"
-        }
+          change_type: "patch",
+        },
       ],
-      navigation: []
+      navigation: [],
     };
     const requirements = {
       ...fakeStore().requirements,
       getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", pages: [], document_md: "" })),
-      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({
+        id: input.requirement_id,
+        status: "submitted",
+        ...input,
+      })),
     };
     const app = await appWith(fakeStore({ requirements }));
 
     const response = await app.inject({
       method: "POST",
       url: "/api/products/P-123abc/requirements/R-12345678/save",
-      payload: body
+      payload: body,
     });
 
     expect(response.statusCode).toBe(200);
@@ -755,7 +806,11 @@ describe("Fastify API routes", () => {
     const requirements = {
       ...fakeStore().requirements,
       getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", pages: [], document_md: "" })),
-      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted", ...input }))
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({
+        id: input.requirement_id,
+        status: "submitted",
+        ...input,
+      })),
     };
     const app = await appWith(fakeStore({ requirements }));
 
@@ -766,8 +821,8 @@ describe("Fastify API routes", () => {
         requirement_id: "R-deadbeef",
         document_md: "# Checkout",
         pages: [],
-        navigation: []
-      }
+        navigation: [],
+      },
     });
 
     expect(response.statusCode).toBe(200);
@@ -776,7 +831,7 @@ describe("Fastify API routes", () => {
       requirement_id: "R-12345678",
       document_md: "# Checkout",
       pages: [],
-      navigation: []
+      navigation: [],
     });
     expect(response.json()).toMatchObject({ id: "R-12345678", requirement_id: "R-12345678" });
   });
@@ -785,14 +840,17 @@ describe("Fastify API routes", () => {
     const requirements = {
       ...fakeStore().requirements,
       getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [], document_md: "" })),
-      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({ id: input.requirement_id, status: "submitted" }))
+      saveRequirement: vi.fn(async (input: { requirement_id: string }) => ({
+        id: input.requirement_id,
+        status: "submitted",
+      })),
     };
     const app = await appWith(fakeStore({ requirements }));
 
     const response = await app.inject({
       method: "POST",
       url: "/api/products/P-123abc/requirements/R-12345678/save",
-      payload: { document_md: "# Other", pages: [], navigation: [] }
+      payload: { document_md: "# Other", pages: [], navigation: [] },
     });
 
     expect(response.statusCode).toBe(404);
@@ -821,7 +879,7 @@ describe("Fastify API routes", () => {
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       })
       .mockResolvedValueOnce({
         id: "R-12345678",
@@ -832,7 +890,7 @@ describe("Fastify API routes", () => {
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       });
     const requirements = { ...fakeStore().requirements, archiveRequirement, getRequirement };
     const app = await appWith(fakeStore({ exportArchiveAssets, requirements }));
@@ -844,7 +902,7 @@ describe("Fastify API routes", () => {
     expect(body).toMatchObject({
       requirement: { id: "R-12345678", status: "archived", document_md: "# Checkout" },
       icons: { totalIcons: 3 },
-      vzi: { pages: [], totalElements: 42 }
+      vzi: { pages: [], totalElements: 42 },
     });
     expect(archiveRequirement).toHaveBeenCalledWith("R-12345678");
     expect(getRequirement).toHaveBeenLastCalledWith({ requirement_id: "R-12345678" });
@@ -868,20 +926,22 @@ describe("Fastify API routes", () => {
       callOrder.push("archiveRequirementLocked");
       return { id: "R-12345678", status: "archived" };
     });
-    const runProductMutation = vi.fn(async (
-      input: { operation: string; product_id?: string },
-      fn: (ctx: { warnings: string[] }) => Promise<unknown>
-    ) => {
-      expect(input).toEqual({ operation: "archive_requirement", product_id: "P-123abc" });
-      callOrder.push("lock:start");
-      lockActive = true;
-      try {
-        return await fn({ warnings: [] });
-      } finally {
-        lockActive = false;
-        callOrder.push("lock:end");
-      }
-    });
+    const runProductMutation = vi.fn(
+      async (
+        input: { operation: string; product_id?: string },
+        fn: (ctx: { warnings: string[] }) => Promise<unknown>,
+      ) => {
+        expect(input).toEqual({ operation: "archive_requirement", product_id: "P-123abc" });
+        callOrder.push("lock:start");
+        lockActive = true;
+        try {
+          return await fn({ warnings: [] });
+        } finally {
+          lockActive = false;
+          callOrder.push("lock:end");
+        }
+      },
+    );
     const getRequirement = vi
       .fn()
       .mockResolvedValueOnce({
@@ -891,7 +951,7 @@ describe("Fastify API routes", () => {
         status: "active",
         pages: [],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       })
       .mockResolvedValueOnce({
         id: "R-12345678",
@@ -900,7 +960,7 @@ describe("Fastify API routes", () => {
         status: "active",
         pages: [],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       })
       .mockResolvedValueOnce({
         id: "R-12345678",
@@ -909,19 +969,21 @@ describe("Fastify API routes", () => {
         status: "archived",
         pages: [],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       });
     const requirements = {
       ...fakeStore().requirements,
       archiveRequirement,
       archiveRequirementLocked,
-      getRequirement
+      getRequirement,
     };
-    const app = await appWith(fakeStore({
-      exportArchiveAssets,
-      requirements,
-      runProductMutation
-    } as unknown as Partial<FormaServerStore>));
+    const app = await appWith(
+      fakeStore({
+        exportArchiveAssets,
+        requirements,
+        runProductMutation,
+      } as unknown as Partial<FormaServerStore>),
+    );
 
     const response = await app.inject({ method: "PUT", url: "/api/products/P-123abc/requirements/R-12345678/archive" });
 
@@ -943,7 +1005,7 @@ describe("Fastify API routes", () => {
     await writeFile(
       join(versionDir, "index.html"),
       `<!DOCTYPE html><html><body><main style="width:1024px;height:768px">Archive</main></body></html>`,
-      "utf8"
+      "utf8",
     );
 
     const archiveRequirement = vi.fn(async () => ({ id: requirementId, status: "archived" }));
@@ -956,7 +1018,7 @@ describe("Fastify API routes", () => {
         status: "active",
         pages: [{ page_id: "checkout-page" }],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       })
       .mockResolvedValueOnce({
         id: requirementId,
@@ -965,7 +1027,7 @@ describe("Fastify API routes", () => {
         status: "archived",
         pages: [{ page_id: "checkout-page" }],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       })
       .mockResolvedValueOnce({
         id: requirementId,
@@ -974,7 +1036,7 @@ describe("Fastify API routes", () => {
         status: "archived",
         pages: [{ page_id: "checkout-page" }],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       });
     const base = fakeStore({ home });
     const store = fakeStore({
@@ -996,9 +1058,9 @@ describe("Fastify API routes", () => {
             supportingFiles: ["index.html"],
             createdAt: "2026-05-17T00:00:00.000Z",
             updatedAt: "2026-05-17T00:00:00.000Z",
-            forma: { requirementId, pageId: "checkout-page", variant: "default" }
+            forma: { requirementId, pageId: "checkout-page", variant: "default" },
           } satisfies ArtifactManifest,
-          etag: "etag"
+          etag: "etag",
         })),
       },
       products: {
@@ -1009,17 +1071,25 @@ describe("Fastify API routes", () => {
           description: "Demo",
           platform: "web",
         })),
-        listDesignPointers: vi.fn(async () => [{ artifactId, version }] as unknown as Awaited<ReturnType<FormaServerStore["products"]["listDesignPointers"]>>)
+        listDesignPointers: vi.fn(
+          async () =>
+            [{ artifactId, version }] as unknown as Awaited<
+              ReturnType<FormaServerStore["products"]["listDesignPointers"]>
+            >,
+        ),
       },
       requirements: {
         ...base.requirements,
         archiveRequirement,
-        getRequirement
-      }
+        getRequirement,
+      },
     });
     const app = await appWith(store);
 
-    const response = await app.inject({ method: "PUT", url: `/api/products/${productId}/requirements/${requirementId}/archive` });
+    const response = await app.inject({
+      method: "PUT",
+      url: `/api/products/${productId}/requirements/${requirementId}/archive`,
+    });
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
@@ -1030,7 +1100,9 @@ describe("Fastify API routes", () => {
       artifactId,
       version,
     });
-    await expect(readFile(getArtifactVziPath(join(home, "data", "products"), productId, artifactId))).resolves.toBeInstanceOf(Buffer);
+    await expect(
+      readFile(getArtifactVziPath(join(home, "data", "products"), productId, artifactId)),
+    ).resolves.toBeInstanceOf(Buffer);
     expect(archiveRequirement).toHaveBeenCalledWith(requirementId);
   }, 90_000);
 
@@ -1040,13 +1112,17 @@ describe("Fastify API routes", () => {
         ...fakeStore().products,
         getProduct: vi.fn(async () => {
           throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: "P-missing" });
-        })
-      }
+        }),
+      },
     });
     const app = await appWith(store);
 
     const notFound = await app.inject({ method: "GET", url: "/api/products/P-missing" });
-    const invalidBody = await app.inject({ method: "POST", url: "/api/products", payload: { name: "Missing description" } });
+    const invalidBody = await app.inject({
+      method: "POST",
+      url: "/api/products",
+      payload: { name: "Missing description" },
+    });
 
     expect(notFound.statusCode).toBe(404);
     expect(notFound.json()).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
@@ -1061,9 +1137,9 @@ describe("Fastify API routes", () => {
           ...fakeStore().products,
           listProducts: vi.fn(async () => {
             throw new Error("database path with private details");
-          })
-        }
-      })
+          }),
+        },
+      }),
     );
 
     const response = await app.inject({ method: "GET", url: "/api/products" });
@@ -1072,7 +1148,7 @@ describe("Fastify API routes", () => {
     expect(response.json()).toEqual({
       error_code: "INTERNAL_ERROR",
       message: "Unexpected server error",
-      details: {}
+      details: {},
     });
   });
 
@@ -1088,7 +1164,7 @@ describe("Fastify API routes", () => {
       status: "active",
       pages: [],
       navigation: [],
-      document_md: "# Checkout"
+      document_md: "# Checkout",
     }));
     const requirements = { ...fakeStore().requirements, archiveRequirement, getRequirement };
     const app = await appWith(fakeStore({ exportArchiveAssets, requirements }));
@@ -1106,7 +1182,12 @@ describe("Fastify API routes", () => {
     const requirements = {
       ...fakeStore().requirements,
       archiveRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", status: "archived" })),
-      getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [], document_md: "# Other" }))
+      getRequirement: vi.fn(async () => ({
+        id: "R-12345678",
+        product_id: "P-other1",
+        pages: [],
+        document_md: "# Other",
+      })),
     };
     const app = await appWith(fakeStore({ requirements }));
 
@@ -1120,7 +1201,6 @@ describe("Fastify API routes", () => {
     expect(requirements.archiveRequirement).not.toHaveBeenCalled();
   });
 
-
   it("returns default 404 for removed legacy design API routes without calling design handlers", async () => {
     const store = fakeStore();
     const app = await appWith(store);
@@ -1131,7 +1211,7 @@ describe("Fastify API routes", () => {
       app.inject({ method: "GET", url: "/api/designs/D-12345678/image/file" }),
       app.inject({ method: "GET", url: "/api/designs/D-12345678/history" }),
       app.inject({ method: "GET", url: "/api/designs/D-12345678/diff?v1=1&v2=2" }),
-      app.inject({ method: "GET", url: "/api/designs/D-12345678/export?node_id=root&format=png" })
+      app.inject({ method: "GET", url: "/api/designs/D-12345678/export?node_id=root&format=png" }),
     ]);
 
     for (const response of responses) {
@@ -1139,7 +1219,7 @@ describe("Fastify API routes", () => {
       expect(response.json()).toEqual({
         error_code: "NOT_FOUND",
         message: "Route not found",
-        details: {}
+        details: {},
       });
     }
   });
@@ -1165,7 +1245,7 @@ describe("Fastify API routes", () => {
         app.inject({ method: "GET", url: "/api/products" }),
         app.inject({ method: "GET", url: `/api/products/${productId}` }),
         store.sessions.getCurrentSession(),
-        pathExists(join(home, "data", productId, "product.yaml"))
+        pathExists(join(home, "data", productId, "product.yaml")),
       ]);
       observations.push({
         label,
@@ -1173,12 +1253,17 @@ describe("Fastify API routes", () => {
         detailStatus: detail.statusCode,
         detailError: detail.statusCode === 200 ? undefined : detail.json().error_code,
         currentProduct: session.current_product,
-        productFileExists
+        productFileExists,
       });
     };
     const store = await createStoreWithDeletionHooks(home, {
       afterPhasePersisted: async (state) => {
-        if (state.phase === "backed_up" || state.phase === "session_written" || state.phase === "index_written" || state.phase === "moved") {
+        if (
+          state.phase === "backed_up" ||
+          state.phase === "session_written" ||
+          state.phase === "index_written" ||
+          state.phase === "moved"
+        ) {
           await capture(state.phase, state);
         }
       },
@@ -1186,7 +1271,7 @@ describe("Fastify API routes", () => {
         if (entry.kind === "product_data") {
           await capture("before_first_move", state);
         }
-      }
+      },
     });
     const product = await seedReadyProduct(store);
     productId = product.id;
@@ -1199,7 +1284,7 @@ describe("Fastify API routes", () => {
     const deleted = await app.inject({
       method: "DELETE",
       url: `/api/products/${product.id}`,
-      payload: { confirm_product_id: product.id }
+      payload: { confirm_product_id: product.id },
     });
 
     expect(deleted.statusCode).toBe(200);
@@ -1211,7 +1296,7 @@ describe("Fastify API routes", () => {
         detailStatus: 200,
         detailError: undefined,
         currentProduct: product.id,
-        productFileExists: true
+        productFileExists: true,
       },
       {
         label: "session_written",
@@ -1219,7 +1304,7 @@ describe("Fastify API routes", () => {
         detailStatus: 200,
         detailError: undefined,
         currentProduct: null,
-        productFileExists: true
+        productFileExists: true,
       },
       {
         label: "index_written",
@@ -1227,7 +1312,7 @@ describe("Fastify API routes", () => {
         detailStatus: 404,
         detailError: "PRODUCT_NOT_FOUND",
         currentProduct: null,
-        productFileExists: true
+        productFileExists: true,
       },
       {
         label: "before_first_move",
@@ -1235,7 +1320,7 @@ describe("Fastify API routes", () => {
         detailStatus: 404,
         detailError: "PRODUCT_NOT_FOUND",
         currentProduct: null,
-        productFileExists: true
+        productFileExists: true,
       },
       {
         label: "moved",
@@ -1243,8 +1328,8 @@ describe("Fastify API routes", () => {
         detailStatus: 404,
         detailError: "PRODUCT_NOT_FOUND",
         currentProduct: null,
-        productFileExists: false
-      }
+        productFileExists: false,
+      },
     ]);
   });
 
@@ -1259,15 +1344,17 @@ describe("Fastify API routes", () => {
     const response = await app.inject({ method: "GET", url: "/api/styles" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: "linear-app",
-        description: expect.any(String),
-        design_md_path: expect.any(String),
-        tokens_css_path: expect.any(String),
-        components_html_path: expect.any(String)
-      })
-    ]));
+    expect(response.json()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "linear-app",
+          description: expect.any(String),
+          design_md_path: expect.any(String),
+          tokens_css_path: expect.any(String),
+          components_html_path: expect.any(String),
+        }),
+      ]),
+    );
   });
 });
 
@@ -1287,7 +1374,7 @@ describe("artifact routes", () => {
       kind: "design-page",
       title: "Checkout Design",
       updated_at: "2026-05-17T00:00:00.000Z",
-      preview_url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x"
+      preview_url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x",
     });
   });
 
@@ -1297,8 +1384,8 @@ describe("artifact routes", () => {
         ...fakeStore().products,
         getProduct: vi.fn(async () => {
           throw new FormaError("PRODUCT_NOT_FOUND", "Product not found", { product_id: "P-missing" });
-        })
-      }
+        }),
+      },
     });
     const app = await appWith(store);
 
@@ -1330,8 +1417,8 @@ describe("artifact routes", () => {
         ...fakeStore().artifacts,
         readArtifact: vi.fn(async () => {
           throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found", { artifact_id: "A-missing" });
-        })
-      }
+        }),
+      },
     });
     const app = await appWith(store);
 
@@ -1344,7 +1431,10 @@ describe("artifact routes", () => {
   it("GET /api/products/:pid/artifacts/:aid/preview/:res returns 404 for unknown resolution", async () => {
     const app = await appWith(fakeStore());
 
-    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/3x" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/3x",
+    });
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
@@ -1353,7 +1443,10 @@ describe("artifact routes", () => {
   it("GET /api/products/:pid/artifacts/:aid/preview/:res returns 404 when preview file missing", async () => {
     const app = await appWith(fakeStore({ home: await mkdtemp(join(tmpdir(), "forma-artifact-preview-")) }));
 
-    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x",
+    });
 
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
@@ -1369,19 +1462,21 @@ describe("artifact routes", () => {
         readArtifact: vi.fn(async () => {
           throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found", { artifact_id: "A-abcdef1234567890" });
         }),
-        listArtifactVersions: vi.fn(async () => [1])
+        listArtifactVersions: vi.fn(async () => [1]),
       },
       products: {
         ...base.products,
-        listDesignPointers: vi.fn(async () => [{
-          requirementId: "R-12345678",
-          pageId: "checkout-page",
-          variant: "default",
-          artifactId: "A-abcdef1234567890",
-          version: 1,
-          designStatus: "active" as const
-        }])
-      }
+        listDesignPointers: vi.fn(async () => [
+          {
+            requirementId: "R-12345678",
+            pageId: "checkout-page",
+            variant: "default",
+            artifactId: "A-abcdef1234567890",
+            version: 1,
+            designStatus: "active" as const,
+          },
+        ]),
+      },
     });
   }
 
@@ -1397,7 +1492,7 @@ describe("artifact routes", () => {
       id: "A-abcdef1234567890",
       kind: "design-page",
       requirement_id: "R-12345678",
-      superseded: false
+      superseded: false,
     });
   });
 
@@ -1425,14 +1520,27 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/preview/:res falls back to the current version preview", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-preview-fallback-"));
-    const previewDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1", "preview");
+    const previewDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+      "preview",
+    );
     await mkdir(previewDir, { recursive: true });
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     await writeFile(join(previewDir, "2x.png"), pngBytes);
 
     const app = await appWith(versionedOnlyStore(home));
 
-    const response = await app.inject({ method: "GET", url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x" });
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/preview/2x",
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toBe("image/png");
@@ -1441,7 +1549,16 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* serves index.html from versioned bundle", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-bundle-route-"));
-    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    const versionDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+    );
     await mkdir(versionDir, { recursive: true });
     await writeFile(join(versionDir, "index.html"), "<!doctype html><body>Bundle</body>", "utf8");
 
@@ -1449,7 +1566,7 @@ describe("artifact routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/index.html"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/index.html",
     });
 
     expect(response.statusCode).toBe(200);
@@ -1462,7 +1579,17 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* serves nested asset file", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-bundle-asset-"));
-    const assetsDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v2", "assets");
+    const assetsDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v2",
+      "assets",
+    );
     await mkdir(assetsDir, { recursive: true });
     await writeFile(join(assetsDir, "style.css"), "body { color: red; }", "utf8");
 
@@ -1470,7 +1597,7 @@ describe("artifact routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/2/bundle/assets/style.css"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/2/bundle/assets/style.css",
     });
 
     expect(response.statusCode).toBe(200);
@@ -1480,14 +1607,23 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* rejects path traversal", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-bundle-traversal-"));
-    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    const versionDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+    );
     await mkdir(versionDir, { recursive: true });
 
     const app = await appWith(fakeStore({ home }));
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/..%2F..%2Fsecret"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/..%2F..%2Fsecret",
     });
 
     expect(response.statusCode).toBe(400);
@@ -1496,14 +1632,23 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* rejects NUL bytes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-bundle-nul-"));
-    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    const versionDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+    );
     await mkdir(versionDir, { recursive: true });
 
     const app = await appWith(fakeStore({ home }));
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/index%00.html"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/index%00.html",
     });
 
     expect(response.statusCode).toBe(400);
@@ -1533,10 +1678,16 @@ describe("artifact routes", () => {
     const app = await appWith(versionedOnlyStore(home));
 
     const [bundle, icon, vzi, preview] = await Promise.all([
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/assets/leak.txt` }),
+      app.inject({
+        method: "GET",
+        url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/assets/leak.txt`,
+      }),
       app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/icons/leak.svg` }),
       app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/page.vzi` }),
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png` })
+      app.inject({
+        method: "GET",
+        url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`,
+      }),
     ]);
 
     for (const response of [bundle, icon, vzi, preview]) {
@@ -1560,7 +1711,7 @@ describe("artifact routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/assets/leak.txt`
+      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/assets/leak.txt`,
     });
 
     expect(response.statusCode).toBe(400);
@@ -1569,14 +1720,23 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/bundle/* returns 404 for missing file", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-bundle-missing-"));
-    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    const versionDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+    );
     await mkdir(versionDir, { recursive: true });
 
     const app = await appWith(fakeStore({ home }));
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/missing.html"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/bundle/missing.html",
     });
 
     expect(response.statusCode).toBe(404);
@@ -1585,7 +1745,17 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res serves 2x.png", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-vpreview-"));
-    const previewDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1", "preview");
+    const previewDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+      "preview",
+    );
     await mkdir(previewDir, { recursive: true });
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
     await writeFile(join(previewDir, "2x.png"), pngBytes);
@@ -1594,7 +1764,7 @@ describe("artifact routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/2x.png"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/2x.png",
     });
 
     expect(response.statusCode).toBe(200);
@@ -1620,22 +1790,30 @@ describe("artifact routes", () => {
     await writeFile(join(versionPreviewDir, "2x.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     await writeFile(join(iconsDir, "logo.svg"), "<svg/>", "utf8");
     const elements = new Map<string, unknown>([
-      ["root", { id: "root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 320, height: 640 }, styles: {} }]
+      [
+        "root",
+        { id: "root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 320, height: 640 }, styles: {} },
+      ],
     ]);
     await mkdir(join(getArtifactVziPath(productsRoot, productId, artifactId), ".."), { recursive: true });
-    await writeFile(getArtifactVziPath(productsRoot, productId, artifactId), Buffer.from(new VZIEncoder().encode({
-      header: {},
-      metadata: { formaViewport: { width: 320, height: 640 } },
-      elements,
-      sharedStyles: new Map(),
-      spatialIndex: new SpatialIndexBuilder().build(elements as never),
-      colorTokens: [],
-      fontTokens: [],
-      annotations: [],
-      images: new Map(),
-      layers: [],
-      compatibility: { minReaderVersion: "2.0.0", formatVersion: "2.0.0", features: [] }
-    } as never)));
+    await writeFile(
+      getArtifactVziPath(productsRoot, productId, artifactId),
+      Buffer.from(
+        new VZIEncoder().encode({
+          header: {},
+          metadata: { formaViewport: { width: 320, height: 640 } },
+          elements,
+          sharedStyles: new Map(),
+          spatialIndex: new SpatialIndexBuilder().build(elements as never),
+          colorTokens: [],
+          fontTokens: [],
+          annotations: [],
+          images: new Map(),
+          layers: [],
+          compatibility: { minReaderVersion: "2.0.0", formatVersion: "2.0.0", features: [] },
+        } as never),
+      ),
+    );
 
     const app = await buildServer({ store: fakeStore({ home }), authToken: "s3cret" });
     apps.push(app);
@@ -1644,11 +1822,19 @@ describe("artifact routes", () => {
 
     const responses = await Promise.all([
       app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/preview/2x`, headers }),
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`, headers }),
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`, headers }),
+      app.inject({
+        method: "GET",
+        url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`,
+        headers,
+      }),
+      app.inject({
+        method: "GET",
+        url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`,
+        headers,
+      }),
       app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/icons/logo.svg`, headers }),
       app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/page.vzi`, headers }),
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/content`, headers })
+      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/vzi/content`, headers }),
     ]);
 
     for (const response of responses) {
@@ -1664,7 +1850,7 @@ describe("artifact routes", () => {
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/3x.png"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/3x.png",
     });
 
     expect(response.statusCode).toBe(400);
@@ -1673,14 +1859,23 @@ describe("artifact routes", () => {
 
   it("GET /api/products/:pid/artifacts/:aid/versions/:v/preview/:res returns 404 when preview file missing", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-vpreview-missing-"));
-    const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "A-abcdef1234567890", "v1");
+    const versionDir = join(
+      home,
+      "data",
+      "products",
+      "P-123abc",
+      "od-project",
+      "artifacts",
+      "A-abcdef1234567890",
+      "v1",
+    );
     await mkdir(versionDir, { recursive: true });
 
     const app = await appWith(fakeStore({ home }));
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/1x.png"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890/versions/1/preview/1x.png",
     });
 
     expect(response.statusCode).toBe(404);
@@ -1736,13 +1931,13 @@ describe("baseline compatibility routes", () => {
                 features: "Pay for an order",
                 fields: "Card number",
                 interactions: "Submit payment",
-                copy: [{ context: "title", text: "Checkout" }]
-              }
+                copy: [{ context: "title", text: "Checkout" }],
+              },
             ],
-            navigation: [{ from: "home", to: "checkout", label: "Buy" }]
-          }
-        ])
-      }
+            navigation: [{ from: "home", to: "checkout", label: "Buy" }],
+          },
+        ]),
+      },
     });
     const app = await appWith(store);
 
@@ -1758,10 +1953,10 @@ describe("baseline compatibility routes", () => {
           features: "Pay for an order",
           fields: "Card number",
           interactions: "Submit payment",
-          source_requirements: ["R-12345678"]
-        }
+          source_requirements: ["R-12345678"],
+        },
       ],
-      navigation: [{ from: "home", to: "checkout", label: "Buy" }]
+      navigation: [{ from: "home", to: "checkout", label: "Buy" }],
     });
   });
 
@@ -1777,12 +1972,17 @@ describe("baseline compatibility routes", () => {
             updated_at: "2026-05-18T00:00:00.000Z",
             pages: [
               { page_id: "checkout-page", name: "Checkout", baseline_page: "checkout", design_status: "done" },
-              { page_id: "confirmation-page", name: "Confirmation", baseline_page: "confirmation", design_status: "done" }
+              {
+                page_id: "confirmation-page",
+                name: "Confirmation",
+                baseline_page: "confirmation",
+                design_status: "done",
+              },
             ],
-            navigation: [{ from: "checkout-page", to: "confirmation-page", label: "Continue" }]
-          }
-        ])
-      }
+            navigation: [{ from: "checkout-page", to: "confirmation-page", label: "Continue" }],
+          },
+        ]),
+      },
     });
     const app = await appWith(store);
 
@@ -1798,9 +1998,9 @@ describe("baseline compatibility routes", () => {
         getTranslations: vi.fn(async () => [
           {
             page_id: "checkout-page",
-            entries: [{ context: "title", texts: { "zh-CN": "结账" } }]
-          }
-        ])
+            entries: [{ context: "title", texts: { "zh-CN": "结账" } }],
+          },
+        ]),
       },
       requirements: {
         ...fakeStore().requirements,
@@ -1813,9 +2013,9 @@ describe("baseline compatibility routes", () => {
               name: "Checkout",
               baseline_page: "checkout",
               design_status: "done",
-              copy: [{ context: "title", text: "Checkout" }]
-            }
-          ]
+              copy: [{ context: "title", text: "Checkout" }],
+            },
+          ],
         })),
         getRequirementHistory: vi.fn(async () => [
           {
@@ -1829,26 +2029,26 @@ describe("baseline compatibility routes", () => {
                 name: "Checkout",
                 baseline_page: "checkout",
                 design_status: "done",
-                copy: [{ context: "title", text: "Checkout" }]
-              }
+                copy: [{ context: "title", text: "Checkout" }],
+              },
             ],
-            navigation: []
-          }
-        ])
-      }
+            navigation: [],
+          },
+        ]),
+      },
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R-12345678"
+      url: "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R-12345678",
     });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
       page_id: "checkout",
       default_language_copy: [{ context: "title", text: "Checkout" }],
-      translations: [{ context: "title", texts: { "zh-CN": "结账" } }]
+      translations: [{ context: "title", texts: { "zh-CN": "结账" } }],
     });
     expect(store.copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-12345678");
   });
@@ -1863,7 +2063,7 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
       method: "POST",
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
-      headers: { Origin: "http://localhost:5173" }
+      headers: { Origin: "http://localhost:5173" },
     });
 
     expect(response.statusCode).not.toBe(403);
@@ -1878,7 +2078,7 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
       method: "POST",
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
-      headers: { Origin: "http://localhost:4173" }
+      headers: { Origin: "http://localhost:4173" },
     });
 
     expect(response.statusCode).not.toBe(403);
@@ -1895,8 +2095,8 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
       payload: { name: "App", description: "Demo" },
       headers: {
         Host: "127.0.0.1:3000",
-        Origin: "http://127.0.0.1:3000"
-      }
+        Origin: "http://127.0.0.1:3000",
+      },
     });
 
     expect(response.statusCode).not.toBe(403);
@@ -1911,7 +2111,7 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
       method: "POST",
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
-      headers: { Origin: "https://evil.com" }
+      headers: { Origin: "https://evil.com" },
     });
 
     expect(response.statusCode).toBe(403);
@@ -1927,7 +2127,7 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
       method: "POST",
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
-      headers: { Origin: "null" }
+      headers: { Origin: "null" },
     });
 
     expect(response.statusCode).toBe(403);
@@ -1942,7 +2142,7 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
     const response = await app.inject({
       method: "POST",
       url: "/api/products",
-      payload: { name: "App", description: "Demo" }
+      payload: { name: "App", description: "Demo" },
     });
 
     expect(response.statusCode).not.toBe(403);
@@ -1956,7 +2156,7 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
     const response = await app.inject({
       method: "GET",
       url: "/api/products",
-      headers: { Origin: "https://evil.com" }
+      headers: { Origin: "https://evil.com" },
     });
 
     expect(response.statusCode).toBe(200);
@@ -1974,12 +2174,18 @@ describe("audit log (SPEC-OBS-004)", () => {
       method: "POST",
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
-      headers: { Origin: "http://localhost:5173", "x-forma-client": "web-admin" }
+      headers: { Origin: "http://localhost:5173", "x-forma-client": "web-admin" },
     });
 
-    const logCalls = consoleSpy.mock.calls.map((args) => {
-      try { return JSON.parse(args[0] as string); } catch { return null; }
-    }).filter(Boolean);
+    const logCalls = consoleSpy.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(args[0] as string);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
     const auditEntry = logCalls.find((entry) => entry && "timestamp" in entry && "route" in entry);
 
     expect(auditEntry).toBeTruthy();
@@ -2004,12 +2210,18 @@ describe("audit log (SPEC-OBS-004)", () => {
       method: "POST",
       url: "/api/products",
       payload: { name: "App", description: "Demo" },
-      headers: { Origin: "https://evil.com" }
+      headers: { Origin: "https://evil.com" },
     });
 
-    const logCalls = consoleSpy.mock.calls.map((args) => {
-      try { return JSON.parse(args[0] as string); } catch { return null; }
-    }).filter(Boolean);
+    const logCalls = consoleSpy.mock.calls
+      .map((args) => {
+        try {
+          return JSON.parse(args[0] as string);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
     const auditEntry = logCalls.find((entry) => entry && "timestamp" in entry && "route" in entry);
 
     expect(auditEntry).toBeTruthy();
@@ -2026,12 +2238,16 @@ describe("SPEC-IF-HTTP-005: removed routes return 404", () => {
 
     const responses = await Promise.all([
       app.inject({ method: "GET", url: "/api/products/P-123abc/requirements/R-12345678/design/canvas" }),
-      app.inject({ method: "POST", url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin", payload: {} }),
+      app.inject({
+        method: "POST",
+        url: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
+        payload: {},
+      }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/design/session/active" }),
       app.inject({ method: "POST", url: "/api/products/P-123abc/component-library/session/begin", payload: {} }),
       app.inject({ method: "GET", url: "/api/products/P-123abc/component-library" }),
       app.inject({ method: "POST", url: "/api/styles/sync" }),
-      app.inject({ method: "GET", url: "/api/styles/linear/preview" })
+      app.inject({ method: "GET", url: "/api/styles/linear/preview" }),
     ]);
 
     for (const response of responses) {
@@ -2062,17 +2278,17 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
         getRequirement: vi.fn(async () => ({
           id: "R-12345678",
           product_id: productId,
-          status: "active",  // NOT archived
+          status: "active", // NOT archived
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "GET",
-      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`
+      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`,
     });
 
     expect(response.statusCode).toBe(200);
@@ -2086,7 +2302,17 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
     const home = await mkdtemp(join(tmpdir(), "forma-http-regress-preview-"));
     const productId = "P-123abc";
     const artifactId = "A-abcdef1234567890";
-    const previewDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1", "preview");
+    const previewDir = join(
+      home,
+      "data",
+      "products",
+      productId,
+      "od-project",
+      "artifacts",
+      artifactId,
+      "v1",
+      "preview",
+    );
     await mkdir(previewDir, { recursive: true });
     const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     await writeFile(join(previewDir, "2x.png"), pngBytes);
@@ -2098,17 +2324,17 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
         getRequirement: vi.fn(async () => ({
           id: "R-12345678",
           product_id: productId,
-          status: "active",  // NOT archived
+          status: "active", // NOT archived
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "GET",
-      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`
+      url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`,
     });
 
     expect(response.statusCode).toBe(200);
@@ -2125,17 +2351,17 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
         getRequirement: vi.fn(async () => ({
           id: "R-12345678",
           product_id: "P-123abc",
-          status: "active",  // NOT archived
+          status: "active", // NOT archived
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890"
+      url: "/api/products/P-123abc/artifacts/A-abcdef1234567890",
     });
 
     expect(response.statusCode).toBe(200);
@@ -2154,15 +2380,15 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
           product_id: "P-123abc",
           status: "active",
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const app = await appWith(store);
 
     const response = await app.inject({
       method: "GET",
-      url: "/api/products/P-123abc/artifacts"
+      url: "/api/products/P-123abc/artifacts",
     });
 
     expect(response.statusCode).toBe(200);
@@ -2191,20 +2417,26 @@ describe("regression: HTTP bundle + preview routes are NOT gated by archive stat
       product_id: productId,
       status: "active",
       pages: [],
-      document_md: ""
+      document_md: "",
     }));
     const store = fakeStore({
       home,
       requirements: {
         ...fakeStore().requirements,
-        getRequirement: requirementGetMock
-      }
+        getRequirement: requirementGetMock,
+      },
     });
     const app = await appWith(store);
 
     const [bundleRes, previewRes] = await Promise.all([
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html` }),
-      app.inject({ method: "GET", url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png` })
+      app.inject({
+        method: "GET",
+        url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/bundle/index.html`,
+      }),
+      app.inject({
+        method: "GET",
+        url: `/api/products/${productId}/artifacts/${artifactId}/versions/1/preview/2x.png`,
+      }),
     ]);
 
     expect(bundleRes.statusCode).toBe(200);
@@ -2224,8 +2456,12 @@ describe("annotation handoff routes", () => {
     await writeFile(
       join(iconsDir, "icons.json"),
       JSON.stringify({
-        requirementId: "R-1", generatedFrom: "requirement-archive",
-        pageId: "home", variant: "default", sourceVersion: 1, icons: [{}],
+        requirementId: "R-1",
+        generatedFrom: "requirement-archive",
+        pageId: "home",
+        variant: "default",
+        sourceVersion: 1,
+        icons: [{}],
       }),
     );
     await writeFile(join(iconsDir, "logo.svg"), "<svg/>");
@@ -2243,7 +2479,9 @@ describe("annotation handoff routes", () => {
       requirements: {
         ...fakeStore().requirements,
         getRequirement: vi.fn(async () => ({
-          id: "R-1", product_id: PID, status: "archived",
+          id: "R-1",
+          product_id: PID,
+          status: "archived",
           pages: [{ page_id: "home", name: "Home" }],
         })),
       },
@@ -2261,7 +2499,10 @@ describe("annotation handoff routes", () => {
     const body = res.json();
     expect(body.pages).toHaveLength(1);
     expect(body.pages[0]).toMatchObject({
-      pageId: "home", artifactId: "A-home", variant: "default", version: 1,
+      pageId: "home",
+      artifactId: "A-home",
+      variant: "default",
+      version: 1,
       vziUrl: `/api/products/${PID}/artifacts/A-home/vzi/page.vzi`,
       iconBaseUrl: `/api/products/${PID}/artifacts/A-home/icons/`,
       bundleBaseUrl: `/api/products/${PID}/artifacts/A-home/versions/1/bundle/`,
@@ -2289,13 +2530,15 @@ describe("annotation handoff routes", () => {
   it("GET /handoff 409s when the requirement is not archived", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-srv-"));
     const PID = "P-abc123";
-    const app = await buildServer({ store: fakeStore({
-      home,
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({ id: "R-1", product_id: PID, status: "active", pages: [] })),
-      },
-    } as Partial<FormaServerStore>) });
+    const app = await buildServer({
+      store: fakeStore({
+        home,
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirement: vi.fn(async () => ({ id: "R-1", product_id: PID, status: "active", pages: [] })),
+        },
+      } as Partial<FormaServerStore>),
+    });
     apps.push(app);
     await app.ready();
     const res = await app.inject({ method: "GET", url: `/api/products/${PID}/requirements/R-1/handoff` });
@@ -2325,7 +2568,10 @@ describe("annotation handoff routes", () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.headers["content-type"]).toContain("image/svg+xml");
 
-    const escape = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/icons/..%2f..%2fmanifest.json` });
+    const escape = await app.inject({
+      method: "GET",
+      url: `/api/products/${PID}/artifacts/${AID}/icons/..%2f..%2fmanifest.json`,
+    });
     expect(escape.statusCode).toBe(400);
 
     const missing = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/${AID}/icons/nope.svg` });
@@ -2349,12 +2595,23 @@ describe("annotation handoff routes", () => {
     const AID = "A-home";
     await seedArchived(home);
     const map = new Map<string, unknown>([
-      ["root", { id: "root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 320, height: 640 }, styles: {} }],
+      [
+        "root",
+        { id: "root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 320, height: 640 }, styles: {} },
+      ],
     ]);
     const source = {
-      header: {}, metadata: { formaViewport: { width: 320, height: 640 } }, elements: map, sharedStyles: new Map(),
-      spatialIndex: new SpatialIndexBuilder().build(map as never), colorTokens: [], fontTokens: [], annotations: [],
-      images: new Map(), layers: [], compatibility: { minReaderVersion: "2.0.0", formatVersion: "2.0.0", features: [] },
+      header: {},
+      metadata: { formaViewport: { width: 320, height: 640 } },
+      elements: map,
+      sharedStyles: new Map(),
+      spatialIndex: new SpatialIndexBuilder().build(map as never),
+      colorTokens: [],
+      fontTokens: [],
+      annotations: [],
+      images: new Map(),
+      layers: [],
+      compatibility: { minReaderVersion: "2.0.0", formatVersion: "2.0.0", features: [] },
     };
     await writeFile(getArtifactVziPath(productsRoot, PID, AID), Buffer.from(new VZIEncoder().encode(source as never)));
     const app = await buildServer({ store: archivedStore(home, PID) });
@@ -2407,7 +2664,7 @@ describe("api bearer auth (non-loopback protection)", () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/products",
-      headers: { authorization: "Bearer wrong" }
+      headers: { authorization: "Bearer wrong" },
     });
     expect(res.statusCode).toBe(401);
   });
@@ -2419,7 +2676,7 @@ describe("api bearer auth (non-loopback protection)", () => {
     const res = await app.inject({
       method: "GET",
       url: "/api/products",
-      headers: { authorization: "Bearer s3cret" }
+      headers: { authorization: "Bearer s3cret" },
     });
     expect(res.statusCode).not.toBe(401);
   });

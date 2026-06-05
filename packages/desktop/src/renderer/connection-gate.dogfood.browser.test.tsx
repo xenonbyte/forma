@@ -42,7 +42,7 @@ describe("dogfood: 断连遮罩", () => {
     const container = render(
       <ConnectionGate checkStatus={() => Promise.resolve(false)}>
         <div data-testid="app">应用内容</div>
-      </ConnectionGate>
+      </ConnectionGate>,
     );
     await flush();
 

@@ -85,7 +85,9 @@ describe("validateStaticArtifact", () => {
       html: `<html><head><link rel="stylesheet" href="https://cdn.example.com/x.css"></head></html>`,
     };
     const violations = assertNotOk(validateStaticArtifact(input));
-    expect(violations.some((v) => v.toLowerCase().includes("stylesheet") || v.toLowerCase().includes("link"))).toBe(true);
+    expect(violations.some((v) => v.toLowerCase().includes("stylesheet") || v.toLowerCase().includes("link"))).toBe(
+      true,
+    );
   });
 
   it("<link rel='stylesheet' href='styles/main.css'> (relative) → ok:true", () => {
@@ -150,7 +152,12 @@ describe("validateStaticArtifact", () => {
       html: `<html><head><style>@import url(https://x.com/y.css);</style></head></html>`,
     };
     const violations = assertNotOk(validateStaticArtifact(input));
-    expect(violations.some((v) => v.toLowerCase().includes("css") || v.toLowerCase().includes("remote") || v.toLowerCase().includes("import"))).toBe(true);
+    expect(
+      violations.some(
+        (v) =>
+          v.toLowerCase().includes("css") || v.toLowerCase().includes("remote") || v.toLowerCase().includes("import"),
+      ),
+    ).toBe(true);
   });
 
   it("inline <style> with background:url(https://...) → ok:false", () => {
@@ -207,7 +214,9 @@ describe("validateStaticArtifact", () => {
   it("svgFiles with <script> inside → ok:false", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/logo.svg", `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`]]),
+      svgFiles: new Map([
+        ["icons/logo.svg", `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`],
+      ]),
     };
     const violations = assertNotOk(validateStaticArtifact(input));
     expect(violations.some((v) => v.toLowerCase().includes("script"))).toBe(true);
@@ -216,7 +225,12 @@ describe("validateStaticArtifact", () => {
   it("svgFiles with xlink:href to external URL → ok:false", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/link.svg", `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://evil.com"><rect width="10" height="10"/></a></svg>`]]),
+      svgFiles: new Map([
+        [
+          "icons/link.svg",
+          `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"><a xlink:href="https://evil.com"><rect width="10" height="10"/></a></svg>`,
+        ],
+      ]),
     };
     const violations = assertNotOk(validateStaticArtifact(input));
     expect(violations.length).toBeGreaterThan(0);
@@ -225,16 +239,25 @@ describe("validateStaticArtifact", () => {
   it("svgFiles with on* event attr → ok:false", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/ev.svg", `<svg xmlns="http://www.w3.org/2000/svg"><rect onmouseover="x()" width="10" height="10"/></svg>`]]),
+      svgFiles: new Map([
+        [
+          "icons/ev.svg",
+          `<svg xmlns="http://www.w3.org/2000/svg"><rect onmouseover="x()" width="10" height="10"/></svg>`,
+        ],
+      ]),
     };
     const violations = assertNotOk(validateStaticArtifact(input));
-    expect(violations.some((v) => v.toLowerCase().includes("event") || v.toLowerCase().includes("onmouseover"))).toBe(true);
+    expect(violations.some((v) => v.toLowerCase().includes("event") || v.toLowerCase().includes("onmouseover"))).toBe(
+      true,
+    );
   });
 
   it("clean svgFiles (<svg><rect/></svg>) → ok:true", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/clean.svg", `<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="blue"/></svg>`]]),
+      svgFiles: new Map([
+        ["icons/clean.svg", `<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10" fill="blue"/></svg>`],
+      ]),
     };
     assertOk(validateStaticArtifact(input));
   });
@@ -243,7 +266,12 @@ describe("validateStaticArtifact", () => {
   it("svgFiles with <a href='javascript:...'> → ok:false", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/js.svg", `<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><rect width="10" height="10"/></a></svg>`]]),
+      svgFiles: new Map([
+        [
+          "icons/js.svg",
+          `<svg xmlns="http://www.w3.org/2000/svg"><a href="javascript:alert(1)"><rect width="10" height="10"/></a></svg>`,
+        ],
+      ]),
     };
     const violations = assertNotOk(validateStaticArtifact(input));
     expect(violations.some((v) => v.toLowerCase().includes("javascript"))).toBe(true);
@@ -252,7 +280,12 @@ describe("validateStaticArtifact", () => {
   it("svgFiles with <image href='data:...'> (residual data:) → ok:false", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/data.svg", `<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,AAAA" width="10" height="10"/></svg>`]]),
+      svgFiles: new Map([
+        [
+          "icons/data.svg",
+          `<svg xmlns="http://www.w3.org/2000/svg"><image href="data:image/png;base64,AAAA" width="10" height="10"/></svg>`,
+        ],
+      ]),
     };
     const violations = assertNotOk(validateStaticArtifact(input));
     expect(violations.some((v) => v.toLowerCase().includes("data:"))).toBe(true);
@@ -261,7 +294,12 @@ describe("validateStaticArtifact", () => {
   it("svgFiles with a local href (#gradient) → ok:true", () => {
     const input: StaticValidationInput = {
       html: `<html><body></body></html>`,
-      svgFiles: new Map([["icons/local.svg", `<svg xmlns="http://www.w3.org/2000/svg"><use href="#sprite"/><rect fill="url(#grad)" width="10" height="10"/></svg>`]]),
+      svgFiles: new Map([
+        [
+          "icons/local.svg",
+          `<svg xmlns="http://www.w3.org/2000/svg"><use href="#sprite"/><rect fill="url(#grad)" width="10" height="10"/></svg>`,
+        ],
+      ]),
     };
     assertOk(validateStaticArtifact(input));
   });

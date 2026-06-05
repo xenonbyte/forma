@@ -80,7 +80,10 @@ export function SkeletonDetail(): JSX.Element {
         </div>
         <div className="divide-y divide-zinc-200 px-4">
           {Array.from({ length: 3 }, (_, index) => (
-            <div className="grid h-[48px] grid-cols-[minmax(0,1fr)_5rem] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_8rem_9rem_8rem]" key={index}>
+            <div
+              className="grid h-[48px] grid-cols-[minmax(0,1fr)_5rem] items-center gap-3 lg:grid-cols-[minmax(0,1fr)_8rem_9rem_8rem]"
+              key={index}
+            >
               <div className={`${blockClasses} h-4 w-40`} />
               <div className={`${blockClasses} h-6 w-16`} />
               <div className={`${blockClasses} hidden h-4 w-20 lg:block`} />

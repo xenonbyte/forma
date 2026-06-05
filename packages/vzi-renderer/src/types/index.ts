@@ -2,5 +2,5 @@
  * 类型定义导出
  */
 
-export * from './renderer';
-export * from './design-tokens';
+export * from "./renderer";
+export * from "./design-tokens";

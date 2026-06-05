@@ -8,11 +8,11 @@
  * 4. 将生成的 CSS 注入 HTML，移除 CDN 脚本
  */
 
-import { JSDOM } from 'jsdom';
-import postcss from 'postcss';
-import tailwindcss from 'tailwindcss';
-import type { Config } from 'tailwindcss';
-import autoprefixer from 'autoprefixer';
+import { JSDOM } from "jsdom";
+import postcss from "postcss";
+import tailwindcss from "tailwindcss";
+import type { Config } from "tailwindcss";
+import autoprefixer from "autoprefixer";
 
 /**
  * Tailwind 预处理结果
@@ -32,11 +32,11 @@ type TailwindConfigObject = Record<string, unknown>;
  * 检测 HTML 是否使用 Tailwind CSS Play CDN
  */
 function detectTailwindCDN(html: string): boolean {
-  return html.includes('cdn.tailwindcss.com');
+  return html.includes("cdn.tailwindcss.com");
 }
 
 function isRecord(value: unknown): value is TailwindConfigObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
@@ -44,23 +44,16 @@ function isRecord(value: unknown): value is TailwindConfigObject {
  * 注意：不执行任何代码；复杂表达式会在 JSON.parse 阶段失败并回退。
  */
 function normalizeObjectLiteral(configLiteral: string): string {
-  const withoutComments = configLiteral
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const withoutComments = configLiteral.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
 
-  const withQuotedKeys = withoutComments.replace(
-    /([{,]\s*)([A-Za-z_$][\w$-]*)(\s*:)/g,
-    '$1"$2"$3'
-  );
+  const withQuotedKeys = withoutComments.replace(/([{,]\s*)([A-Za-z_$][\w$-]*)(\s*:)/g, '$1"$2"$3');
 
   const withDoubleQuotedStrings = withQuotedKeys.replace(
     /'([^'\\]*(?:\\.[^'\\]*)*)'/g,
-    (_, value: string) => `"${value.replace(/\\"/g, '"').replace(/"/g, '\\"')}"`
+    (_, value: string) => `"${value.replace(/\\"/g, '"').replace(/"/g, '\\"')}"`,
   );
 
-  return withDoubleQuotedStrings
-    .replace(/\bundefined\b/g, 'null')
-    .replace(/,\s*([}\]])/g, '$1');
+  return withDoubleQuotedStrings.replace(/\bundefined\b/g, "null").replace(/,\s*([}\]])/g, "$1");
 }
 
 function parseTailwindConfig(configLiteral: string): TailwindConfigObject | null {
@@ -76,7 +69,7 @@ function parseTailwindConfig(configLiteral: string): TailwindConfigObject | null
 
 function extractBalancedObjectLiteral(source: string, openBraceIndex: number): string | null {
   let depth = 0;
-  let quote: '"' | "'" | '`' | null = null;
+  let quote: '"' | "'" | "`" | null = null;
   let escaped = false;
   let inLineComment = false;
   let inBlockComment = false;
@@ -86,14 +79,14 @@ function extractBalancedObjectLiteral(source: string, openBraceIndex: number): s
     const next = source[i + 1];
 
     if (inLineComment) {
-      if (ch === '\n' || ch === '\r') {
+      if (ch === "\n" || ch === "\r") {
         inLineComment = false;
       }
       continue;
     }
 
     if (inBlockComment) {
-      if (ch === '*' && next === '/') {
+      if (ch === "*" && next === "/") {
         inBlockComment = false;
         i += 1;
       }
@@ -103,7 +96,7 @@ function extractBalancedObjectLiteral(source: string, openBraceIndex: number): s
     if (quote) {
       if (escaped) {
         escaped = false;
-      } else if (ch === '\\') {
+      } else if (ch === "\\") {
         escaped = true;
       } else if (ch === quote) {
         quote = null;
@@ -111,29 +104,29 @@ function extractBalancedObjectLiteral(source: string, openBraceIndex: number): s
       continue;
     }
 
-    if (ch === '/' && next === '/') {
+    if (ch === "/" && next === "/") {
       inLineComment = true;
       i += 1;
       continue;
     }
 
-    if (ch === '/' && next === '*') {
+    if (ch === "/" && next === "*") {
       inBlockComment = true;
       i += 1;
       continue;
     }
 
-    if (ch === '"' || ch === "'" || ch === '`') {
+    if (ch === '"' || ch === "'" || ch === "`") {
       quote = ch;
       continue;
     }
 
-    if (ch === '{') {
+    if (ch === "{") {
       depth += 1;
       continue;
     }
 
-    if (ch === '}') {
+    if (ch === "}") {
       depth -= 1;
       if (depth === 0) {
         return source.slice(openBraceIndex, i + 1);
@@ -155,7 +148,7 @@ function extractTailwindConfigLiteral(content: string): string | null {
     openBraceIndex += 1;
   }
 
-  if (content[openBraceIndex] !== '{') {
+  if (content[openBraceIndex] !== "{") {
     return null;
   }
 
@@ -166,11 +159,11 @@ function extractTailwindConfigLiteral(content: string): string | null {
  * 提取 Tailwind 配置
  */
 function extractTailwindConfig(document: Document): Partial<Config> {
-  const scripts = document.querySelectorAll('script');
+  const scripts = document.querySelectorAll("script");
 
   for (const script of scripts) {
-    const content = script.textContent || '';
-    if (!content.includes('tailwind.config')) {
+    const content = script.textContent || "";
+    if (!content.includes("tailwind.config")) {
       continue;
     }
 
@@ -184,7 +177,7 @@ function extractTailwindConfig(document: Document): Partial<Config> {
       return parsed as Partial<Config>;
     }
 
-    console.warn('Failed to parse Tailwind config safely; fallback to default config.');
+    console.warn("Failed to parse Tailwind config safely; fallback to default config.");
   }
 
   return {};
@@ -194,12 +187,12 @@ function extractTailwindConfig(document: Document): Partial<Config> {
  * 提取自定义 Tailwind 样式
  */
 function extractCustomStyles(document: Document): string {
-  let customStyles = '';
+  let customStyles = "";
   const styleElements = document.querySelectorAll('style[type="text/tailwindcss"]');
 
   for (const style of styleElements) {
-    customStyles += style.textContent || '';
-    customStyles += '\n';
+    customStyles += style.textContent || "";
+    customStyles += "\n";
   }
 
   return customStyles;
@@ -210,10 +203,10 @@ function extractCustomStyles(document: Document): string {
  */
 function collectClasses(document: Document): string[] {
   const classes = new Set<string>();
-  const elements = document.querySelectorAll('[class]');
+  const elements = document.querySelectorAll("[class]");
 
   for (const element of elements) {
-    const classList = element.getAttribute('class') || '';
+    const classList = element.getAttribute("class") || "";
     for (const className of classList.split(/\s+/)) {
       if (className) {
         classes.add(className);
@@ -227,11 +220,7 @@ function collectClasses(document: Document): string[] {
 /**
  * 使用 Tailwind CSS API 编译生成 CSS
  */
-async function compileTailwindCSS(
-  config: Partial<Config>,
-  customStyles: string,
-  classes: string[]
-): Promise<string> {
+async function compileTailwindCSS(config: Partial<Config>, customStyles: string, classes: string[]): Promise<string> {
   const inputCSS = `
 @tailwind base;
 @tailwind components;
@@ -240,22 +229,19 @@ async function compileTailwindCSS(
 ${customStyles}
 `;
 
-  const virtualHTML = `<div class="${classes.join(' ')}"></div>`;
+  const virtualHTML = `<div class="${classes.join(" ")}"></div>`;
 
   const tailwindConfig: Config = {
     ...(config as Config),
     content: [
       {
         raw: virtualHTML,
-        extension: 'html',
+        extension: "html",
       },
     ],
   };
 
-  const result = await postcss([
-    tailwindcss(tailwindConfig),
-    autoprefixer(),
-  ]).process(inputCSS, {
+  const result = await postcss([tailwindcss(tailwindConfig), autoprefixer()]).process(inputCSS, {
     from: undefined,
   });
 
@@ -286,10 +272,10 @@ export async function preprocessTailwindCSS(html: string): Promise<TailwindPrepr
     script.remove();
   }
 
-  const configScripts = document.querySelectorAll('script');
+  const configScripts = document.querySelectorAll("script");
   for (const script of configScripts) {
-    const content = script.textContent || '';
-    if (content.includes('tailwind.config')) {
+    const content = script.textContent || "";
+    if (content.includes("tailwind.config")) {
       script.remove();
     }
   }
@@ -299,13 +285,13 @@ export async function preprocessTailwindCSS(html: string): Promise<TailwindPrepr
     style.remove();
   }
 
-  const styleElement = document.createElement('style');
+  const styleElement = document.createElement("style");
   styleElement.textContent = generatedCSS;
 
   if (document.head) {
     document.head.appendChild(styleElement);
   } else {
-    const head = document.createElement('head');
+    const head = document.createElement("head");
     head.appendChild(styleElement);
     document.documentElement.insertBefore(head, document.body || null);
   }

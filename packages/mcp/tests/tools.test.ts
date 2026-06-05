@@ -1,4 +1,12 @@
-import { FormaError, createFormaStore, getArtifactIconsDir, getArtifactVziPath, getArtifactVersionDir, getArtifactsDir, type FormaStore } from "@xenonbyte/forma-core";
+import {
+  FormaError,
+  createFormaStore,
+  getArtifactIconsDir,
+  getArtifactVziPath,
+  getArtifactVersionDir,
+  getArtifactsDir,
+  type FormaStore,
+} from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -6,14 +14,20 @@ import { pathToFileURL } from "node:url";
 import AdmZip from "adm-zip";
 import { describe, expect, it, vi } from "vitest";
 import * as z from "zod/v4";
-import { createFormaTools, formaToolInputSchemas, formaToolNames, registerFormaTools, type FormaToolName } from "../src/index.js";
+import {
+  createFormaTools,
+  formaToolInputSchemas,
+  formaToolNames,
+  registerFormaTools,
+  type FormaToolName,
+} from "../src/index.js";
 import { VZIEncoder } from "@vzi-core/format";
 import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
 
 const puppeteerParserOptions = vi.hoisted(() => [] as Array<Record<string, unknown> | undefined>);
 
 vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
-  const actual = await importOriginal() as Record<string, unknown>;
+  const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
     createOdRuntime: vi.fn(() => ({
@@ -21,13 +35,13 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
         manifest: fakeManifest(),
         supportingFiles: new Map([
           ["preview/2x.png", new Uint8Array()],
-          ["preview/1x.png", new Uint8Array()]
-        ])
-      }))
+          ["preview/1x.png", new Uint8Array()],
+        ]),
+      })),
     })),
     extractIconAssets: vi.fn(async () => ({
       files: new Map([
-        ["icons/icon-0-24x24-abc123.svg", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8")]
+        ["icons/icon-0-24x24-abc123.svg", Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>', "utf8")],
       ]),
       manifest: {
         schemaVersion: 1,
@@ -51,19 +65,19 @@ vi.mock("@xenonbyte/forma-core", async (importOriginal) => {
             sourceOrders: [0],
             files: {
               svg: "icons/icon-0-24x24-abc123.svg",
-              png: {}
-            }
-          }
+              png: {},
+            },
+          },
         ],
         instances: [
           {
             sourceOrder: 0,
             iconId: "icon-0-24x24-abc123",
-            contentHash: "abc123"
-          }
-        ]
-      }
-    }))
+            contentHash: "abc123",
+          },
+        ],
+      },
+    })),
   };
 });
 
@@ -78,18 +92,22 @@ vi.mock("@vzi-core/parser", async () => {
         parentId: null,
         type: "container",
         bounds: { x: 0, y: 0, width: 1024, height: 768 },
-        styles: { backgroundColor: "#ffffff" }
-      }
+        styles: { backgroundColor: "#ffffff" },
+      },
     },
-    metadata: { title: "mock-page", viewport: { width: 1024, height: 768 } }
+    metadata: { title: "mock-page", viewport: { width: 1024, height: 768 } },
   };
 
   class MockPuppeteerParser {
     constructor(opts?: Record<string, unknown>) {
       puppeteerParserOptions.push(opts);
     }
-    async parse(_html: string) { return fakeIR; }
-    async dispose() { return undefined; }
+    async parse(_html: string) {
+      return fakeIR;
+    }
+    async dispose() {
+      return undefined;
+    }
   }
 
   return {
@@ -97,8 +115,8 @@ vi.mock("@vzi-core/parser", async () => {
     VIEWPORT_PRESETS: {
       mobile: { width: 390, height: 884 },
       tablet: { width: 768, height: 1024 },
-      desktop: { width: 1024, height: 1280 }
-    }
+      desktop: { width: 1024, height: 1280 },
+    },
   };
 });
 
@@ -112,7 +130,7 @@ const removedLegacyToolNames = [
   "get_design_annotations",
   "export_design_asset",
   "get_current_session",
-  "set_current_session"
+  "set_current_session",
 ] as const;
 
 const v6ToolNames = [
@@ -138,7 +156,7 @@ const v6ToolNames = [
   "refresh_requirement_components",
   "plan_import_metadata_normalization",
   "validate_requirement_design_quality",
-  "session_get_editor_state"
+  "session_get_editor_state",
 ] as const;
 
 // Session tools removed in P4.9 C
@@ -148,7 +166,7 @@ const removedSessionToolNames = [
   "session_batch_get",
   "session_snapshot_layout",
   "session_get_screenshot",
-  "session_export_nodes"
+  "session_export_nodes",
 ] as const;
 
 function textPayload(result: { content: Array<{ text: string }> }) {
@@ -179,7 +197,7 @@ function fakeManifest() {
     status: "complete" as const,
     exports: ["index.html"],
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
   };
 }
 
@@ -193,33 +211,33 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       deleteArtifact: vi.fn(async () => undefined),
       listArtifactVersions: vi.fn(async () => [1, 2]),
       writeArtifactVersion: vi.fn(async () => ({ etag: "sha256:abc" })),
-      readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+      readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
     },
     copy: {
       getTranslations: vi.fn(async () => []),
-      updatePageTranslations: vi.fn(async () => undefined)
+      updatePageTranslations: vi.fn(async () => undefined),
     },
     deleteProduct: vi.fn(async () => ({
       product_id: "P-123abc",
       deleted: true,
       session_cleared: false,
       cleanup_pending: false,
-      recovery_warnings: []
+      recovery_warnings: [],
     })),
     generateRequirementDesign: vi.fn(async () => ({
       artifact_id: "ABCDEFGHIJ123456",
       version: 1,
-      preview_status: "pending"
+      preview_status: "pending",
     })),
     generateComponents: vi.fn(async () => ({
       artifact_id: "ABCDEFGHIJ123456",
       version: 1,
-      preview_status: "pending"
+      preview_status: "pending",
     })),
     changeArtifactStyle: vi.fn(async () => ({
       artifact_id: "ABCDEFGHIJ123456",
       version: 1,
-      preview_status: "pending"
+      preview_status: "pending",
     })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
@@ -233,10 +251,13 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         default_language: "en",
         designSystemArtifactId: "DS_ARTIFACT123456",
         requirements: {
-          "R-12345678": { latestArtifactId: "OLDARTIFACT12345" }
-        }
+          "R-12345678": { latestArtifactId: "OLDARTIFACT12345" },
+        },
       })),
-      initProductConfig: vi.fn(async (_productId: string, config: unknown) => ({ id: "P-123abc", ...config as object })),
+      initProductConfig: vi.fn(async (_productId: string, config: unknown) => ({
+        id: "P-123abc",
+        ...(config as object),
+      })),
       listProducts: vi.fn(async () => [{ id: "P-123abc", name: "App", description: "Demo" }]),
       setRequirementArtifactPointerLocked: vi.fn(async () => undefined as string | undefined),
       setDesignSystemArtifactPointerLocked: vi.fn(async () => undefined),
@@ -246,33 +267,46 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         variant: "default",
         artifactId: "ABCDEFGHIJ123456",
         version: 2,
-        designStatus: "active" as const
+        designStatus: "active" as const,
       })),
       listDesignPointers: vi.fn(async () => []),
-      rollbackDesignPointerLocked: vi.fn(async () => undefined)
+      rollbackDesignPointerLocked: vi.fn(async () => undefined),
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
     requirements: {
       createEmptyRequirement: vi.fn(async () => ({ id: "R-12345678", status: "empty" })),
-      getLatestRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", status: "active", pages: [] })),
+      getLatestRequirement: vi.fn(async () => ({
+        id: "R-12345678",
+        product_id: "P-123abc",
+        status: "active",
+        pages: [],
+      })),
       getProductRules: vi.fn(async () => []),
       getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-123abc", pages: [] })),
       getRequirementHistory: vi.fn(async () => []),
       saveRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" })),
       submitRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" })),
-      updateRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" }))
+      updateRequirement: vi.fn(async () => ({ id: "R-12345678", status: "submitted" })),
     },
-    runProductMutation: vi.fn(async (_input: unknown, fn: (ctx: { warnings: string[] }) => Promise<unknown>) => fn({ warnings: [] })),
+    runProductMutation: vi.fn(async (_input: unknown, fn: (ctx: { warnings: string[] }) => Promise<unknown>) =>
+      fn({ warnings: [] }),
+    ),
     sessions: {
       getCurrentSession: vi.fn(async () => ({ current_product: "P-123abc" })),
-      setCurrentProduct: vi.fn(async () => ({ current_product: "P-123abc" }))
+      setCurrentProduct: vi.fn(async () => ({ current_product: "P-123abc" })),
     },
     styles: {
-      getStyle: vi.fn(async () => ({ kind: "brand" as const, metadata: { name: "linear" }, designMd: "# Linear", tokensCss: ":root{}", componentsHtml: "<div/>" })),
+      getStyle: vi.fn(async () => ({
+        kind: "brand" as const,
+        metadata: { name: "linear" },
+        designMd: "# Linear",
+        tokensCss: ":root{}",
+        componentsHtml: "<div/>",
+      })),
       listStyles: vi.fn(async () => [{ name: "linear" }]),
-      listSystemStyles: vi.fn(async () => [])
+      listSystemStyles: vi.fn(async () => []),
     },
-    ...overrides
+    ...overrides,
   };
   return store as unknown as FormaStore;
 }
@@ -288,7 +322,7 @@ describe("MCP forma tools", () => {
     expect(server.registerTool).toHaveBeenCalledTimes(formaToolNames.length);
     expect(server.registerTool.mock.calls.map((call) => call[0])).toEqual(formaToolNames);
     expect(server.registerTool.mock.calls.map((call) => call[1])).toEqual(
-      expect.arrayContaining([expect.objectContaining({ inputSchema: expect.any(Object) })])
+      expect.arrayContaining([expect.objectContaining({ inputSchema: expect.any(Object) })]),
     );
     for (const removedToolName of removedLegacyToolNames) {
       expect(formaToolNames).not.toContain(removedToolName);
@@ -307,17 +341,19 @@ describe("MCP forma tools", () => {
       expect(formaToolNames).not.toContain(v6ToolName);
       expect(Object.keys(tools)).not.toContain(v6ToolName);
     }
-    expect(formaToolNames).toEqual(expect.arrayContaining([
-      "save_requirement",
-      "get_product_rules",
-      "get_page_copy",
-      "delete_product",
-      "confirm_product_id",
-      "generate_requirement_design",
-      "generate_components",
-      "change_artifact_style",
-      "get_design_context"
-    ]));
+    expect(formaToolNames).toEqual(
+      expect.arrayContaining([
+        "save_requirement",
+        "get_product_rules",
+        "get_page_copy",
+        "delete_product",
+        "confirm_product_id",
+        "generate_requirement_design",
+        "generate_components",
+        "change_artifact_style",
+        "get_design_context",
+      ]),
+    );
     expect(formaToolNames).not.toContain("change_style");
     expect(formaToolNames).not.toContain("refine_requirement_design");
     expect(formaToolNames).not.toContain("update_page_copy");
@@ -337,7 +373,7 @@ describe("MCP forma tools", () => {
           expect.stringContaining("get_product_rules"),
           expect.stringContaining("get_page_copy"),
           expect.stringContaining("get_product_artifact"),
-          expect.stringContaining("export_artifact")
+          expect.stringContaining("export_artifact"),
         ]),
         workflows: {
           develop_frontend: [
@@ -346,10 +382,10 @@ describe("MCP forma tools", () => {
             "get_ui_node",
             "search_page_ui",
             "get_requirement",
-            "get_product_rules"
-          ]
-        }
-      }
+            "get_product_rules",
+          ],
+        },
+      },
     });
     for (const removedToolName of removedLegacyToolNames) {
       expect(JSON.stringify(payload)).not.toContain(removedToolName);
@@ -379,7 +415,7 @@ describe("MCP forma tools", () => {
     const result = await tools.list_products({});
 
     expect(result).toEqual({
-      content: [{ type: "text", text: JSON.stringify([{ id: "P-123abc", name: "App", description: "Demo" }]) }]
+      content: [{ type: "text", text: JSON.stringify([{ id: "P-123abc", name: "App", description: "Demo" }]) }],
     });
   });
 
@@ -390,9 +426,9 @@ describe("MCP forma tools", () => {
           ...fakeStore().products,
           getProduct: vi.fn(async () => {
             throw new FormaError("PRODUCT_NOT_FOUND", "Product not found");
-          })
-        }
-      })
+          }),
+        },
+      }),
     );
 
     const result = await tools.get_product({ product_id: "P-missing" });
@@ -401,7 +437,7 @@ describe("MCP forma tools", () => {
     expect(textPayload(result)).toEqual({
       error_code: "PRODUCT_NOT_FOUND",
       message: "Product not found",
-      details: {}
+      details: {},
     });
   });
 
@@ -412,9 +448,9 @@ describe("MCP forma tools", () => {
           ...fakeStore().products,
           listProducts: vi.fn(async () => {
             throw new Error("boom");
-          })
-        }
-      })
+          }),
+        },
+      }),
     );
 
     const validationResult = await tools.get_product({});
@@ -424,13 +460,13 @@ describe("MCP forma tools", () => {
     expect(textPayload(validationResult)).toMatchObject({
       error_code: "VALIDATION_ERROR",
       message: "Invalid tool input",
-      details: { issues: expect.any(Array) }
+      details: { issues: expect.any(Array) },
     });
     expect(runtimeResult.isError).toBe(true);
     expect(textPayload(runtimeResult)).toEqual({
       error_code: "INTERNAL_ERROR",
       message: "Unexpected tool error",
-      details: {}
+      details: {},
     });
   });
 
@@ -453,10 +489,10 @@ describe("MCP forma tools", () => {
       deleted: true,
       session_cleared: true,
       cleanup_pending: false,
-      recovery_warnings: []
+      recovery_warnings: [],
     };
     const store = fakeStore({
-      deleteProduct: vi.fn(async () => deleted)
+      deleteProduct: vi.fn(async () => deleted),
     });
     const tools = createFormaTools(store);
 
@@ -479,7 +515,7 @@ describe("MCP forma tools", () => {
     expect(mismatch.isError).toBe(true);
     expect(textPayload(mismatch)).toMatchObject({
       error_code: "VALIDATION_ERROR",
-      details: { issues: expect.arrayContaining([expect.objectContaining({ path: ["confirm_product_id"] })]) }
+      details: { issues: expect.arrayContaining([expect.objectContaining({ path: ["confirm_product_id"] })]) },
     });
     expect(store.deleteProduct).not.toHaveBeenCalled();
   });
@@ -489,9 +525,9 @@ describe("MCP forma tools", () => {
       deleteProduct: vi.fn(async () => {
         throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held", {
           operation: "delete_product",
-          product_id: "P-123abc"
+          product_id: "P-123abc",
         });
-      })
+      }),
     });
     const tools = createFormaTools(store);
 
@@ -501,7 +537,7 @@ describe("MCP forma tools", () => {
     expect(textPayload(result)).toEqual({
       error_code: "PRODUCT_MUTATION_LOCKED",
       message: "Product mutation lock is held",
-      details: { operation: "delete_product", product_id: "P-123abc" }
+      details: { operation: "delete_product", product_id: "P-123abc" },
     });
   });
 
@@ -512,8 +548,8 @@ describe("MCP forma tools", () => {
         deleted: true,
         session_cleared: false,
         cleanup_pending: true,
-        recovery_warnings: ["cleanup was deferred"]
-      }))
+        recovery_warnings: ["cleanup was deferred"],
+      })),
     });
     const tools = createFormaTools(store);
 
@@ -522,7 +558,7 @@ describe("MCP forma tools", () => {
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({
       cleanup_pending: true,
-      recovery_warnings: ["cleanup was deferred"]
+      recovery_warnings: ["cleanup was deferred"],
     });
   });
 
@@ -534,16 +570,16 @@ describe("MCP forma tools", () => {
     const productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]> = {
       afterPhasePersisted: async (state) => {
         if (["session_written", "index_written", "moved"].includes(state.phase)) {
-          const session = await store.sessions.getCurrentSession() as { current_product: string | null };
+          const session = (await store.sessions.getCurrentSession()) as { current_product: string | null };
           expect(session.current_product).not.toBe(state.product_id);
           observations.push({ phase: state.phase, current_product: session.current_product });
         }
-      }
+      },
     };
     store = await createFormaStore({
       home,
       bundledStylesDir: resolve("styles"),
-      productDeletionHooks
+      productDeletionHooks,
     });
     const tools = createFormaTools(store);
     const product = await store.products.createProduct({ name: "Delete Me", description: "Temporary" });
@@ -551,7 +587,7 @@ describe("MCP forma tools", () => {
       platform: "web",
       brand_style: "linear",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
     await store.sessions.setCurrentProduct(product.id);
 
@@ -559,12 +595,12 @@ describe("MCP forma tools", () => {
 
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({ product_id: product.id, session_cleared: true });
-    const finalSession = await store.sessions.getCurrentSession() as { current_product: string | null };
+    const finalSession = (await store.sessions.getCurrentSession()) as { current_product: string | null };
     expect(finalSession).toEqual({ current_product: null });
     expect(observations).toEqual([
       { phase: "session_written", current_product: null },
       { phase: "index_written", current_product: null },
-      { phase: "moved", current_product: null }
+      { phase: "moved", current_product: null },
     ]);
   });
 
@@ -577,14 +613,14 @@ describe("MCP forma tools", () => {
       platform: "web",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
 
     expect(store.products.initProductConfig).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
     expect(store.products.createProduct).not.toHaveBeenCalled();
   });
@@ -599,7 +635,7 @@ describe("MCP forma tools", () => {
     expect(textPayload(result)).toMatchObject({
       error_code: "VALIDATION_ERROR",
       message: "Invalid tool input",
-      details: { issues: expect.any(Array) }
+      details: { issues: expect.any(Array) },
     });
     expect(store.products.initProductConfig).not.toHaveBeenCalled();
   });
@@ -608,13 +644,17 @@ describe("MCP forma tools", () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
 
-    const result = await tools.update_product_config({ product_id: "P-123abc", platform: "web", brand_style: "linear" });
+    const result = await tools.update_product_config({
+      product_id: "P-123abc",
+      platform: "web",
+      brand_style: "linear",
+    });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
       error_code: "VALIDATION_ERROR",
       message: "Invalid tool input",
-      details: { issues: expect.any(Array) }
+      details: { issues: expect.any(Array) },
     });
     expect(store.products.initProductConfig).not.toHaveBeenCalled();
   });
@@ -628,39 +668,39 @@ describe("MCP forma tools", () => {
       platform: "web",
       brand_style: "linear",
       languages: ["en"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
     await tools.init_product_config({
       product_id: "P-123abc",
       platform: "web",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
     await tools.update_product_config({
       product_id: "P-123abc",
       platform: "mobile",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
 
     expect(invalid.isError).toBe(true);
     expect(textPayload(invalid)).toMatchObject({
       error_code: "VALIDATION_ERROR",
-      details: { issues: expect.any(Array) }
+      details: { issues: expect.any(Array) },
     });
     expect(store.products.initProductConfig).toHaveBeenNthCalledWith(1, "P-123abc", {
       platform: "web",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
     expect(store.products.initProductConfig).toHaveBeenNthCalledWith(2, "P-123abc", {
       platform: "mobile",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
   });
 
@@ -674,7 +714,7 @@ describe("MCP forma tools", () => {
     expect(textPayload(result)).toMatchObject({
       error_code: "VALIDATION_ERROR",
       message: "Invalid tool input",
-      details: { issues: expect.any(Array) }
+      details: { issues: expect.any(Array) },
     });
     expect(store.products.createProduct).not.toHaveBeenCalled();
   });
@@ -687,7 +727,7 @@ describe("MCP forma tools", () => {
     expect(textPayload(result)).toMatchObject({
       id: "P-123abc",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
   });
 
@@ -698,31 +738,37 @@ describe("MCP forma tools", () => {
       requirement_id: "R-12345678",
       document_md: "# Checkout",
       ui_affected: true,
-      pages: [{
-        page_id: "checkout",
-        name: "Checkout",
-        baseline_page: "checkout",
-        change_type: "new",
-        features: "Pay for an order",
-        copy: [{ context: "submit", text: "Pay now" }],
-        fields: "email",
-        interactions: "tap submit"
-      }],
+      pages: [
+        {
+          page_id: "checkout",
+          name: "Checkout",
+          baseline_page: "checkout",
+          change_type: "new",
+          features: "Pay for an order",
+          copy: [{ context: "submit", text: "Pay now" }],
+          fields: "email",
+          interactions: "tap submit",
+        },
+      ],
       navigation: [{ from: "cart", to: "checkout", label: "Checkout" }],
-      translations: [{
-        page_id: "checkout",
-        entries: [{ context: "submit", texts: { "zh-CN": "立即支付" } }]
-      }],
-      rules: [{
-        id: "rule-1",
-        page_id: "checkout",
-        given: "items are in cart",
-        when: "checkout opens",
-        then: "show payment form",
-        replaces_rule_id: "old-rule"
-      }],
+      translations: [
+        {
+          page_id: "checkout",
+          entries: [{ context: "submit", texts: { "zh-CN": "立即支付" } }],
+        },
+      ],
+      rules: [
+        {
+          id: "rule-1",
+          page_id: "checkout",
+          given: "items are in cart",
+          when: "checkout opens",
+          then: "show payment form",
+          replaces_rule_id: "old-rule",
+        },
+      ],
       remove_rule_ids: ["old-rule-2"],
-      remove_page_ids: ["legacy"]
+      remove_page_ids: ["legacy"],
     };
 
     const result = await tools.save_requirement(input);
@@ -747,8 +793,8 @@ describe("MCP forma tools", () => {
     const store = fakeStore({
       requirements: {
         ...fakeStore().requirements,
-        saveRequirement: vi.fn(async () => saved)
-      }
+        saveRequirement: vi.fn(async () => saved),
+      },
     });
     const tools = createFormaTools(store);
     const input = {
@@ -756,7 +802,7 @@ describe("MCP forma tools", () => {
       document_md: "# Logic update",
       ui_affected: false,
       pages: [],
-      navigation: []
+      navigation: [],
     };
 
     const result = await tools.save_requirement(input);
@@ -766,14 +812,16 @@ describe("MCP forma tools", () => {
   });
 
   it("get_requirement includes copy translations without legacy page-level design metadata", async () => {
-    const translations = [{
-      page_id: "checkout",
-      entries: [{ context: "submit", texts: { "zh-CN": "立即支付" } }]
-    }];
+    const translations = [
+      {
+        page_id: "checkout",
+        entries: [{ context: "submit", texts: { "zh-CN": "立即支付" } }],
+      },
+    ];
     const store = fakeStore({
       copy: {
         ...fakeStore().copy,
-        getTranslations: vi.fn(async () => translations)
+        getTranslations: vi.fn(async () => translations),
       },
       requirements: {
         ...fakeStore().requirements,
@@ -782,10 +830,10 @@ describe("MCP forma tools", () => {
           product_id: "P-123abc",
           pages: [
             { page_id: "checkout", baseline_page: "checkout", design_status: "done" },
-            { page_id: "profile", baseline_page: "profile" }
-          ]
-        }))
-      }
+            { page_id: "profile", baseline_page: "profile" },
+          ],
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -795,10 +843,7 @@ describe("MCP forma tools", () => {
     expect(textPayload(result)).toMatchObject({
       id: "R-12345678",
       copy_translations: translations,
-      pages: [
-        { page_id: "checkout", baseline_page: "checkout", design_status: "done" },
-        { page_id: "profile" }
-      ]
+      pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }, { page_id: "profile" }],
     });
     expect(JSON.stringify(textPayload(result))).not.toContain("design_metadata");
     expect(JSON.stringify(textPayload(result))).not.toContain("pen_path");
@@ -812,9 +857,9 @@ describe("MCP forma tools", () => {
         getRequirement: vi.fn(async () => ({
           id: "R-12345678",
           product_id: "P-123abc",
-          pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }]
-        }))
-      }
+          pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }],
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -823,24 +868,26 @@ describe("MCP forma tools", () => {
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({
       id: "R-12345678",
-      pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }]
+      pages: [{ page_id: "checkout", baseline_page: "checkout", design_status: "done" }],
     });
   });
 
   it("get_product_rules returns stored rules", async () => {
-    const rules = [{
-      id: "R-12345678-rule-1",
-      page_id: "checkout",
-      given: "cart has items",
-      when: "checkout opens",
-      then: "payment form appears",
-      source_requirement: "R-12345678"
-    }];
+    const rules = [
+      {
+        id: "R-12345678-rule-1",
+        page_id: "checkout",
+        given: "cart has items",
+        when: "checkout opens",
+        then: "payment form appears",
+        source_requirement: "R-12345678",
+      },
+    ];
     const store = fakeStore({
       requirements: {
         ...fakeStore().requirements,
-        getProductRules: vi.fn(async () => rules)
-      }
+        getProductRules: vi.fn(async () => rules),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -851,14 +898,16 @@ describe("MCP forma tools", () => {
   });
 
   it("get_page_copy without requirement_id resolves latest non-archived requirement for the product", async () => {
-    const translations = [{
-      page_id: "checkout",
-      entries: [{ context: "submit", texts: { "zh-CN": "立即支付" } }]
-    }];
+    const translations = [
+      {
+        page_id: "checkout",
+        entries: [{ context: "submit", texts: { "zh-CN": "立即支付" } }],
+      },
+    ];
     const store = fakeStore({
       copy: {
         ...fakeStore().copy,
-        getTranslations: vi.fn(async () => translations)
+        getTranslations: vi.fn(async () => translations),
       },
       requirements: {
         ...fakeStore().requirements,
@@ -866,13 +915,15 @@ describe("MCP forma tools", () => {
           id: "R-latest1",
           product_id: "P-123abc",
           status: "active",
-          pages: [{
-            page_id: "checkout",
-            baseline_page: "checkout",
-            copy: [{ context: "submit", text: "Pay now" }]
-          }]
-        }))
-      }
+          pages: [
+            {
+              page_id: "checkout",
+              baseline_page: "checkout",
+              copy: [{ context: "submit", text: "Pay now" }],
+            },
+          ],
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -885,7 +936,7 @@ describe("MCP forma tools", () => {
       requirement_id: "R-latest1",
       page_id: "checkout",
       copy: [{ context: "submit", text: "Pay now" }],
-      translations: translations[0]
+      translations: translations[0],
     });
   });
 
@@ -893,18 +944,22 @@ describe("MCP forma tools", () => {
     const store = fakeStore({
       requirements: {
         ...fakeStore().requirements,
-        getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [] }))
-      }
+        getRequirement: vi.fn(async () => ({ id: "R-12345678", product_id: "P-other1", pages: [] })),
+      },
     });
     const tools = createFormaTools(store);
 
-    const result = await tools.get_page_copy({ product_id: "P-123abc", requirement_id: "R-12345678", page_id: "checkout" });
+    const result = await tools.get_page_copy({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+      page_id: "checkout",
+    });
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toEqual({
       error_code: "REQUIREMENT_PRODUCT_MISMATCH",
       message: "Requirement does not belong to product",
-      details: { product_id: "P-123abc", requirement_id: "R-12345678", requirement_product_id: "P-other1" }
+      details: { product_id: "P-123abc", requirement_id: "R-12345678", requirement_product_id: "P-other1" },
     });
   });
 
@@ -962,10 +1017,10 @@ describe("MCP forma tools", () => {
           name: "App",
           description: "Demo",
           platform: "web",
-          requirements: {}
+          requirements: {},
           // no designSystemArtifactId
-        }))
-      }
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -974,7 +1029,7 @@ describe("MCP forma tools", () => {
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
       error_code: "ARTIFACT_NOT_FOUND",
-      details: { product_id: "P-123abc" }
+      details: { product_id: "P-123abc" },
     });
   });
 });
@@ -1001,8 +1056,8 @@ describe("artifact tools (C-03)", () => {
         ...fakeStore().artifacts,
         listArtifacts: vi.fn(async () => [{ artifactId: "OLDARTIFACT12345", etag: "sha256:abc" }]),
         listArtifactVersions: vi.fn(async () => [1, 2]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      }
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1019,7 +1074,7 @@ describe("artifact tools (C-03)", () => {
       superseded: false,
       versions: [1, 2],
       current_version: 2,
-      preview_url: "/api/products/P-123abc/artifacts/OLDARTIFACT12345/versions/2/preview/2x.png"
+      preview_url: "/api/products/P-123abc/artifacts/OLDARTIFACT12345/versions/2/preview/2x.png",
     });
   });
 
@@ -1030,8 +1085,8 @@ describe("artifact tools (C-03)", () => {
         ...fakeStore().artifacts,
         listArtifacts: vi.fn(async () => [{ artifactId: "SUPERSEDEDART123", etag: "sha256:old" }]),
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:old" }))
-      }
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:old" })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1041,7 +1096,7 @@ describe("artifact tools (C-03)", () => {
     expect(result.isError).toBeUndefined();
     expect(payload.artifacts[0]).toMatchObject({
       id: "SUPERSEDEDART123",
-      superseded: true
+      superseded: true,
     });
   });
 
@@ -1051,8 +1106,8 @@ describe("artifact tools (C-03)", () => {
         ...fakeStore().products,
         getProduct: vi.fn(async () => {
           throw new FormaError("PRODUCT_NOT_FOUND", "Product not found");
-        })
-      }
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1070,15 +1125,15 @@ describe("artifact tools (C-03)", () => {
       forma: {
         requirementId: "R-12345678",
         pageId: "checkout",
-        variant: "default"
-      }
+        variant: "default",
+      },
     };
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
         listArtifacts: vi.fn(async () => [{ artifactId: "ABCDEFGHIJ123456", etag: "sha256:abc" }]),
         listArtifactVersions: vi.fn(async () => [1, 2]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
@@ -1088,18 +1143,20 @@ describe("artifact tools (C-03)", () => {
           name: "App",
           description: "Demo",
           requirements: {
-            "R-12345678": { latestArtifactId: "ABCDEFGHIJ123456" }
-          }
+            "R-12345678": { latestArtifactId: "ABCDEFGHIJ123456" },
+          },
         })),
-        listDesignPointers: vi.fn(async () => [{
-          requirementId: "R-12345678",
-          pageId: "checkout",
-          variant: "default",
-          artifactId: "ABCDEFGHIJ123456",
-          version: 2,
-          designStatus: "active" as const
-        }])
-      }
+        listDesignPointers: vi.fn(async () => [
+          {
+            requirementId: "R-12345678",
+            pageId: "checkout",
+            variant: "default",
+            artifactId: "ABCDEFGHIJ123456",
+            version: 2,
+            designStatus: "active" as const,
+          },
+        ]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1115,7 +1172,7 @@ describe("artifact tools (C-03)", () => {
       variant: "default",
       requirement_id: "R-12345678",
       versions: [1, 2],
-      current_version: 2
+      current_version: 2,
     });
   });
 
@@ -1130,15 +1187,15 @@ describe("artifact tools (C-03)", () => {
       forma: {
         requirementId: "R-12345678",
         pageId: "home",
-        variant: "default"
-      }
+        variant: "default",
+      },
     };
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
         listArtifacts: vi.fn(async () => [{ artifactId: "DESIGNPTRART12345", etag: "sha256:abc" }]),
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
@@ -1147,18 +1204,20 @@ describe("artifact tools (C-03)", () => {
           id: "P-123abc",
           name: "App",
           description: "Demo",
-          requirements: {}
+          requirements: {},
         })),
         // Only design pointer references the artifact
-        listDesignPointers: vi.fn(async () => [{
-          requirementId: "R-12345678",
-          pageId: "home",
-          variant: "default",
-          artifactId: "DESIGNPTRART12345",
-          version: 1,
-          designStatus: "active" as const
-        }])
-      }
+        listDesignPointers: vi.fn(async () => [
+          {
+            requirementId: "R-12345678",
+            pageId: "home",
+            variant: "default",
+            artifactId: "DESIGNPTRART12345",
+            version: 1,
+            designStatus: "active" as const,
+          },
+        ]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1170,18 +1229,27 @@ describe("artifact tools (C-03)", () => {
     expect(payload.artifacts).toHaveLength(1);
     expect(payload.artifacts[0]).toMatchObject({
       id: "DESIGNPTRART12345",
-      superseded: false
+      superseded: false,
     });
   });
 
   it("list_product_artifacts kind filter accepts new kinds (design-page, component-library) and rejects design-system", () => {
     // Schema-level test — these kinds must be valid enum values
-    const parsed = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "design-page" });
+    const parsed = formaToolInputSchemas.list_product_artifacts.safeParse({
+      product_id: "P-123abc",
+      kind: "design-page",
+    });
     expect(parsed.success).toBe(true);
-    const parsed2 = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "component-library" });
+    const parsed2 = formaToolInputSchemas.list_product_artifacts.safeParse({
+      product_id: "P-123abc",
+      kind: "component-library",
+    });
     expect(parsed2.success).toBe(true);
     // design-system is removed from user-facing enum
-    const parsed3 = formaToolInputSchemas.list_product_artifacts.safeParse({ product_id: "P-123abc", kind: "design-system" });
+    const parsed3 = formaToolInputSchemas.list_product_artifacts.safeParse({
+      product_id: "P-123abc",
+      kind: "design-system",
+    });
     expect(parsed3.success).toBe(false);
   });
 
@@ -1193,8 +1261,8 @@ describe("artifact tools (C-03)", () => {
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1, 2]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      }
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1221,19 +1289,21 @@ describe("artifact tools (C-03)", () => {
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1, 2, 3]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [{
-          requirementId: "R-12345678",
-          pageId: "page-home",
-          variant: "default",
-          artifactId: "ABCDEFGHIJ123456",
-          version: 1,
-          designStatus: "active" as const
-        }])
-      }
+        listDesignPointers: vi.fn(async () => [
+          {
+            requirementId: "R-12345678",
+            pageId: "page-home",
+            variant: "default",
+            artifactId: "ABCDEFGHIJ123456",
+            version: 1,
+            designStatus: "active" as const,
+          },
+        ]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1254,8 +1324,8 @@ describe("artifact tools (C-03)", () => {
         listArtifactVersions: vi.fn(async () => []),
         readArtifact: vi.fn(async () => {
           throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
-        })
-      }
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1273,8 +1343,8 @@ describe("artifact tools (C-03)", () => {
         // No versioned dirs
         listArtifactVersions: vi.fn(async () => []),
         // Flat artifact is readable
-        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      }
+        readArtifact: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1300,16 +1370,16 @@ describe("artifact tools (C-03)", () => {
         variant: "default",
         assets: [
           { path: "assets/logo@1x.png", density: [1, 2, 3], role: "image" },
-          { path: "assets/icon.svg", density: [1], role: "icon" }
-        ]
-      }
+          { path: "assets/icon.svg", density: [1], role: "icon" },
+        ],
+      },
     };
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      }
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1337,7 +1407,7 @@ describe("artifact tools (C-03)", () => {
     const result = await tools.export_artifact({
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
-      format: "png"
+      format: "png",
     });
 
     // Either success (file was there) or a structured error — not ARTIFACT_UNSUPPORTED_FORMAT
@@ -1362,19 +1432,19 @@ describe("artifact tools (C-03)", () => {
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
-      }
+        listDesignPointers: vi.fn(async () => []),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.export_artifact({
       product_id: productId,
       artifact_id: artifactId,
-      format: "zip"
+      format: "zip",
     });
 
     expect(result.isError).toBeUndefined();
@@ -1387,45 +1457,48 @@ describe("artifact tools (C-03)", () => {
 
   it.each([
     { artifactKind: "html" as const, entry: "index.html", requestedFormat: "svg" as const },
-    { artifactKind: "svg" as const, entry: "icon.svg", requestedFormat: "html" as const }
-  ])("export_artifact rejects $requestedFormat export for $artifactKind artifacts", async ({ artifactKind, entry, requestedFormat }) => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-format-"));
-    const artifactId = "ABCDEFGHIJ123456";
-    const productId = "P-123abc";
-    // Create versioned dir
-    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
-    await mkdir(versionDir, { recursive: true });
-    await writeFile(join(versionDir, entry), "<main>entry</main>", "utf8");
-    const manifest = {
-      ...fakeManifest(),
-      kind: artifactKind,
-      renderer: artifactKind,
-      entry,
-      exports: [entry]
-    };
-    const store = fakeStore({
-      home,
-      artifacts: {
-        ...fakeStore().artifacts,
-        listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      },
-      products: {
-        ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
-      }
-    });
-    const tools = createFormaTools(store);
+    { artifactKind: "svg" as const, entry: "icon.svg", requestedFormat: "html" as const },
+  ])(
+    "export_artifact rejects $requestedFormat export for $artifactKind artifacts",
+    async ({ artifactKind, entry, requestedFormat }) => {
+      const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-format-"));
+      const artifactId = "ABCDEFGHIJ123456";
+      const productId = "P-123abc";
+      // Create versioned dir
+      const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(join(versionDir, entry), "<main>entry</main>", "utf8");
+      const manifest = {
+        ...fakeManifest(),
+        kind: artifactKind,
+        renderer: artifactKind,
+        entry,
+        exports: [entry],
+      };
+      const store = fakeStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => []),
+        },
+      });
+      const tools = createFormaTools(store);
 
-    const result = await tools.export_artifact({
-      product_id: productId,
-      artifact_id: artifactId,
-      format: requestedFormat
-    });
+      const result = await tools.export_artifact({
+        product_id: productId,
+        artifact_id: artifactId,
+        format: requestedFormat,
+      });
 
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
-  });
+      expect(result.isError).toBe(true);
+      expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
+    },
+  );
 
   it("export_artifact returns ARTIFACT_NOT_FOUND when artifact has no versions and readArtifact fails", async () => {
     const store = fakeStore({
@@ -1434,15 +1507,15 @@ describe("artifact tools (C-03)", () => {
         listArtifactVersions: vi.fn(async () => []),
         readArtifact: vi.fn(async () => {
           throw new FormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
-        })
-      }
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.export_artifact({
       product_id: "P-123abc",
       artifact_id: "MISSING12345678",
-      format: "html"
+      format: "html",
     });
 
     expect(result.isError).toBe(true);
@@ -1456,7 +1529,7 @@ describe("artifact tools (C-03)", () => {
     const result = await tools.export_artifact({
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
-      format: "pdf"
+      format: "pdf",
     });
 
     expect(result.isError).toBe(true);
@@ -1467,54 +1540,57 @@ describe("artifact tools (C-03)", () => {
 
   it.each([
     { format: "icons" as const, expectedPath: "icons" },
-    { format: "vzi" as const, expectedPath: ".vzi" }
-  ])("export_artifact $format format uses the manifest HTML entry when it is not index.html", async ({ format, expectedPath }) => {
-    puppeteerParserOptions.length = 0;
-    const home = await mkdtemp(join(tmpdir(), `forma-mcp-export-${format}-entry-`));
-    const artifactId = "ABCDEFGHIJ123456";
-    const productId = "P-123abc";
-    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
-    await mkdir(versionDir, { recursive: true });
-    await writeFile(
-      join(versionDir, "page.html"),
-      `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
-      "utf8"
-    );
-    const manifest = {
-      ...fakeManifest(),
-      entry: "page.html",
-      exports: ["page.html"]
-    };
-    const store = fakeStore({
-      home,
-      artifacts: {
-        ...fakeStore().artifacts,
-        listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
-      },
-      products: {
-        ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
-      }
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.export_artifact({
-      product_id: productId,
-      artifact_id: artifactId,
-      format
-    });
-
-    expect(result.isError).toBeUndefined();
-    const payload = textPayload(result);
-    expect(payload.output_path as string).toContain(expectedPath);
-    if (format === "vzi") {
-      expect(puppeteerParserOptions.at(-1)).toMatchObject({
-        viewportPreset: "desktop",
-        baseUrl: pathToFileURL(`${versionDir}/`).toString()
+    { format: "vzi" as const, expectedPath: ".vzi" },
+  ])(
+    "export_artifact $format format uses the manifest HTML entry when it is not index.html",
+    async ({ format, expectedPath }) => {
+      puppeteerParserOptions.length = 0;
+      const home = await mkdtemp(join(tmpdir(), `forma-mcp-export-${format}-entry-`));
+      const artifactId = "ABCDEFGHIJ123456";
+      const productId = "P-123abc";
+      const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+      await mkdir(versionDir, { recursive: true });
+      await writeFile(
+        join(versionDir, "page.html"),
+        `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
+        "utf8",
+      );
+      const manifest = {
+        ...fakeManifest(),
+        entry: "page.html",
+        exports: ["page.html"],
+      };
+      const store = fakeStore({
+        home,
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+          readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+        },
+        products: {
+          ...fakeStore().products,
+          listDesignPointers: vi.fn(async () => []),
+        },
       });
-    }
-  });
+      const tools = createFormaTools(store);
+
+      const result = await tools.export_artifact({
+        product_id: productId,
+        artifact_id: artifactId,
+        format,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.output_path as string).toContain(expectedPath);
+      if (format === "vzi") {
+        expect(puppeteerParserOptions.at(-1)).toMatchObject({
+          viewportPreset: "desktop",
+          baseUrl: pathToFileURL(`${versionDir}/`).toString(),
+        });
+      }
+    },
+  );
 
   it.each(["icons", "vzi"] as const)(
     "export_artifact %s format rejects artifacts without an HTML entry",
@@ -1530,31 +1606,31 @@ describe("artifact tools (C-03)", () => {
         kind: "svg" as const,
         renderer: "svg" as const,
         entry: "icon.svg",
-        exports: ["icon.svg"]
+        exports: ["icon.svg"],
       };
       const store = fakeStore({
         home,
         artifacts: {
           ...fakeStore().artifacts,
           listArtifactVersions: vi.fn(async () => [1]),
-          readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+          readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [])
-        }
+          listDesignPointers: vi.fn(async () => []),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.export_artifact({
         product_id: productId,
         artifact_id: artifactId,
-        format
+        format,
       });
 
       expect(result.isError).toBe(true);
       expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_UNSUPPORTED_FORMAT" });
-    }
+    },
   );
 
   it("export_artifact icons format returns output_path containing an icons dir with icons.json", async () => {
@@ -1567,43 +1643,47 @@ describe("artifact tools (C-03)", () => {
     await writeFile(
       join(versionDir, "index.html"),
       `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
-      "utf8"
+      "utf8",
     );
     const store = fakeStore({
       home,
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
+        listDesignPointers: vi.fn(async () => []),
       },
       requirements: {
         ...fakeStore().requirements,
-        archiveRequirement: vi.fn(async () => { throw new Error("archiveRequirement must NOT be called during manual export"); })
-      }
+        archiveRequirement: vi.fn(async () => {
+          throw new Error("archiveRequirement must NOT be called during manual export");
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.export_artifact({
       product_id: productId,
       artifact_id: artifactId,
-      format: "icons"
+      format: "icons",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(payload).toHaveProperty("output_path");
     expect(typeof payload.output_path).toBe("string");
-    expect((payload.output_path as string)).toContain("icons");
+    expect(payload.output_path as string).toContain("icons");
     const manifest = JSON.parse(await readFile(join(payload.output_path as string, "icons.json"), "utf8"));
     const svgPath = manifest.icons[0].files.svg;
     expect(svgPath).toBe("icons/icon-0-24x24-abc123.svg");
     await expect(readFile(join(payload.output_path as string, svgPath), "utf8")).resolves.toContain("<svg");
     // archiveRequirement must not have been called
-    expect((store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement).not.toHaveBeenCalled();
+    expect(
+      (store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement,
+    ).not.toHaveBeenCalled();
   });
 
   it("export_artifact vzi format returns output_path ending with .vzi", async () => {
@@ -1614,46 +1694,46 @@ describe("artifact tools (C-03)", () => {
     // Write index.html in the versioned artifact dir
     const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
     await mkdir(versionDir, { recursive: true });
-    await writeFile(
-      join(versionDir, "index.html"),
-      `<!DOCTYPE html><html><body><p>hello</p></body></html>`,
-      "utf8"
-    );
+    await writeFile(join(versionDir, "index.html"), `<!DOCTYPE html><html><body><p>hello</p></body></html>`, "utf8");
     const store = fakeStore({
       home,
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
+        listDesignPointers: vi.fn(async () => []),
       },
       requirements: {
         ...fakeStore().requirements,
-        archiveRequirement: vi.fn(async () => { throw new Error("archiveRequirement must NOT be called during manual export"); })
-      }
+        archiveRequirement: vi.fn(async () => {
+          throw new Error("archiveRequirement must NOT be called during manual export");
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.export_artifact({
       product_id: productId,
       artifact_id: artifactId,
-      format: "vzi"
+      format: "vzi",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(payload).toHaveProperty("output_path");
     expect(typeof payload.output_path).toBe("string");
-    expect((payload.output_path as string)).toMatch(/\.vzi$/);
+    expect(payload.output_path as string).toMatch(/\.vzi$/);
     expect(puppeteerParserOptions.at(-1)).toMatchObject({
       viewportPreset: "desktop",
-      baseUrl: pathToFileURL(`${versionDir}/`).toString()
+      baseUrl: pathToFileURL(`${versionDir}/`).toString(),
     });
     // archiveRequirement must not have been called
-    expect((store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement).not.toHaveBeenCalled();
+    expect(
+      (store.requirements as unknown as Record<string, ReturnType<typeof vi.fn>>).archiveRequirement,
+    ).not.toHaveBeenCalled();
   });
 
   it("export_artifact icons/vzi do NOT mutate requirement status (archiveRequirement not called)", async () => {
@@ -1664,22 +1744,24 @@ describe("artifact tools (C-03)", () => {
     await mkdir(versionDir, { recursive: true });
     await writeFile(join(versionDir, "index.html"), `<html><body></body></html>`, "utf8");
 
-    const archiveRequirement = vi.fn(async () => { throw new Error("must not be called"); });
+    const archiveRequirement = vi.fn(async () => {
+      throw new Error("must not be called");
+    });
     const store = fakeStore({
       home,
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
+        listDesignPointers: vi.fn(async () => []),
       },
       requirements: {
         ...fakeStore().requirements,
-        archiveRequirement
-      }
+        archiveRequirement,
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1703,12 +1785,12 @@ describe("artifact tools (C-03)", () => {
       artifacts: {
         ...fakeStore().artifacts,
         listArtifactVersions: vi.fn(async () => [1]),
-        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" }))
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
       },
       products: {
         ...fakeStore().products,
-        listDesignPointers: vi.fn(async () => [])
-      }
+        listDesignPointers: vi.fn(async () => []),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1738,7 +1820,7 @@ describe("artifact tools (C-03)", () => {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
       page_id: "page-home",
-      target_version: 1
+      target_version: 1,
     });
     const payload = textPayload(result);
 
@@ -1747,14 +1829,14 @@ describe("artifact tools (C-03)", () => {
       requirement_id: "R-12345678",
       page_id: "page-home",
       variant: "default",
-      version: 1
+      version: 1,
     });
     expect(store.products.rollbackDesignPointerLocked).toHaveBeenCalledWith(
       "P-123abc",
       "R-12345678",
       "page-home",
       "default",
-      1
+      1,
     );
   });
 
@@ -1768,9 +1850,9 @@ describe("artifact tools (C-03)", () => {
           variant: "dark",
           artifactId: "ABCDEFGHIJ123456",
           version: 2,
-          designStatus: "active" as const
-        }))
-      }
+          designStatus: "active" as const,
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1779,7 +1861,7 @@ describe("artifact tools (C-03)", () => {
       requirement_id: "R-12345678",
       page_id: "page-home",
       variant: "dark",
-      target_version: 1
+      target_version: 1,
     });
     const payload = textPayload(result);
 
@@ -1791,8 +1873,8 @@ describe("artifact tools (C-03)", () => {
     const store = fakeStore({
       products: {
         ...fakeStore().products,
-        getDesignPointer: vi.fn(async () => undefined)
-      }
+        getDesignPointer: vi.fn(async () => undefined),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1800,7 +1882,7 @@ describe("artifact tools (C-03)", () => {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
       page_id: "page-missing",
-      target_version: 1
+      target_version: 1,
     });
 
     expect(result.isError).toBe(true);
@@ -1811,8 +1893,8 @@ describe("artifact tools (C-03)", () => {
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
-        listArtifactVersions: vi.fn(async () => [1, 2])
-      }
+        listArtifactVersions: vi.fn(async () => [1, 2]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1820,7 +1902,7 @@ describe("artifact tools (C-03)", () => {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
       page_id: "page-home",
-      target_version: 99
+      target_version: 99,
     });
 
     expect(result.isError).toBe(true);
@@ -1831,7 +1913,7 @@ describe("artifact tools (C-03)", () => {
     expectSchemaFailure("rollback_requirement_design", {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      page_id: "page-home"
+      page_id: "page-home",
     });
   });
 
@@ -1841,7 +1923,7 @@ describe("artifact tools (C-03)", () => {
       requirement_id: "R-12345678",
       page_id: "page-home",
       target_artifact_id: "ABCDEFGHIJ123456",
-      target_version: 1
+      target_version: 1,
     });
   });
 });
@@ -1885,8 +1967,8 @@ describe("C-04 retained tools", () => {
         ...fakeStore().products,
         getProduct: vi.fn(async () => {
           throw new FormaError("PRODUCT_NOT_FOUND", "Product not found");
-        })
-      }
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1902,7 +1984,10 @@ describe("C-04 retained tools", () => {
     const store = fakeStore({
       artifacts: {
         ...fakeStore().artifacts,
-        readArtifact: vi.fn(async () => ({ manifest: { ...fakeManifest(), kind: "design-system" as const }, etag: "sha256:abc" }))
+        readArtifact: vi.fn(async () => ({
+          manifest: { ...fakeManifest(), kind: "design-system" as const },
+          etag: "sha256:abc",
+        })),
       },
       requirements: {
         ...fakeStore().requirements,
@@ -1922,13 +2007,13 @@ describe("C-04 retained tools", () => {
                 features: "Pay for an order",
                 fields: "Card number",
                 interactions: "Submit payment",
-                copy: [{ context: "title", text: "Checkout" }]
-              }
+                copy: [{ context: "title", text: "Checkout" }],
+              },
             ],
-            navigation: [{ from: "checkout-page", to: "checkout-page", label: "Stay" }]
-          }
-        ])
-      }
+            navigation: [{ from: "checkout-page", to: "checkout-page", label: "Stay" }],
+          },
+        ]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -1946,11 +2031,11 @@ describe("C-04 retained tools", () => {
             fields: "Card number",
             interactions: "Submit payment",
             copy: [{ context: "title", text: "Checkout" }],
-            source_requirements: ["R-12345678"]
-          }
+            source_requirements: ["R-12345678"],
+          },
         ],
-        navigation: [{ from: "checkout", to: "checkout", label: "Stay" }]
-      }
+        navigation: [{ from: "checkout", to: "checkout", label: "Stay" }],
+      },
     });
     expect(store.artifacts.readArtifact).not.toHaveBeenCalled();
   });
@@ -1963,8 +2048,8 @@ describe("C-04 retained tools", () => {
           id: "P-123abc",
           name: "App",
           description: "Demo",
-          requirements: {}
-        }))
+          requirements: {},
+        })),
       },
       requirements: {
         ...fakeStore().requirements,
@@ -1980,19 +2065,19 @@ describe("C-04 retained tools", () => {
                 page_id: "checkout-page",
                 name: "Checkout",
                 baseline_page: "checkout",
-                design_status: "pending"
+                design_status: "pending",
               },
               {
                 page_id: "confirmation-page",
                 name: "Confirmation",
                 baseline_page: "confirmation",
-                design_status: "pending"
-              }
+                design_status: "pending",
+              },
             ],
-            navigation: [{ from: "checkout-page", to: "confirmation-page", label: "Continue" }]
-          }
-        ])
-      }
+            navigation: [{ from: "checkout-page", to: "confirmation-page", label: "Continue" }],
+          },
+        ]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -2004,10 +2089,10 @@ describe("C-04 retained tools", () => {
         product_id: "P-123abc",
         pages: [
           { id: "checkout", name: "Checkout", source_requirements: ["R-12345678"] },
-          { id: "confirmation", name: "Confirmation", source_requirements: ["R-12345678"] }
+          { id: "confirmation", name: "Confirmation", source_requirements: ["R-12345678"] },
         ],
-        navigation: [{ from: "checkout", to: "confirmation", label: "Continue" }]
-      }
+        navigation: [{ from: "checkout", to: "confirmation", label: "Continue" }],
+      },
     });
   });
 
@@ -2023,17 +2108,23 @@ describe("C-04 retained tools", () => {
   it("get_style returns BrandStyleContent for a known brand style", async () => {
     const brandStyleContent = {
       kind: "brand" as const,
-      metadata: { name: "linear", description: "Linear brand", design_md_path: "styles/linear/DESIGN.md", tokens_css_path: "styles/linear/tokens.css", components_html_path: "styles/linear/components.html" },
+      metadata: {
+        name: "linear",
+        description: "Linear brand",
+        design_md_path: "styles/linear/DESIGN.md",
+        tokens_css_path: "styles/linear/tokens.css",
+        components_html_path: "styles/linear/components.html",
+      },
       designMd: "# Linear Design",
       tokensCss: ":root { --color-primary: #5E6AD2; }",
-      componentsHtml: "<button class='btn'>Button</button>"
+      componentsHtml: "<button class='btn'>Button</button>",
     };
     const store = fakeStore({
       styles: {
         getStyle: vi.fn(async () => brandStyleContent),
         listStyles: vi.fn(async () => [{ name: "linear", description: "Linear brand" }]),
-        listSystemStyles: vi.fn(async () => [])
-      }
+        listSystemStyles: vi.fn(async () => []),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -2045,7 +2136,7 @@ describe("C-04 retained tools", () => {
       metadata: { name: "linear" },
       designMd: "# Linear Design",
       tokensCss: ":root { --color-primary: #5E6AD2; }",
-      componentsHtml: "<button class='btn'>Button</button>"
+      componentsHtml: "<button class='btn'>Button</button>",
     });
     expect(store.styles.listStyles).toHaveBeenCalled();
     expect(store.styles.getStyle).toHaveBeenCalledWith("linear");
@@ -2055,10 +2146,12 @@ describe("C-04 retained tools", () => {
     const systemStyle = { name: "material", description: "Material Design", mode: "design-system" as const };
     const store = fakeStore({
       styles: {
-        getStyle: vi.fn(async () => { throw new Error("should not be called"); }),
+        getStyle: vi.fn(async () => {
+          throw new Error("should not be called");
+        }),
         listStyles: vi.fn(async () => []),
-        listSystemStyles: vi.fn(async () => [systemStyle])
-      }
+        listSystemStyles: vi.fn(async () => [systemStyle]),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -2072,10 +2165,12 @@ describe("C-04 retained tools", () => {
   it("get_style returns INVALID_INPUT when style name is not found", async () => {
     const store = fakeStore({
       styles: {
-        getStyle: vi.fn(async () => { throw new Error("should not be called"); }),
+        getStyle: vi.fn(async () => {
+          throw new Error("should not be called");
+        }),
         listStyles: vi.fn(async () => []),
-        listSystemStyles: vi.fn(async () => [])
-      }
+        listSystemStyles: vi.fn(async () => []),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -2084,7 +2179,7 @@ describe("C-04 retained tools", () => {
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({
       error_code: "INVALID_INPUT",
-      details: { style: "nonexistent" }
+      details: { style: "nonexistent" },
     });
   });
 
@@ -2099,8 +2194,8 @@ describe("C-04 retained tools", () => {
             id: "P-123abc",
             name: "App",
             description: "Demo",
-            designSystemArtifactId: "DS_ARTIFACT123456"
-          }))
+            designSystemArtifactId: "DS_ARTIFACT123456",
+          })),
         },
         artifacts: {
           ...fakeStore().artifacts,
@@ -2108,11 +2203,11 @@ describe("C-04 retained tools", () => {
             manifest: {
               ...fakeManifest(),
               kind: "design-system" as const,
-              metadata: { pages: [{ id: "home", name: "Home", layout: {} }] }
+              metadata: { pages: [{ id: "home", name: "Home", layout: {} }] },
             },
-            etag: "sha256:abc"
-          }))
-        }
+            etag: "sha256:abc",
+          })),
+        },
       });
       const tools = createFormaTools(store);
       const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "home" });
@@ -2125,8 +2220,8 @@ describe("C-04 retained tools", () => {
       const store = fakeStore({
         products: {
           ...fakeStore().products,
-          getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" }))
-        }
+          getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
+        },
       });
       const tools = createFormaTools(store);
       const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "home" });
@@ -2143,8 +2238,8 @@ describe("C-04 retained tools", () => {
             id: "P-123abc",
             name: "App",
             description: "Demo",
-            designSystemArtifactId: "DS_ARTIFACT123456"
-          }))
+            designSystemArtifactId: "DS_ARTIFACT123456",
+          })),
         },
         artifacts: {
           ...fakeStore().artifacts,
@@ -2152,11 +2247,11 @@ describe("C-04 retained tools", () => {
             manifest: {
               ...fakeManifest(),
               kind: "design-system" as const,
-              metadata: { pages: [] }
+              metadata: { pages: [] },
             },
-            etag: "sha256:abc"
-          }))
-        }
+            etag: "sha256:abc",
+          })),
+        },
       });
       const tools = createFormaTools(store);
       const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "missing" });
@@ -2177,7 +2272,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       page_id: "checkout",
       html: "<main>Hello</main>",
       title: "Checkout",
-      brand_style: "linear"
+      brand_style: "linear",
     });
     expectSchemaSuccess("generate_requirement_design", {
       product_id: "P-123abc",
@@ -2187,7 +2282,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       title: "Checkout",
       brand_style: "linear",
       system_style: "material",
-      variant: "dark"
+      variant: "dark",
     });
   });
 
@@ -2198,7 +2293,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       requirement_id: "R-12345678",
       page_id: "checkout",
       title: "Checkout",
-      brand_style: "linear"
+      brand_style: "linear",
     });
     // missing page_id
     expectSchemaFailure("generate_requirement_design", {
@@ -2206,7 +2301,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       requirement_id: "R-12345678",
       html: "<main/>",
       title: "Checkout",
-      brand_style: "linear"
+      brand_style: "linear",
     });
     // missing brand_style
     expectSchemaFailure("generate_requirement_design", {
@@ -2214,7 +2309,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       requirement_id: "R-12345678",
       page_id: "checkout",
       html: "<main/>",
-      title: "Checkout"
+      title: "Checkout",
     });
     // missing product_id
     expectSchemaFailure("generate_requirement_design", {
@@ -2222,14 +2317,14 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       page_id: "checkout",
       html: "<main/>",
       title: "Checkout",
-      brand_style: "linear"
+      brand_style: "linear",
     });
   });
 
   it("generate_requirement_design delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
     const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
     const store = fakeStore({
-      generateRequirementDesign: vi.fn(async () => fakeResult)
+      generateRequirementDesign: vi.fn(async () => fakeResult),
     });
     const tools = createFormaTools(store);
 
@@ -2241,21 +2336,22 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       title: "Checkout",
       brand_style: "linear",
       system_style: "material",
-      variant: "dark"
+      variant: "dark",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" });
-    expect((store as unknown as { generateRequirementDesign: ReturnType<typeof vi.fn> }).generateRequirementDesign)
-      .toHaveBeenCalledWith("P-123abc", "R-12345678", {
-        html: "<main>Checkout</main>",
-        title: "Checkout",
-        pageId: "checkout",
-        variant: "dark",
-        brandStyle: "linear",
-        systemStyle: "material"
-      });
+    expect(
+      (store as unknown as { generateRequirementDesign: ReturnType<typeof vi.fn> }).generateRequirementDesign,
+    ).toHaveBeenCalledWith("P-123abc", "R-12345678", {
+      html: "<main>Checkout</main>",
+      title: "Checkout",
+      pageId: "checkout",
+      variant: "dark",
+      brandStyle: "linear",
+      systemStyle: "material",
+    });
   });
 
   it("generate_requirement_design passes through store errors as MCP error results", async () => {
@@ -2263,7 +2359,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
     const store = fakeStore({
       generateRequirementDesign: vi.fn(async () => {
         throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
-      })
+      }),
     });
     const tools = createFormaTools(store);
 
@@ -2273,7 +2369,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       page_id: "checkout",
       html: "<main/>",
       title: "Checkout",
-      brand_style: "linear"
+      brand_style: "linear",
     });
 
     expect(result.isError).toBe(true);
@@ -2287,14 +2383,14 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       product_id: "P-123abc",
       html: "<section>Button</section>",
       title: "Button Library",
-      brand_style: "linear"
+      brand_style: "linear",
     });
     expectSchemaSuccess("generate_components", {
       product_id: "P-123abc",
       html: "<section>Card</section>",
       title: "Component Library",
       brand_style: "linear",
-      system_style: "material"
+      system_style: "material",
     });
   });
 
@@ -2310,7 +2406,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
   it("generate_components delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
     const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
     const store = fakeStore({
-      generateComponents: vi.fn(async () => fakeResult)
+      generateComponents: vi.fn(async () => fakeResult),
     });
     const tools = createFormaTools(store);
 
@@ -2319,19 +2415,20 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       html: "<section>Button</section>",
       title: "Button Library",
       brand_style: "linear",
-      system_style: "material"
+      system_style: "material",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" });
-    expect((store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents)
-      .toHaveBeenCalledWith("P-123abc", {
-        html: "<section>Button</section>",
-        title: "Button Library",
-        brandStyle: "linear",
-        systemStyle: "material"
-      });
+    expect(
+      (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents,
+    ).toHaveBeenCalledWith("P-123abc", {
+      html: "<section>Button</section>",
+      title: "Button Library",
+      brandStyle: "linear",
+      systemStyle: "material",
+    });
   });
 
   it("generate_components passes through store errors as MCP error results", async () => {
@@ -2339,7 +2436,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
     const store = fakeStore({
       generateComponents: vi.fn(async () => {
         throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
-      })
+      }),
     });
     const tools = createFormaTools(store);
 
@@ -2347,7 +2444,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       product_id: "P-missing",
       html: "<section/>",
       title: "Library",
-      brand_style: "linear"
+      brand_style: "linear",
     });
 
     expect(result.isError).toBe(true);
@@ -2362,7 +2459,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       artifact_id: "ABCDEFGHIJ123456",
       html: "<main>Restyled</main>",
       title: "Checkout (Dark)",
-      brand_style: "dark"
+      brand_style: "dark",
     });
     expectSchemaSuccess("change_artifact_style", {
       product_id: "P-123abc",
@@ -2370,7 +2467,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       html: "<main>Restyled</main>",
       title: "Checkout (Linear)",
       brand_style: "linear",
-      system_style: "material"
+      system_style: "material",
     });
   });
 
@@ -2380,35 +2477,35 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
       title: "Checkout",
-      brand_style: "dark"
+      brand_style: "dark",
     });
     // missing brand_style
     expectSchemaFailure("change_artifact_style", {
       product_id: "P-123abc",
       artifact_id: "ABCDEFGHIJ123456",
       html: "<main/>",
-      title: "Checkout"
+      title: "Checkout",
     });
     // missing artifact_id
     expectSchemaFailure("change_artifact_style", {
       product_id: "P-123abc",
       html: "<main/>",
       title: "Checkout",
-      brand_style: "dark"
+      brand_style: "dark",
     });
     // missing product_id
     expectSchemaFailure("change_artifact_style", {
       artifact_id: "ABCDEFGHIJ123456",
       html: "<main/>",
       title: "Checkout",
-      brand_style: "dark"
+      brand_style: "dark",
     });
   });
 
   it("change_artifact_style delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
     const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 2, preview_status: "pending" };
     const store = fakeStore({
-      changeArtifactStyle: vi.fn(async () => fakeResult)
+      changeArtifactStyle: vi.fn(async () => fakeResult),
     });
     const tools = createFormaTools(store);
 
@@ -2418,19 +2515,20 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       html: "<main>Restyled</main>",
       title: "Checkout (Dark)",
       brand_style: "dark",
-      system_style: "material"
+      system_style: "material",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 2, preview_status: "pending" });
-    expect((store as unknown as { changeArtifactStyle: ReturnType<typeof vi.fn> }).changeArtifactStyle)
-      .toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", {
-        html: "<main>Restyled</main>",
-        title: "Checkout (Dark)",
-        brandStyle: "dark",
-        systemStyle: "material"
-      });
+    expect(
+      (store as unknown as { changeArtifactStyle: ReturnType<typeof vi.fn> }).changeArtifactStyle,
+    ).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", {
+      html: "<main>Restyled</main>",
+      title: "Checkout (Dark)",
+      brandStyle: "dark",
+      systemStyle: "material",
+    });
   });
 
   it("change_artifact_style passes through store errors as MCP error results", async () => {
@@ -2438,7 +2536,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
     const store = fakeStore({
       changeArtifactStyle: vi.fn(async () => {
         throw new ActualFormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
-      })
+      }),
     });
     const tools = createFormaTools(store);
 
@@ -2447,7 +2545,7 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
       artifact_id: "MISSING12345678",
       html: "<main/>",
       title: "Checkout",
-      brand_style: "dark"
+      brand_style: "dark",
     });
 
     expect(result.isError).toBe(true);
@@ -2463,7 +2561,7 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
         listStyles: vi.fn(async () => [{ name: "linear" }]),
         listCraftDocs: vi.fn(async () => [{ slug: "spacing", content: "# Spacing rules" }]),
         readCraftDoc: vi.fn(async () => ({ slug: "spacing", content: "# Spacing rules" })),
-        listSystemStyles: vi.fn(async () => [{ name: "material", tokens: {} }])
+        listSystemStyles: vi.fn(async () => [{ name: "material", tokens: {} }]),
       },
       requirements: {
         ...fakeStore().requirements,
@@ -2477,9 +2575,9 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
               name: "Checkout",
               baseline_page: "checkout",
               features: "Pay for an order",
-              change_type: "new"
-            }
-          ]
+              change_type: "new",
+            },
+          ],
         })),
         getProductRules: vi.fn(async () => [
           {
@@ -2488,9 +2586,9 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
             given: "cart has items",
             when: "checkout opens",
             then: "payment form appears",
-            source_requirement: "R-12345678"
-          }
-        ])
+            source_requirement: "R-12345678",
+          },
+        ]),
       },
       products: {
         ...fakeStore().products,
@@ -2503,10 +2601,10 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
           system_style: "material",
           languages: ["en"],
           default_language: "en",
-          requirements: {}
-        }))
+          requirements: {},
+        })),
       },
-      ...overrides
+      ...overrides,
     });
   }
 
@@ -2517,7 +2615,7 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
   it("get_design_context schema accepts valid minimal input", () => {
     expectSchemaSuccess("get_design_context", {
       product_id: "P-123abc",
-      requirement_id: "R-12345678"
+      requirement_id: "R-12345678",
     });
   });
 
@@ -2528,7 +2626,7 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
       page_id: "checkout",
       brand_style: "linear",
       system_style: "material",
-      craft_slugs: ["spacing", "typography"]
+      craft_slugs: ["spacing", "typography"],
     });
   });
 
@@ -2542,7 +2640,7 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
     expectSchemaFailure("get_design_context", {
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      unknown_field: "value"
+      unknown_field: "value",
     });
   });
 
@@ -2553,19 +2651,15 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
     const result = await tools.get_design_context({
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      page_id: "checkout"
+      page_id: "checkout",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
-    expect(payload.craft).toEqual(expect.arrayContaining([
-      expect.objectContaining({ slug: "spacing" })
-    ]));
+    expect(payload.craft).toEqual(expect.arrayContaining([expect.objectContaining({ slug: "spacing" })]));
     expect(payload.brandStyle).toMatchObject({ metadata: { name: "linear" } });
     expect(payload.page).toMatchObject({ page_id: "checkout" });
-    expect(payload.rules).toEqual(expect.arrayContaining([
-      expect.objectContaining({ page_id: "checkout" })
-    ]));
+    expect(payload.rules).toEqual(expect.arrayContaining([expect.objectContaining({ page_id: "checkout" })]));
   });
 
   it("get_design_context uses explicit brand_style over product config", async () => {
@@ -2575,22 +2669,23 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
         listStyles: vi.fn(async () => []),
         listCraftDocs: vi.fn(async () => []),
         readCraftDoc: vi.fn(async () => ({ slug: "x", content: "" })),
-        listSystemStyles: vi.fn(async () => [])
-      }
+        listSystemStyles: vi.fn(async () => []),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.get_design_context({
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      brand_style: "darkmode"
+      brand_style: "darkmode",
     });
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(payload.brandStyle).toMatchObject({ metadata: { name: "darkmode" } });
-    expect((store as unknown as { styles: { getStyle: ReturnType<typeof vi.fn> } }).styles.getStyle)
-      .toHaveBeenCalledWith("darkmode");
+    expect(
+      (store as unknown as { styles: { getStyle: ReturnType<typeof vi.fn> } }).styles.getStyle,
+    ).toHaveBeenCalledWith("darkmode");
   });
 
   it("get_design_context with craft_slugs fetches only specified craft docs", async () => {
@@ -2601,15 +2696,15 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
         listStyles: vi.fn(async () => []),
         listCraftDocs: vi.fn(async () => []),
         readCraftDoc,
-        listSystemStyles: vi.fn(async () => [])
-      }
+        listSystemStyles: vi.fn(async () => []),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.get_design_context({
       product_id: "P-123abc",
       requirement_id: "R-12345678",
-      craft_slugs: ["spacing", "typography"]
+      craft_slugs: ["spacing", "typography"],
     });
 
     expect(result.isError).toBeUndefined();
@@ -2626,14 +2721,14 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
         ...fakeStore().products,
         getProduct: vi.fn(async () => {
           throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
-        })
-      }
+        }),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.get_design_context({
       product_id: "P-missing",
-      requirement_id: "R-12345678"
+      requirement_id: "R-12345678",
     });
 
     expect(result.isError).toBe(true);
@@ -2648,16 +2743,18 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
  * No Puppeteer required — hand-crafts a minimal IR with two elements
  * (one container and one text) plus one SVG-bearing element.
  */
-function buildMinimalVziBytes(opts: {
-  title?: string;
-  withSvgElement?: boolean;
-  formaProductId?: string;
-  formaRequirementId?: string;
-  formaArtifactId?: string;
-  iconRelativePath?: string;
-  withNestedText?: boolean;
-  textContent?: string;
-} = {}): Uint8Array {
+function buildMinimalVziBytes(
+  opts: {
+    title?: string;
+    withSvgElement?: boolean;
+    formaProductId?: string;
+    formaRequirementId?: string;
+    formaArtifactId?: string;
+    iconRelativePath?: string;
+    withNestedText?: boolean;
+    textContent?: string;
+  } = {},
+): Uint8Array {
   const {
     title = "test-page",
     withSvgElement = false,
@@ -2763,7 +2860,7 @@ async function writeVziFixture(
   productId: string,
   artifactId: string,
   vziBytes: Uint8Array,
-  options: { writeEmptyIconsManifest?: boolean } = {}
+  options: { writeEmptyIconsManifest?: boolean } = {},
 ): Promise<void> {
   const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
   await mkdir(dirname(vziPath), { recursive: true });
@@ -2799,8 +2896,8 @@ async function writeIconsFixture(
   productsRoot: string,
   productId: string,
   artifactId: string,
-  iconRelativePath: string,  // e.g. "icons/icon-test.svg"
-  options: { requirementId?: string; pageId?: string; version?: string; variant?: string } = {}
+  iconRelativePath: string, // e.g. "icons/icon-test.svg"
+  options: { requirementId?: string; pageId?: string; version?: string; variant?: string } = {},
 ): Promise<void> {
   const iconsDir = getArtifactIconsDir(productsRoot, productId, artifactId);
   await mkdir(iconsDir, { recursive: true });
@@ -2871,7 +2968,7 @@ describe("design-handoff tools (Task 8)", () => {
   it("get_design_handoff rejects product_id parameter (requirement_id only)", () => {
     const parsed = formaToolInputSchemas.get_design_handoff.safeParse({
       requirement_id: REQ_ID,
-      product_id: PRODUCT_ID
+      product_id: PRODUCT_ID,
     });
     expect(parsed.success).toBe(false);
   });
@@ -2882,7 +2979,9 @@ describe("design-handoff tools (Task 8)", () => {
   });
 
   it("get_page_ui requires requirement_id and page_id", () => {
-    expect(formaToolInputSchemas.get_page_ui.safeParse({ requirement_id: REQ_ID, page_id: PAGE_ID }).success).toBe(true);
+    expect(formaToolInputSchemas.get_page_ui.safeParse({ requirement_id: REQ_ID, page_id: PAGE_ID }).success).toBe(
+      true,
+    );
     expect(formaToolInputSchemas.get_page_ui.safeParse({ requirement_id: REQ_ID }).success).toBe(false);
     expect(formaToolInputSchemas.get_page_ui.safeParse({ page_id: PAGE_ID }).success).toBe(false);
   });
@@ -2895,34 +2994,38 @@ describe("design-handoff tools (Task 8)", () => {
       fields: "layout",
       node_id: "el-root",
       variant: "experiment",
-      artifact_id: "artifact-123"
+      artifact_id: "artifact-123",
     });
     expect(valid.success).toBe(true);
   });
 
   it("get_ui_node and search_page_ui accept optional variant and artifact_id", () => {
-    expect(formaToolInputSchemas.get_ui_node.safeParse({
-      requirement_id: REQ_ID,
-      page_id: PAGE_ID,
-      node_id: "el-root",
-      variant: "experiment",
-      artifact_id: "artifact-123"
-    }).success).toBe(true);
+    expect(
+      formaToolInputSchemas.get_ui_node.safeParse({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        node_id: "el-root",
+        variant: "experiment",
+        artifact_id: "artifact-123",
+      }).success,
+    ).toBe(true);
 
-    expect(formaToolInputSchemas.search_page_ui.safeParse({
-      requirement_id: REQ_ID,
-      page_id: PAGE_ID,
-      query: "hello",
-      variant: "experiment",
-      artifact_id: "artifact-123"
-    }).success).toBe(true);
+    expect(
+      formaToolInputSchemas.search_page_ui.safeParse({
+        requirement_id: REQ_ID,
+        page_id: PAGE_ID,
+        query: "hello",
+        variant: "experiment",
+        artifact_id: "artifact-123",
+      }).success,
+    ).toBe(true);
   });
 
   it("get_page_ui rejects invalid fields value", () => {
     const invalid = formaToolInputSchemas.get_page_ui.safeParse({
       requirement_id: REQ_ID,
       page_id: PAGE_ID,
-      fields: "unknown-field"
+      fields: "unknown-field",
     });
     expect(invalid.success).toBe(false);
   });
@@ -2938,9 +3041,9 @@ describe("design-handoff tools (Task 8)", () => {
           product_id: PRODUCT_ID,
           status: "active",
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -2962,9 +3065,9 @@ describe("design-handoff tools (Task 8)", () => {
           product_id: PRODUCT_ID,
           status: "submitted",
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -2983,9 +3086,9 @@ describe("design-handoff tools (Task 8)", () => {
           product_id: PRODUCT_ID,
           status: "empty",
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -3004,9 +3107,9 @@ describe("design-handoff tools (Task 8)", () => {
           product_id: PRODUCT_ID,
           status: "active",
           pages: [],
-          document_md: ""
-        }))
-      }
+          document_md: "",
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
@@ -3031,21 +3134,23 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
           getProductRules: vi.fn(async () => []),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3085,7 +3190,7 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
           getProductRules: vi.fn(async () => rules),
         },
@@ -3095,15 +3200,17 @@ describe("design-handoff tools (Task 8)", () => {
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3135,12 +3242,7 @@ describe("design-handoff tools (Task 8)", () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-skip-invalid-"));
     try {
       const productsRoot = join(home, "data", "products");
-      await writeVziFixture(
-        productsRoot,
-        PRODUCT_ID,
-        ARTIFACT_ID,
-        buildMinimalVziBytes({ title: PAGE_ID }),
-      );
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, buildMinimalVziBytes({ title: PAGE_ID }));
       await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
         requirementId: REQ_ID,
         pageId: PAGE_ID,
@@ -3164,7 +3266,7 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
           getProductRules: vi.fn(async () => []),
         },
@@ -3192,24 +3294,14 @@ describe("design-handoff tools (Task 8)", () => {
     try {
       const productsRoot = join(home, "data", "products");
 
-      await writeVziFixture(
-        productsRoot,
-        PRODUCT_ID,
-        ARTIFACT_ID,
-        buildMinimalVziBytes({ title: PAGE_ID }),
-      );
+      await writeVziFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, buildMinimalVziBytes({ title: PAGE_ID }));
       await writeIconsFixture(productsRoot, PRODUCT_ID, ARTIFACT_ID, ICON_REL_PATH, {
         requirementId: REQ_ID,
         pageId: PAGE_ID,
         version: "v1",
       });
 
-      await writeVziFixture(
-        productsRoot,
-        PRODUCT_ID,
-        staleArtifactId,
-        buildMinimalVziBytes({ title: "page-removed" }),
-      );
+      await writeVziFixture(productsRoot, PRODUCT_ID, staleArtifactId, buildMinimalVziBytes({ title: "page-removed" }));
       await writeIconsFixture(productsRoot, PRODUCT_ID, staleArtifactId, ICON_REL_PATH, {
         requirementId: REQ_ID,
         pageId: "page-removed",
@@ -3231,7 +3323,7 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
           getProductRules: vi.fn(async () => []),
         },
@@ -3242,10 +3334,12 @@ describe("design-handoff tools (Task 8)", () => {
       const payload = textPayload(result);
 
       expect(result.isError).toBeUndefined();
-      expect(payload.pages.map((page: { pageId: string; artifactId: string }) => ({
-        pageId: page.pageId,
-        artifactId: page.artifactId,
-      }))).toEqual([{ pageId: PAGE_ID, artifactId: ARTIFACT_ID }]);
+      expect(
+        payload.pages.map((page: { pageId: string; artifactId: string }) => ({
+          pageId: page.pageId,
+          artifactId: page.artifactId,
+        })),
+      ).toEqual([{ pageId: PAGE_ID, artifactId: ARTIFACT_ID }]);
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -3280,21 +3374,23 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
           getProductRules: vi.fn(async () => []),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 2,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 2,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3340,7 +3436,10 @@ describe("design-handoff tools (Task 8)", () => {
         buildMinimalVziBytes({ title: PAGE_ID, textContent: "Experiment variant" }),
       );
 
-      for (const [artifactId, version] of [[ARTIFACT_ID, 1], [secondArtifactId, 2]] as const) {
+      for (const [artifactId, version] of [
+        [ARTIFACT_ID, 1],
+        [secondArtifactId, 2],
+      ] as const) {
         const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, artifactId, version);
         await mkdir(versionDir, { recursive: true });
         await writeFile(join(versionDir, "index.html"), "<!DOCTYPE html><html></html>", "utf8");
@@ -3373,51 +3472,59 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
           listDesignPointers: vi.fn(async () => pointers),
-        }
+        },
       });
       const tools = createFormaTools(store);
 
       const handoff = textPayload(await tools.get_design_handoff({ requirement_id: REQ_ID }));
-      expect(handoff.pages.map((page: { pageId: string; variant?: string; artifactId: string }) => ({
-        pageId: page.pageId,
-        variant: page.variant,
-        artifactId: page.artifactId,
-      }))).toEqual([
+      expect(
+        handoff.pages.map((page: { pageId: string; variant?: string; artifactId: string }) => ({
+          pageId: page.pageId,
+          variant: page.variant,
+          artifactId: page.artifactId,
+        })),
+      ).toEqual([
         { pageId: PAGE_ID, variant: "default", artifactId: ARTIFACT_ID },
         { pageId: PAGE_ID, variant: "experiment", artifactId: secondArtifactId },
       ]);
 
-      const pageUi = textPayload(await tools.get_page_ui({
-        requirement_id: REQ_ID,
-        page_id: PAGE_ID,
-        variant: "experiment",
-      }));
+      const pageUi = textPayload(
+        await tools.get_page_ui({
+          requirement_id: REQ_ID,
+          page_id: PAGE_ID,
+          variant: "experiment",
+        }),
+      );
       expect(pageUi.artifactId).toBe(secondArtifactId);
       expect(pageUi.variant).toBe("experiment");
       expect(pageUi.tree.some((el: { textContent?: string }) => el.textContent === "Experiment variant")).toBe(true);
 
-      const searchResult = textPayload(await tools.search_page_ui({
-        requirement_id: REQ_ID,
-        page_id: PAGE_ID,
-        artifact_id: secondArtifactId,
-        query: "Experiment",
-      }));
+      const searchResult = textPayload(
+        await tools.search_page_ui({
+          requirement_id: REQ_ID,
+          page_id: PAGE_ID,
+          artifact_id: secondArtifactId,
+          query: "Experiment",
+        }),
+      );
       expect(searchResult.artifactId).toBe(secondArtifactId);
       expect(searchResult.variant).toBe("experiment");
       expect(searchResult.total).toBeGreaterThan(0);
 
-      const nodeResult = textPayload(await tools.get_ui_node({
-        requirement_id: REQ_ID,
-        page_id: PAGE_ID,
-        variant: "experiment",
-        node_id: "el-text",
-      }));
+      const nodeResult = textPayload(
+        await tools.get_ui_node({
+          requirement_id: REQ_ID,
+          page_id: PAGE_ID,
+          variant: "experiment",
+          node_id: "el-text",
+        }),
+      );
       expect(nodeResult.textContent).toBe("Experiment variant");
     } finally {
       await rm(home, { recursive: true, force: true });
@@ -3446,20 +3553,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3500,20 +3609,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3555,7 +3666,7 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
         },
       });
@@ -3587,20 +3698,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3638,20 +3751,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [{ page_id: PAGE_ID }],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3682,20 +3797,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3734,20 +3851,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3781,20 +3900,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3832,20 +3953,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -3859,7 +3982,7 @@ describe("design-handoff tools (Task 8)", () => {
       const subtreeResult = await tools.get_page_ui({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        node_id: "el-text"
+        node_id: "el-text",
       });
       const subtreePayload = textPayload(subtreeResult);
 
@@ -3886,27 +4009,29 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.get_ui_node({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        node_id: "el-root"
+        node_id: "el-root",
       });
       const payload = textPayload(result);
 
@@ -3939,27 +4064,29 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.get_ui_node({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        node_id: "non-existent-node"
+        node_id: "non-existent-node",
       });
 
       expect(result.isError).toBe(true);
@@ -3985,27 +4112,29 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.search_page_ui({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        query: "Hello design"
+        query: "Hello design",
       });
       const payload = textPayload(result);
 
@@ -4015,9 +4144,9 @@ describe("design-handoff tools (Task 8)", () => {
       expect(Array.isArray(payload.elements)).toBe(true);
       expect(typeof payload.total).toBe("number");
       // The text element "Hello design" should be found
-      expect(payload.elements.some((el: { textContent?: string }) =>
-        el.textContent?.includes("Hello design")
-      )).toBe(true);
+      expect(payload.elements.some((el: { textContent?: string }) => el.textContent?.includes("Hello design"))).toBe(
+        true,
+      );
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -4044,27 +4173,29 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.search_page_ui({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        query: "el-svg"
+        query: "el-svg",
       });
       const payload = textPayload(result);
 
@@ -4095,27 +4226,29 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.search_page_ui({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        query: "zzz-no-match-zzz"
+        query: "zzz-no-match-zzz",
       });
       const payload = textPayload(result);
 
@@ -4151,20 +4284,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4173,8 +4308,8 @@ describe("design-handoff tools (Task 8)", () => {
 
       expect(result.isError).toBeUndefined();
       // Find the SVG element — it should have an assetRef
-      const svgEl = payload.tree.find((el: { id: string; assetRef?: string }) =>
-        el.id === "el-svg" && el.assetRef !== undefined
+      const svgEl = payload.tree.find(
+        (el: { id: string; assetRef?: string }) => el.id === "el-svg" && el.assetRef !== undefined,
       );
       expect(svgEl).toBeDefined();
       // assetRef must be an absolute path
@@ -4211,27 +4346,29 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.get_ui_node({
         requirement_id: REQ_ID,
         page_id: PAGE_ID,
-        node_id: "el-svg"
+        node_id: "el-svg",
       });
       const payload = textPayload(result);
 
@@ -4263,20 +4400,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4314,20 +4453,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4370,20 +4511,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4419,20 +4562,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4468,20 +4613,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4519,20 +4666,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4579,20 +4728,22 @@ describe("design-handoff tools (Task 8)", () => {
             product_id: PRODUCT_ID,
             status: "archived",
             pages: [],
-            document_md: ""
+            document_md: "",
           })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [{
-            requirementId: REQ_ID,
-            pageId: PAGE_ID,
-            variant: "default",
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            designStatus: "active" as const,
-          }]),
-        }
+          listDesignPointers: vi.fn(async () => [
+            {
+              requirementId: REQ_ID,
+              pageId: PAGE_ID,
+              variant: "default",
+              artifactId: ARTIFACT_ID,
+              version: 1,
+              designStatus: "active" as const,
+            },
+          ]),
+        },
       });
       const tools = createFormaTools(store);
 
@@ -4674,11 +4825,11 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
           product_id: "P-123abc",
           status: "active",
           pages: [{ page_id: "page-checkout", baseline_page: "checkout" }],
-          document_md: "# Active requirement"
+          document_md: "# Active requirement",
         })),
         getProductRules: vi.fn(async () => []),
       },
-      ...overrides
+      ...overrides,
     });
   }
 
@@ -4688,7 +4839,7 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
 
     const result = await tools.get_product_artifact({
       product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456"
+      artifact_id: "ABCDEFGHIJ123456",
     });
 
     // Tool must NOT be gated — it never checks requirement status
@@ -4698,14 +4849,24 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       expect(result.isError).toBeUndefined();
     }
     // Confirm assertArchived (getRequirement check) was NOT called by this tool
-    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
-      .not.toHaveBeenCalled();
+    expect(
+      (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
+    ).not.toHaveBeenCalled();
   });
 
   it("export_artifact html format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-regress-export-html-"));
     try {
-      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      const versionDir = join(
+        home,
+        "data",
+        "products",
+        "P-123abc",
+        "od-project",
+        "artifacts",
+        "ABCDEFGHIJ123456",
+        "v1",
+      );
       await mkdir(versionDir, { recursive: true });
       await writeFile(join(versionDir, "index.html"), "<main>Active design</main>", "utf8");
 
@@ -4714,19 +4875,19 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
         artifacts: {
           ...fakeStore().artifacts,
           listArtifactVersions: vi.fn(async () => [1]),
-          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [])
-        }
+          listDesignPointers: vi.fn(async () => []),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.export_artifact({
         product_id: "P-123abc",
         artifact_id: "ABCDEFGHIJ123456",
-        format: "html"
+        format: "html",
       });
 
       if (result.isError) {
@@ -4743,7 +4904,16 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
   it("export_artifact zip format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-regress-export-zip-"));
     try {
-      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      const versionDir = join(
+        home,
+        "data",
+        "products",
+        "P-123abc",
+        "od-project",
+        "artifacts",
+        "ABCDEFGHIJ123456",
+        "v1",
+      );
       await mkdir(versionDir, { recursive: true });
       await writeFile(join(versionDir, "index.html"), "<main>Active design</main>", "utf8");
 
@@ -4752,19 +4922,19 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
         artifacts: {
           ...fakeStore().artifacts,
           listArtifactVersions: vi.fn(async () => [1]),
-          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [])
-        }
+          listDesignPointers: vi.fn(async () => []),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.export_artifact({
         product_id: "P-123abc",
         artifact_id: "ABCDEFGHIJ123456",
-        format: "zip"
+        format: "zip",
       });
 
       if (result.isError) {
@@ -4781,12 +4951,21 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
   it("export_artifact icons format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-regress-export-icons-"));
     try {
-      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      const versionDir = join(
+        home,
+        "data",
+        "products",
+        "P-123abc",
+        "od-project",
+        "artifacts",
+        "ABCDEFGHIJ123456",
+        "v1",
+      );
       await mkdir(versionDir, { recursive: true });
       await writeFile(
         join(versionDir, "index.html"),
         `<!DOCTYPE html><html><body><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" aria-label="check"><path d="M20 6L9 17l-5-5"/></svg></body></html>`,
-        "utf8"
+        "utf8",
       );
 
       const store = activeRequirementStore({
@@ -4794,19 +4973,19 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
         artifacts: {
           ...fakeStore().artifacts,
           listArtifactVersions: vi.fn(async () => [1]),
-          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [])
-        }
+          listDesignPointers: vi.fn(async () => []),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.export_artifact({
         product_id: "P-123abc",
         artifact_id: "ABCDEFGHIJ123456",
-        format: "icons"
+        format: "icons",
       });
 
       if (result.isError) {
@@ -4816,8 +4995,9 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
         expect(textPayload(result)).toHaveProperty("output_path");
       }
       // getRequirement must NOT have been called by export_artifact
-      expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
-        .not.toHaveBeenCalled();
+      expect(
+        (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
+      ).not.toHaveBeenCalled();
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -4826,12 +5006,21 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
   it("export_artifact vzi format succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-regress-export-vzi-"));
     try {
-      const versionDir = join(home, "data", "products", "P-123abc", "od-project", "artifacts", "ABCDEFGHIJ123456", "v1");
+      const versionDir = join(
+        home,
+        "data",
+        "products",
+        "P-123abc",
+        "od-project",
+        "artifacts",
+        "ABCDEFGHIJ123456",
+        "v1",
+      );
       await mkdir(versionDir, { recursive: true });
       await writeFile(
         join(versionDir, "index.html"),
         `<!DOCTYPE html><html><body><p>active design</p></body></html>`,
-        "utf8"
+        "utf8",
       );
 
       const store = activeRequirementStore({
@@ -4839,30 +5028,31 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
         artifacts: {
           ...fakeStore().artifacts,
           listArtifactVersions: vi.fn(async () => [1]),
-          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" }))
+          readArtifactVersion: vi.fn(async () => ({ manifest: fakeManifest(), etag: "sha256:abc" })),
         },
         products: {
           ...fakeStore().products,
-          listDesignPointers: vi.fn(async () => [])
-        }
+          listDesignPointers: vi.fn(async () => []),
+        },
       });
       const tools = createFormaTools(store);
 
       const result = await tools.export_artifact({
         product_id: "P-123abc",
         artifact_id: "ABCDEFGHIJ123456",
-        format: "vzi"
+        format: "vzi",
       });
 
       if (result.isError) {
         expect(textPayload(result).error_code).not.toBe("REQUIREMENT_NOT_FINALIZED");
       } else {
         expect(result.isError).toBeUndefined();
-        expect((textPayload(result).output_path as string)).toMatch(/\.vzi$/);
+        expect(textPayload(result).output_path as string).toMatch(/\.vzi$/);
       }
       // getRequirement must NOT have been called by export_artifact
-      expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
-        .not.toHaveBeenCalled();
+      expect(
+        (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
+      ).not.toHaveBeenCalled();
     } finally {
       await rm(home, { recursive: true, force: true });
     }
@@ -4871,11 +5061,17 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
   it("get_design_context succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status requirement", async () => {
     const store = activeRequirementStore({
       styles: {
-        getStyle: vi.fn(async () => ({ kind: "brand" as const, metadata: { name: "linear" }, designMd: "# Linear", tokensCss: ":root{}", componentsHtml: "<div/>" })),
+        getStyle: vi.fn(async () => ({
+          kind: "brand" as const,
+          metadata: { name: "linear" },
+          designMd: "# Linear",
+          tokensCss: ":root{}",
+          componentsHtml: "<div/>",
+        })),
         listStyles: vi.fn(async () => [{ name: "linear" }]),
         listCraftDocs: vi.fn(async () => []),
         readCraftDoc: vi.fn(async (slug: string) => ({ slug, content: "" })),
-        listSystemStyles: vi.fn(async () => [])
+        listSystemStyles: vi.fn(async () => []),
       },
       products: {
         ...fakeStore().products,
@@ -4887,15 +5083,15 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
           brand_style: "linear",
           languages: ["en"],
           default_language: "en",
-          requirements: {}
-        }))
-      }
+          requirements: {},
+        })),
+      },
     });
     const tools = createFormaTools(store);
 
     const result = await tools.get_design_context({
       product_id: "P-123abc",
-      requirement_id: "R-active001"
+      requirement_id: "R-active001",
     });
 
     // get_design_context must NOT be gated by archive status
@@ -4911,8 +5107,8 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       generateRequirementDesign: vi.fn(async () => ({
         artifact_id: "ABCDEFGHIJ123456",
         version: 1,
-        preview_status: "pending"
-      }))
+        preview_status: "pending",
+      })),
     });
     const tools = createFormaTools(store);
 
@@ -4922,15 +5118,16 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       page_id: "page-checkout",
       html: "<main>Active design</main>",
       title: "Checkout",
-      brand_style: "linear"
+      brand_style: "linear",
     });
 
     // Must succeed without REQUIREMENT_NOT_FINALIZED
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1 });
     // generate_requirement_design must NOT call getRequirement (no archive check)
-    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
-      .not.toHaveBeenCalled();
+    expect(
+      (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
+    ).not.toHaveBeenCalled();
   });
 
   it("generate_components succeeds (no REQUIREMENT_NOT_FINALIZED) for a non-archived product", async () => {
@@ -4938,8 +5135,8 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       generateComponents: vi.fn(async () => ({
         artifact_id: "ABCDEFGHIJ123456",
         version: 1,
-        preview_status: "pending"
-      }))
+        preview_status: "pending",
+      })),
     });
     const tools = createFormaTools(store);
 
@@ -4947,14 +5144,15 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       product_id: "P-123abc",
       html: "<section>Button</section>",
       title: "Component Library",
-      brand_style: "linear"
+      brand_style: "linear",
     });
 
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1 });
     // generate_components must NOT call getRequirement (no archive check)
-    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
-      .not.toHaveBeenCalled();
+    expect(
+      (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
+    ).not.toHaveBeenCalled();
   });
 
   it("change_artifact_style succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status product", async () => {
@@ -4962,8 +5160,8 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       changeArtifactStyle: vi.fn(async () => ({
         artifact_id: "ABCDEFGHIJ123456",
         version: 2,
-        preview_status: "pending"
-      }))
+        preview_status: "pending",
+      })),
     });
     const tools = createFormaTools(store);
 
@@ -4972,14 +5170,15 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       artifact_id: "ABCDEFGHIJ123456",
       html: "<main>Restyled</main>",
       title: "Checkout (Dark)",
-      brand_style: "dark"
+      brand_style: "dark",
     });
 
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 2 });
     // change_artifact_style must NOT call getRequirement (no archive check)
-    expect((store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement)
-      .not.toHaveBeenCalled();
+    expect(
+      (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
+    ).not.toHaveBeenCalled();
   });
 
   it("only the 4 dev-handoff tools (get_design_handoff/get_page_ui/get_ui_node/search_page_ui) return REQUIREMENT_NOT_FINALIZED for a non-archived requirement", async () => {
@@ -4997,7 +5196,7 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
       tools.get_design_handoff(devHandoffInput),
       tools.get_page_ui(pageInput),
       tools.get_ui_node(nodeInput),
-      tools.search_page_ui(searchInput)
+      tools.search_page_ui(searchInput),
     ]);
 
     // All 4 must be gated

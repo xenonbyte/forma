@@ -14,8 +14,8 @@ describe("isDesignTile", () => {
     htmlBundle: { artifactId: "a", version: 1, kind: "bundle" },
     previewImages: {
       "1x": { artifactId: "a", version: 1, kind: "preview", density: "1x" },
-      "2x": { artifactId: "a", version: 1, kind: "preview", density: "2x" }
-    }
+      "2x": { artifactId: "a", version: 1, kind: "preview", density: "2x" },
+    },
   };
 
   it("returns true for design tiles", () => {

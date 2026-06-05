@@ -3,15 +3,15 @@ export const COMPONENTS_MANIFEST_SCHEMA_VERSION = 1 as const;
 export type ComponentsManifestSchemaVersion = typeof COMPONENTS_MANIFEST_SCHEMA_VERSION;
 
 export type ComponentManifestGroupId =
-  | 'buttons'
-  | 'inputs'
-  | 'cards'
-  | 'badges'
-  | 'links'
-  | 'keyboard'
-  | 'icons'
-  | 'typography'
-  | 'layout';
+  | "buttons"
+  | "inputs"
+  | "cards"
+  | "badges"
+  | "links"
+  | "keyboard"
+  | "icons"
+  | "typography"
+  | "layout";
 
 export type ComponentManifestGroup = {
   id: ComponentManifestGroupId;
@@ -33,8 +33,8 @@ export type ComponentsManifest = {
   schemaVersion: ComponentsManifestSchemaVersion;
   brandId: string;
   source: {
-    componentsHtml: 'components.html';
-    tokensCss?: 'tokens.css';
+    componentsHtml: "components.html";
+    tokensCss?: "tokens.css";
   };
   fixture: {
     title?: string;
@@ -73,64 +73,64 @@ type ComponentGroupDefinition = {
 
 const COMPONENT_GROUPS: ComponentGroupDefinition[] = [
   {
-    id: 'buttons',
-    label: 'Buttons and calls to action',
+    id: "buttons",
+    label: "Buttons and calls to action",
     selectorMatchers: [/\bbutton\b/i, /\.btn(?:\b|[-_:])/i, /\[type=["']?(?:button|submit|reset)/i],
     classMatchers: [/^btn(?:$|-)/i, /button/i, /cta/i],
     elementMatchers: [/^button$/i],
   },
   {
-    id: 'inputs',
-    label: 'Form fields and controls',
+    id: "inputs",
+    label: "Form fields and controls",
     selectorMatchers: [/\binput\b/i, /\btextarea\b/i, /\bselect\b/i, /\.field(?:\b|[-_:])/i, /\blabel\b/i],
     classMatchers: [/^field(?:$|-)/i, /input/i, /control/i, /form/i],
     elementMatchers: [/^(input|textarea|select|label|form)$/i],
   },
   {
-    id: 'cards',
-    label: 'Cards and panels',
+    id: "cards",
+    label: "Cards and panels",
     selectorMatchers: [/\.card(?:\b|[-_:])/i, /\.panel(?:\b|[-_:])/i, /\.tile(?:\b|[-_:])/i],
     classMatchers: [/^card(?:$|-)/i, /^panel(?:$|-)/i, /^tile(?:$|-)/i],
     elementMatchers: [],
   },
   {
-    id: 'badges',
-    label: 'Badges, chips, and status labels',
+    id: "badges",
+    label: "Badges, chips, and status labels",
     selectorMatchers: [/\.badge(?:\b|[-_:])/i, /\.chip(?:\b|[-_:])/i, /\.tag(?:\b|[-_:])/i, /\.pill(?:\b|[-_:])/i],
     classMatchers: [/^badge(?:$|-)/i, /^chip(?:$|-)/i, /^tag(?:$|-)/i, /^pill(?:$|-)/i, /status/i],
     elementMatchers: [],
   },
   {
-    id: 'links',
-    label: 'Links and inline actions',
+    id: "links",
+    label: "Links and inline actions",
     selectorMatchers: [/\ba\b/i, /\.link(?:\b|[-_:])/i],
     classMatchers: [/^link(?:$|-)/i],
     elementMatchers: [/^a$/i],
   },
   {
-    id: 'keyboard',
-    label: 'Keyboard hints',
+    id: "keyboard",
+    label: "Keyboard hints",
     selectorMatchers: [/\bkbd\b/i, /\.kbd(?:\b|[-_:])/i],
     classMatchers: [/^kbd(?:$|-)/i, /keyboard/i, /shortcut/i],
     elementMatchers: [/^kbd$/i],
   },
   {
-    id: 'icons',
-    label: 'Icon slots',
+    id: "icons",
+    label: "Icon slots",
     selectorMatchers: [/\.icon(?:\b|[-_:])/i, /\[aria-hidden=["']true["']\]/i],
     classMatchers: [/^icon(?:$|-)/i],
     elementMatchers: [/^svg$/i],
   },
   {
-    id: 'typography',
-    label: 'Typography scale and text utilities',
+    id: "typography",
+    label: "Typography scale and text utilities",
     selectorMatchers: [/\bh[1-6]\b/i, /\.lead(?:\b|[-_:])/i, /\.eyebrow(?:\b|[-_:])/i, /\.body-(?:muted|sm|small)\b/i],
     classMatchers: [/^lead$/i, /^eyebrow$/i, /^body-(?:muted|sm|small)$/i, /caption/i],
     elementMatchers: [/^h[1-6]$/i, /^p$/i],
   },
   {
-    id: 'layout',
-    label: 'Layout primitives',
+    id: "layout",
+    label: "Layout primitives",
     selectorMatchers: [
       /\.container(?:\b|[-_:])/i,
       /\.stack-\d+\b/i,
@@ -150,12 +150,12 @@ export function extractComponentsManifest({
   tokensCss,
 }: ExtractComponentsManifestInput): ComponentsManifest {
   const styleBlocks = extractStyleBlocks(fixtureHtml);
-  const css = styleBlocks.join('\n\n');
+  const css = styleBlocks.join("\n\n");
   const selectors = extractCssSelectors(css);
   const selectorTokenReferences = extractSelectorTokenReferences(css);
   const classes = extractHtmlClasses(fixtureHtml);
   const elements = extractHtmlElements(fixtureHtml);
-  const declaredTokens = parseTokenNames(tokensCss ?? extractFirstRootBody(css) ?? '');
+  const declaredTokens = parseTokenNames(tokensCss ?? extractFirstRootBody(css) ?? "");
   const referencedTokens = extractTokenReferences(fixtureHtml);
 
   return {
@@ -163,11 +163,11 @@ export function extractComponentsManifest({
     brandId,
     source:
       tokensCss === undefined
-        ? { componentsHtml: 'components.html' }
-        : { componentsHtml: 'components.html', tokensCss: 'tokens.css' },
+        ? { componentsHtml: "components.html" }
+        : { componentsHtml: "components.html", tokensCss: "tokens.css" },
     fixture: {
-      ...optionalText('title', extractTitle(fixtureHtml)),
-      ...optionalText('description', extractMetaDescription(fixtureHtml)),
+      ...optionalText("title", extractTitle(fixtureHtml)),
+      ...optionalText("description", extractMetaDescription(fixtureHtml)),
       styleBlockCount: styleBlocks.length,
       selectorCount: selectors.length,
       classCount: classes.length,
@@ -200,17 +200,17 @@ export function summarizeComponentsManifestForPrompt(manifest: ComponentsManifes
   const presentGroups = manifest.groups
     .filter((group) => group.present)
     .map((group) => {
-      const selectors = group.selectors.slice(0, 8).join(', ') || 'none';
-      const tokens = group.tokenReferences.slice(0, 10).join(', ') || 'none';
+      const selectors = group.selectors.slice(0, 8).join(", ") || "none";
+      const tokens = group.tokenReferences.slice(0, 10).join(", ") || "none";
       return `- ${group.label}: selectors ${selectors}; tokens ${tokens}`;
     });
 
   return [
     `components.manifest schema v${manifest.schemaVersion} for ${manifest.brandId}`,
     `Fixture: ${manifest.fixture.selectorCount} selectors, ${manifest.fixture.classCount} classes, ${manifest.tokens.declared.length} declared tokens, ${manifest.tokens.referenced.length} referenced tokens.`,
-    'Available component groups:',
-    ...(presentGroups.length > 0 ? presentGroups : ['- none detected']),
-  ].join('\n');
+    "Available component groups:",
+    ...(presentGroups.length > 0 ? presentGroups : ["- none detected"]),
+  ].join("\n");
 }
 
 function buildGroupManifest(
@@ -252,7 +252,7 @@ function extractStyleBlocks(html: string): string[] {
   const stylePattern = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
   let match: RegExpExecArray | null;
   while ((match = stylePattern.exec(html)) !== null) {
-    blocks.push((match[1] ?? '').trim());
+    blocks.push((match[1] ?? "").trim());
   }
   return blocks;
 }
@@ -266,12 +266,12 @@ function extractCssSelectors(css: string): string[] {
   while ((match = selectorPattern.exec(commentlessCss)) !== null) {
     const rawSelectorList = match[1]?.trim();
     if (rawSelectorList == null || rawSelectorList.length === 0) continue;
-    if (rawSelectorList.includes(':root')) continue;
+    if (rawSelectorList.includes(":root")) continue;
     if (/^(?:from|to|\d+(?:\.\d+)?%)$/i.test(rawSelectorList)) continue;
 
     for (const selector of splitSelectorList(rawSelectorList)) {
       const normalized = normalizeSelector(selector);
-      if (normalized.length > 0 && !normalized.startsWith('@')) {
+      if (normalized.length > 0 && !normalized.startsWith("@")) {
         selectors.add(normalized);
       }
     }
@@ -288,9 +288,9 @@ function extractSelectorTokenReferences(css: string): Map<string, string[]> {
 
   while ((match = rulePattern.exec(commentlessCss)) !== null) {
     const rawSelectorList = match[1]?.trim();
-    const rawBody = match[2] ?? '';
+    const rawBody = match[2] ?? "";
     if (rawSelectorList == null || rawSelectorList.length === 0) continue;
-    if (rawSelectorList.includes(':root')) continue;
+    if (rawSelectorList.includes(":root")) continue;
     if (/^(?:from|to|\d+(?:\.\d+)?%)$/i.test(rawSelectorList)) continue;
 
     const tokenReferences = extractTokenReferences(rawBody);
@@ -298,7 +298,7 @@ function extractSelectorTokenReferences(css: string): Map<string, string[]> {
 
     for (const selector of splitSelectorList(rawSelectorList)) {
       const normalized = normalizeSelector(selector);
-      if (normalized.length === 0 || normalized.startsWith('@')) continue;
+      if (normalized.length === 0 || normalized.startsWith("@")) continue;
       const selectorReferences = referencesBySelector.get(normalized) ?? new Set<string>();
       for (const token of tokenReferences) {
         selectorReferences.add(token);
@@ -321,15 +321,15 @@ function splitSelectorList(selectorList: string): string[] {
 
   for (let index = 0; index < selectorList.length; index += 1) {
     const char = selectorList[index];
-    if (char === '(' || char === '[') {
+    if (char === "(" || char === "[") {
       depth += 1;
       continue;
     }
-    if (char === ')' || char === ']') {
+    if (char === ")" || char === "]") {
       depth = Math.max(0, depth - 1);
       continue;
     }
-    if (char === ',' && depth === 0) {
+    if (char === "," && depth === 0) {
       selectors.push(selectorList.slice(start, index));
       start = index + 1;
     }
@@ -340,7 +340,7 @@ function splitSelectorList(selectorList: string): string[] {
 }
 
 function normalizeSelector(selector: string): string {
-  return selector.trim().replace(/\s+/g, ' ');
+  return selector.trim().replace(/\s+/g, " ");
 }
 
 function extractHtmlClasses(html: string): string[] {
@@ -348,7 +348,7 @@ function extractHtmlClasses(html: string): string[] {
   const classPattern = /\bclass\s*=\s*(["'])(.*?)\1/gis;
   let match: RegExpExecArray | null;
   while ((match = classPattern.exec(html)) !== null) {
-    const classValue = match[2] ?? '';
+    const classValue = match[2] ?? "";
     for (const className of classValue.split(/\s+/)) {
       if (className.length > 0) classes.add(className);
     }
@@ -362,7 +362,7 @@ function extractHtmlElements(html: string): string[] {
   let match: RegExpExecArray | null;
   while ((match = elementPattern.exec(html)) !== null) {
     const element = match[1]?.toLowerCase();
-    if (element == null || element.startsWith('!')) continue;
+    if (element == null || element.startsWith("!")) continue;
     elements.add(element);
   }
   return [...elements].sort((a, b) => a.localeCompare(b));
@@ -395,15 +395,15 @@ function extractFirstRootBody(css: string): string | null {
 }
 
 function stripRootBlocks(css: string): string {
-  return css.replace(/:root(?:\[[^\]]+\])?\s*\{[\s\S]*?\}/g, '');
+  return css.replace(/:root(?:\[[^\]]+\])?\s*\{[\s\S]*?\}/g, "");
 }
 
 function stripCssComments(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
 function stripContainerAtRuleHeaders(css: string): string {
-  return css.replace(/@(media|supports|container|layer)\b[^{]*\{/gi, '{');
+  return css.replace(/@(media|supports|container|layer)\b[^{]*\{/gi, "{");
 }
 
 function countLiterals(css: string): ComponentManifestLiteralInventory {
@@ -426,13 +426,14 @@ function uniqueSorted(values: string[]): string[] {
 }
 
 function extractTitle(html: string): string | undefined {
-  const value = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim().replace(/\s+/g, ' ');
+  const value = /<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1]?.trim().replace(/\s+/g, " ");
   return value == null || value.length === 0 ? undefined : decodeBasicEntities(value);
 }
 
 function extractMetaDescription(html: string): string | undefined {
-  const match = /<meta\b(?=[^>]*\bname\s*=\s*["']description["'])(?=[^>]*\bcontent\s*=\s*(["'])([\s\S]*?)\1)[^>]*>/i.exec(html);
-  const value = match?.[2]?.trim().replace(/\s+/g, ' ');
+  const match =
+    /<meta\b(?=[^>]*\bname\s*=\s*["']description["'])(?=[^>]*\bcontent\s*=\s*(["'])([\s\S]*?)\1)[^>]*>/i.exec(html);
+  const value = match?.[2]?.trim().replace(/\s+/g, " ");
   return value == null || value.length === 0 ? undefined : decodeBasicEntities(value);
 }
 
@@ -440,11 +441,14 @@ function decodeBasicEntities(value: string): string {
   return value
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>');
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
 }
 
-function optionalText<Key extends string>(key: Key, value: string | undefined): Record<Key, string> | Record<string, never> {
-  return value === undefined ? {} : { [key]: value } as Record<Key, string>;
+function optionalText<Key extends string>(
+  key: Key,
+  value: string | undefined,
+): Record<Key, string> | Record<string, never> {
+  return value === undefined ? {} : ({ [key]: value } as Record<Key, string>);
 }

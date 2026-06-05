@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from "react";
 
 interface ConnectionGateProps {
   children: React.ReactNode;
@@ -7,10 +7,10 @@ interface ConnectionGateProps {
 }
 
 function defaultCheckStatus(): Promise<boolean> {
-  if (typeof window !== 'undefined' && window.forma?.formaServerStatus) {
+  if (typeof window !== "undefined" && window.forma?.formaServerStatus) {
     return window.forma.formaServerStatus().then(
       (v) => v === true,
-      () => false
+      () => false,
     );
   }
   return Promise.resolve(false);

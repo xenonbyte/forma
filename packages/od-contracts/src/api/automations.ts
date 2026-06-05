@@ -1,48 +1,27 @@
-import type { JsonValue } from '../common.js';
-import type { RunContextSelection } from './context.js';
-import type { MemoryType } from './memory.js';
+import type { JsonValue } from "../common.js";
+import type { RunContextSelection } from "./context.js";
+import type { MemoryType } from "./memory.js";
 
-export type AutomationTriggerKind =
-  | 'manual'
-  | 'schedule'
-  | 'connector'
-  | 'project-event';
+export type AutomationTriggerKind = "manual" | "schedule" | "connector" | "project-event";
 
-export type AutomationSourceKind =
-  | 'upload'
-  | 'url'
-  | 'repo'
-  | 'connector'
-  | 'artifact'
-  | 'chat';
+export type AutomationSourceKind = "upload" | "url" | "repo" | "connector" | "artifact" | "chat";
 
-export type AutomationOutputSink =
-  | 'memory'
-  | 'skill'
-  | 'design-system'
-  | 'automation-template'
-  | 'artifact';
+export type AutomationOutputSink = "memory" | "skill" | "design-system" | "automation-template" | "artifact";
 
-export type AutomationReviewPolicy =
-  | 'always'
-  | 'trusted-source'
-  | 'auto-apply';
+export type AutomationReviewPolicy = "always" | "trusted-source" | "auto-apply";
 
-export type AutomationTokenCompressionMode =
-  | 'off'
-  | 'balanced'
-  | 'aggressive';
+export type AutomationTokenCompressionMode = "off" | "balanced" | "aggressive";
 
 export type AutomationTemplateStageKind =
-  | 'ingest'
-  | 'canonicalize'
-  | 'redact'
-  | 'compress'
-  | 'classify'
-  | 'propose'
-  | 'agent-run'
-  | 'apply'
-  | 'notify';
+  | "ingest"
+  | "canonicalize"
+  | "redact"
+  | "compress"
+  | "classify"
+  | "propose"
+  | "agent-run"
+  | "apply"
+  | "notify";
 
 export interface AutomationTemplateStage {
   id: string;
@@ -67,13 +46,7 @@ export interface AutomationTemplate {
   tags?: string[];
 }
 
-export type AutomationRunStatus =
-  | 'queued'
-  | 'running'
-  | 'needs-review'
-  | 'succeeded'
-  | 'failed'
-  | 'canceled';
+export type AutomationRunStatus = "queued" | "running" | "needs-review" | "succeeded" | "failed" | "canceled";
 
 export interface AutomationRunSummary {
   id: string;
@@ -91,10 +64,10 @@ export interface AutomationRunSummary {
 
 export type AutomationProvenanceSourceKind =
   | AutomationSourceKind
-  | 'automation-run'
-  | 'memory-node'
-  | 'skill'
-  | 'design-system';
+  | "automation-run"
+  | "memory-node"
+  | "skill"
+  | "design-system";
 
 export interface AutomationProvenanceRef {
   kind: AutomationProvenanceSourceKind;
@@ -103,11 +76,7 @@ export interface AutomationProvenanceRef {
   url?: string;
 }
 
-export type AutomationSensitivity =
-  | 'public'
-  | 'workspace'
-  | 'private'
-  | 'secret-adjacent';
+export type AutomationSensitivity = "public" | "workspace" | "private" | "secret-adjacent";
 
 export interface AutomationAttachmentRef {
   id: string;
@@ -156,11 +125,7 @@ export interface AutomationContentPacket {
   metadata?: JsonValue;
 }
 
-export type AutomationCompressionStatus =
-  | 'not-run'
-  | 'applied'
-  | 'skipped'
-  | 'failed';
+export type AutomationCompressionStatus = "not-run" | "applied" | "skipped" | "failed";
 
 export interface AutomationCompressionReport {
   mode: AutomationTokenCompressionMode;
@@ -172,15 +137,9 @@ export interface AutomationCompressionReport {
   preservedSourcePacketId?: string;
 }
 
-export type MemoryTreeNodeKind = 'folder' | 'entry';
+export type MemoryTreeNodeKind = "folder" | "entry";
 
-export type MemoryTreeNodeScope =
-  | 'global'
-  | 'project'
-  | 'connector'
-  | 'artifact'
-  | 'design-system'
-  | 'skill';
+export type MemoryTreeNodeScope = "global" | "project" | "connector" | "artifact" | "design-system" | "skill";
 
 export interface MemoryTreeNode {
   id: string;
@@ -198,32 +157,13 @@ export interface MemoryTreeNode {
   childrenCount?: number;
 }
 
-export type AutomationProposalTargetKind =
-  | 'memory-node'
-  | 'skill'
-  | 'design-system'
-  | 'automation-template';
+export type AutomationProposalTargetKind = "memory-node" | "skill" | "design-system" | "automation-template";
 
-export type AutomationProposalAction =
-  | 'create'
-  | 'update'
-  | 'merge'
-  | 'move'
-  | 'delete'
-  | 'promote';
+export type AutomationProposalAction = "create" | "update" | "merge" | "move" | "delete" | "promote";
 
-export type AutomationProposalStatus =
-  | 'draft'
-  | 'pending-review'
-  | 'applied'
-  | 'rejected'
-  | 'superseded'
-  | 'failed';
+export type AutomationProposalStatus = "draft" | "pending-review" | "applied" | "rejected" | "superseded" | "failed";
 
-export type AutomationProposalPatchFormat =
-  | 'markdown'
-  | 'json'
-  | 'file-tree';
+export type AutomationProposalPatchFormat = "markdown" | "json" | "file-tree";
 
 export interface AutomationProposalPatch {
   format: AutomationProposalPatchFormat;

@@ -5,7 +5,7 @@ import { ApiError, apiRequest, createApiClient, type Fetcher } from "./api.js";
 function jsonResponse(body: unknown, init?: ResponseInit): Response {
   return new Response(JSON.stringify(body), {
     headers: { "Content-Type": "application/json" },
-    ...init
+    ...init,
   });
 }
 
@@ -20,9 +20,11 @@ describe("apiRequest", () => {
       return jsonResponse({ id: "P-123abc", name: "Workbench" });
     };
 
-    await expect(apiRequest("/api/products", { method: "POST", body: { name: "Workbench" }, fetcher })).resolves.toEqual({
+    await expect(
+      apiRequest("/api/products", { method: "POST", body: { name: "Workbench" }, fetcher }),
+    ).resolves.toEqual({
       id: "P-123abc",
-      name: "Workbench"
+      name: "Workbench",
     });
   });
 
@@ -32,16 +34,16 @@ describe("apiRequest", () => {
         {
           error_code: "PRODUCT_NOT_FOUND",
           message: "Missing",
-          details: { product_id: "P-missing" }
+          details: { product_id: "P-missing" },
         },
-        { status: 404 }
+        { status: 404 },
       );
 
     await expect(apiRequest("/api/products/P-missing", { fetcher })).rejects.toMatchObject({
       error_code: "PRODUCT_NOT_FOUND",
       message: "Missing",
       details: { product_id: "P-missing" },
-      status: 404
+      status: 404,
     });
   });
 
@@ -50,7 +52,7 @@ describe("apiRequest", () => {
       new Response("{", {
         headers: { "Content-Type": "application/json" },
         status: 502,
-        statusText: "Bad Gateway"
+        statusText: "Bad Gateway",
       });
     const emptyFetcher: Fetcher = async () => new Response(null, { status: 500, statusText: "Server Error" });
 
@@ -59,13 +61,13 @@ describe("apiRequest", () => {
       error_code: "HTTP_ERROR",
       message: "Bad Gateway",
       details: {},
-      status: 502
+      status: 502,
     });
     await expect(apiRequest("/api/products", { fetcher: emptyFetcher })).rejects.toMatchObject({
       error_code: "HTTP_ERROR",
       message: "Server Error",
       details: {},
-      status: 500
+      status: 500,
     });
   });
 
@@ -74,7 +76,7 @@ describe("apiRequest", () => {
 
     await expect(client.listStyles()).rejects.toMatchObject({
       error_code: "INVALID_RESPONSE",
-      message: "Invalid API response"
+      message: "Invalid API response",
     });
   });
 
@@ -84,7 +86,7 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
       const path = input.toString();
       if (path.endsWith("/requirements")) {
@@ -96,7 +98,7 @@ describe("apiRequest", () => {
           created_at: "2026-05-17T00:00:00.000Z",
           updated_at: "2026-05-17T00:00:00.000Z",
           pages: [],
-          navigation: []
+          navigation: [],
         });
       }
       if (path.endsWith("/archive")) {
@@ -111,10 +113,10 @@ describe("apiRequest", () => {
             updated_at: "2026-05-17T00:00:00.000Z",
             pages: [],
             navigation: [],
-            document_md: "# Checkout"
+            document_md: "# Checkout",
           },
           icons: { pages: [], totalIcons: 0 },
-          vzi: { pages: [], totalElements: 0 }
+          vzi: { pages: [], totalElements: 0 },
         });
       }
       return jsonResponse({
@@ -126,7 +128,7 @@ describe("apiRequest", () => {
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
         navigation: [],
-        document_md: "# Checkout"
+        document_md: "# Checkout",
       });
     });
 
@@ -140,23 +142,23 @@ describe("apiRequest", () => {
             page_id: "profile-page",
             name: "Profile",
             baseline_page: "profile",
-            change_type: "patch"
-          }
+            change_type: "patch",
+          },
         ],
-        navigation: []
-      })
+        navigation: [],
+      }),
     ).resolves.toMatchObject({ id: "R-12345678", document_md: "# Checkout" });
 
     await expect(client.archiveRequirement("P-123abc", "R-12345678")).resolves.toMatchObject({
       requirement: { id: "R-12345678", status: "archived", document_md: "# Checkout" },
       icons: { totalIcons: 0 },
-      vzi: { pages: [], totalElements: 0 }
+      vzi: { pages: [], totalElements: 0 },
     });
     expect(requests).toEqual([
       {
         input: "/api/products/P-123abc/requirements",
         method: "POST",
-        body: { title: "Checkout" }
+        body: { title: "Checkout" },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/save",
@@ -169,23 +171,23 @@ describe("apiRequest", () => {
               page_id: "checkout-page",
               name: "Checkout",
               baseline_page: "checkout",
-              change_type: "new"
+              change_type: "new",
             },
             {
               page_id: "profile-page",
               name: "Profile",
               baseline_page: "profile",
-              change_type: "patch"
-            }
+              change_type: "patch",
+            },
           ],
-          ui_affected: true
-        }
+          ui_affected: true,
+        },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/archive",
         method: "PUT",
-        body: undefined
-      }
+        body: undefined,
+      },
     ]);
   });
 
@@ -195,7 +197,7 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
 
       const path = input.toString();
@@ -206,7 +208,7 @@ describe("apiRequest", () => {
           description: "Internal tool",
           platform: "web",
           languages: ["zh-CN", "en"],
-          default_language: "zh-CN"
+          default_language: "zh-CN",
         });
       }
       if (path.endsWith("/save")) {
@@ -220,7 +222,7 @@ describe("apiRequest", () => {
           updated_at: "2026-05-17T00:00:00.000Z",
           pages: [],
           navigation: [],
-          document_md: "# Checkout"
+          document_md: "# Checkout",
         });
       }
       return jsonResponse({
@@ -232,7 +234,7 @@ describe("apiRequest", () => {
         created_at: "2026-05-17T00:00:00.000Z",
         updated_at: "2026-05-17T00:00:00.000Z",
         pages: [],
-        navigation: []
+        navigation: [],
       });
     });
 
@@ -241,12 +243,12 @@ describe("apiRequest", () => {
         platform: "web",
         brand_style: "linear",
         languages: ["zh-CN", "en"],
-        default_language: "zh-CN"
-      })
+        default_language: "zh-CN",
+      }),
     ).resolves.toMatchObject({ id: "P-123abc", default_language: "zh-CN" });
     await expect(client.createEmptyRequirement("P-123abc", { title: "Checkout" })).resolves.toMatchObject({
       id: "R-12345678",
-      status: "empty"
+      status: "empty",
     });
     await expect(
       client.saveRequirement("P-123abc", "R-12345678", {
@@ -257,21 +259,21 @@ describe("apiRequest", () => {
             name: "Checkout",
             baseline_page: "checkout",
             change_type: "patch",
-            copy: [{ context: "title", text: "Checkout" }]
-          }
+            copy: [{ context: "title", text: "Checkout" }],
+          },
         ],
         navigation: [],
         translations: [
           {
             page_id: "checkout-page",
-            entries: [{ context: "title", texts: { en: "Checkout", "zh-CN": "结账" } }]
-          }
+            entries: [{ context: "title", texts: { en: "Checkout", "zh-CN": "结账" } }],
+          },
         ],
         rules: [],
         remove_rule_ids: [],
         remove_page_ids: [],
-        ui_affected: true
-      })
+        ui_affected: true,
+      }),
     ).resolves.toMatchObject({ id: "R-12345678", document_md: "# Checkout" });
 
     expect(requests).toEqual([
@@ -282,13 +284,13 @@ describe("apiRequest", () => {
           platform: "web",
           brand_style: "linear",
           languages: ["zh-CN", "en"],
-          default_language: "zh-CN"
-        }
+          default_language: "zh-CN",
+        },
       },
       {
         input: "/api/products/P-123abc/requirements",
         method: "POST",
-        body: { title: "Checkout" }
+        body: { title: "Checkout" },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/save",
@@ -301,22 +303,22 @@ describe("apiRequest", () => {
               name: "Checkout",
               baseline_page: "checkout",
               change_type: "patch",
-              copy: [{ context: "title", text: "Checkout" }]
-            }
+              copy: [{ context: "title", text: "Checkout" }],
+            },
           ],
           navigation: [],
           translations: [
             {
               page_id: "checkout-page",
-              entries: [{ context: "title", texts: { en: "Checkout", "zh-CN": "结账" } }]
-            }
+              entries: [{ context: "title", texts: { en: "Checkout", "zh-CN": "结账" } }],
+            },
           ],
           rules: [],
           remove_rule_ids: [],
           remove_page_ids: [],
-          ui_affected: true
-        }
-      }
+          ui_affected: true,
+        },
+      },
     ]);
   });
 
@@ -327,7 +329,7 @@ describe("apiRequest", () => {
       return jsonResponse({
         page_id: "checkout",
         default_language_copy: [{ context: "title", text: "结账" }],
-        translations: [{ context: "title", texts: { en: "Checkout" } }]
+        translations: [{ context: "title", texts: { en: "Checkout" } }],
       });
     });
 
@@ -336,7 +338,7 @@ describe("apiRequest", () => {
 
     expect(requests).toEqual([
       "/api/products/P-123abc/baseline/pages/checkout/copy",
-      "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R+123"
+      "/api/products/P-123abc/baseline/pages/checkout/copy?requirement_id=R+123",
     ]);
   });
 
@@ -346,14 +348,14 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
       return jsonResponse({
         product_id: "P-123abc",
         deleted: true,
         session_cleared: true,
         cleanup_pending: false,
-        recovery_warnings: ["Recovered orphaned requirement index"]
+        recovery_warnings: ["Recovered orphaned requirement index"],
       });
     });
 
@@ -362,15 +364,15 @@ describe("apiRequest", () => {
       deleted: true,
       session_cleared: true,
       cleanup_pending: false,
-      recovery_warnings: ["Recovered orphaned requirement index"]
+      recovery_warnings: ["Recovered orphaned requirement index"],
     });
 
     expect(requests).toEqual([
       {
         input: "/api/products/P-123abc",
         method: "DELETE",
-        body: { confirm_product_id: "P-123abc" }
-      }
+        body: { confirm_product_id: "P-123abc" },
+      },
     ]);
   });
 
@@ -391,7 +393,7 @@ describe("apiRequest", () => {
       "indexRequirementDesignCanvas",
       "getStylePreview",
       "getSyncStatus",
-      "syncStyles"
+      "syncStyles",
     ]) {
       expect(method in client).toBe(false);
     }
@@ -403,7 +405,7 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
       const path = input.toString();
       if (path.includes("/design/history")) {
@@ -420,84 +422,130 @@ describe("apiRequest", () => {
     const sessionId = "S-1234567890abcdef";
 
     await expect(client.getRequirementDesignHistory("P-123abc", "R-12345678", "checkout-page")).resolves.toEqual([
-      { version: 1, file: "history/canvas/canvas.c1.pen" }
+      { version: 1, file: "history/canvas/canvas.c1.pen" },
     ]);
-    await expect(client.exportRequirementDesignAsset("P-123abc", "R-12345678", { node_id: "frame-1", format: "png" })).resolves.toMatchObject({
-      revision: "sha256:abc"
+    await expect(
+      client.exportRequirementDesignAsset("P-123abc", "R-12345678", { node_id: "frame-1", format: "png" }),
+    ).resolves.toMatchObject({
+      revision: "sha256:abc",
     });
-    await expect(client.getRequirementDesignDiff("P-123abc", "R-12345678", {
-      page_id: "checkout-page",
-      from_page_version: 1,
-      to_page_version: 2
-    })).resolves.toMatchObject({ changed: false });
-    await expect(client.beginRequirementDesignSession("P-123abc", "R-12345678", { operation: "generate", page_id: "checkout-page" })).resolves.toMatchObject({
-      session_id: sessionId
+    await expect(
+      client.getRequirementDesignDiff("P-123abc", "R-12345678", {
+        page_id: "checkout-page",
+        from_page_version: 1,
+        to_page_version: 2,
+      }),
+    ).resolves.toMatchObject({ changed: false });
+    await expect(
+      client.beginRequirementDesignSession("P-123abc", "R-12345678", {
+        operation: "generate",
+        page_id: "checkout-page",
+      }),
+    ).resolves.toMatchObject({
+      session_id: sessionId,
     });
-    await expect(client.applyRequirementDesignOperations("P-123abc", "R-12345678", sessionId, {
-      operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }]
-    })).resolves.toMatchObject({ status: "running" });
-    await expect(client.validateRequirementDesignQuality("P-123abc", "R-12345678", sessionId, {
-      page_id: "checkout-page",
-      frame_id: "frame-1"
-    })).resolves.toMatchObject({ status: "running" });
-    await expect(client.planRequirementComponentRefresh("P-123abc", "R-12345678", sessionId, {
-      version: "latest",
-      scope: "all_pages"
-    })).resolves.toMatchObject({ status: "running" });
-    await expect(client.planImportMetadataNormalization("P-123abc", "R-12345678", sessionId, {
-      page_id: "checkout-page",
-      frame_id: "frame-1"
-    })).resolves.toMatchObject({ status: "running" });
-    await expect(client.planRequirementDesignRollback("P-123abc", "R-12345678", sessionId, { canvas_version: 1 })).resolves.toMatchObject({
-      status: "running"
+    await expect(
+      client.applyRequirementDesignOperations("P-123abc", "R-12345678", sessionId, {
+        operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }],
+      }),
+    ).resolves.toMatchObject({ status: "running" });
+    await expect(
+      client.validateRequirementDesignQuality("P-123abc", "R-12345678", sessionId, {
+        page_id: "checkout-page",
+        frame_id: "frame-1",
+      }),
+    ).resolves.toMatchObject({ status: "running" });
+    await expect(
+      client.planRequirementComponentRefresh("P-123abc", "R-12345678", sessionId, {
+        version: "latest",
+        scope: "all_pages",
+      }),
+    ).resolves.toMatchObject({ status: "running" });
+    await expect(
+      client.planImportMetadataNormalization("P-123abc", "R-12345678", sessionId, {
+        page_id: "checkout-page",
+        frame_id: "frame-1",
+      }),
+    ).resolves.toMatchObject({ status: "running" });
+    await expect(
+      client.planRequirementDesignRollback("P-123abc", "R-12345678", sessionId, { canvas_version: 1 }),
+    ).resolves.toMatchObject({
+      status: "running",
     });
-    await expect(client.commitRequirementDesignSession("P-123abc", "R-12345678", sessionId, {
-      page_id: "checkout-page",
-      frame_id: "frame-1",
-      quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] }
-    })).resolves.toMatchObject({ status: "running" });
-    await expect(client.discardRequirementDesignSession("P-123abc", "R-12345678", sessionId)).resolves.toMatchObject({ status: "running" });
+    await expect(
+      client.commitRequirementDesignSession("P-123abc", "R-12345678", sessionId, {
+        page_id: "checkout-page",
+        frame_id: "frame-1",
+        quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] },
+      }),
+    ).resolves.toMatchObject({ status: "running" });
+    await expect(client.discardRequirementDesignSession("P-123abc", "R-12345678", sessionId)).resolves.toMatchObject({
+      status: "running",
+    });
 
     expect(requests).toEqual([
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/history?page_id=checkout-page", method: undefined, body: undefined },
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/export?node_id=frame-1&format=png", method: undefined, body: undefined },
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/diff?page_id=checkout-page&from_page_version=1&to_page_version=2", method: undefined, body: undefined },
-      { input: "/api/products/P-123abc/requirements/R-12345678/design/session/begin", method: "POST", body: { operation: "generate", page_id: "checkout-page" } },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/history?page_id=checkout-page",
+        method: undefined,
+        body: undefined,
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/export?node_id=frame-1&format=png",
+        method: undefined,
+        body: undefined,
+      },
+      {
+        input:
+          "/api/products/P-123abc/requirements/R-12345678/design/diff?page_id=checkout-page&from_page_version=1&to_page_version=2",
+        method: undefined,
+        body: undefined,
+      },
+      {
+        input: "/api/products/P-123abc/requirements/R-12345678/design/session/begin",
+        method: "POST",
+        body: { operation: "generate", page_id: "checkout-page" },
+      },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/operations",
         method: "POST",
-        body: { operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }] }
+        body: { operations: [{ tool: "batch_design", args: { node_id: "frame-1" }, intent: "generate" }] },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/quality",
         method: "POST",
-        body: { page_id: "checkout-page", frame_id: "frame-1" }
+        body: { page_id: "checkout-page", frame_id: "frame-1" },
       },
       {
-        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/component-refresh/plan",
+        input:
+          "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/component-refresh/plan",
         method: "POST",
-        body: { version: "latest", scope: "all_pages" }
+        body: { version: "latest", scope: "all_pages" },
       },
       {
-        input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/import-metadata-normalization/plan",
+        input:
+          "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/import-metadata-normalization/plan",
         method: "POST",
-        body: { page_id: "checkout-page", frame_id: "frame-1" }
+        body: { page_id: "checkout-page", frame_id: "frame-1" },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/rollback/plan",
         method: "POST",
-        body: { canvas_version: 1 }
+        body: { canvas_version: 1 },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/commit",
         method: "POST",
-        body: { page_id: "checkout-page", frame_id: "frame-1", quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] } }
+        body: {
+          page_id: "checkout-page",
+          frame_id: "frame-1",
+          quality_report: { status: "passed", hard_checks: { issues: [] }, warnings: [] },
+        },
       },
       {
         input: "/api/products/P-123abc/requirements/R-12345678/design/session/S-1234567890abcdef/discard",
         method: "POST",
-        body: undefined
-      }
+        body: undefined,
+      },
     ]);
     expect(JSON.stringify(requests)).not.toContain("design_id");
   });
@@ -508,14 +556,22 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
-      return jsonResponse({ product_id: "P-123abc", session_id: "S-1234567890abcdef", status: "running", components: [] });
+      return jsonResponse({
+        product_id: "P-123abc",
+        session_id: "S-1234567890abcdef",
+        status: "running",
+        components: [],
+      });
     });
 
-    await client.beginProductComponentSession("P-123abc", { operation: "generate", seed_components: [{ component_key: "button-primary" }] });
+    await client.beginProductComponentSession("P-123abc", {
+      operation: "generate",
+      seed_components: [{ component_key: "button-primary" }],
+    });
     await client.applyProductComponentOperations("P-123abc", "S-1234567890abcdef", {
-      operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }]
+      operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }],
     });
     await client.commitProductComponentSession("P-123abc", "S-1234567890abcdef");
     await client.discardProductComponentSession("P-123abc", "S-1234567890abcdef");
@@ -525,20 +581,28 @@ describe("apiRequest", () => {
       {
         input: "/api/products/P-123abc/component-library/session/begin",
         method: "POST",
-        body: { operation: "generate", seed_components: [{ component_key: "button-primary" }] }
+        body: { operation: "generate", seed_components: [{ component_key: "button-primary" }] },
       },
       {
         input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/operations",
         method: "POST",
-        body: { operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }] }
+        body: { operations: [{ tool: "set_variables", args: { primary: "#111111" }, intent: "change_style" }] },
       },
-      { input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/commit", method: "POST", body: undefined },
-      { input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/discard", method: "POST", body: undefined },
+      {
+        input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/commit",
+        method: "POST",
+        body: undefined,
+      },
+      {
+        input: "/api/products/P-123abc/component-library/session/S-1234567890abcdef/discard",
+        method: "POST",
+        body: undefined,
+      },
       {
         input: "/api/products/P-123abc/design/session/S-1234567890abcdef/recover-commit-journal",
         method: "POST",
-        body: { scope: "product_component_library" }
-      }
+        body: { scope: "product_component_library" },
+      },
     ]);
   });
 
@@ -548,23 +612,48 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
       const path = input.toString();
       if (path.includes("/artifacts/A-abc123")) {
         return jsonResponse({
-          manifest: { id: "A-abc123", kind: "page_design", title: "Checkout", entry: "index.html", status: "ready", exports: [] }
+          manifest: {
+            id: "A-abc123",
+            kind: "page_design",
+            title: "Checkout",
+            entry: "index.html",
+            status: "ready",
+            exports: [],
+          },
         });
       }
-      return jsonResponse({ artifacts: [{ id: "A-abc123", kind: "page_design", title: "Checkout", updated_at: "2026-05-28T00:00:00.000Z", superseded: false }] });
+      return jsonResponse({
+        artifacts: [
+          {
+            id: "A-abc123",
+            kind: "page_design",
+            title: "Checkout",
+            updated_at: "2026-05-28T00:00:00.000Z",
+            superseded: false,
+          },
+        ],
+      });
     });
 
     await expect(client.listProductArtifacts("P-123abc")).resolves.toMatchObject({ artifacts: [{ id: "A-abc123" }] });
-    await expect(client.listProductArtifacts("P-123abc", "page_design")).resolves.toMatchObject({ artifacts: [{ id: "A-abc123" }] });
-    await expect(client.getProductArtifact("P-123abc", "A-abc123")).resolves.toMatchObject({ manifest: { id: "A-abc123" } });
+    await expect(client.listProductArtifacts("P-123abc", "page_design")).resolves.toMatchObject({
+      artifacts: [{ id: "A-abc123" }],
+    });
+    await expect(client.getProductArtifact("P-123abc", "A-abc123")).resolves.toMatchObject({
+      manifest: { id: "A-abc123" },
+    });
 
-    expect(client.getArtifactPreviewUrl("P-123abc", "A-abc123", "1x")).toBe("/api/products/P-123abc/artifacts/A-abc123/preview/1x");
-    expect(client.getArtifactPreviewUrl("P-123abc", "A-abc123", "2x")).toBe("/api/products/P-123abc/artifacts/A-abc123/preview/2x");
+    expect(client.getArtifactPreviewUrl("P-123abc", "A-abc123", "1x")).toBe(
+      "/api/products/P-123abc/artifacts/A-abc123/preview/1x",
+    );
+    expect(client.getArtifactPreviewUrl("P-123abc", "A-abc123", "2x")).toBe(
+      "/api/products/P-123abc/artifacts/A-abc123/preview/2x",
+    );
 
     expect(requests[0]).toMatchObject({ input: "/api/products/P-123abc/artifacts", method: undefined });
     expect(requests[1]?.input.toString()).toContain("kind=page_design");
@@ -584,7 +673,7 @@ describe("apiRequest", () => {
       requests.push({
         body: init?.body ? JSON.parse(init.body.toString()) : undefined,
         input,
-        method: init?.method
+        method: init?.method,
       });
       return jsonResponse({ id: "P-123abc", name: "App", description: "Demo" });
     });
@@ -594,7 +683,7 @@ describe("apiRequest", () => {
       brand_style: "linear-app",
       system_style: "material",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
 
     expect(requests[0]).toMatchObject({
@@ -605,8 +694,8 @@ describe("apiRequest", () => {
         brand_style: "linear-app",
         system_style: "material",
         languages: ["en"],
-        default_language: "en"
-      }
+        default_language: "en",
+      },
     });
   });
 });

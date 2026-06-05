@@ -8,13 +8,13 @@ export interface AgentInfo {
   name: string;
   bin: string;
   available: boolean;
-  authStatus?: 'ok' | 'missing' | 'unknown';
+  authStatus?: "ok" | "missing" | "unknown";
   authMessage?: string;
   path?: string;
   version?: string | null;
   models?: AgentModelOption[];
   /** Whether models came from the installed CLI or Open Design's static fallback. */
-  modelsSource?: 'live' | 'fallback';
+  modelsSource?: "live" | "fallback";
   reasoningOptions?: AgentModelOption[];
   /** HTTPS URL to install or download the CLI (vendor docs, GitHub README, npm). */
   installUrl?: string;
@@ -28,33 +28,23 @@ export interface AgentInfo {
    * a "configure MCP in the agent's own config file" hint instead of
    * silently dropping the servers (issue #2142).
    */
-  externalMcpInjection?:
-    | 'claude-mcp-json'
-    | 'acp-merge'
-    | 'opencode-env-content';
+  externalMcpInjection?: "claude-mcp-json" | "acp-merge" | "opencode-env-content";
 }
 
 export interface AgentsResponse {
   agents: AgentInfo[];
 }
 
-export type SkillSource = 'built-in' | 'user';
+export type SkillSource = "built-in" | "user";
 
 export interface SkillSummary {
   id: string;
   name: string;
   description: string;
   triggers: string[];
-  mode:
-    | 'prototype'
-    | 'deck'
-    | 'template'
-    | 'design-system'
-    | 'image'
-    | 'video'
-    | 'audio';
-  surface?: 'web' | 'image' | 'video' | 'audio';
-  platform?: 'desktop' | 'mobile' | null;
+  mode: "prototype" | "deck" | "template" | "design-system" | "image" | "video" | "audio";
+  surface?: "web" | "image" | "video" | "audio";
+  platform?: "desktop" | "mobile" | null;
   scenario?: string | null;
   // Optional human-readable category (e.g. "image-generation", "video",
   // "design-systems"). Surfaced as a filter pill in Settings → Skills so a
@@ -71,7 +61,7 @@ export interface SkillSummary {
   defaultFor: string[];
   upstream: string | null;
   featured?: number | null;
-  fidelity?: 'wireframe' | 'high-fidelity' | null;
+  fidelity?: "wireframe" | "high-fidelity" | null;
   speakerNotes?: boolean | null;
   animations?: boolean | null;
   craftRequires?: string[];
@@ -121,7 +111,7 @@ export interface SkillUpdateResponse {
 // the payload bounded. Used by the Settings → Skills detail panel.
 export interface SkillFileEntry {
   path: string;
-  kind: 'file' | 'directory';
+  kind: "file" | "directory";
   size: number | null;
 }
 
@@ -162,9 +152,9 @@ export interface DesignSystemSummary {
   category: string;
   summary: string;
   swatches?: string[];
-  surface?: 'web' | 'image' | 'video' | 'audio';
-  source?: 'built-in' | 'installed' | 'user';
-  status?: 'draft' | 'published';
+  surface?: "web" | "image" | "video" | "audio";
+  source?: "built-in" | "installed" | "user";
+  status?: "draft" | "published";
   isEditable?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -237,14 +227,7 @@ export interface DesignSystemProvenance {
   sourceNotes?: string;
 }
 
-export type DesignSystemFileKind =
-  | 'folder'
-  | 'page'
-  | 'stylesheet'
-  | 'document'
-  | 'image'
-  | 'data'
-  | 'asset';
+export type DesignSystemFileKind = "folder" | "page" | "stylesheet" | "document" | "image" | "data" | "asset";
 
 export interface DesignSystemFileSummary {
   path: string;
@@ -267,11 +250,11 @@ export interface DesignSystemFileResponse {
 }
 
 export interface DesignSystemWorkspaceResponse {
-  project: import('./projects.js').Project;
-  files: import('./files.js').ProjectFile[];
+  project: import("./projects.js").Project;
+  files: import("./files.js").ProjectFile[];
 }
 
-export type DesignSystemRevisionStatus = 'pending' | 'accepted' | 'rejected';
+export type DesignSystemRevisionStatus = "pending" | "accepted" | "rejected";
 
 export interface DesignSystemRevision {
   id: string;
@@ -294,17 +277,9 @@ export interface DesignSystemRevisionResponse {
   revision: DesignSystemRevision;
 }
 
-export type DesignSystemGenerationJobStatus =
-  | 'queued'
-  | 'running'
-  | 'succeeded'
-  | 'failed';
+export type DesignSystemGenerationJobStatus = "queued" | "running" | "succeeded" | "failed";
 
-export type DesignSystemGenerationStepStatus =
-  | 'pending'
-  | 'running'
-  | 'succeeded'
-  | 'failed';
+export type DesignSystemGenerationStepStatus = "pending" | "running" | "succeeded" | "failed";
 
 export interface DesignSystemGenerationStep {
   id: string;
@@ -317,7 +292,7 @@ export interface DesignSystemGenerationStep {
 
 export interface DesignSystemGenerationJob {
   id: string;
-  kind?: 'generation' | 'revision';
+  kind?: "generation" | "revision";
   status: DesignSystemGenerationJobStatus;
   progress: number;
   steps: DesignSystemGenerationStep[];
@@ -334,7 +309,7 @@ export interface DesignSystemGenerationJobResponse {
   job: DesignSystemGenerationJob;
 }
 
-export type DesignSystemPackageAuditSeverity = 'error' | 'warning';
+export type DesignSystemPackageAuditSeverity = "error" | "warning";
 
 export interface DesignSystemPackageAuditIssue {
   severity: DesignSystemPackageAuditSeverity;
@@ -367,7 +342,7 @@ export interface ImportLocalDesignSystemRequest {
   /** Optional display name override for the generated design-system project. */
   name?: string;
   /** Import structure mode. Defaults to hybrid for real project imports. */
-  importMode?: 'normalized' | 'hybrid' | 'verbatim';
+  importMode?: "normalized" | "hybrid" | "verbatim";
   /** Craft sections that should actively apply when this system is used. */
   craftApplies?: string[];
 }
@@ -384,7 +359,7 @@ export interface ImportGitHubDesignSystemRequest {
   /** Optional display name override for the generated design-system project. */
   name?: string;
   /** Import structure mode. Defaults to hybrid for real project imports. */
-  importMode?: 'normalized' | 'hybrid' | 'verbatim';
+  importMode?: "normalized" | "hybrid" | "verbatim";
   /** Craft sections that should actively apply when this system is used. */
   craftApplies?: string[];
 }
@@ -395,7 +370,7 @@ export interface ImportGitHubDesignSystemResponse {
 
 export interface HealthResponse {
   ok: true;
-  service?: 'daemon';
+  service?: "daemon";
   version?: string;
 }
 
@@ -438,7 +413,7 @@ export interface CodexPetsResponse {
 // skips pets that already exist on disk.
 export interface SyncCommunityPetsRequest {
   // Which catalog(s) to download. Defaults to 'all'.
-  source?: 'all' | 'petshare' | 'hatchery';
+  source?: "all" | "petshare" | "hatchery";
   // Re-download pets that already have a folder on disk.
   force?: boolean;
 }
@@ -455,9 +430,7 @@ export interface SyncCommunityPetsResponse {
   errors: string[];
 }
 
-export type InstallInput =
-  | { source: 'github'; url: string }
-  | { source: 'local'; path: string };
+export type InstallInput = { source: "github"; url: string } | { source: "local"; path: string };
 
 export interface InstallSkillResponse {
   skill: SkillSummary;

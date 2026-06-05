@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /**
  * Local mirror of SseTransportEvent from './sse/common'. Re-defining the
@@ -14,11 +14,11 @@ interface SseTransportEvent<Name extends string, Payload> {
   data: Payload;
 }
 
-export const PANELIST_ROLES = ['designer', 'critic', 'brand', 'a11y', 'copy'] as const;
-export type PanelistRole = typeof PANELIST_ROLES[number];
+export const PANELIST_ROLES = ["designer", "critic", "brand", "a11y", "copy"] as const;
+export type PanelistRole = (typeof PANELIST_ROLES)[number];
 
-export const FALLBACK_POLICIES = ['ship_best', 'ship_last', 'fail'] as const;
-export type FallbackPolicy = typeof FALLBACK_POLICIES[number];
+export const FALLBACK_POLICIES = ["ship_best", "ship_last", "fail"] as const;
+export type FallbackPolicy = (typeof FALLBACK_POLICIES)[number];
 
 export const CRITIQUE_PROTOCOL_VERSION = 1;
 
@@ -31,27 +31,28 @@ export const RoleWeights = z.object({
 });
 export type RoleWeights = z.infer<typeof RoleWeights>;
 
-export const CritiqueConfigSchema = z.object({
-  enabled: z.boolean(),
-  cast: z.array(z.enum(PANELIST_ROLES)).min(1),
-  maxRounds: z.number().int().min(1).max(10),
-  scoreScale: z.number().int().min(1).max(100),
-  scoreThreshold: z.number().min(0).max(100)
-    .describe('Must be <= scoreScale; enforced by cross-field refine'),
-  weights: RoleWeights,
-  perRoundTimeoutMs: z.number().int().min(1000),
-  totalTimeoutMs: z.number().int().min(1000),
-  parserMaxBlockBytes: z.number().int().min(1024),
-  fallbackPolicy: z.enum(FALLBACK_POLICIES),
-  protocolVersion: z.number().int().min(1),
-  maxConcurrentRuns: z.number().int().min(1),
-}).refine(
-  // Small epsilon tolerance so a fractional threshold that rounds up against an
-  // integer scale (e.g. 8.0 with floating-point slack) still validates. The
-  // semantic check is "threshold cannot meaningfully exceed scale".
-  (cfg) => cfg.scoreThreshold <= cfg.scoreScale + 1e-9,
-  { message: 'scoreThreshold must be <= scoreScale' },
-);
+export const CritiqueConfigSchema = z
+  .object({
+    enabled: z.boolean(),
+    cast: z.array(z.enum(PANELIST_ROLES)).min(1),
+    maxRounds: z.number().int().min(1).max(10),
+    scoreScale: z.number().int().min(1).max(100),
+    scoreThreshold: z.number().min(0).max(100).describe("Must be <= scoreScale; enforced by cross-field refine"),
+    weights: RoleWeights,
+    perRoundTimeoutMs: z.number().int().min(1000),
+    totalTimeoutMs: z.number().int().min(1000),
+    parserMaxBlockBytes: z.number().int().min(1024),
+    fallbackPolicy: z.enum(FALLBACK_POLICIES),
+    protocolVersion: z.number().int().min(1),
+    maxConcurrentRuns: z.number().int().min(1),
+  })
+  .refine(
+    // Small epsilon tolerance so a fractional threshold that rounds up against an
+    // integer scale (e.g. 8.0 with floating-point slack) still validates. The
+    // semantic check is "threshold cannot meaningfully exceed scale".
+    (cfg) => cfg.scoreThreshold <= cfg.scoreScale + 1e-9,
+    { message: "scoreThreshold must be <= scoreScale" },
+  );
 
 export type CritiqueConfig = z.infer<typeof CritiqueConfigSchema>;
 
@@ -66,7 +67,7 @@ export function defaultCritiqueConfig(): CritiqueConfig {
     perRoundTimeoutMs: 90_000,
     totalTimeoutMs: 240_000,
     parserMaxBlockBytes: 262_144,
-    fallbackPolicy: 'ship_best',
+    fallbackPolicy: "ship_best",
     protocolVersion: CRITIQUE_PROTOCOL_VERSION,
     // Contracts layer cannot call os.cpus(); daemon env layer overrides via OD_CRITIQUE_MAX_CONCURRENT_RUNS.
     maxConcurrentRuns: 4,
@@ -74,62 +75,97 @@ export function defaultCritiqueConfig(): CritiqueConfig {
 }
 
 export const DEGRADED_REASONS = [
-  'malformed_block',
-  'oversize_block',
-  'adapter_unsupported',
-  'protocol_version_mismatch',
-  'missing_artifact',
+  "malformed_block",
+  "oversize_block",
+  "adapter_unsupported",
+  "protocol_version_mismatch",
+  "missing_artifact",
 ] as const;
-export type DegradedReason = typeof DEGRADED_REASONS[number];
+export type DegradedReason = (typeof DEGRADED_REASONS)[number];
 
 export const FAILED_CAUSES = [
-  'cli_exit_nonzero',
-  'per_round_timeout',
-  'total_timeout',
-  'orchestrator_internal',
+  "cli_exit_nonzero",
+  "per_round_timeout",
+  "total_timeout",
+  "orchestrator_internal",
 ] as const;
-export type FailedCause = typeof FAILED_CAUSES[number];
+export type FailedCause = (typeof FAILED_CAUSES)[number];
 
 export const PARSER_WARNING_KINDS = [
-  'weak_debate',
-  'unknown_role',
-  'score_clamped',
-  'composite_mismatch',
-  'duplicate_ship',
+  "weak_debate",
+  "unknown_role",
+  "score_clamped",
+  "composite_mismatch",
+  "duplicate_ship",
 ] as const;
-export type ParserWarningKind = typeof PARSER_WARNING_KINDS[number];
+export type ParserWarningKind = (typeof PARSER_WARNING_KINDS)[number];
 
-export const ROUND_DECISIONS = ['continue', 'ship'] as const;
-export type RoundDecision = typeof ROUND_DECISIONS[number];
+export const ROUND_DECISIONS = ["continue", "ship"] as const;
+export type RoundDecision = (typeof ROUND_DECISIONS)[number];
 
-export const SHIP_STATUSES = [
-  'shipped',
-  'below_threshold',
-  'timed_out',
-  'interrupted',
-] as const;
-export type ShipStatus = typeof SHIP_STATUSES[number];
+export const SHIP_STATUSES = ["shipped", "below_threshold", "timed_out", "interrupted"] as const;
+export type ShipStatus = (typeof SHIP_STATUSES)[number];
 
 export type PanelEvent =
-  | { type: 'run_started'; runId: string; protocolVersion: number; cast: PanelistRole[]; maxRounds: number; threshold: number; scale: number }
-  | { type: 'panelist_open';     runId: string; round: number; role: PanelistRole }
-  | { type: 'panelist_dim';      runId: string; round: number; role: PanelistRole; dimName: string; dimScore: number; dimNote: string }
-  | { type: 'panelist_must_fix'; runId: string; round: number; role: PanelistRole; text: string }
-  | { type: 'panelist_close';    runId: string; round: number; role: PanelistRole; score: number }
-  | { type: 'round_end';         runId: string; round: number; composite: number; mustFix: number; decision: RoundDecision; reason: string }
-  | { type: 'ship';              runId: string; round: number; composite: number; status: ShipStatus; artifactRef: { projectId: string; artifactId: string }; summary: string }
-  | { type: 'degraded';          runId: string; reason: DegradedReason; adapter: string }
-  | { type: 'interrupted';       runId: string; bestRound: number; composite: number }
-  | { type: 'failed';            runId: string; cause: FailedCause }
-  | { type: 'parser_warning';    runId: string; kind: ParserWarningKind; position: number };
+  | {
+      type: "run_started";
+      runId: string;
+      protocolVersion: number;
+      cast: PanelistRole[];
+      maxRounds: number;
+      threshold: number;
+      scale: number;
+    }
+  | { type: "panelist_open"; runId: string; round: number; role: PanelistRole }
+  | {
+      type: "panelist_dim";
+      runId: string;
+      round: number;
+      role: PanelistRole;
+      dimName: string;
+      dimScore: number;
+      dimNote: string;
+    }
+  | { type: "panelist_must_fix"; runId: string; round: number; role: PanelistRole; text: string }
+  | { type: "panelist_close"; runId: string; round: number; role: PanelistRole; score: number }
+  | {
+      type: "round_end";
+      runId: string;
+      round: number;
+      composite: number;
+      mustFix: number;
+      decision: RoundDecision;
+      reason: string;
+    }
+  | {
+      type: "ship";
+      runId: string;
+      round: number;
+      composite: number;
+      status: ShipStatus;
+      artifactRef: { projectId: string; artifactId: string };
+      summary: string;
+    }
+  | { type: "degraded"; runId: string; reason: DegradedReason; adapter: string }
+  | { type: "interrupted"; runId: string; bestRound: number; composite: number }
+  | { type: "failed"; runId: string; cause: FailedCause }
+  | { type: "parser_warning"; runId: string; kind: ParserWarningKind; position: number };
 
 const PANEL_EVENT_TYPE_LIST = [
-  'run_started', 'panelist_open', 'panelist_dim', 'panelist_must_fix',
-  'panelist_close', 'round_end', 'ship', 'degraded', 'interrupted',
-  'failed', 'parser_warning',
-] as const satisfies readonly PanelEvent['type'][];
+  "run_started",
+  "panelist_open",
+  "panelist_dim",
+  "panelist_must_fix",
+  "panelist_close",
+  "round_end",
+  "ship",
+  "degraded",
+  "interrupted",
+  "failed",
+  "parser_warning",
+] as const satisfies readonly PanelEvent["type"][];
 
-const PANEL_EVENT_TYPES = new Set<PanelEvent['type']>(PANEL_EVENT_TYPE_LIST);
+const PANEL_EVENT_TYPES = new Set<PanelEvent["type"]>(PANEL_EVENT_TYPE_LIST);
 
 const PANELIST_ROLE_SET = new Set<string>(PANELIST_ROLES);
 const SHIP_STATUS_SET = new Set<string>(SHIP_STATUSES);
@@ -138,20 +174,15 @@ const FAILED_CAUSE_SET = new Set<string>(FAILED_CAUSES);
 const PARSER_WARNING_KIND_SET = new Set<string>(PARSER_WARNING_KINDS);
 const ROUND_DECISION_SET = new Set<string>(ROUND_DECISIONS);
 
-const isFiniteNumber = (v: unknown): v is number =>
-  typeof v === 'number' && Number.isFinite(v);
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 /** Non-negative finite (>= 0). Used for composite / score / dimScore. */
-const isNonNegativeFinite = (v: unknown): v is number =>
-  isFiniteNumber(v) && v >= 0;
+const isNonNegativeFinite = (v: unknown): v is number => isFiniteNumber(v) && v >= 0;
 /** Non-negative integer (0, 1, 2, ...). Used for mustFix, position, bestRound. */
-const isNonNegativeInt = (v: unknown): v is number =>
-  isFiniteNumber(v) && Number.isInteger(v) && v >= 0;
+const isNonNegativeInt = (v: unknown): v is number => isFiniteNumber(v) && Number.isInteger(v) && v >= 0;
 /** Positive integer (1, 2, ...). Used for round, maxRounds, protocolVersion, scale. */
-const isPositiveInt = (v: unknown): v is number =>
-  isFiniteNumber(v) && Number.isInteger(v) && v > 0;
-const isString = (v: unknown): v is string => typeof v === 'string';
-const isPanelistRole = (v: unknown): v is PanelistRole =>
-  isString(v) && PANELIST_ROLE_SET.has(v);
+const isPositiveInt = (v: unknown): v is number => isFiniteNumber(v) && Number.isInteger(v) && v > 0;
+const isString = (v: unknown): v is string => typeof v === "string";
+const isPanelistRole = (v: unknown): v is PanelistRole => isString(v) && PANELIST_ROLE_SET.has(v);
 
 /**
  * Strict runtime guard for the `PanelEvent` union. Validates the union tag
@@ -188,71 +219,79 @@ const isPanelistRole = (v: unknown): v is PanelistRole =>
  *     the closed-set arrays.
  */
 export function isPanelEvent(value: unknown): value is PanelEvent {
-  if (!value || typeof value !== 'object') return false;
+  if (!value || typeof value !== "object") return false;
   const o = value as Record<string, unknown>;
-  const t = o['type'];
-  if (typeof t !== 'string' || !PANEL_EVENT_TYPES.has(t as PanelEvent['type'])) return false;
-  const runId = o['runId'];
-  if (typeof runId !== 'string' || runId.length === 0) return false;
-  switch (t as PanelEvent['type']) {
-    case 'run_started': {
-      const threshold = o['threshold'];
-      const scale = o['scale'];
-      return isPositiveInt(o['protocolVersion'])
-        && Array.isArray(o['cast']) && o['cast'].length > 0
-        && (o['cast'] as unknown[]).every(isPanelistRole)
-        && isPositiveInt(o['maxRounds'])
-        && isPositiveInt(scale)
-        && isNonNegativeFinite(threshold)
+  const t = o["type"];
+  if (typeof t !== "string" || !PANEL_EVENT_TYPES.has(t as PanelEvent["type"])) return false;
+  const runId = o["runId"];
+  if (typeof runId !== "string" || runId.length === 0) return false;
+  switch (t as PanelEvent["type"]) {
+    case "run_started": {
+      const threshold = o["threshold"];
+      const scale = o["scale"];
+      return (
+        isPositiveInt(o["protocolVersion"]) &&
+        Array.isArray(o["cast"]) &&
+        o["cast"].length > 0 &&
+        (o["cast"] as unknown[]).every(isPanelistRole) &&
+        isPositiveInt(o["maxRounds"]) &&
+        isPositiveInt(scale) &&
+        isNonNegativeFinite(threshold) &&
         // threshold must fit within the configured scale; downstream
         // panel decisions compare composite against threshold and break
         // silently if threshold > scale.
-        && (threshold as number) <= (scale as number);
+        (threshold as number) <= (scale as number)
+      );
     }
-    case 'panelist_open':
-      return isPositiveInt(o['round']) && isPanelistRole(o['role']);
-    case 'panelist_dim':
-      return isPositiveInt(o['round'])
-        && isPanelistRole(o['role'])
-        && isString(o['dimName'])
-        && isNonNegativeFinite(o['dimScore'])
-        && isString(o['dimNote']);
-    case 'panelist_must_fix':
-      return isPositiveInt(o['round'])
-        && isPanelistRole(o['role'])
-        && isString(o['text']);
-    case 'panelist_close':
-      return isPositiveInt(o['round'])
-        && isPanelistRole(o['role'])
-        && isNonNegativeFinite(o['score']);
-    case 'round_end':
-      return isPositiveInt(o['round'])
-        && isNonNegativeFinite(o['composite'])
-        && isNonNegativeInt(o['mustFix'])
-        && isString(o['decision']) && ROUND_DECISION_SET.has(o['decision'])
-        && isString(o['reason']);
-    case 'ship': {
-      const ref = o['artifactRef'] as { projectId?: unknown; artifactId?: unknown } | null | undefined;
-      return isPositiveInt(o['round'])
-        && isNonNegativeFinite(o['composite'])
-        && isString(o['status']) && SHIP_STATUS_SET.has(o['status'])
-        && ref !== null && typeof ref === 'object'
-        && typeof ref.projectId === 'string' && ref.projectId.length > 0
-        && typeof ref.artifactId === 'string' && ref.artifactId.length > 0
-        && isString(o['summary']);
+    case "panelist_open":
+      return isPositiveInt(o["round"]) && isPanelistRole(o["role"]);
+    case "panelist_dim":
+      return (
+        isPositiveInt(o["round"]) &&
+        isPanelistRole(o["role"]) &&
+        isString(o["dimName"]) &&
+        isNonNegativeFinite(o["dimScore"]) &&
+        isString(o["dimNote"])
+      );
+    case "panelist_must_fix":
+      return isPositiveInt(o["round"]) && isPanelistRole(o["role"]) && isString(o["text"]);
+    case "panelist_close":
+      return isPositiveInt(o["round"]) && isPanelistRole(o["role"]) && isNonNegativeFinite(o["score"]);
+    case "round_end":
+      return (
+        isPositiveInt(o["round"]) &&
+        isNonNegativeFinite(o["composite"]) &&
+        isNonNegativeInt(o["mustFix"]) &&
+        isString(o["decision"]) &&
+        ROUND_DECISION_SET.has(o["decision"]) &&
+        isString(o["reason"])
+      );
+    case "ship": {
+      const ref = o["artifactRef"] as { projectId?: unknown; artifactId?: unknown } | null | undefined;
+      return (
+        isPositiveInt(o["round"]) &&
+        isNonNegativeFinite(o["composite"]) &&
+        isString(o["status"]) &&
+        SHIP_STATUS_SET.has(o["status"]) &&
+        ref !== null &&
+        typeof ref === "object" &&
+        typeof ref.projectId === "string" &&
+        ref.projectId.length > 0 &&
+        typeof ref.artifactId === "string" &&
+        ref.artifactId.length > 0 &&
+        isString(o["summary"])
+      );
     }
-    case 'degraded':
-      return isString(o['reason']) && DEGRADED_REASON_SET.has(o['reason'])
-        && isString(o['adapter']);
-    case 'interrupted':
+    case "degraded":
+      return isString(o["reason"]) && DEGRADED_REASON_SET.has(o["reason"]) && isString(o["adapter"]);
+    case "interrupted":
       // `bestRound: 0` is the valid sentinel for "interrupted before any
       // round closed"; rounds otherwise start at 1.
-      return isNonNegativeInt(o['bestRound']) && isNonNegativeFinite(o['composite']);
-    case 'failed':
-      return isString(o['cause']) && FAILED_CAUSE_SET.has(o['cause']);
-    case 'parser_warning':
-      return isString(o['kind']) && PARSER_WARNING_KIND_SET.has(o['kind'])
-        && isNonNegativeInt(o['position']);
+      return isNonNegativeInt(o["bestRound"]) && isNonNegativeFinite(o["composite"]);
+    case "failed":
+      return isString(o["cause"]) && FAILED_CAUSE_SET.has(o["cause"]);
+    case "parser_warning":
+      return isString(o["kind"]) && PARSER_WARNING_KIND_SET.has(o["kind"]) && isNonNegativeInt(o["position"]);
   }
 }
 
@@ -266,36 +305,36 @@ export function isPanelEvent(value: unknown): value is PanelEvent {
 // avoids the conflict entirely.
 // ---------------------------------------------------------------------------
 
-type PayloadOf<T extends PanelEvent['type']> = Omit<Extract<PanelEvent, { type: T }>, 'type'>;
+type PayloadOf<T extends PanelEvent["type"]> = Omit<Extract<PanelEvent, { type: T }>, "type">;
 
 export type CritiqueSseEvent =
-  | SseTransportEvent<'critique.run_started',       PayloadOf<'run_started'>>
-  | SseTransportEvent<'critique.panelist_open',     PayloadOf<'panelist_open'>>
-  | SseTransportEvent<'critique.panelist_dim',      PayloadOf<'panelist_dim'>>
-  | SseTransportEvent<'critique.panelist_must_fix', PayloadOf<'panelist_must_fix'>>
-  | SseTransportEvent<'critique.panelist_close',    PayloadOf<'panelist_close'>>
-  | SseTransportEvent<'critique.round_end',         PayloadOf<'round_end'>>
-  | SseTransportEvent<'critique.ship',              PayloadOf<'ship'>>
-  | SseTransportEvent<'critique.degraded',          PayloadOf<'degraded'>>
-  | SseTransportEvent<'critique.interrupted',       PayloadOf<'interrupted'>>
-  | SseTransportEvent<'critique.failed',            PayloadOf<'failed'>>
-  | SseTransportEvent<'critique.parser_warning',    PayloadOf<'parser_warning'>>;
+  | SseTransportEvent<"critique.run_started", PayloadOf<"run_started">>
+  | SseTransportEvent<"critique.panelist_open", PayloadOf<"panelist_open">>
+  | SseTransportEvent<"critique.panelist_dim", PayloadOf<"panelist_dim">>
+  | SseTransportEvent<"critique.panelist_must_fix", PayloadOf<"panelist_must_fix">>
+  | SseTransportEvent<"critique.panelist_close", PayloadOf<"panelist_close">>
+  | SseTransportEvent<"critique.round_end", PayloadOf<"round_end">>
+  | SseTransportEvent<"critique.ship", PayloadOf<"ship">>
+  | SseTransportEvent<"critique.degraded", PayloadOf<"degraded">>
+  | SseTransportEvent<"critique.interrupted", PayloadOf<"interrupted">>
+  | SseTransportEvent<"critique.failed", PayloadOf<"failed">>
+  | SseTransportEvent<"critique.parser_warning", PayloadOf<"parser_warning">>;
 
 export const CRITIQUE_SSE_EVENT_NAMES = [
-  'critique.run_started',
-  'critique.panelist_open',
-  'critique.panelist_dim',
-  'critique.panelist_must_fix',
-  'critique.panelist_close',
-  'critique.round_end',
-  'critique.ship',
-  'critique.degraded',
-  'critique.interrupted',
-  'critique.failed',
-  'critique.parser_warning',
-] as const satisfies readonly CritiqueSseEvent['event'][];
+  "critique.run_started",
+  "critique.panelist_open",
+  "critique.panelist_dim",
+  "critique.panelist_must_fix",
+  "critique.panelist_close",
+  "critique.round_end",
+  "critique.ship",
+  "critique.degraded",
+  "critique.interrupted",
+  "critique.failed",
+  "critique.parser_warning",
+] as const satisfies readonly CritiqueSseEvent["event"][];
 
-export type CritiqueSseEventName = typeof CRITIQUE_SSE_EVENT_NAMES[number];
+export type CritiqueSseEventName = (typeof CRITIQUE_SSE_EVENT_NAMES)[number];
 
 export function panelEventToSse(e: PanelEvent): CritiqueSseEvent {
   const { type, ...payload } = e;
@@ -324,11 +363,7 @@ export interface CritiqueRoundSummary {
  * inline by daemon-side code; the public contract surface is terminal-only
  * because every consumer of this type works against finished runs.
  */
-export type CritiqueRunStatus =
-  | ShipStatus
-  | 'degraded'
-  | 'failed'
-  | 'legacy';
+export type CritiqueRunStatus = ShipStatus | "degraded" | "failed" | "legacy";
 
 /**
  * Enumeration of every terminal CritiqueRunStatus value, in the order the
@@ -340,13 +375,13 @@ export type CritiqueRunStatus =
  * daemon stays the single source of truth on the order.
  */
 export const CRITIQUE_RUN_STATUSES = [
-  'shipped',
-  'below_threshold',
-  'timed_out',
-  'interrupted',
-  'degraded',
-  'failed',
-  'legacy',
+  "shipped",
+  "below_threshold",
+  "timed_out",
+  "interrupted",
+  "degraded",
+  "failed",
+  "legacy",
 ] as const satisfies readonly CritiqueRunStatus[];
 
 /**
@@ -359,15 +394,11 @@ export const CRITIQUE_RUN_STATUSES = [
  * by other shared enums (e.g. `PANELIST_ROLES`) once they need the same
  * guard.
  */
-export type AssertExhaustiveValues<T extends string, U extends readonly T[]> =
-  Exclude<T, U[number]> extends never
-    ? true
-    : ['Missing variants in array:', Exclude<T, U[number]>];
+export type AssertExhaustiveValues<T extends string, U extends readonly T[]> = Exclude<T, U[number]> extends never
+  ? true
+  : ["Missing variants in array:", Exclude<T, U[number]>];
 
-const _critiqueRunStatusesExhaustive: AssertExhaustiveValues<
-  CritiqueRunStatus,
-  typeof CRITIQUE_RUN_STATUSES
-> = true;
+const _critiqueRunStatusesExhaustive: AssertExhaustiveValues<CritiqueRunStatus, typeof CRITIQUE_RUN_STATUSES> = true;
 // Reference the binding so esbuild does not tree-shake it; the assignment
 // itself is what enforces the exhaustiveness guarantee at compile time.
 void _critiqueRunStatusesExhaustive;
@@ -380,7 +411,7 @@ void _critiqueRunStatusesExhaustive;
  * terminal-only `CritiqueRunStatus` so a future endpoint cannot leak a
  * 'running' row through the wire. Picked up from lefarcen P2 on PR #1016.
  */
-export type CritiquePersistedStatus = CritiqueRunStatus | 'running';
+export type CritiquePersistedStatus = CritiqueRunStatus | "running";
 
 /**
  * Logical handle the daemon hands to the web layer for a critique run's

@@ -2,7 +2,7 @@
 // translates each kind into user-facing copy; the daemon picks one per test
 // and returns it inside a JSON envelope (always HTTP 200 — see notes in the
 // daemon module for why).
-import type { AgentCliEnvPrefs } from './app-config';
+import type { AgentCliEnvPrefs } from "./app-config";
 
 export interface BaseUrlValidationResult {
   parsed?: ParsedBaseUrl;
@@ -17,22 +17,20 @@ export interface ParsedBaseUrl {
 }
 
 declare const URL: {
-  new(input: string): ParsedBaseUrl;
+  new (input: string): ParsedBaseUrl;
 };
 
 function normalizeBracketedIpv6(hostname: string): string {
-  const stripped = hostname.startsWith('[') && hostname.endsWith(']')
-    ? hostname.slice(1, -1)
-    : hostname;
+  const stripped = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
   // FQDN trailing-dot form (RFC 1034) resolves identically to the dotless form,
   // so `localhost.` must normalize to `localhost` before the equality check in
   // isLoopbackApiHost — and `0.0.0.0.`, `10.0.0.1.`, etc. must normalize before
   // isBlockedIpv4 parses them. Strips one or more trailing dots.
-  return stripped.toLowerCase().replace(/\.+$/, '');
+  return stripped.toLowerCase().replace(/\.+$/, "");
 }
 
 function parseIpv4(hostname: string): [number, number, number, number] | null {
-  const parts = hostname.split('.');
+  const parts = hostname.split(".");
   if (parts.length !== 4) return null;
   const parsed = parts.map((part) => {
     if (!/^\d{1,3}$/.test(part)) return null;
@@ -68,30 +66,20 @@ function ipv4MappedToDotted(hostname: string): string | null {
   const mapped = /^::ffff:(.+)$/i.exec(host)?.[1];
   if (!mapped) return null;
   if (parseIpv4(mapped.toLowerCase())) return mapped.toLowerCase();
-  const hexParts = mapped.split(':');
-  if (
-    hexParts.length !== 2 ||
-    !hexParts.every((part) => /^[0-9a-f]{1,4}$/i.test(part))
-  ) {
+  const hexParts = mapped.split(":");
+  if (hexParts.length !== 2 || !hexParts.every((part) => /^[0-9a-f]{1,4}$/i.test(part))) {
     return null;
   }
   const hi = hexParts[0];
   const lo = hexParts[1];
   if (!hi || !lo) return null;
-  const value =
-    (Number.parseInt(hi, 16) << 16) |
-    Number.parseInt(lo, 16);
-  return [
-    (value >>> 24) & 255,
-    (value >>> 16) & 255,
-    (value >>> 8) & 255,
-    value & 255,
-  ].join('.');
+  const value = (Number.parseInt(hi, 16) << 16) | Number.parseInt(lo, 16);
+  return [(value >>> 24) & 255, (value >>> 16) & 255, (value >>> 8) & 255, value & 255].join(".");
 }
 
 export function isLoopbackApiHost(hostname: string): boolean {
   const host = normalizeBracketedIpv6(hostname);
-  if (host === 'localhost' || host === '::1') return true;
+  if (host === "localhost" || host === "::1") return true;
   if (isLoopbackIpv4(host)) return true;
   const mapped = ipv4MappedToDotted(host);
   return Boolean(mapped && isLoopbackIpv4(mapped));
@@ -99,7 +87,7 @@ export function isLoopbackApiHost(hostname: string): boolean {
 
 export function isBlockedExternalApiHostname(hostname: string): boolean {
   const host = normalizeBracketedIpv6(hostname);
-  if (host === '::') return true;
+  if (host === "::") return true;
   if (isBlockedIpv4(host)) return true;
   if (/^f[cd][0-9a-f]{2}:/i.test(host)) return true;
   if (/^fe[89ab][0-9a-f]:/i.test(host)) return true;
@@ -110,36 +98,36 @@ export function isBlockedExternalApiHostname(hostname: string): boolean {
 export function validateBaseUrl(baseUrl: string): BaseUrlValidationResult {
   let parsed: ParsedBaseUrl;
   try {
-    parsed = new URL(String(baseUrl).replace(/\/+$/, ''));
+    parsed = new URL(String(baseUrl).replace(/\/+$/, ""));
   } catch {
-    return { error: 'Invalid baseUrl' };
+    return { error: "Invalid baseUrl" };
   }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    return { error: 'Only http/https allowed' };
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return { error: "Only http/https allowed" };
   }
   const hostname = parsed.hostname.toLowerCase();
   if (!isLoopbackApiHost(hostname) && isBlockedExternalApiHostname(hostname)) {
-    return { error: 'Internal IPs blocked', forbidden: true };
+    return { error: "Internal IPs blocked", forbidden: true };
   }
   return { parsed };
 }
 
 export type ConnectionTestKind =
-  | 'success'
-  | 'auth_failed'
-  | 'forbidden'
-  | 'not_found_model'
-  | 'invalid_model_id'
-  | 'invalid_base_url'
-  | 'rate_limited'
-  | 'upstream_unavailable'
-  | 'timeout'
-  | 'agent_not_installed'
-  | 'agent_auth_required'
-  | 'agent_spawn_failed'
-  | 'unknown';
+  | "success"
+  | "auth_failed"
+  | "forbidden"
+  | "not_found_model"
+  | "invalid_model_id"
+  | "invalid_base_url"
+  | "rate_limited"
+  | "upstream_unavailable"
+  | "timeout"
+  | "agent_not_installed"
+  | "agent_auth_required"
+  | "agent_spawn_failed"
+  | "unknown";
 
-export type ConnectionTestProtocol = 'anthropic' | 'openai' | 'azure' | 'google' | 'ollama' | 'senseaudio';
+export type ConnectionTestProtocol = "anthropic" | "openai" | "azure" | "google" | "ollama" | "senseaudio";
 
 export interface ProviderTestRequest {
   protocol: ConnectionTestProtocol;
@@ -158,8 +146,8 @@ export interface AgentTestRequest {
 }
 
 export type ConnectionTestRequest =
-  | ({ mode: 'provider' } & ProviderTestRequest)
-  | ({ mode: 'agent' } & AgentTestRequest);
+  | ({ mode: "provider" } & ProviderTestRequest)
+  | ({ mode: "agent" } & AgentTestRequest);
 
 export interface ConnectionTestResponse {
   ok: boolean;
@@ -182,5 +170,5 @@ export interface ConnectionTestResponse {
   configuredExecutablePath?: string;
   detectedExecutablePath?: string;
   usedExecutablePath?: string;
-  usedExecutableSource?: 'configured' | 'path' | 'fallback_invalid' | 'fallback_failed';
+  usedExecutableSource?: "configured" | "path" | "fallback_invalid" | "fallback_failed";
 }

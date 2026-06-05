@@ -30,23 +30,23 @@ export const assetCopies: AssetCopy[] = [
   {
     label: "agent templates",
     source: resolve(repoRoot, "packages/agent/templates"),
-    target: resolve(repoRoot, "packages/cli/dist/assets/agent/templates")
+    target: resolve(repoRoot, "packages/cli/dist/assets/agent/templates"),
   },
   {
     label: "styles",
     source: resolve(repoRoot, "styles"),
-    target: resolve(repoRoot, "packages/cli/dist/assets/styles")
+    target: resolve(repoRoot, "packages/cli/dist/assets/styles"),
   },
   {
     label: "craft",
     source: resolve(repoRoot, "craft"),
-    target: resolve(repoRoot, "packages/cli/dist/assets/craft")
+    target: resolve(repoRoot, "packages/cli/dist/assets/craft"),
   },
   {
     label: "web dist",
     source: resolve(repoRoot, "packages/web/dist"),
-    target: resolve(repoRoot, "packages/cli/dist/assets/web")
-  }
+    target: resolve(repoRoot, "packages/cli/dist/assets/web"),
+  },
 ];
 
 export async function copyAssets(copies: AssetCopy[] = assetCopies): Promise<void> {
@@ -54,7 +54,9 @@ export async function copyAssets(copies: AssetCopy[] = assetCopies): Promise<voi
     assertSafeAssetTarget(copy.target);
     if (!(await pathExists(copy.source))) {
       if (isWebAssetCopy(copy)) {
-        throw new Error(`Missing web dist: ${relative(repoRoot, copy.source)}. Run pnpm build before packaging the CLI.`);
+        throw new Error(
+          `Missing web dist: ${relative(repoRoot, copy.source)}. Run pnpm build before packaging the CLI.`,
+        );
       }
       console.log(`skip ${copy.label}: ${copy.source} does not exist`);
       continue;
@@ -84,7 +86,7 @@ export async function checkAssets(): Promise<void> {
 
 export async function assertBuiltInStyles(
   stylesDirInput: string | URL,
-  options: BuiltInStyleCheckOptions = {}
+  options: BuiltInStyleCheckOptions = {},
 ): Promise<BuiltInStyleAsset[]> {
   const stylesDir = filePath(stylesDirInput);
   const stylesIndex = resolve(stylesDir, "styles.yaml");
@@ -114,7 +116,7 @@ export async function assertBuiltInStyles(
 
 export async function assertCopiedBuiltInStyles(
   sourceStylesDirInput: string | URL,
-  copiedStylesDirInput: string | URL
+  copiedStylesDirInput: string | URL,
 ): Promise<BuiltInStyleAsset[]> {
   const sourceStylesDir = filePath(sourceStylesDirInput);
   const copiedStylesDir = filePath(copiedStylesDirInput);
@@ -130,7 +132,9 @@ export async function assertWebAssets(webAssetsDirInput: string | URL): Promise<
 
   const assetFiles = await listFiles(resolve(webAssetsDir, "assets"));
   if (!assetFiles.some((file) => file.endsWith(".js"))) {
-    throw new Error(`Expected Web assets to include at least one JavaScript bundle in ${resolve(webAssetsDir, "assets")}`);
+    throw new Error(
+      `Expected Web assets to include at least one JavaScript bundle in ${resolve(webAssetsDir, "assets")}`,
+    );
   }
   if (!assetFiles.some((file) => file.endsWith(".css"))) {
     throw new Error(`Expected Web assets to include at least one CSS bundle in ${resolve(webAssetsDir, "assets")}`);
@@ -152,12 +156,16 @@ function assertSafeAssetTarget(target: string): void {
 async function checkCopiedStyleAssets(): Promise<void> {
   const copiedStylesDir = resolve(cliAssetsDir, "styles");
   if (!(await pathExists(copiedStylesDir))) {
-    console.log(`skip copied styles: ${relative(repoRoot, copiedStylesDir)} does not exist; run pnpm build to create it`);
+    console.log(
+      `skip copied styles: ${relative(repoRoot, copiedStylesDir)} does not exist; run pnpm build to create it`,
+    );
     return;
   }
 
   const copiedStyles = await assertCopiedBuiltInStyles(repoStylesDir, copiedStylesDir);
-  console.log(`validated copied styles: ${copiedStyles.length} built-in styles in ${relative(repoRoot, copiedStylesDir)}`);
+  console.log(
+    `validated copied styles: ${copiedStyles.length} built-in styles in ${relative(repoRoot, copiedStylesDir)}`,
+  );
 }
 
 async function checkCopiedCraftAssets(): Promise<void> {
@@ -189,7 +197,7 @@ async function listFiles(root: string): Promise<string[]> {
         return [file];
       }
       return [];
-    })
+    }),
   );
   return files.flat();
 }
@@ -210,7 +218,7 @@ function assertMatchingStyleNames(sourceStyles: BuiltInStyleAsset[], copiedStyle
 
   if (missing.length > 0 || extra.length > 0) {
     throw new Error(
-      `Copied built-in styles do not match source styles: missing [${missing.join(", ")}], extra [${extra.join(", ")}]`
+      `Copied built-in styles do not match source styles: missing [${missing.join(", ")}], extra [${extra.join(", ")}]`,
     );
   }
 }
@@ -229,7 +237,7 @@ function parseStyleIndex(source: string): BuiltInStyleAsset[] {
       description: s.description,
       designMdPath: s.design_md_path,
       tokensCssPath: s.tokens_css_path,
-      componentsHtmlPath: s.components_html_path
+      componentsHtmlPath: s.components_html_path,
     };
   });
 }

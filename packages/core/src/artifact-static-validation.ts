@@ -10,9 +10,7 @@ export interface StaticValidationInput {
   cssFiles?: Map<string, string>;
 }
 
-export type StaticValidationResult =
-  | { ok: true }
-  | { ok: false; violations: string[] };
+export type StaticValidationResult = { ok: true } | { ok: false; violations: string[] };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,7 +18,7 @@ export type StaticValidationResult =
 function isRemoteUrl(value: string): boolean {
   const trimmed = value.trim();
   // Protocol-relative: exactly "//" at start (not a single "/" which is a local absolute path)
-  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith('//');
+  return /^https?:\/\//i.test(trimmed) || trimmed.startsWith("//");
 }
 
 /** Returns true when the value starts with data: */
@@ -89,17 +87,11 @@ function scanResourceAttributes(el: HTMLElement, violations: string[]): void {
 
     const trimmed = val.trim();
     if (isRemoteUrl(trimmed)) {
-      violations.push(
-        `Remote http(s) reference on <${el.tagName.toLowerCase()}> ${attr}="${trimmed}"`
-      );
+      violations.push(`Remote http(s) reference on <${el.tagName.toLowerCase()}> ${attr}="${trimmed}"`);
     } else if (isJavascriptUrl(trimmed)) {
-      violations.push(
-        `javascript: URL on <${el.tagName.toLowerCase()}> ${attr}="${trimmed}"`
-      );
+      violations.push(`javascript: URL on <${el.tagName.toLowerCase()}> ${attr}="${trimmed}"`);
     } else if (isDataUrl(trimmed)) {
-      violations.push(
-        `Residual data: URL on <${el.tagName.toLowerCase()}> ${attr}="${trimmed.slice(0, 64)}"`
-      );
+      violations.push(`Residual data: URL on <${el.tagName.toLowerCase()}> ${attr}="${trimmed.slice(0, 64)}"`);
     }
 
     // Also check each token in srcset (e.g. "https://x/y.png 2x, assets/z.png 1x")
@@ -117,32 +109,21 @@ function scanResourceAttributes(el: HTMLElement, violations: string[]): void {
   }
 
   // xlink:href — node-html-parser stores this as "xlink:href" in rawAttributes
-  const xlinkHref =
-    el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
+  const xlinkHref = el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
   if (xlinkHref) {
     const trimmed = xlinkHref.trim();
     if (isRemoteUrl(trimmed)) {
-      violations.push(
-        `Remote http(s) xlink:href on <${el.tagName.toLowerCase()}>: ${trimmed}`
-      );
+      violations.push(`Remote http(s) xlink:href on <${el.tagName.toLowerCase()}>: ${trimmed}`);
     } else if (isJavascriptUrl(trimmed)) {
-      violations.push(
-        `javascript: URL in xlink:href on <${el.tagName.toLowerCase()}>: ${trimmed}`
-      );
+      violations.push(`javascript: URL in xlink:href on <${el.tagName.toLowerCase()}>: ${trimmed}`);
     } else if (isDataUrl(trimmed)) {
-      violations.push(
-        `Residual data: URL in xlink:href on <${el.tagName.toLowerCase()}>: ${trimmed.slice(0, 64)}`
-      );
+      violations.push(`Residual data: URL in xlink:href on <${el.tagName.toLowerCase()}>: ${trimmed.slice(0, 64)}`);
     }
   }
 }
 
 /** Scan all elements of a parsed tree and push violations. */
-function scanParsedTree(
-  root: ReturnType<typeof parse>,
-  violations: string[],
-  context: string
-): void {
+function scanParsedTree(root: ReturnType<typeof parse>, violations: string[], context: string): void {
   // Rule 1: <script> elements
   if (root.querySelectorAll("script").length > 0) {
     violations.push(`<script> element found in ${context}`);
@@ -175,9 +156,7 @@ function scanParsedTree(
     // Rule 2: inline on* event handlers
     for (const [attrName] of Object.entries(el.attributes)) {
       if (attrName.toLowerCase().startsWith("on")) {
-        violations.push(
-          `Inline event handler attribute "${attrName}" on <${tag}> in ${context}`
-        );
+        violations.push(`Inline event handler attribute "${attrName}" on <${tag}> in ${context}`);
       }
     }
 
@@ -212,9 +191,7 @@ export function scanSvg(path: string, svgText: string, violations: string[]): vo
 
     for (const [attrName] of Object.entries(el.attributes)) {
       if (attrName.toLowerCase().startsWith("on")) {
-        violations.push(
-          `Inline event handler attribute "${attrName}" on <${tag}> in SVG file "${path}"`
-        );
+        violations.push(`Inline event handler attribute "${attrName}" on <${tag}> in SVG file "${path}"`);
       }
     }
 
@@ -226,8 +203,7 @@ export function scanSvg(path: string, svgText: string, violations: string[]): vo
     }
 
     // xlink:href
-    const xlinkHref =
-      el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
+    const xlinkHref = el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
     if (xlinkHref) {
       scanSvgHref(xlinkHref, "xlink:href", path, tag, violations);
     }
@@ -235,13 +211,7 @@ export function scanSvg(path: string, svgText: string, violations: string[]): vo
 }
 
 /** Flag remote / javascript: / residual data: targets on an SVG href attribute. */
-function scanSvgHref(
-  value: string,
-  attr: string,
-  path: string,
-  tag: string,
-  violations: string[]
-): void {
+function scanSvgHref(value: string, attr: string, path: string, tag: string, violations: string[]): void {
   const trimmed = value.trim();
   if (isRemoteUrl(trimmed)) {
     violations.push(`Remote http(s) ${attr} on <${tag}> in SVG file "${path}": ${trimmed}`);
@@ -258,9 +228,7 @@ function scanSvgHref(
  * Pure, synchronous static validator for a localized artifact.
  * Collects ALL violations — never throws.
  */
-export function validateStaticArtifact(
-  input: StaticValidationInput
-): StaticValidationResult {
+export function validateStaticArtifact(input: StaticValidationInput): StaticValidationResult {
   const violations: string[] = [];
 
   // Scan HTML

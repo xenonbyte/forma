@@ -1,10 +1,10 @@
-import type { VZIContent } from '@vzi-core/format';
+import type { VZIContent } from "@vzi-core/format";
 import {
   buildCanvasKitElementTree,
   type FlatIRDocumentLike,
   type FlatIRElementLike,
   type IRElement,
-} from '@vzi-core/renderer';
+} from "@vzi-core/renderer";
 
 export interface PageAssetUrls {
   iconBaseUrl: string;
@@ -22,7 +22,7 @@ export interface ResourceRef {
   artifactId: string;
   pageId: string;
   path: string;
-  kind: 'icon' | 'bundle';
+  kind: "icon" | "bundle";
   url: string;
 }
 
@@ -35,14 +35,14 @@ interface RewriteCtx {
 }
 
 function stripDotSlash(p: string): string {
-  return p.replace(/^\.\//, '');
+  return p.replace(/^\.\//, "");
 }
 
 function stripIconsPrefix(rel: string): string {
-  return rel.replace(/^icons\//, '');
+  return rel.replace(/^icons\//, "");
 }
 
-function trackLocalResource(url: string, kind: 'icon' | 'bundle', path: string, ctx: RewriteCtx): string {
+function trackLocalResource(url: string, kind: "icon" | "bundle", path: string, ctx: RewriteCtx): string {
   ctx.resourceRefs?.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path, kind, url });
   return url;
 }
@@ -56,35 +56,39 @@ function pushResourceError(
   errors.push({ artifactId: ctx.artifactId, pageId: ctx.pageId, path, reason });
 }
 
-function safeRelativePath(raw: string, ctx: RewriteCtx, errors: Array<Partial<ResourceError> & { reason: string }>): string | undefined {
+function safeRelativePath(
+  raw: string,
+  ctx: RewriteCtx,
+  errors: Array<Partial<ResourceError> & { reason: string }>,
+): string | undefined {
   const rel = stripDotSlash(raw).trim();
   let decoded: string;
   try {
     decoded = decodeURIComponent(rel);
   } catch {
-    pushResourceError(errors, ctx, raw, 'malformed resource path');
+    pushResourceError(errors, ctx, raw, "malformed resource path");
     return undefined;
   }
-  const parts = decoded.split('/');
+  const parts = decoded.split("/");
   if (
     rel.length === 0 ||
-    rel.includes('\\') ||
-    decoded.includes('\\') ||
-    decoded.startsWith('/') ||
+    rel.includes("\\") ||
+    decoded.includes("\\") ||
+    decoded.startsWith("/") ||
     /^https?:\/\//i.test(decoded) ||
-    decoded.startsWith('file:') ||
+    decoded.startsWith("file:") ||
     parts.some((part) => {
-      if (part.length === 0 || part === '..') return true;
+      if (part.length === 0 || part === "..") return true;
       let inner = part;
       try {
         inner = decodeURIComponent(part);
       } catch {
         return true;
       }
-      return inner === '..' || inner.includes('/') || inner.includes('\\');
+      return inner === ".." || inner.includes("/") || inner.includes("\\");
     })
   ) {
-    pushResourceError(errors, ctx, raw, 'unsafe relative resource path');
+    pushResourceError(errors, ctx, raw, "unsafe relative resource path");
     return undefined;
   }
   return rel;
@@ -105,44 +109,44 @@ function artifactVersionFileRelativePath(
   try {
     parsed = new URL(raw);
   } catch {
-    pushResourceError(errors, ctx, raw, 'malformed file: resource URL');
+    pushResourceError(errors, ctx, raw, "malformed file: resource URL");
     return undefined;
   }
-  if (parsed.hostname && parsed.hostname !== 'localhost') {
-    pushResourceError(errors, ctx, raw, 'file: resource not allowed');
+  if (parsed.hostname && parsed.hostname !== "localhost") {
+    pushResourceError(errors, ctx, raw, "file: resource not allowed");
     return undefined;
   }
   const versionSegment = bundleVersionSegment(urls.bundleBaseUrl);
   if (!versionSegment) {
-    pushResourceError(errors, ctx, raw, 'file: resource not allowed');
+    pushResourceError(errors, ctx, raw, "file: resource not allowed");
     return undefined;
   }
 
-  const encodedSegments = parsed.pathname.split('/').filter((part) => part.length > 0);
+  const encodedSegments = parsed.pathname.split("/").filter((part) => part.length > 0);
   const decodedSegments: string[] = [];
   for (const segment of encodedSegments) {
     try {
       decodedSegments.push(decodeURIComponent(segment));
     } catch {
-      pushResourceError(errors, ctx, raw, 'malformed file: resource path');
+      pushResourceError(errors, ctx, raw, "malformed file: resource path");
       return undefined;
     }
   }
 
   for (let i = 0; i <= decodedSegments.length - 5; i += 1) {
     if (
-      decodedSegments[i] !== 'od-project' ||
-      decodedSegments[i + 1] !== 'artifacts' ||
+      decodedSegments[i] !== "od-project" ||
+      decodedSegments[i + 1] !== "artifacts" ||
       decodedSegments[i + 2] !== ctx.artifactId ||
       decodedSegments[i + 3] !== versionSegment
     ) {
       continue;
     }
-    const rel = safeRelativePath(encodedSegments.slice(i + 4).join('/'), ctx, errors);
+    const rel = safeRelativePath(encodedSegments.slice(i + 4).join("/"), ctx, errors);
     return rel ? `${rel}${parsed.search}${parsed.hash}` : undefined;
   }
 
-  pushResourceError(errors, ctx, raw, 'file: resource not allowed');
+  pushResourceError(errors, ctx, raw, "file: resource not allowed");
   return undefined;
 }
 
@@ -161,65 +165,65 @@ export function rewriteResourceUrl(
   ctx: RewriteCtx,
   errors: Array<Partial<ResourceError> & { reason: string }>,
 ): string | undefined {
-  const iconRel = metadata?.['iconRelativePath'];
-  if (typeof iconRel === 'string' && iconRel.length > 0) {
+  const iconRel = metadata?.["iconRelativePath"];
+  if (typeof iconRel === "string" && iconRel.length > 0) {
     const safeIconRel = safeRelativePath(iconRel, ctx, errors);
     return safeIconRel
-      ? trackLocalResource(`${urls.iconBaseUrl}${stripIconsPrefix(safeIconRel)}`, 'icon', safeIconRel, ctx)
+      ? trackLocalResource(`${urls.iconBaseUrl}${stripIconsPrefix(safeIconRel)}`, "icon", safeIconRel, ctx)
       : undefined;
   }
   if (!raw || raw.length === 0) return undefined;
   if (/^data:/i.test(raw)) return raw;
 
   if (/^https?:\/\//i.test(raw)) {
-    pushResourceError(errors, ctx, raw, 'remote http(s) resource not allowed');
+    pushResourceError(errors, ctx, raw, "remote http(s) resource not allowed");
     return undefined;
   }
   if (/^file:/i.test(raw)) {
     const rel = artifactVersionFileRelativePath(raw, urls, ctx, errors);
-    return rel ? trackLocalResource(`${urls.bundleBaseUrl}${rel}`, 'bundle', rel, ctx) : undefined;
+    return rel ? trackLocalResource(`${urls.bundleBaseUrl}${rel}`, "bundle", rel, ctx) : undefined;
   }
   if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) {
-    pushResourceError(errors, ctx, raw, 'unsupported resource protocol');
+    pushResourceError(errors, ctx, raw, "unsupported resource protocol");
     return undefined;
   }
-  if (raw.startsWith('/')) {
-    pushResourceError(errors, ctx, raw, 'absolute path not allowed');
+  if (raw.startsWith("/")) {
+    pushResourceError(errors, ctx, raw, "absolute path not allowed");
     return undefined;
   }
 
   const rel = safeRelativePath(raw, ctx, errors);
   if (!rel) return undefined;
-  if (rel.startsWith('icons/')) {
-    return trackLocalResource(`${urls.iconBaseUrl}${stripIconsPrefix(rel)}`, 'icon', rel, ctx);
+  if (rel.startsWith("icons/")) {
+    return trackLocalResource(`${urls.iconBaseUrl}${stripIconsPrefix(rel)}`, "icon", rel, ctx);
   }
   // assets/* and any other relative ref resolve against the version bundle
-  return trackLocalResource(`${urls.bundleBaseUrl}${rel}`, 'bundle', rel, ctx);
+  return trackLocalResource(`${urls.bundleBaseUrl}${rel}`, "bundle", rel, ctx);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
 
 function readSrc(el: Record<string, unknown>): string | undefined {
-  const imageData = asRecord(el['imageData']);
-  const source = asRecord(el['source']);
-  if (typeof el['src'] === 'string') return el['src'] as string;
-  if (typeof imageData['src'] === 'string') return imageData['src'] as string;
-  if (typeof source['src'] === 'string') return source['src'] as string;
+  const imageData = asRecord(el["imageData"]);
+  const source = asRecord(el["source"]);
+  if (typeof el["src"] === "string") return el["src"] as string;
+  if (typeof imageData["src"] === "string") return imageData["src"] as string;
+  if (typeof source["src"] === "string") return source["src"] as string;
   return undefined;
 }
 
 function namespaceElementId(id: string, ctx: RewriteCtx): string {
   if (!ctx.namespaceIds) return id;
-  const variantPart = ctx.variant && ctx.variant !== 'default' ? `/${ctx.variant}` : '';
+  const variantPart = ctx.variant && ctx.variant !== "default" ? `/${ctx.variant}` : "";
   return `${ctx.artifactId}/${ctx.pageId}${variantPart}/${id}`;
 }
 
 function readImageAssetUrl(metadata: Record<string, unknown>, imageUrls: Map<string, string>): string | undefined {
-  for (const key of ['iconAssetId', 'imageAssetId', 'assetId']) {
+  for (const key of ["iconAssetId", "imageAssetId", "assetId"]) {
     const id = metadata[key];
-    if (typeof id === 'string') {
+    if (typeof id === "string") {
       const url = imageUrls.get(id);
       if (url) return url;
     }
@@ -237,17 +241,20 @@ function rewriteCssUrlReferences(
 ): string | undefined {
   let sawUrl = false;
   let unsafeUrl = false;
-  const rewritten = value.replace(CSS_URL_RE, (match, doubleQuoted: string | undefined, singleQuoted: string | undefined, bare: string | undefined) => {
-    sawUrl = true;
-    const raw = (doubleQuoted ?? singleQuoted ?? bare ?? '').trim();
-    if (raw.startsWith('data:')) return match;
-    const mapped = rewriteResourceUrl(raw, undefined, urls, ctx, errors);
-    if (!mapped) {
-      unsafeUrl = true;
-      return '';
-    }
-    return `url("${mapped}")`;
-  });
+  const rewritten = value.replace(
+    CSS_URL_RE,
+    (match, doubleQuoted: string | undefined, singleQuoted: string | undefined, bare: string | undefined) => {
+      sawUrl = true;
+      const raw = (doubleQuoted ?? singleQuoted ?? bare ?? "").trim();
+      if (raw.startsWith("data:")) return match;
+      const mapped = rewriteResourceUrl(raw, undefined, urls, ctx, errors);
+      if (!mapped) {
+        unsafeUrl = true;
+        return "";
+      }
+      return `url("${mapped}")`;
+    },
+  );
   if (!sawUrl) return value;
   return unsafeUrl ? undefined : rewritten;
 }
@@ -259,13 +266,13 @@ function rewriteStyleResourceUrls(
   errors: Array<Partial<ResourceError> & { reason: string }>,
 ): Record<string, unknown> {
   const rewritten = { ...styles };
-  const backgroundImage = rewritten['backgroundImage'];
-  if (typeof backgroundImage === 'string') {
+  const backgroundImage = rewritten["backgroundImage"];
+  if (typeof backgroundImage === "string") {
     const next = rewriteCssUrlReferences(backgroundImage, urls, ctx, errors);
-    if (typeof next === 'string') {
-      rewritten['backgroundImage'] = next;
+    if (typeof next === "string") {
+      rewritten["backgroundImage"] = next;
     } else {
-      delete rewritten['backgroundImage'];
+      delete rewritten["backgroundImage"];
     }
   }
   return rewritten;
@@ -280,7 +287,7 @@ function rewriteImageAssetUrls(
   const rewritten = new Map<string, string>();
   for (const [assetId, asset] of content.images.entries()) {
     const rec = asset as unknown as Record<string, unknown>;
-    const rawUrl = typeof rec['url'] === 'string' ? (rec['url'] as string) : undefined;
+    const rawUrl = typeof rec["url"] === "string" ? (rec["url"] as string) : undefined;
     const mapped = rewriteResourceUrl(rawUrl, undefined, urls, ctx, errors);
     if (mapped) rewritten.set(assetId, mapped);
   }
@@ -298,18 +305,19 @@ export function vziContentToFlatDoc(
   const imageUrls = rewriteImageAssetUrls(content, urls, ctx, errors);
   for (const [id, rawEl] of content.elements.entries()) {
     const el = rawEl as unknown as Record<string, unknown>;
-    const metadata = asRecord(el['metadata']);
-    const rewritten = readImageAssetUrl(metadata, imageUrls) ?? rewriteResourceUrl(readSrc(el), metadata, urls, ctx, errors);
+    const metadata = asRecord(el["metadata"]);
+    const rewritten =
+      readImageAssetUrl(metadata, imageUrls) ?? rewriteResourceUrl(readSrc(el), metadata, urls, ctx, errors);
     const mappedId = namespaceElementId(id, ctx);
-    const parentId = typeof el['parentId'] === 'string' ? namespaceElementId(el['parentId'] as string, ctx) : null;
+    const parentId = typeof el["parentId"] === "string" ? namespaceElementId(el["parentId"] as string, ctx) : null;
     elements[mappedId] = {
       id: mappedId,
       parentId,
-      type: typeof el['type'] === 'string' ? (el['type'] as string) : 'container',
-      bounds: el['bounds'] as FlatIRElementLike['bounds'],
-      styles: rewriteStyleResourceUrls(asRecord(el['styles']), urls, ctx, errors),
-      textContent: typeof el['textContent'] === 'string' ? (el['textContent'] as string) : undefined,
-      svgData: el['svgData'],
+      type: typeof el["type"] === "string" ? (el["type"] as string) : "container",
+      bounds: el["bounds"] as FlatIRElementLike["bounds"],
+      styles: rewriteStyleResourceUrls(asRecord(el["styles"]), urls, ctx, errors),
+      textContent: typeof el["textContent"] === "string" ? (el["textContent"] as string) : undefined,
+      svgData: el["svgData"],
       ...(rewritten ? { src: rewritten } : {}),
     };
   }
@@ -325,23 +333,23 @@ export function translateTree(elements: IRElement[], dx: number): void {
 }
 
 function isFiniteNumber(v: unknown): v is number {
-  return typeof v === 'number' && Number.isFinite(v);
+  return typeof v === "number" && Number.isFinite(v);
 }
 
 export function pageSize(content: VZIContent): { width: number; height: number } {
   const meta = content.metadata as unknown as Record<string, unknown>;
-  const vp = asRecord(meta['formaViewport']);
-  let width = isFiniteNumber(vp['width']) ? (vp['width'] as number) : 0;
-  let height = isFiniteNumber(vp['height']) ? (vp['height'] as number) : 0;
+  const vp = asRecord(meta["formaViewport"]);
+  let width = isFiniteNumber(vp["width"]) ? (vp["width"] as number) : 0;
+  let height = isFiniteNumber(vp["height"]) ? (vp["height"] as number) : 0;
   if (width <= 0 || height <= 0) {
     let maxX = 0;
     let maxY = 0;
     for (const rawEl of content.elements.values()) {
-      const b = asRecord((rawEl as unknown as Record<string, unknown>)['bounds']);
-      const x = isFiniteNumber(b['x']) ? (b['x'] as number) : 0;
-      const y = isFiniteNumber(b['y']) ? (b['y'] as number) : 0;
-      const w = isFiniteNumber(b['width']) ? (b['width'] as number) : 0;
-      const h = isFiniteNumber(b['height']) ? (b['height'] as number) : 0;
+      const b = asRecord((rawEl as unknown as Record<string, unknown>)["bounds"]);
+      const x = isFiniteNumber(b["x"]) ? (b["x"] as number) : 0;
+      const y = isFiniteNumber(b["y"]) ? (b["y"] as number) : 0;
+      const w = isFiniteNumber(b["width"]) ? (b["width"] as number) : 0;
+      const h = isFiniteNumber(b["height"]) ? (b["height"] as number) : 0;
       maxX = Math.max(maxX, x + w);
       maxY = Math.max(maxY, y + h);
     }
@@ -352,7 +360,7 @@ export function pageSize(content: VZIContent): { width: number; height: number }
 }
 
 export interface AdapterPageInput {
-  status?: 'ready';
+  status?: "ready";
   pageId: string;
   artifactId: string;
   variant: string;
@@ -362,7 +370,7 @@ export interface AdapterPageInput {
 }
 
 export interface AdapterFailedPageInput {
-  status: 'failed';
+  status: "failed";
   pageId: string;
   artifactId: string;
   variant: string;
@@ -382,7 +390,7 @@ export interface PageFrame {
   x: number;
   width: number;
   height: number;
-  status: 'ready' | 'error';
+  status: "ready" | "error";
   errorReason?: string;
 }
 
@@ -398,7 +406,7 @@ export interface ComposedCanvas {
 const FAILED_PAGE_FRAME = { width: 390, height: 800 };
 
 function isFailedPage(page: AdapterCanvasPageInput): page is AdapterFailedPageInput {
-  return page.status === 'failed';
+  return page.status === "failed";
 }
 
 function hasDuplicateElementIds(pages: AdapterCanvasPageInput[]): boolean {
@@ -435,7 +443,7 @@ export function composeAnnotationCanvas(pages: AdapterCanvasPageInput[], gap = 8
         x: xCursor,
         width,
         height,
-        status: 'error',
+        status: "error",
         errorReason: page.errorReason,
       });
       maxHeight = Math.max(maxHeight, height);
@@ -449,7 +457,16 @@ export function composeAnnotationCanvas(pages: AdapterCanvasPageInput[], gap = 8
     const { width, height } = pageSize(page.content);
     translateTree(tree, xCursor);
     elements.push(...tree);
-    frames.push({ pageId: page.pageId, artifactId: page.artifactId, variant: page.variant, title: page.title, x: xCursor, width, height, status: 'ready' });
+    frames.push({
+      pageId: page.pageId,
+      artifactId: page.artifactId,
+      variant: page.variant,
+      title: page.title,
+      x: xCursor,
+      width,
+      height,
+      status: "ready",
+    });
     maxHeight = Math.max(maxHeight, height);
     xCursor += width + gap;
   }
@@ -471,8 +488,8 @@ function markElementMissing(el: IRElement): IRElement {
     svgData: undefined,
     styles: {
       ...el.styles,
-      backgroundColor: '#fee2e2',
-      borderColor: '#f59e0b',
+      backgroundColor: "#fee2e2",
+      borderColor: "#f59e0b",
       borderWidth: 1,
     },
   };
@@ -483,6 +500,6 @@ export function withMissingResourcePlaceholders(elements: IRElement[], missingUr
   return elements.map((el) => {
     const children = el.children ? withMissingResourcePlaceholders(el.children, missingUrls) : el.children;
     const next = children ? { ...el, children } : el;
-    return typeof next.src === 'string' && missingUrls.has(next.src) ? markElementMissing(next) : next;
+    return typeof next.src === "string" && missingUrls.has(next.src) ? markElementMissing(next) : next;
   });
 }

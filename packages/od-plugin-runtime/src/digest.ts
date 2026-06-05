@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import type { PluginManifest } from '@xenonbyte/od-contracts';
+import { createHash } from "node:crypto";
+import type { PluginManifest } from "@xenonbyte/od-contracts";
 
 // Frozen `manifestSourceDigest` algorithm (plan F1). The input shape is
 // stable forever: bumping it must come with a CI fixture update so historic
@@ -33,13 +33,13 @@ export function manifestSourceDigest(input: DigestInput): string {
     resolvedContextRefs: input.resolvedContextRefs,
   });
   const json = JSON.stringify(canonical);
-  return createHash('sha256').update(json, 'utf8').digest('hex');
+  return createHash("sha256").update(json, "utf8").digest("hex");
 }
 
 function canonicalize(value: unknown): unknown {
   if (value === null) return null;
   if (Array.isArray(value)) return value.map(canonicalize);
-  if (typeof value !== 'object') return value;
+  if (typeof value !== "object") return value;
   const obj = value as Record<string, unknown>;
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(obj).sort()) {

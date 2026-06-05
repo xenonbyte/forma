@@ -2,11 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
-import {
-  createFormaStore,
-  formaCoreVersion,
-  isSchemaNormalizationStartupError
-} from "@xenonbyte/forma-core";
+import { createFormaStore, formaCoreVersion, isSchemaNormalizationStartupError } from "@xenonbyte/forma-core";
 import { createFormaTools, registerFormaTools, registerLimitedFormaTools } from "./tools.js";
 
 export { formaCoreVersion } from "@xenonbyte/forma-core";
@@ -18,7 +14,7 @@ export {
   type FormaToolHandler,
   type FormaToolName,
   type FormaToolResult,
-  type FormaTools
+  type FormaTools,
 } from "./tools.js";
 
 export interface CreateFormaMcpServerOptions {
@@ -37,7 +33,7 @@ export async function createFormaMcpServer(options: CreateFormaMcpServerOptions 
   try {
     store = await createFormaStore({
       home,
-      bundledStylesDir: options.bundledStylesDir
+      bundledStylesDir: options.bundledStylesDir,
     });
   } catch (error) {
     if (!isSchemaNormalizationStartupError(error)) {
@@ -81,7 +77,7 @@ function logRecoveryWarning(warning: string, logger?: FormaMcpLogger): void {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
     console.error(message);
     process.exitCode = 1;
   });

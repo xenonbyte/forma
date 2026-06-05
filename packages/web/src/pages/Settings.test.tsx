@@ -34,7 +34,7 @@ describe("Settings", () => {
       root.render(
         <LocaleProvider>
           <Settings />
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });

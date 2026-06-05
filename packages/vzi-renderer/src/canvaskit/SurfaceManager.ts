@@ -4,8 +4,8 @@
  * 负责创建、管理和销毁 CanvasKit Surface
  */
 
-import type { CanvasKit, Surface } from 'canvaskit-wasm';
-import { getCanvasKit } from './CanvasKitLoader';
+import type { CanvasKit, Surface } from "canvaskit-wasm";
+import { getCanvasKit } from "./CanvasKitLoader";
 
 export interface SurfaceOptions {
   /**
@@ -33,7 +33,7 @@ export interface SurfaceOptions {
 
 export interface SurfaceInfo {
   surface: Surface;
-  backend: 'WebGL' | 'CPU';
+  backend: "WebGL" | "CPU";
   width: number;
   height: number;
   devicePixelRatio: number;
@@ -52,7 +52,7 @@ export class SurfaceManager {
     } catch (error) {
       // React StrictMode 或异步初始化竞态下，Surface 可能已被释放；幂等处理即可
       // eslint-disable-next-line no-console
-      console.warn('[VZI][SurfaceManager] surface already deleted, skip', error);
+      console.warn("[VZI][SurfaceManager] surface already deleted, skip", error);
     }
   }
 
@@ -65,7 +65,7 @@ export class SurfaceManager {
    */
   createSurface(canvas: HTMLCanvasElement, options: SurfaceOptions): SurfaceInfo {
     if (!this.canvasKit) {
-      throw new Error('CanvasKit not loaded. Call loadCanvasKit() first.');
+      throw new Error("CanvasKit not loaded. Call loadCanvasKit() first.");
     }
 
     const id = this.generateSurfaceId(canvas);
@@ -75,12 +75,7 @@ export class SurfaceManager {
       this.surfaces.delete(id);
     }
 
-    const {
-      width,
-      height,
-      useWebGL = true,
-      devicePixelRatio = window.devicePixelRatio || 1,
-    } = options;
+    const { width, height, useWebGL = true, devicePixelRatio = window.devicePixelRatio || 1 } = options;
 
     // 设置 canvas 尺寸
     canvas.width = width * devicePixelRatio;
@@ -89,18 +84,18 @@ export class SurfaceManager {
     canvas.style.height = `${height}px`;
 
     let surface: Surface | null = null;
-    let backend: 'WebGL' | 'CPU' = 'CPU';
+    let backend: "WebGL" | "CPU" = "CPU";
 
     // 尝试创建 WebGL Surface
     if (useWebGL) {
       try {
         surface = this.canvasKit.MakeWebGLCanvasSurface(canvas);
         if (surface) {
-          backend = 'WebGL';
+          backend = "WebGL";
         }
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.warn('[VZI][SurfaceManager] WebGL surface creation failed, fallback to CPU', error);
+        console.warn("[VZI][SurfaceManager] WebGL surface creation failed, fallback to CPU", error);
         surface = null;
       }
     }
@@ -113,9 +108,9 @@ export class SurfaceManager {
         throw new Error(`Failed to create CPU Surface: ${error instanceof Error ? error.message : String(error)}`);
       }
       if (!surface) {
-        throw new Error('Failed to create Surface (both WebGL and CPU failed)');
+        throw new Error("Failed to create Surface (both WebGL and CPU failed)");
       }
-      backend = 'CPU';
+      backend = "CPU";
     }
 
     const surfaceInfo: SurfaceInfo = {
@@ -135,12 +130,7 @@ export class SurfaceManager {
   /**
    * 调整 Surface 大小
    */
-  resizeSurface(
-    canvas: HTMLCanvasElement,
-    width: number,
-    height: number,
-    devicePixelRatio?: number
-  ): SurfaceInfo {
+  resizeSurface(canvas: HTMLCanvasElement, width: number, height: number, devicePixelRatio?: number): SurfaceInfo {
     const id = this.generateSurfaceId(canvas);
     const existingInfo = this.surfaces.get(id);
 
@@ -154,7 +144,7 @@ export class SurfaceManager {
     return this.createSurface(canvas, {
       width,
       height,
-      useWebGL: existingInfo?.backend === 'WebGL',
+      useWebGL: existingInfo?.backend === "WebGL",
       devicePixelRatio: devicePixelRatio || existingInfo?.devicePixelRatio,
     });
   }

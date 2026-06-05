@@ -7,9 +7,9 @@
  * 对于常规使用场景，Konva Canvas 渲染器已经足够。
  */
 
-import { memo, useEffect, useRef, useCallback, useState } from 'react';
-import type { IRElement } from '@vzi-core/types';
-import { buildWebGLRenderBatch, parseWebGLColor } from './webgl-render-utils';
+import { memo, useEffect, useRef, useCallback, useState } from "react";
+import type { IRElement } from "@vzi-core/types";
+import { buildWebGLRenderBatch, parseWebGLColor } from "./webgl-render-utils";
 
 /**
  * WebGL 渲染器配置
@@ -76,18 +76,18 @@ interface WebGLContextInfo {
  * 检查 WebGL 是否可用
  */
 function checkWebGLAvailability(): WebGLContextInfo {
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
 
   let gl: WebGLRenderingContext | WebGL2RenderingContext | null = null;
   let isWebGL2 = false;
 
   // 尝试 WebGL 2
-  gl = canvas.getContext('webgl2');
+  gl = canvas.getContext("webgl2");
   if (gl) {
     isWebGL2 = true;
   } else {
     // 回退到 WebGL 1
-    const webgl1 = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+    const webgl1 = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
     gl = webgl1 as WebGLRenderingContext | null;
   }
 
@@ -102,7 +102,7 @@ function checkWebGLAvailability(): WebGLContextInfo {
 function createShader(
   gl: WebGLRenderingContext | WebGL2RenderingContext,
   type: number,
-  source: string
+  source: string,
 ): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) return null;
@@ -111,7 +111,7 @@ function createShader(
   gl.compileShader(shader);
 
   if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    console.error('Shader compilation error:', gl.getShaderInfoLog(shader));
+    console.error("Shader compilation error:", gl.getShaderInfoLog(shader));
     gl.deleteShader(shader);
     return null;
   }
@@ -125,7 +125,7 @@ function createShader(
 function createProgram(
   gl: WebGLRenderingContext | WebGL2RenderingContext,
   vertexShader: WebGLShader,
-  fragmentShader: WebGLShader
+  fragmentShader: WebGLShader,
 ): WebGLProgram | null {
   const program = gl.createProgram();
   if (!program) return null;
@@ -135,7 +135,7 @@ function createProgram(
   gl.linkProgram(program);
 
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    console.error('Program linking error:', gl.getProgramInfoLog(program));
+    console.error("Program linking error:", gl.getProgramInfoLog(program));
     gl.deleteProgram(program);
     return null;
   }
@@ -174,187 +174,166 @@ const FRAGMENT_SHADER_SOURCE = `
 /**
  * WebGL 渲染器组件
  */
-export const WebGLRenderer: React.FC<WebGLRendererProps> = memo(({
-  elements,
-  width,
-  height,
-  viewport,
-  config = {},
-  onRenderComplete,
-  onWebGLUnavailable,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const glRef = useRef<WebGLRenderingContext | null>(null);
-  const programRef = useRef<WebGLProgram | null>(null);
-  const [isWebGLAvailable, setIsWebGLAvailable] = useState(true);
+export const WebGLRenderer: React.FC<WebGLRendererProps> = memo(
+  ({ elements, width, height, viewport, config = {}, onRenderComplete, onWebGLUnavailable }) => {
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const glRef = useRef<WebGLRenderingContext | null>(null);
+    const programRef = useRef<WebGLProgram | null>(null);
+    const [isWebGLAvailable, setIsWebGLAvailable] = useState(true);
 
-  const {
-    enabled = true,
-    backgroundColor = '#ffffff',
-  } = config;
+    const { enabled = true, backgroundColor = "#ffffff" } = config;
 
-  // 初始化 WebGL
-  useEffect(() => {
-    if (!enabled) return;
+    // 初始化 WebGL
+    useEffect(() => {
+      if (!enabled) return;
 
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
 
-    const info = checkWebGLAvailability();
+      const info = checkWebGLAvailability();
 
-    if (!info.gl) {
-      setIsWebGLAvailable(false);
-      onWebGLUnavailable?.();
-      return;
-    }
-
-    glRef.current = info.gl;
-    const gl = info.gl;
-
-    // 设置视口
-    gl.viewport(0, 0, width, height);
-
-    // 编译着色器
-    const vertexShader = createShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
-    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER_SOURCE);
-
-    if (vertexShader && fragmentShader) {
-      programRef.current = createProgram(gl, vertexShader, fragmentShader);
-      gl.deleteShader(vertexShader);
-      gl.deleteShader(fragmentShader);
-    }
-
-    if (!programRef.current) {
-      setIsWebGLAvailable(false);
-      onWebGLUnavailable?.();
-      return;
-    }
-
-    // 清理
-    return () => {
-      if (programRef.current) {
-        gl.deleteProgram(programRef.current);
+      if (!info.gl) {
+        setIsWebGLAvailable(false);
+        onWebGLUnavailable?.();
+        return;
       }
-    };
-  }, [enabled, width, height, onWebGLUnavailable]);
 
-  // 渲染循环
-  const render = useCallback(() => {
-    const gl = glRef.current;
-    const program = programRef.current;
-    const canvas = canvasRef.current;
+      glRef.current = info.gl;
+      const gl = info.gl;
 
-    if (!gl || !program || !canvas) return;
+      // 设置视口
+      gl.viewport(0, 0, width, height);
 
-    const startTime = performance.now();
-    const { vertexData, drawnElementCount } = buildWebGLRenderBatch(elements);
+      // 编译着色器
+      const vertexShader = createShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER_SOURCE);
+      const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER_SOURCE);
 
-    // 清除画布
-    const clearColor = parseWebGLColor(backgroundColor, 1, [1, 1, 1, 1]) ?? [1, 1, 1, 1];
-    gl.clearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    // 使用程序
-    gl.useProgram(program);
-
-    // 设置 uniform
-    const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
-    const translationLocation = gl.getUniformLocation(program, 'u_translation');
-    const scaleLocation = gl.getUniformLocation(program, 'u_scale');
-
-    gl.uniform2f(resolutionLocation, width, height);
-    gl.uniform2f(translationLocation, viewport.x, viewport.y);
-    gl.uniform1f(scaleLocation, viewport.scale);
-
-    if (vertexData.length > 0) {
-      const vertexBuffer = gl.createBuffer();
-      const positionLocation = gl.getAttribLocation(program, 'a_position');
-      const colorLocation = gl.getAttribLocation(program, 'a_color');
-
-      if (vertexBuffer && positionLocation >= 0 && colorLocation >= 0) {
-        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
-
-        const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
-        gl.enableVertexAttribArray(positionLocation);
-        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, stride, 0);
-        gl.enableVertexAttribArray(colorLocation);
-        gl.vertexAttribPointer(
-          colorLocation,
-          4,
-          gl.FLOAT,
-          false,
-          stride,
-          2 * Float32Array.BYTES_PER_ELEMENT,
-        );
-
-        gl.drawArrays(gl.TRIANGLES, 0, vertexData.length / 6);
-        gl.deleteBuffer(vertexBuffer);
+      if (vertexShader && fragmentShader) {
+        programRef.current = createProgram(gl, vertexShader, fragmentShader);
+        gl.deleteShader(vertexShader);
+        gl.deleteShader(fragmentShader);
       }
+
+      if (!programRef.current) {
+        setIsWebGLAvailable(false);
+        onWebGLUnavailable?.();
+        return;
+      }
+
+      // 清理
+      return () => {
+        if (programRef.current) {
+          gl.deleteProgram(programRef.current);
+        }
+      };
+    }, [enabled, width, height, onWebGLUnavailable]);
+
+    // 渲染循环
+    const render = useCallback(() => {
+      const gl = glRef.current;
+      const program = programRef.current;
+      const canvas = canvasRef.current;
+
+      if (!gl || !program || !canvas) return;
+
+      const startTime = performance.now();
+      const { vertexData, drawnElementCount } = buildWebGLRenderBatch(elements);
+
+      // 清除画布
+      const clearColor = parseWebGLColor(backgroundColor, 1, [1, 1, 1, 1]) ?? [1, 1, 1, 1];
+      gl.clearColor(clearColor[0], clearColor[1], clearColor[2], clearColor[3]);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      // 使用程序
+      gl.useProgram(program);
+
+      // 设置 uniform
+      const resolutionLocation = gl.getUniformLocation(program, "u_resolution");
+      const translationLocation = gl.getUniformLocation(program, "u_translation");
+      const scaleLocation = gl.getUniformLocation(program, "u_scale");
+
+      gl.uniform2f(resolutionLocation, width, height);
+      gl.uniform2f(translationLocation, viewport.x, viewport.y);
+      gl.uniform1f(scaleLocation, viewport.scale);
+
+      if (vertexData.length > 0) {
+        const vertexBuffer = gl.createBuffer();
+        const positionLocation = gl.getAttribLocation(program, "a_position");
+        const colorLocation = gl.getAttribLocation(program, "a_color");
+
+        if (vertexBuffer && positionLocation >= 0 && colorLocation >= 0) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+          gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+          const stride = 6 * Float32Array.BYTES_PER_ELEMENT;
+          gl.enableVertexAttribArray(positionLocation);
+          gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, stride, 0);
+          gl.enableVertexAttribArray(colorLocation);
+          gl.vertexAttribPointer(colorLocation, 4, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
+
+          gl.drawArrays(gl.TRIANGLES, 0, vertexData.length / 6);
+          gl.deleteBuffer(vertexBuffer);
+        }
+      }
+
+      const frameTime = performance.now() - startTime;
+
+      onRenderComplete?.({
+        elementCount: drawnElementCount,
+        frameTime,
+        usedWebGL: true,
+        gpuMemoryEstimate: vertexData.byteLength,
+      });
+    }, [elements, width, height, viewport, backgroundColor, onRenderComplete]);
+
+    // 响应视口变化
+    useEffect(() => {
+      render();
+    }, [render]);
+
+    // 如果 WebGL 不可用或禁用，显示回退提示
+    if (!isWebGLAvailable || !enabled) {
+      return (
+        <div
+          style={{
+            width,
+            height,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            backgroundColor,
+            color: "#666666",
+            fontSize: 14,
+          }}
+        >
+          {!enabled ? "WebGL 渲染器已禁用" : "WebGL 不可用，请使用 Canvas 渲染器"}
+        </div>
+      );
     }
 
-    const frameTime = performance.now() - startTime;
-
-    onRenderComplete?.({
-      elementCount: drawnElementCount,
-      frameTime,
-      usedWebGL: true,
-      gpuMemoryEstimate: vertexData.byteLength,
-    });
-  }, [elements, width, height, viewport, backgroundColor, onRenderComplete]);
-
-  // 响应视口变化
-  useEffect(() => {
-    render();
-  }, [render]);
-
-  // 如果 WebGL 不可用或禁用，显示回退提示
-  if (!isWebGLAvailable || !enabled) {
     return (
-      <div
+      <canvas
+        ref={canvasRef}
+        width={width}
+        height={height}
         style={{
           width,
           height,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor,
-          color: '#666666',
-          fontSize: 14,
+          display: "block",
         }}
-      >
-        {!enabled
-          ? 'WebGL 渲染器已禁用'
-          : 'WebGL 不可用，请使用 Canvas 渲染器'}
-      </div>
+      />
     );
-  }
+  },
+);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      width={width}
-      height={height}
-      style={{
-        width,
-        height,
-        display: 'block',
-      }}
-    />
-  );
-});
-
-WebGLRenderer.displayName = 'WebGLRenderer';
+WebGLRenderer.displayName = "WebGLRenderer";
 
 /**
  * 检查是否应该使用 WebGL
  *
  * 根据元素数量和设备能力决定是否启用 WebGL
  */
-export function shouldUseWebGL(
-  elementCount: number,
-  threshold: number = 5000
-): boolean {
+export function shouldUseWebGL(elementCount: number, threshold: number = 5000): boolean {
   // 元素数量超过阈值时考虑使用 WebGL
   if (elementCount < threshold) {
     return false;
@@ -382,23 +361,19 @@ export function getWebGLCapabilities(): {
       available: false,
       webgl2: false,
       maxTextureSize: 0,
-      vendor: '',
-      renderer: '',
+      vendor: "",
+      renderer: "",
     };
   }
 
   const gl = info.gl;
-  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+  const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
 
   return {
     available: true,
     webgl2: info.isWebGL2,
     maxTextureSize: info.maxTextureSize,
-    vendor: debugInfo
-      ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL)
-      : 'unknown',
-    renderer: debugInfo
-      ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
-      : 'unknown',
+    vendor: debugInfo ? gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL) : "unknown",
+    renderer: debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : "unknown",
   };
 }

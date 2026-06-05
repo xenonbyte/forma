@@ -88,7 +88,10 @@ export function layoutNavigationGraph(input: {
   };
 }
 
-function createInitialNodes(inputs: ForceLayoutNodeInput[], size: { height: number; width: number }): ForceLayoutNode[] {
+function createInitialNodes(
+  inputs: ForceLayoutNodeInput[],
+  size: { height: number; width: number },
+): ForceLayoutNode[] {
   const centerX = size.width / 2;
   const centerY = size.height / 2;
   const orbitRadius = Math.min(size.width, size.height) * 0.32;

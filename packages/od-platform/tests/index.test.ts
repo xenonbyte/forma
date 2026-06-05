@@ -82,7 +82,9 @@ describe("generic process stamp primitives", () => {
     const command = ["node", "ui.js", ...createProcessStampArgs(stamp, fakeContract)].join(" ");
 
     expect(readProcessStampFromCommand(command, fakeContract)).toEqual(stamp);
-    expect(matchesStampedProcess({ command }, { app: "ui", namespace: stamp.namespace, source: "tool" }, fakeContract)).toBe(true);
+    expect(
+      matchesStampedProcess({ command }, { app: "ui", namespace: stamp.namespace, source: "tool" }, fakeContract),
+    ).toBe(true);
     expect(matchesStampedProcess({ command }, { namespace: "stamp-boundary-b" }, fakeContract)).toBe(false);
     expect(matchesStampedProcess({ command }, { source: "pack" }, fakeContract)).toBe(false);
   });
@@ -183,12 +185,7 @@ describe("createCommandInvocation", () => {
       args: ["--model", "claude-opus-4", "--max-tokens=4096"],
       env: { ComSpec: "cmd.exe" } as NodeJS.ProcessEnv,
     });
-    expect(invocation.args).toEqual([
-      "/d",
-      "/s",
-      "/c",
-      '"codex.cmd --model claude-opus-4 --max-tokens=4096"',
-    ]);
+    expect(invocation.args).toEqual(["/d", "/s", "/c", '"codex.cmd --model claude-opus-4 --max-tokens=4096"']);
   });
 
   // cmd.exe runs percent-expansion on the inner command line of `cmd /s /c
@@ -237,12 +234,7 @@ describe("createCommandInvocation", () => {
     });
     // Pre-fix shape — adding the `%` escape must not change the line for
     // ordinary prompts that happen not to mention env-var names.
-    expect(invocation.args).toEqual([
-      "/d",
-      "/s",
-      "/c",
-      '"deepseek.cmd exec --auto "write hello world""',
-    ]);
+    expect(invocation.args).toEqual(["/d", "/s", "/c", '"deepseek.cmd exec --auto "write hello world""']);
   });
 
   it("falls back to process.env.ComSpec when env override is absent", () => {
@@ -301,12 +293,7 @@ describe("createPackageManagerInvocation", () => {
     } as NodeJS.ProcessEnv);
     expect(invocation.command).toBe("cmd.exe");
     expect(invocation.windowsVerbatimArguments).toBe(true);
-    expect(invocation.args).toEqual([
-      "/d",
-      "/s",
-      "/c",
-      '"C:\\Users\\u\\setup-pnpm\\pnpm.cmd install"',
-    ]);
+    expect(invocation.args).toEqual(["/d", "/s", "/c", '"C:\\Users\\u\\setup-pnpm\\pnpm.cmd install"']);
   });
 
   it("returns plain pnpm invocation on POSIX without npm_execpath", () => {
@@ -322,12 +309,7 @@ describe("createPackageManagerInvocation", () => {
     } as NodeJS.ProcessEnv);
     expect(invocation.command).toBe("cmd.exe");
     expect(invocation.windowsVerbatimArguments).toBe(true);
-    expect(invocation.args).toEqual([
-      "/d",
-      "/s",
-      "/c",
-      '"pnpm --filter @xenonbyte/od-desktop build"',
-    ]);
+    expect(invocation.args).toEqual(["/d", "/s", "/c", '"pnpm --filter @xenonbyte/od-desktop build"']);
   });
 });
 
@@ -533,16 +515,7 @@ describe("wellKnownUserToolchainBins", () => {
     const home = mkdtempSync(join(tmpdir(), "wkutb-versioned-"));
     try {
       const miseBin = join(home, ".local", "share", "mise", "installs", "node", "24.14.1", "bin");
-      const miseNpmCodexBin = join(
-        home,
-        ".local",
-        "share",
-        "mise",
-        "installs",
-        "npm-openai-codex",
-        "latest",
-        "bin",
-      );
+      const miseNpmCodexBin = join(home, ".local", "share", "mise", "installs", "npm-openai-codex", "latest", "bin");
       const miseNpmCodexVersionBin = join(
         home,
         ".local",

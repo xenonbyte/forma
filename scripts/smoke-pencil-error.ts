@@ -2,7 +2,7 @@ const sensitiveKeyPattern =
   "access[-_]?token|refresh[-_]?token|id[-_]?token|auth[-_]?token|api[-_]?key|token|secret|password|passwd|authorization|cookie|session[-_]?id|session|account[-_]?id|account|email|username|user[-_]?id|user|login";
 const sensitiveAssignmentPattern = new RegExp(
   `(["']?)\\b(${sensitiveKeyPattern})\\b\\1\\s*[:=]\\s*("[^"]*"|'[^']*'|[^\\s,;]+)`,
-  "gi"
+  "gi",
 );
 
 export function formatGenericErrorForLog(error: unknown): string {
@@ -27,7 +27,7 @@ function redactSensitiveFields(value: string): string {
   return value
     .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer <redacted>")
     .replace(sensitiveAssignmentPattern, (_match, quote: string, key: string) =>
-      quote ? `${quote}${key}${quote}=<redacted>` : `${key}=<redacted>`
+      quote ? `${quote}${key}${quote}=<redacted>` : `${key}=<redacted>`,
     )
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "<redacted-email>");
 }

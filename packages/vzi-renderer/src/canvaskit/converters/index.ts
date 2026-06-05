@@ -4,21 +4,21 @@
  * 将 CSS 样式转换为 CanvasKit API 调用
  */
 
-import type { CanvasKit, Paint, Shader, ImageFilter, Font, Path } from 'canvaskit-wasm';
+import type { CanvasKit, Paint, Shader, ImageFilter, Font, Path } from "canvaskit-wasm";
 
 // 导出所有转换器
-export * from './ColorConverter';
-export * from './GradientConverter';
-export * from './BorderConverter';
-export * from './ShadowConverter';
-export * from './TextStyleConverter';
+export * from "./ColorConverter";
+export * from "./GradientConverter";
+export * from "./BorderConverter";
+export * from "./ShadowConverter";
+export * from "./TextStyleConverter";
 
 // 导入转换器函数
-import { toCanvasKitColor } from './ColorConverter';
-import { parseGradient, createGradientShader } from './GradientConverter';
-import { parseBorder, createBorderPath, createBorderPaint } from './BorderConverter';
-import { parseShadow, createShadowFilters } from './ShadowConverter';
-import { parseTextStyle, createFont, createTextPaint } from './TextStyleConverter';
+import { toCanvasKitColor } from "./ColorConverter";
+import { parseGradient, createGradientShader } from "./GradientConverter";
+import { parseBorder, createBorderPath, createBorderPaint } from "./BorderConverter";
+import { parseShadow, createShadowFilters } from "./ShadowConverter";
+import { parseTextStyle, createFont, createTextPaint } from "./TextStyleConverter";
 
 /**
  * CanvasKit 样式对象
@@ -84,12 +84,12 @@ export interface CSSStyles {
 export function convertStyles(
   styles: CSSStyles,
   bounds: { x: number; y: number; width: number; height: number },
-  CanvasKit: CanvasKit
+  CanvasKit: CanvasKit,
 ): CanvasKitStyles {
   const result: CanvasKitStyles = {};
 
   // 1. 处理填充（背景色或渐变）
-  if (styles.backgroundImage && styles.backgroundImage !== 'none') {
+  if (styles.backgroundImage && styles.backgroundImage !== "none") {
     // 渐变背景
     const gradient = parseGradient(styles.backgroundImage);
     if (gradient) {
@@ -128,7 +128,7 @@ export function convertStyles(
       textStyle.fontSize,
       textStyle.fontWeight,
       textStyle.fontStyle,
-      CanvasKit
+      CanvasKit,
     );
     result.textPaint = createTextPaint(textStyle.color, textStyle.textDecoration, CanvasKit);
   }

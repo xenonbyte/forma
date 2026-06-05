@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 
 import type { BaselinePage } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { countFeatures, layoutNavigationGraph, type ForceLayoutEdge, type ForceLayoutNode, type ForceLayoutResult } from "../lib/force-layout.js";
+import {
+  countFeatures,
+  layoutNavigationGraph,
+  type ForceLayoutEdge,
+  type ForceLayoutNode,
+  type ForceLayoutResult,
+} from "../lib/force-layout.js";
 
 export type NavigationGraphNavigationInput = { from: string; to: string; label?: string; trigger?: string };
 
@@ -79,7 +85,7 @@ export function normalizeNavigation(input: NavigationGraphNavigationInput[]): Na
   return input.map((edge) => ({
     from: edge.from,
     label: edge.trigger ?? edge.label ?? "No label",
-    to: edge.to
+    to: edge.to,
   }));
 }
 
@@ -97,9 +103,9 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
     () =>
       layoutNavigationGraph({
         nodes: pages.map((page) => ({ id: page.id, label: page.name, featureCount: countFeatures(page.features) })),
-        edges: normalizedNavigation
+        edges: normalizedNavigation,
       }),
-    [normalizedNavigation, pages]
+    [normalizedNavigation, pages],
   );
 
   useEffect(() => {
@@ -129,9 +135,9 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
             container,
             layout,
             onSelectPage: setSelectedPageId,
-            selectedPageId
+            selectedPageId,
           },
-          runtime
+          runtime,
         );
       })
       .catch((error: unknown) => {
@@ -154,11 +160,21 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <GraphButton label={t("design.graphZoomOut")} onClick={() => changeZoom(-0.25)}>-</GraphButton>
-        <GraphButton label={t("design.graphZoomIn")} onClick={() => changeZoom(0.25)}>+</GraphButton>
-        <GraphButton label={t("design.graphFit")} onClick={fitGraph}>[]</GraphButton>
-        <GraphButton label={t("design.graphZoomOne")} onClick={() => setZoom(1)}>1</GraphButton>
-        <GraphButton label={t("design.graphReset")} onClick={resetGraph}>R</GraphButton>
+        <GraphButton label={t("design.graphZoomOut")} onClick={() => changeZoom(-0.25)}>
+          -
+        </GraphButton>
+        <GraphButton label={t("design.graphZoomIn")} onClick={() => changeZoom(0.25)}>
+          +
+        </GraphButton>
+        <GraphButton label={t("design.graphFit")} onClick={fitGraph}>
+          []
+        </GraphButton>
+        <GraphButton label={t("design.graphZoomOne")} onClick={() => setZoom(1)}>
+          1
+        </GraphButton>
+        <GraphButton label={t("design.graphReset")} onClick={resetGraph}>
+          R
+        </GraphButton>
       </div>
       <div
         aria-label="Navigation graph"
@@ -181,9 +197,14 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
         ) : null}
       </div>
 
-      <p id="navigation-graph-status" className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+      <p
+        id="navigation-graph-status"
+        className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700"
+      >
         Zoom {Math.round(zoom * 100)}%
-        <span className="ml-3">Pan {Math.round(pan.x)}, {Math.round(pan.y)}</span>
+        <span className="ml-3">
+          Pan {Math.round(pan.x)}, {Math.round(pan.y)}
+        </span>
         {viewAction === "fit" ? <span className="ml-3">{t("design.graphFit")}</span> : null}
         {viewAction === "reset" ? <span className="ml-3">{t("design.graphReset")}</span> : null}
       </p>
@@ -226,11 +247,16 @@ export function NavigationGraph({ pages, navigation }: NavigationGraphProps) {
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     const step = event.shiftKey ? 240 : 48;
-    if (event.key === "ArrowRight" || event.key === "ArrowLeft" || event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (
+      event.key === "ArrowRight" ||
+      event.key === "ArrowLeft" ||
+      event.key === "ArrowDown" ||
+      event.key === "ArrowUp"
+    ) {
       event.preventDefault();
       setPan((current) => ({
         x: current.x + (event.key === "ArrowRight" ? step : event.key === "ArrowLeft" ? -step : 0),
-        y: current.y + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0)
+        y: current.y + (event.key === "ArrowDown" ? step : event.key === "ArrowUp" ? -step : 0),
       }));
       setViewAction(null);
       return;
@@ -266,13 +292,16 @@ function GraphButton({ children, label, onClick }: { children: string; label: st
   );
 }
 
-function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPageId }: NavigationGraphSceneOptions, runtime: LeaferRuntime): NavigationGraphScene {
+function mountNavigationGraphScene(
+  { container, layout, onSelectPage, selectedPageId }: NavigationGraphSceneOptions,
+  runtime: LeaferRuntime,
+): NavigationGraphScene {
   const leafer = new runtime.Leafer({
     fill: "#fafafa",
     height: layout.height,
     hittable: true,
     view: container,
-    width: layout.width
+    width: layout.width,
   });
 
   try {
@@ -288,14 +317,14 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
         name: `edge-${edge.from}-${edge.to}`,
         path: pathToSvgData(geometry.path),
         stroke: edgeStroke,
-        strokeWidth: 1.5
+        strokeWidth: 1.5,
       });
       const arrow = new runtime.Path({
         fill: edgeStroke,
         hitSelf: false,
         hittable: false,
         name: `edge-arrow-${edge.from}-${edge.to}`,
-        path: pathToSvgData(geometry.arrowPath)
+        path: pathToSvgData(geometry.arrowPath),
       });
 
       leafer.add(edgeLine);
@@ -315,8 +344,8 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
           textAlign: "center",
           width: 160,
           x: geometry.labelPoint.x - 80,
-          y: geometry.labelPoint.y - 18
-        })
+          y: geometry.labelPoint.y - 18,
+        }),
       );
     }
 
@@ -334,7 +363,7 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
         strokeWidth: selected ? 2 : 1,
         width,
         x: node.x - width / 2,
-        y: node.y - height / 2
+        y: node.y - height / 2,
       });
 
       rect.on?.(runtime.PointerEvent.ENTER, () => {
@@ -369,8 +398,8 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
           textWrap: "none",
           width: width - 16,
           x: node.x - width / 2 + 8,
-          y: node.y - 18
-        })
+          y: node.y - 18,
+        }),
       );
     }
 
@@ -384,14 +413,14 @@ function mountNavigationGraphScene({ container, layout, onSelectPage, selectedPa
     leafer,
     dispose: () => {
       leafer.destroy();
-    }
+    },
   };
 }
 
 function nodeBoxFor(node: ForceLayoutNode): { height: number; width: number } {
   return {
     height: 56,
-    width: Math.max(144, node.radius * 3.6)
+    width: Math.max(144, node.radius * 3.6),
   };
 }
 
@@ -409,8 +438,8 @@ function edgeGeometry(edge: ForceLayoutEdge, nodeBoxes: Map<string, { height: nu
         ["M", start.x, start.y],
         ["L", elbowRight.x, elbowRight.y],
         ["L", elbowTop.x, elbowTop.y],
-        ["L", end.x, end.y]
-      ]
+        ["L", end.x, end.y],
+      ],
     };
   }
 
@@ -424,8 +453,8 @@ function edgeGeometry(edge: ForceLayoutEdge, nodeBoxes: Map<string, { height: nu
     labelPoint: { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 },
     path: [
       ["M", start.x, start.y],
-      ["L", end.x, end.y]
-    ]
+      ["L", end.x, end.y],
+    ],
   };
 }
 
@@ -441,12 +470,12 @@ function boxBoundaryPoint(from: ForceLayoutNode, toward: ForceLayoutNode, box: {
   const halfHeight = box.height / 2;
   const scale = Math.min(
     dx === 0 ? Number.POSITIVE_INFINITY : halfWidth / Math.abs(dx),
-    dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy)
+    dy === 0 ? Number.POSITIVE_INFINITY : halfHeight / Math.abs(dy),
   );
 
   return {
     x: roundSceneValue(from.x + dx * scale),
-    y: roundSceneValue(from.y + dy * scale)
+    y: roundSceneValue(from.y + dy * scale),
   };
 }
 
@@ -465,7 +494,7 @@ function trianglePath(tip: { x: number; y: number }, tail: { x: number; y: numbe
     ["M", roundSceneValue(tip.x), roundSceneValue(tip.y)],
     ["L", roundSceneValue(baseX + perpX), roundSceneValue(baseY + perpY)],
     ["L", roundSceneValue(baseX - perpX), roundSceneValue(baseY - perpY)],
-    ["Z"]
+    ["Z"],
   ];
 }
 
@@ -473,7 +502,11 @@ function pathToSvgData(path: GraphPathCommand[]): string {
   return path.map((command) => (command[0] === "Z" ? "Z" : `${command[0]} ${command[1]} ${command[2]}`)).join(" ");
 }
 
-function registerEdgeElement(edgeElementsByNodeId: Map<string, LeaferElement[]>, nodeId: string, element: LeaferElement): void {
+function registerEdgeElement(
+  edgeElementsByNodeId: Map<string, LeaferElement[]>,
+  nodeId: string,
+  element: LeaferElement,
+): void {
   const elements = edgeElementsByNodeId.get(nodeId) ?? [];
   if (!elements.includes(element)) {
     elements.push(element);
@@ -504,10 +537,10 @@ async function loadLeaferRuntime(): Promise<LeaferRuntime> {
     PointerEvent: {
       CLICK: runtime.PointerEvent.CLICK,
       ENTER: runtime.PointerEvent.ENTER,
-      LEAVE: runtime.PointerEvent.LEAVE
+      LEAVE: runtime.PointerEvent.LEAVE,
     },
     Rect: runtime.Rect as LeaferRuntime["Rect"],
-    Text: runtime.Text as LeaferRuntime["Text"]
+    Text: runtime.Text as LeaferRuntime["Text"],
   };
 }
 

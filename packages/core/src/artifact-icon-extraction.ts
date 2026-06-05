@@ -173,37 +173,38 @@ function findAriaLabel(svgEl: HTMLElement): string | undefined {
 }
 
 function elementTagName(el: HTMLElement | undefined | null): string {
-  return (el?.tagName ?? '').toLowerCase();
+  return (el?.tagName ?? "").toLowerCase();
 }
 
 function parentElement(el: HTMLElement): HTMLElement | null {
   const parent = el.parentNode as HTMLElement | null | undefined;
-  return parent && typeof parent.tagName === 'string' ? parent : null;
+  return parent && typeof parent.tagName === "string" ? parent : null;
 }
 
 function styleDeclaresHidden(style: string | undefined): boolean {
   if (!style) return false;
-  return /(?:^|;)\s*display\s*:\s*none\s*(?:;|$)/i.test(style) ||
-    /(?:^|;)\s*visibility\s*:\s*hidden\s*(?:;|$)/i.test(style);
+  return (
+    /(?:^|;)\s*display\s*:\s*none\s*(?:;|$)/i.test(style) || /(?:^|;)\s*visibility\s*:\s*hidden\s*(?:;|$)/i.test(style)
+  );
 }
 
 function classDeclaresHidden(className: string | undefined): boolean {
-  return (className ?? '').split(/\s+/).includes('hidden');
+  return (className ?? "").split(/\s+/).includes("hidden");
 }
 
 function isInNonRenderedTree(el: HTMLElement): boolean {
   let current: HTMLElement | null = el;
   while (current) {
-    if (elementTagName(current) === 'template') {
+    if (elementTagName(current) === "template") {
       return true;
     }
-    if (current.hasAttribute('hidden')) {
+    if (current.hasAttribute("hidden")) {
       return true;
     }
-    if (styleDeclaresHidden(current.getAttribute('style') ?? undefined)) {
+    if (styleDeclaresHidden(current.getAttribute("style") ?? undefined)) {
       return true;
     }
-    if (classDeclaresHidden(current.getAttribute('class') ?? undefined)) {
+    if (classDeclaresHidden(current.getAttribute("class") ?? undefined)) {
       return true;
     }
     current = parentElement(current);
@@ -219,20 +220,18 @@ function positiveNumericAttr(el: HTMLElement, attr: string): boolean {
 }
 
 function hasVziRenderableSvgPrimitive(svgEl: HTMLElement): boolean {
-  if (svgEl.querySelectorAll('path').some((el) => (el.getAttribute('d') ?? '').trim().length > 0)) {
+  if (svgEl.querySelectorAll("path").some((el) => (el.getAttribute("d") ?? "").trim().length > 0)) {
     return true;
   }
-  if (svgEl.querySelectorAll('circle').some((el) => positiveNumericAttr(el, 'r'))) {
+  if (svgEl.querySelectorAll("circle").some((el) => positiveNumericAttr(el, "r"))) {
     return true;
   }
-  if (svgEl.querySelectorAll('rect').some((el) =>
-    positiveNumericAttr(el, 'width') && positiveNumericAttr(el, 'height')
-  )) {
+  if (
+    svgEl.querySelectorAll("rect").some((el) => positiveNumericAttr(el, "width") && positiveNumericAttr(el, "height"))
+  ) {
     return true;
   }
-  return svgEl.querySelectorAll('polygon, polyline').some((el) =>
-    (el.getAttribute('points') ?? '').trim().length > 0
-  );
+  return svgEl.querySelectorAll("polygon, polyline").some((el) => (el.getAttribute("points") ?? "").trim().length > 0);
 }
 
 function isVziRenderableSvgOccurrence(svgEl: HTMLElement, svgText: string): boolean {
@@ -250,11 +249,10 @@ function assertSafeSvg(index: number, svgText: string): void {
   const svgViolations: string[] = [];
   scanSvg(`icon[${index}]`, svgText, svgViolations);
   if (svgViolations.length > 0) {
-    throw new FormaError(
-      "ARTIFACT_NOT_STATIC",
-      `Unsafe SVG at icon index ${index}: ${svgViolations[0]}`,
-      { index, violations: svgViolations },
-    );
+    throw new FormaError("ARTIFACT_NOT_STATIC", `Unsafe SVG at icon index ${index}: ${svgViolations[0]}`, {
+      index,
+      violations: svgViolations,
+    });
   }
 }
 
@@ -300,9 +298,7 @@ async function collectComputedRenderableSvgSourceOrders(
       if (element.svgData === undefined) {
         continue;
       }
-      const sourceOrder = parseSourceOrder(
-        element.source?.dataAttributes?.[ICON_SOURCE_ORDER_ATTR],
-      );
+      const sourceOrder = parseSourceOrder(element.source?.dataAttributes?.[ICON_SOURCE_ORDER_ATTR]);
       if (sourceOrder !== undefined) {
         sourceOrders.add(sourceOrder);
       }

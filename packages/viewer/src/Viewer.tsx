@@ -14,7 +14,7 @@ export function Viewer({ model, resolver }: ViewerProps): React.ReactElement {
   const [mode, setMode] = useState<CanvasMode>("design");
   const [locateRequest, setLocateRequest] = useState<{ tileId: string | null; requestId: number }>({
     tileId: null,
-    requestId: 0
+    requestId: 0,
   });
 
   return (

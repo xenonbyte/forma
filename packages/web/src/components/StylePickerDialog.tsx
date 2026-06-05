@@ -1,7 +1,13 @@
 import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { formatApiError, type ApiErrorInfo, type BrandStyleContent, type Platform, type StyleMetadata } from "../api.js";
+import {
+  formatApiError,
+  type ApiErrorInfo,
+  type BrandStyleContent,
+  type Platform,
+  type StyleMetadata,
+} from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { PlatformTemplatePreview } from "./PlatformTemplatePreview.js";
 
@@ -14,7 +20,8 @@ export interface StylePickerDialogProps {
   styles: StyleMetadata[];
 }
 
-const focusClasses = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+const focusClasses =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
 type DetailState =
   | { name: string; status: "idle" }
@@ -27,7 +34,7 @@ export function StylePickerDialog({
   getStyle,
   onConfirm,
   selectedStyleName,
-  styles
+  styles,
 }: StylePickerDialogProps) {
   const tx = useT();
   const [candidateStyleName, setCandidateStyleName] = useState("");
@@ -44,7 +51,8 @@ export function StylePickerDialog({
   const selectedStyle = styles.find((style) => style.name === selectedStyleName);
   const candidateStyle = styles.find((style) => style.name === candidateStyleName);
   const previewMetadata = candidateStyle;
-  const previewDesignMd = detailState.status === "ready" && detailState.name === candidateStyleName ? detailState.detail.designMd : undefined;
+  const previewDesignMd =
+    detailState.status === "ready" && detailState.name === candidateStyleName ? detailState.detail.designMd : undefined;
   const summary = disabled
     ? (disabledReason ?? tx("stylePicker.selectStyle"))
     : selectedStyleName.length > 0
@@ -158,81 +166,94 @@ export function StylePickerDialog({
   function renderDialog(): ReactNode {
     const dialog = (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6">
-          <section
-            aria-labelledby="style-picker-title"
-            aria-modal="true"
-            className="grid max-h-[calc(100vh-3rem)] w-full max-w-[1360px] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl"
-            data-style-picker-dialog="true"
-            ref={dialogRef}
-            role="dialog"
-          >
-            <header className="flex items-center justify-between gap-4 border-b border-zinc-200 px-7 py-4">
-              <div className="min-w-0">
-                <h2 className="truncate text-[24px] font-semibold tracking-normal text-zinc-900" id="style-picker-title">
-                  {tx("stylePicker.title")}
-                </h2>
-              </div>
-              <button
-                aria-label={tx("action.close")}
-                className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-xl leading-none text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 ${focusClasses}`}
-                data-style-picker-close=""
-                onClick={() => setOpen(false)}
-                type="button"
-              >
-                ✕
-              </button>
-            </header>
-
-            <div className="grid min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
-              <aside className="min-h-0 border-r border-zinc-200 bg-zinc-50 p-5">
-                <div aria-label={tx("stylePicker.candidateList")} className="grid max-h-full content-start gap-3 overflow-y-auto overflow-x-hidden pr-1" role="listbox">
-                  {styles.length > 0 ? (
-                    styles.map((style, index) => (
-                      <StyleCandidateButton
-                        active={style.name === candidateStyleName}
-                        key={style.name}
-                        onClick={() => setCandidateStyleName(style.name)}
-                        ref={index === 0 ? firstOptionRef : undefined}
-                        style={style}
-                      />
-                    ))
-                  ) : (
-                    <p className="rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-500">{tx("stylePicker.noResults")}</p>
-                  )}
-                </div>
-              </aside>
-
-              <section className="min-w-0 overflow-hidden p-6">
-                {previewMetadata ? <PlatformTemplatePreview designMd={previewDesignMd} kind="style" metadata={previewMetadata} /> : null}
-                {detailState.status === "error" && detailState.name === candidateStyleName ? (
-                  <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    {tx("stylePicker.detailUnavailable")}: {detailState.error.error_code} - {detailState.error.message}
-                  </p>
-                ) : null}
-              </section>
+        <section
+          aria-labelledby="style-picker-title"
+          aria-modal="true"
+          className="grid max-h-[calc(100vh-3rem)] w-full max-w-[1360px] grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden rounded-2xl bg-white shadow-2xl"
+          data-style-picker-dialog="true"
+          ref={dialogRef}
+          role="dialog"
+        >
+          <header className="flex items-center justify-between gap-4 border-b border-zinc-200 px-7 py-4">
+            <div className="min-w-0">
+              <h2 className="truncate text-[24px] font-semibold tracking-normal text-zinc-900" id="style-picker-title">
+                {tx("stylePicker.title")}
+              </h2>
             </div>
+            <button
+              aria-label={tx("action.close")}
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-md text-xl leading-none text-zinc-500 transition hover:bg-zinc-100 hover:text-zinc-800 ${focusClasses}`}
+              data-style-picker-close=""
+              onClick={() => setOpen(false)}
+              type="button"
+            >
+              ✕
+            </button>
+          </header>
 
-            <footer className="flex justify-end gap-3 border-t border-zinc-200 px-7 py-4">
-              <button className={secondaryButtonClasses} data-style-picker-cancel="" onClick={() => setOpen(false)} type="button">
-                {tx("action.cancel")}
-              </button>
-              <button
-                className={primaryButtonClasses}
-                data-style-picker-confirm=""
-                disabled={!candidateStyle}
-                onClick={() => {
-                  if (candidateStyle) {
-                    onConfirm(candidateStyle.name);
-                    setOpen(false);
-                  }
-                }}
-                type="button"
+          <div className="grid min-h-0 grid-cols-[340px_minmax(0,1fr)] overflow-hidden">
+            <aside className="min-h-0 border-r border-zinc-200 bg-zinc-50 p-5">
+              <div
+                aria-label={tx("stylePicker.candidateList")}
+                className="grid max-h-full content-start gap-3 overflow-y-auto overflow-x-hidden pr-1"
+                role="listbox"
               >
-                {tx("action.confirm")}
-              </button>
-            </footer>
-          </section>
-        </div>
+                {styles.length > 0 ? (
+                  styles.map((style, index) => (
+                    <StyleCandidateButton
+                      active={style.name === candidateStyleName}
+                      key={style.name}
+                      onClick={() => setCandidateStyleName(style.name)}
+                      ref={index === 0 ? firstOptionRef : undefined}
+                      style={style}
+                    />
+                  ))
+                ) : (
+                  <p className="rounded-md border border-dashed border-zinc-300 bg-zinc-50 px-3 py-4 text-sm text-zinc-500">
+                    {tx("stylePicker.noResults")}
+                  </p>
+                )}
+              </div>
+            </aside>
+
+            <section className="min-w-0 overflow-hidden p-6">
+              {previewMetadata ? (
+                <PlatformTemplatePreview designMd={previewDesignMd} kind="style" metadata={previewMetadata} />
+              ) : null}
+              {detailState.status === "error" && detailState.name === candidateStyleName ? (
+                <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  {tx("stylePicker.detailUnavailable")}: {detailState.error.error_code} - {detailState.error.message}
+                </p>
+              ) : null}
+            </section>
+          </div>
+
+          <footer className="flex justify-end gap-3 border-t border-zinc-200 px-7 py-4">
+            <button
+              className={secondaryButtonClasses}
+              data-style-picker-cancel=""
+              onClick={() => setOpen(false)}
+              type="button"
+            >
+              {tx("action.cancel")}
+            </button>
+            <button
+              className={primaryButtonClasses}
+              data-style-picker-confirm=""
+              disabled={!candidateStyle}
+              onClick={() => {
+                if (candidateStyle) {
+                  onConfirm(candidateStyle.name);
+                  setOpen(false);
+                }
+              }}
+              type="button"
+            >
+              {tx("action.confirm")}
+            </button>
+          </footer>
+        </section>
+      </div>
     );
 
     return typeof document === "undefined" ? dialog : createPortal(dialog, document.body);
@@ -255,11 +276,10 @@ interface StyleCandidateButtonProps {
   style: StyleMetadata;
 }
 
-const StyleCandidateButton = forwardRef<HTMLButtonElement, StyleCandidateButtonProps>(function StyleCandidateButton({
-  active,
-  onClick,
-  style
-}, ref) {
+const StyleCandidateButton = forwardRef<HTMLButtonElement, StyleCandidateButtonProps>(function StyleCandidateButton(
+  { active, onClick, style },
+  ref,
+) {
   const tx = useT();
   const category = style.category;
 
@@ -281,12 +301,16 @@ const StyleCandidateButton = forwardRef<HTMLButtonElement, StyleCandidateButtonP
             <StyleIcon name={style.name} />
           </span>
           <span className="min-w-0">
-            <span className="block text-base font-semibold tracking-normal text-zinc-900">{formatDisplayName(style.name)}</span>
+            <span className="block text-base font-semibold tracking-normal text-zinc-900">
+              {formatDisplayName(style.name)}
+            </span>
             <span className="mt-1 block break-words text-sm leading-5 text-zinc-500">{style.description}</span>
           </span>
         </span>
         {active ? (
-          <span className="shrink-0 rounded-full bg-amber-500 px-2 py-1 text-xs font-semibold text-zinc-950">{tx("action.selected")}</span>
+          <span className="shrink-0 rounded-full bg-amber-500 px-2 py-1 text-xs font-semibold text-zinc-950">
+            {tx("action.selected")}
+          </span>
         ) : null}
       </span>
       {category ? <span className="sr-only">{category}</span> : null}
@@ -352,8 +376,8 @@ function trapDialogFocus(event: KeyboardEvent, dialog: HTMLElement | null): void
 
   const focusable = Array.from(
     dialog.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-    )
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
   ).filter((element) => !element.hasAttribute("hidden"));
   if (focusable.length === 0) {
     event.preventDefault();

@@ -20,29 +20,29 @@
  *   7.  Temp-directory cleanup on parse/encode failure.
  */
 
-import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   captureRequirementVzi,
   resolveViewport,
   type CaptureRequirementVziDeps,
-} from '../src/requirement-vzi-capture.js';
-import { getArtifactVersionDir, getArtifactVziPath } from '../src/artifact-paths.js';
-import type { DesignPointer } from '../src/product.js';
-import type { Platform } from '../src/schemas.js';
-import { FormaError } from '../src/errors.js';
-import { VZIDecoder } from '@vzi-core/format';
-import { exportRequirementIcons, type ExportRequirementIconsResult } from '../src/requirement-icon-export.js';
-import type { IconManifest } from '../src/artifact-icon-extraction.js';
+} from "../src/requirement-vzi-capture.js";
+import { getArtifactVersionDir, getArtifactVziPath } from "../src/artifact-paths.js";
+import type { DesignPointer } from "../src/product.js";
+import type { Platform } from "../src/schemas.js";
+import { FormaError } from "../src/errors.js";
+import { VZIDecoder } from "@vzi-core/format";
+import { exportRequirementIcons, type ExportRequirementIconsResult } from "../src/requirement-icon-export.js";
+import type { IconManifest } from "../src/artifact-icon-extraction.js";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const PRODUCT_ID = 'P-aabbcc';
-const REQ_ID = 'req-001';
-const ARTIFACT_ID = 'ArtAAAAAAAAAAAAA';
-const PAGE_ID = 'page-home';
+const PRODUCT_ID = "P-aabbcc";
+const REQ_ID = "req-001";
+const ARTIFACT_ID = "ArtAAAAAAAAAAAAA";
+const PAGE_ID = "page-home";
 
 /**
  * A representative Forma design-page HTML fixture.
@@ -116,7 +116,7 @@ const DESIGN_PAGE_HTML = `<!DOCTYPE html>
 </html>`;
 
 const INLINE_PNG_DATA_URL =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 const DESIGN_PAGE_HTML_WITH_SVG_AND_IMG = `<!DOCTYPE html>
 <html lang="en">
@@ -130,19 +130,14 @@ const DESIGN_PAGE_HTML_WITH_SVG_AND_IMG = `<!DOCTYPE html>
 </body>
 </html>`;
 
-function makePointer(
-  requirementId: string,
-  pageId: string,
-  artifactId: string,
-  version = 1,
-): DesignPointer {
+function makePointer(requirementId: string, pageId: string, artifactId: string, version = 1): DesignPointer {
   return {
     requirementId,
     pageId,
-    variant: 'default',
+    variant: "default",
     artifactId,
     version,
-    designStatus: 'active',
+    designStatus: "active",
   };
 }
 
@@ -152,21 +147,23 @@ async function makeTestDeps(
   formaHome: string,
   platform: Platform | undefined = undefined,
 ): Promise<CaptureRequirementVziDeps> {
-  const productsRoot = join(formaHome, 'products');
+  const productsRoot = join(formaHome, "products");
   await mkdir(productsRoot, { recursive: true });
 
   return {
     productsRoot,
     getProductPlatform: async () => platform,
-    listDesignPointers: async () => [],  // overridden per test
+    listDesignPointers: async () => [], // overridden per test
     readFile: (path) => readFile(path),
     writeFile: async (path, data) => {
-      await mkdir(join(path, '..'), { recursive: true });
+      await mkdir(join(path, ".."), { recursive: true });
       await writeFile(path, data);
     },
     rmDir: (path) => rm(path, { recursive: true, force: true }),
     rename: (src, dest) => rename(src, dest),
-    mkdir: async (path) => { await mkdir(path, { recursive: true }); },
+    mkdir: async (path) => {
+      await mkdir(path, { recursive: true });
+    },
   };
 }
 
@@ -180,149 +177,144 @@ async function seedVersionHtml(
 ): Promise<void> {
   const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
   await mkdir(versionDir, { recursive: true });
-  await writeFile(join(versionDir, 'index.html'), html, 'utf8');
+  await writeFile(join(versionDir, "index.html"), html, "utf8");
 }
 
 // ─── 1. Viewport mapping tests ────────────────────────────────────────────────
 
-describe('resolveViewport', () => {
-  it('mobile → 390×884, source=mobile', () => {
-    const vp = resolveViewport('mobile');
+describe("resolveViewport", () => {
+  it("mobile → 390×884, source=mobile", () => {
+    const vp = resolveViewport("mobile");
     expect(vp.width).toBe(390);
     expect(vp.height).toBe(884);
-    expect(vp.viewportSource).toBe('mobile');
-    expect(vp.preset).toBe('mobile');
+    expect(vp.viewportSource).toBe("mobile");
+    expect(vp.preset).toBe("mobile");
   });
 
-  it('tablet → 768×1024, source=tablet', () => {
-    const vp = resolveViewport('tablet');
+  it("tablet → 768×1024, source=tablet", () => {
+    const vp = resolveViewport("tablet");
     expect(vp.width).toBe(768);
     expect(vp.height).toBe(1024);
-    expect(vp.viewportSource).toBe('tablet');
-    expect(vp.preset).toBe('tablet');
+    expect(vp.viewportSource).toBe("tablet");
+    expect(vp.preset).toBe("tablet");
   });
 
-  it('desktop → 1024×1280, source=desktop', () => {
-    const vp = resolveViewport('desktop');
+  it("desktop → 1024×1280, source=desktop", () => {
+    const vp = resolveViewport("desktop");
     expect(vp.width).toBe(1024);
     expect(vp.height).toBe(1280);
-    expect(vp.viewportSource).toBe('desktop');
-    expect(vp.preset).toBe('desktop');
+    expect(vp.viewportSource).toBe("desktop");
+    expect(vp.preset).toBe("desktop");
   });
 
-  it('web → 1024×1280 (reuses desktop preset), source=web', () => {
-    const vp = resolveViewport('web');
+  it("web → 1024×1280 (reuses desktop preset), source=web", () => {
+    const vp = resolveViewport("web");
     expect(vp.width).toBe(1024);
     expect(vp.height).toBe(1280);
-    expect(vp.viewportSource).toBe('web');
-    expect(vp.preset).toBe('desktop');
+    expect(vp.viewportSource).toBe("web");
+    expect(vp.preset).toBe("desktop");
   });
 
   it('undefined (missing platform) → 1024×1280, source="default(desktop)"', () => {
     const vp = resolveViewport(undefined);
     expect(vp.width).toBe(1024);
     expect(vp.height).toBe(1280);
-    expect(vp.viewportSource).toBe('default(desktop)');
-    expect(vp.preset).toBe('desktop');
+    expect(vp.viewportSource).toBe("default(desktop)");
+    expect(vp.preset).toBe("desktop");
   });
 });
 
 // ─── 2. Smoke test: full round-trip via Puppeteer ─────────────────────────────
 
-describe('captureRequirementVzi (smoke — Puppeteer required)', () => {
-  it(
-    'parses a design-page HTML fixture and produces a decodable .vzi with non-zero bounds, color tokens, font tokens, and annotations',
-    async () => {
-      const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-smoke-'));
-      try {
-        const deps = await makeTestDeps(formaHome, 'desktop');
-        const productsRoot = join(formaHome, 'products');
-
-        // Seed fixture HTML
-        await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
-
-        const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
-        deps.listDesignPointers = async () => [pointer];
-
-        const result = await captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID });
-
-        expect(result.pages).toHaveLength(1);
-        const page = result.pages[0];
-        expect(page.artifactId).toBe(ARTIFACT_ID);
-        expect(page.viewportWidth).toBe(1024);
-        expect(page.viewportHeight).toBe(1280);
-        expect(page.viewportSource).toBe('desktop');
-        expect(page.iconRefsInjected).toBe(0);
-        expect(page.elementCount).toBeGreaterThan(0);
-        expect(result.totalElements).toBe(page.elementCount);
-
-        // Verify the .vzi file was written
-        const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
-        const vziBytes = await readFile(vziPath);
-        expect(vziBytes.length).toBeGreaterThan(0);
-
-        // Decode and assert structural properties
-        const decoder = new VZIDecoder({ enableErrorRecovery: true });
-        const decoded = decoder.decode(new Uint8Array(vziBytes));
-
-        // Should decode without fatal errors
-        const fatals = decoded.errors.filter((e) => e.fatal);
-        expect(fatals).toHaveLength(0);
-
-        const content = decoded.content;
-
-        // Non-zero elements with valid bounds
-        expect(content.elements.size).toBeGreaterThan(0);
-        for (const [, el] of content.elements) {
-          // At least one element must have non-zero width and height
-          if (el.bounds.width > 0 && el.bounds.height > 0) {
-            break;
-          }
-        }
-        const hasNonZeroBounds = Array.from(content.elements.values()).some(
-          (el) => el.bounds.width > 0 && el.bounds.height > 0,
-        );
-        expect(hasNonZeroBounds).toBe(true);
-
-        // Non-empty color tokens
-        expect(content.colorTokens.length).toBeGreaterThan(0);
-
-        // Non-empty font tokens
-        expect(content.fontTokens.length).toBeGreaterThan(0);
-
-        // Non-empty annotations (enableAnnotations is on)
-        expect(content.annotations.length).toBeGreaterThan(0);
-
-        // ── FIX 2: metadata round-trip — verify VZIEncoder preserves forma fields ──
-        // The production code writes forma extension fields onto content.metadata
-        // by casting to Record<string,unknown>. This block asserts that VZIEncoder
-        // faithfully preserves these fields through encode → decode so that the
-        // design-handoff MCP surface can read them back.  If any assertion fails,
-        // the encoder is dropping extension metadata and the storage approach must
-        // be revisited.
-        const meta = content.metadata as unknown as Record<string, unknown>;
-        expect(meta['formaSourceVersion']).toBe('v1');
-        expect(meta['formaPlatform']).toBe('desktop');
-        expect(meta['formaViewport']).toEqual({ width: 1024, height: 1280 });
-        expect(meta['formaViewportSource']).toBe('desktop');
-        // These identity fields should also survive
-        expect(meta['formaProductId']).toBe(PRODUCT_ID);
-        expect(meta['formaRequirementId']).toBe(REQ_ID);
-        expect(meta['formaArtifactId']).toBe(ARTIFACT_ID);
-        expect(meta['formaGenerationSource']).toBe('forma-vzi-capture');
-      } finally {
-        await rm(formaHome, { recursive: true, force: true });
-      }
-    },
-    // Puppeteer can be slow to launch; give it 90 seconds
-    90_000,
-  );
-
-  it('viewport source is observable in page result for platform=mobile', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-mobile-'));
+describe("captureRequirementVzi (smoke — Puppeteer required)", () => {
+  it("parses a design-page HTML fixture and produces a decodable .vzi with non-zero bounds, color tokens, font tokens, and annotations", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-smoke-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'mobile');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
+
+      // Seed fixture HTML
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
+
+      const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
+      deps.listDesignPointers = async () => [pointer];
+
+      const result = await captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID });
+
+      expect(result.pages).toHaveLength(1);
+      const page = result.pages[0];
+      expect(page.artifactId).toBe(ARTIFACT_ID);
+      expect(page.viewportWidth).toBe(1024);
+      expect(page.viewportHeight).toBe(1280);
+      expect(page.viewportSource).toBe("desktop");
+      expect(page.iconRefsInjected).toBe(0);
+      expect(page.elementCount).toBeGreaterThan(0);
+      expect(result.totalElements).toBe(page.elementCount);
+
+      // Verify the .vzi file was written
+      const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
+      const vziBytes = await readFile(vziPath);
+      expect(vziBytes.length).toBeGreaterThan(0);
+
+      // Decode and assert structural properties
+      const decoder = new VZIDecoder({ enableErrorRecovery: true });
+      const decoded = decoder.decode(new Uint8Array(vziBytes));
+
+      // Should decode without fatal errors
+      const fatals = decoded.errors.filter((e) => e.fatal);
+      expect(fatals).toHaveLength(0);
+
+      const content = decoded.content;
+
+      // Non-zero elements with valid bounds
+      expect(content.elements.size).toBeGreaterThan(0);
+      for (const [, el] of content.elements) {
+        // At least one element must have non-zero width and height
+        if (el.bounds.width > 0 && el.bounds.height > 0) {
+          break;
+        }
+      }
+      const hasNonZeroBounds = Array.from(content.elements.values()).some(
+        (el) => el.bounds.width > 0 && el.bounds.height > 0,
+      );
+      expect(hasNonZeroBounds).toBe(true);
+
+      // Non-empty color tokens
+      expect(content.colorTokens.length).toBeGreaterThan(0);
+
+      // Non-empty font tokens
+      expect(content.fontTokens.length).toBeGreaterThan(0);
+
+      // Non-empty annotations (enableAnnotations is on)
+      expect(content.annotations.length).toBeGreaterThan(0);
+
+      // ── FIX 2: metadata round-trip — verify VZIEncoder preserves forma fields ──
+      // The production code writes forma extension fields onto content.metadata
+      // by casting to Record<string,unknown>. This block asserts that VZIEncoder
+      // faithfully preserves these fields through encode → decode so that the
+      // design-handoff MCP surface can read them back.  If any assertion fails,
+      // the encoder is dropping extension metadata and the storage approach must
+      // be revisited.
+      const meta = content.metadata as unknown as Record<string, unknown>;
+      expect(meta["formaSourceVersion"]).toBe("v1");
+      expect(meta["formaPlatform"]).toBe("desktop");
+      expect(meta["formaViewport"]).toEqual({ width: 1024, height: 1280 });
+      expect(meta["formaViewportSource"]).toBe("desktop");
+      // These identity fields should also survive
+      expect(meta["formaProductId"]).toBe(PRODUCT_ID);
+      expect(meta["formaRequirementId"]).toBe(REQ_ID);
+      expect(meta["formaArtifactId"]).toBe(ARTIFACT_ID);
+      expect(meta["formaGenerationSource"]).toBe("forma-vzi-capture");
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 90_000); // Puppeteer can be slow to launch; give it 90 seconds
+
+  it("viewport source is observable in page result for platform=mobile", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-mobile-"));
+    try {
+      const deps = await makeTestDeps(formaHome, "mobile");
+      const productsRoot = join(formaHome, "products");
 
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
 
@@ -333,7 +325,7 @@ describe('captureRequirementVzi (smoke — Puppeteer required)', () => {
 
       expect(result.pages[0].viewportWidth).toBe(390);
       expect(result.pages[0].viewportHeight).toBe(884);
-      expect(result.pages[0].viewportSource).toBe('mobile');
+      expect(result.pages[0].viewportSource).toBe("mobile");
       expect(result.totalElements).toBeGreaterThan(0);
     } finally {
       await rm(formaHome, { recursive: true, force: true });
@@ -343,8 +335,8 @@ describe('captureRequirementVzi (smoke — Puppeteer required)', () => {
 
 // ─── 3. Icon ref resolution ────────────────────────────────────────────────────
 
-describe('captureRequirementVzi with iconExportResult', () => {
-  it('injects icon asset refs when icon count matches VZI inline SVG element count', async () => {
+describe("captureRequirementVzi with iconExportResult", () => {
+  it("injects icon asset refs when icon count matches VZI inline SVG element count", async () => {
     // We use the DESIGN_PAGE_HTML fixture which has 1 inline <svg>.
     // Build a fake icon manifest with exactly 1 entry to match.
     const singleIconManifest: IconManifest = {
@@ -353,16 +345,16 @@ describe('captureRequirementVzi with iconExportResult', () => {
       productId: PRODUCT_ID,
       requirementId: REQ_ID,
       pageId: PAGE_ID,
-      version: 'v1',
-      sourceVersion: 'v1',
-      generatedFrom: 'requirement-archive',
-      generatedAt: '2026-06-02T00:00:00.000Z',
+      version: "v1",
+      sourceVersion: "v1",
+      generatedFrom: "requirement-archive",
+      generatedAt: "2026-06-02T00:00:00.000Z",
       densities: [1, 2, 3],
       icons: [
         {
-          id: 'icon-settings',
-          name: 'settings',
-          contentHash: 'hash-settings',
+          id: "icon-settings",
+          name: "settings",
+          contentHash: "hash-settings",
           size: { w: 48, h: 48 },
           usesCurrentColor: false,
           sourceOrderFirst: 0,
@@ -370,14 +362,14 @@ describe('captureRequirementVzi with iconExportResult', () => {
           files: {
             svg: `icons/svg/icon-settings.svg`,
             png: {
-              '1x': `icons/png/icon-settings@1x.png`,
-              '2x': `icons/png/icon-settings@2x.png`,
-              '3x': `icons/png/icon-settings@3x.png`,
+              "1x": `icons/png/icon-settings@1x.png`,
+              "2x": `icons/png/icon-settings@2x.png`,
+              "3x": `icons/png/icon-settings@3x.png`,
             },
           },
         },
       ],
-      instances: [{ sourceOrder: 0, iconId: 'icon-settings', contentHash: 'hash-settings' }],
+      instances: [{ sourceOrder: 0, iconId: "icon-settings", contentHash: "hash-settings" }],
     };
 
     const iconExportResult: ExportRequirementIconsResult = {
@@ -393,10 +385,10 @@ describe('captureRequirementVzi with iconExportResult', () => {
       totalIcons: 1,
     };
 
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-iconref-'));
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-iconref-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
 
@@ -424,8 +416,8 @@ describe('captureRequirementVzi with iconExportResult', () => {
       // Should have exactly one image asset
       expect(decoded.content.images.size).toBe(1);
       const [, asset] = Array.from(decoded.content.images.entries())[0];
-      expect(asset.storageType).toBe('reference');
-      expect(asset.url).toBe('icons/svg/icon-settings.svg');
+      expect(asset.storageType).toBe("reference");
+      expect(asset.url).toBe("icons/svg/icon-settings.svg");
 
       // The element that has the SVG data should have iconAssetId in metadata
       const elementWithIconRef = Array.from(decoded.content.elements.values()).find(
@@ -438,38 +430,38 @@ describe('captureRequirementVzi with iconExportResult', () => {
     }
   }, 90_000);
 
-  it('ignores ordinary img elements when matching inline SVG icons to the icon manifest', async () => {
+  it("ignores ordinary img elements when matching inline SVG icons to the icon manifest", async () => {
     const singleIconManifest: IconManifest = {
       schemaVersion: 1,
       artifactId: ARTIFACT_ID,
       productId: PRODUCT_ID,
       requirementId: REQ_ID,
       pageId: PAGE_ID,
-      version: 'v1',
-      sourceVersion: 'v1',
-      generatedFrom: 'requirement-archive',
-      generatedAt: '2026-06-02T00:00:00.000Z',
+      version: "v1",
+      sourceVersion: "v1",
+      generatedFrom: "requirement-archive",
+      generatedAt: "2026-06-02T00:00:00.000Z",
       densities: [1, 2, 3],
       icons: [
         {
-          id: 'icon-settings',
-          name: 'settings',
-          contentHash: 'hash-settings',
+          id: "icon-settings",
+          name: "settings",
+          contentHash: "hash-settings",
           size: { w: 24, h: 24 },
           usesCurrentColor: false,
           sourceOrderFirst: 0,
           sourceOrders: [0],
           files: {
-            svg: 'icons/svg/icon-settings.svg',
+            svg: "icons/svg/icon-settings.svg",
             png: {
-              '1x': 'icons/png/icon-settings@1x.png',
-              '2x': 'icons/png/icon-settings@2x.png',
-              '3x': 'icons/png/icon-settings@3x.png',
+              "1x": "icons/png/icon-settings@1x.png",
+              "2x": "icons/png/icon-settings@2x.png",
+              "3x": "icons/png/icon-settings@3x.png",
             },
           },
         },
       ],
-      instances: [{ sourceOrder: 0, iconId: 'icon-settings', contentHash: 'hash-settings' }],
+      instances: [{ sourceOrder: 0, iconId: "icon-settings", contentHash: "hash-settings" }],
     };
 
     const iconExportResult: ExportRequirementIconsResult = {
@@ -485,18 +477,12 @@ describe('captureRequirementVzi with iconExportResult', () => {
       totalIcons: 1,
     };
 
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-img-non-icon-'));
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-img-non-icon-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
-      await seedVersionHtml(
-        productsRoot,
-        PRODUCT_ID,
-        ARTIFACT_ID,
-        1,
-        DESIGN_PAGE_HTML_WITH_SVG_AND_IMG,
-      );
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML_WITH_SVG_AND_IMG);
 
       const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
       deps.listDesignPointers = async () => [pointer];
@@ -526,7 +512,7 @@ describe('captureRequirementVzi with iconExportResult', () => {
     }
   }, 90_000);
 
-  it('matches icon refs by explicit SVG source order when VZI element ids are integer-like', async () => {
+  it("matches icon refs by explicit SVG source order when VZI element ids are integer-like", async () => {
     const htmlWithIntegerLikeSvgIds = `<!DOCTYPE html>
 <html lang="en">
 <body>
@@ -547,42 +533,42 @@ describe('captureRequirementVzi with iconExportResult', () => {
       productId: PRODUCT_ID,
       requirementId: REQ_ID,
       pageId: PAGE_ID,
-      version: 'v1',
-      sourceVersion: 'v1',
-      generatedFrom: 'requirement-archive',
-      generatedAt: '2026-06-02T00:00:00.000Z',
+      version: "v1",
+      sourceVersion: "v1",
+      generatedFrom: "requirement-archive",
+      generatedAt: "2026-06-02T00:00:00.000Z",
       densities: [1, 2, 3],
       icons: [
         {
-          id: 'icon-first',
-          name: 'first',
-          contentHash: 'hash-first',
+          id: "icon-first",
+          name: "first",
+          contentHash: "hash-first",
           size: { w: 24, h: 24 },
           usesCurrentColor: false,
           sourceOrderFirst: 0,
           sourceOrders: [0],
           files: {
-            svg: 'icons/first.svg',
-            png: { '1x': 'icons/first@1x.png', '2x': 'icons/first@2x.png', '3x': 'icons/first@3x.png' },
+            svg: "icons/first.svg",
+            png: { "1x": "icons/first@1x.png", "2x": "icons/first@2x.png", "3x": "icons/first@3x.png" },
           },
         },
         {
-          id: 'icon-second',
-          name: 'second',
-          contentHash: 'hash-second',
+          id: "icon-second",
+          name: "second",
+          contentHash: "hash-second",
           size: { w: 24, h: 24 },
           usesCurrentColor: false,
           sourceOrderFirst: 1,
           sourceOrders: [1],
           files: {
-            svg: 'icons/second.svg',
-            png: { '1x': 'icons/second@1x.png', '2x': 'icons/second@2x.png', '3x': 'icons/second@3x.png' },
+            svg: "icons/second.svg",
+            png: { "1x": "icons/second@1x.png", "2x": "icons/second@2x.png", "3x": "icons/second@3x.png" },
           },
         },
       ],
       instances: [
-        { sourceOrder: 0, iconId: 'icon-first', contentHash: 'hash-first' },
-        { sourceOrder: 1, iconId: 'icon-second', contentHash: 'hash-second' },
+        { sourceOrder: 0, iconId: "icon-first", contentHash: "hash-first" },
+        { sourceOrder: 1, iconId: "icon-second", contentHash: "hash-second" },
       ],
     };
 
@@ -599,10 +585,10 @@ describe('captureRequirementVzi with iconExportResult', () => {
       totalIcons: 2,
     };
 
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-integer-svg-ids-'));
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-integer-svg-ids-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, htmlWithIntegerLikeSvgIds);
       const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
@@ -619,14 +605,14 @@ describe('captureRequirementVzi with iconExportResult', () => {
       const vziBytes = await readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID));
       const decoded = new VZIDecoder({ enableErrorRecovery: true }).decode(new Uint8Array(vziBytes));
 
-      expect(decoded.content.elements.get('10')?.metadata?.iconRelativePath).toBe('icons/first.svg');
-      expect(decoded.content.elements.get('2')?.metadata?.iconRelativePath).toBe('icons/second.svg');
+      expect(decoded.content.elements.get("10")?.metadata?.iconRelativePath).toBe("icons/first.svg");
+      expect(decoded.content.elements.get("2")?.metadata?.iconRelativePath).toBe("icons/second.svg");
     } finally {
       await rm(formaHome, { recursive: true, force: true });
     }
   }, 90_000);
 
-  it('does not fail archive capture when CSS-computed hidden SVGs are skipped by icon extraction', async () => {
+  it("does not fail archive capture when CSS-computed hidden SVGs are skipped by icon extraction", async () => {
     const htmlWithHiddenSprite = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -652,10 +638,10 @@ describe('captureRequirementVzi with iconExportResult', () => {
 </body>
 </html>`;
 
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-hidden-svg-'));
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-hidden-svg-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, htmlWithHiddenSprite);
       const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
@@ -664,15 +650,11 @@ describe('captureRequirementVzi with iconExportResult', () => {
       const icons = await exportRequirementIcons(deps, {
         productId: PRODUCT_ID,
         requirementId: REQ_ID,
-        generatedFrom: 'requirement-archive',
+        generatedFrom: "requirement-archive",
       });
 
       expect(icons.totalIcons).toBe(1);
-      const result = await captureRequirementVzi(
-        deps,
-        { productId: PRODUCT_ID, requirementId: REQ_ID },
-        icons,
-      );
+      const result = await captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID }, icons);
 
       expect(result.pages[0].iconRefsInjected).toBe(1);
 
@@ -690,123 +672,115 @@ describe('captureRequirementVzi with iconExportResult', () => {
 
 // ─── 4. Icon/VZI count mismatch → fail-loud ───────────────────────────────────
 
-describe('captureRequirementVzi icon mismatch', () => {
-  it(
-    'throws FormaError before archive commit when icon count mismatches VZI image element count',
-    async () => {
-      // DESIGN_PAGE_HTML has 1 SVG element; we supply 3 icons → mismatch
-      const mismatchManifest: IconManifest = {
-        schemaVersion: 1,
-        artifactId: ARTIFACT_ID,
-        productId: PRODUCT_ID,
-        requirementId: REQ_ID,
-        pageId: PAGE_ID,
-        version: 'v1',
-        sourceVersion: 'v1',
-        generatedFrom: 'requirement-archive',
-        generatedAt: '2026-06-02T00:00:00.000Z',
-        densities: [1, 2, 3],
-        icons: [
-          {
-            id: 'icon-a',
-            name: 'icon-a',
-            contentHash: 'hash-a',
-            size: { w: 24, h: 24 },
-            usesCurrentColor: false,
-            sourceOrderFirst: 0,
-            sourceOrders: [0],
-            files: { svg: 'icons/svg/icon-a.svg', png: { '1x': '', '2x': '', '3x': '' } },
-          },
-          {
-            id: 'icon-b',
-            name: 'icon-b',
-            contentHash: 'hash-b',
-            size: { w: 24, h: 24 },
-            usesCurrentColor: false,
-            sourceOrderFirst: 1,
-            sourceOrders: [1],
-            files: { svg: 'icons/svg/icon-b.svg', png: { '1x': '', '2x': '', '3x': '' } },
-          },
-          {
-            id: 'icon-c',
-            name: 'icon-c',
-            contentHash: 'hash-c',
-            size: { w: 24, h: 24 },
-            usesCurrentColor: false,
-            sourceOrderFirst: 2,
-            sourceOrders: [2],
-            files: { svg: 'icons/svg/icon-c.svg', png: { '1x': '', '2x': '', '3x': '' } },
-          },
-        ],
-        instances: [
-          { sourceOrder: 0, iconId: 'icon-a', contentHash: 'hash-a' },
-          { sourceOrder: 1, iconId: 'icon-b', contentHash: 'hash-b' },
-          { sourceOrder: 2, iconId: 'icon-c', contentHash: 'hash-c' },
-        ],
-      };
+describe("captureRequirementVzi icon mismatch", () => {
+  it("throws FormaError before archive commit when icon count mismatches VZI image element count", async () => {
+    // DESIGN_PAGE_HTML has 1 SVG element; we supply 3 icons → mismatch
+    const mismatchManifest: IconManifest = {
+      schemaVersion: 1,
+      artifactId: ARTIFACT_ID,
+      productId: PRODUCT_ID,
+      requirementId: REQ_ID,
+      pageId: PAGE_ID,
+      version: "v1",
+      sourceVersion: "v1",
+      generatedFrom: "requirement-archive",
+      generatedAt: "2026-06-02T00:00:00.000Z",
+      densities: [1, 2, 3],
+      icons: [
+        {
+          id: "icon-a",
+          name: "icon-a",
+          contentHash: "hash-a",
+          size: { w: 24, h: 24 },
+          usesCurrentColor: false,
+          sourceOrderFirst: 0,
+          sourceOrders: [0],
+          files: { svg: "icons/svg/icon-a.svg", png: { "1x": "", "2x": "", "3x": "" } },
+        },
+        {
+          id: "icon-b",
+          name: "icon-b",
+          contentHash: "hash-b",
+          size: { w: 24, h: 24 },
+          usesCurrentColor: false,
+          sourceOrderFirst: 1,
+          sourceOrders: [1],
+          files: { svg: "icons/svg/icon-b.svg", png: { "1x": "", "2x": "", "3x": "" } },
+        },
+        {
+          id: "icon-c",
+          name: "icon-c",
+          contentHash: "hash-c",
+          size: { w: 24, h: 24 },
+          usesCurrentColor: false,
+          sourceOrderFirst: 2,
+          sourceOrders: [2],
+          files: { svg: "icons/svg/icon-c.svg", png: { "1x": "", "2x": "", "3x": "" } },
+        },
+      ],
+      instances: [
+        { sourceOrder: 0, iconId: "icon-a", contentHash: "hash-a" },
+        { sourceOrder: 1, iconId: "icon-b", contentHash: "hash-b" },
+        { sourceOrder: 2, iconId: "icon-c", contentHash: "hash-c" },
+      ],
+    };
 
-      const iconExportResult: ExportRequirementIconsResult = {
-        pages: [
-          {
-            pageId: PAGE_ID,
-            artifactId: ARTIFACT_ID,
-            version: 1,
-            count: 3,
-            manifest: mismatchManifest,
-          },
-        ],
-        totalIcons: 3,
-      };
+    const iconExportResult: ExportRequirementIconsResult = {
+      pages: [
+        {
+          pageId: PAGE_ID,
+          artifactId: ARTIFACT_ID,
+          version: 1,
+          count: 3,
+          manifest: mismatchManifest,
+        },
+      ],
+      totalIcons: 3,
+    };
 
-      const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-mismatch-'));
-      try {
-        const deps = await makeTestDeps(formaHome, 'desktop');
-        const productsRoot = join(formaHome, 'products');
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-mismatch-"));
+    try {
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
-        await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
 
-        const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
-        deps.listDesignPointers = async () => [pointer];
+      const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
+      deps.listDesignPointers = async () => [pointer];
 
-        await expect(
-          captureRequirementVzi(
-            deps,
-            { productId: PRODUCT_ID, requirementId: REQ_ID },
-            iconExportResult,
-          ),
-        ).rejects.toThrow(FormaError);
+      await expect(
+        captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID }, iconExportResult),
+      ).rejects.toThrow(FormaError);
 
-        // Verify the vzi/ directory was NOT created (no partial commit)
-        const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
-        await expect(readFile(vziPath)).rejects.toThrow();
-      } finally {
-        await rm(formaHome, { recursive: true, force: true });
-      }
-    },
-    90_000,
-  );
+      // Verify the vzi/ directory was NOT created (no partial commit)
+      const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
+      await expect(readFile(vziPath)).rejects.toThrow();
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 90_000);
 });
 
 // ─── 5. Multi-page filtering ──────────────────────────────────────────────────
 
-describe('captureRequirementVzi multi-page filtering', () => {
-  it('only processes pointers matching requirementId (active)', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-filter-'));
+describe("captureRequirementVzi multi-page filtering", () => {
+  it("only processes pointers matching requirementId (active)", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-filter-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
       // Seed only the target requirement's artifact
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
 
       const targetPointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
       const otherPointer: DesignPointer = {
-        requirementId: 'req-other',
-        pageId: 'page-other',
-        variant: 'default',
-        artifactId: 'ArtBBBBBBBBBBBBB',
+        requirementId: "req-other",
+        pageId: "page-other",
+        variant: "default",
+        artifactId: "ArtBBBBBBBBBBBBB",
         version: 1,
-        designStatus: 'active',
+        designStatus: "active",
       };
 
       deps.listDesignPointers = async () => [targetPointer, otherPointer];
@@ -822,19 +796,19 @@ describe('captureRequirementVzi multi-page filtering', () => {
     }
   }, 90_000);
 
-  it('skips active pointers whose page no longer exists on the requirement', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-filter-current-pages-'));
+  it("skips active pointers whose page no longer exists on the requirement", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-filter-current-pages-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
-      const staleArtifactId = 'ArtCCCCCCCCCCCCC';
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
+      const staleArtifactId = "ArtCCCCCCCCCCCCC";
 
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML);
       await seedVersionHtml(productsRoot, PRODUCT_ID, staleArtifactId, 1, DESIGN_PAGE_HTML);
 
       deps.listDesignPointers = async () => [
         makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1),
-        makePointer(REQ_ID, 'page-removed', staleArtifactId, 1),
+        makePointer(REQ_ID, "page-removed", staleArtifactId, 1),
       ];
       deps.getRequirementPageIds = async () => [PAGE_ID];
 
@@ -848,8 +822,8 @@ describe('captureRequirementVzi multi-page filtering', () => {
     }
   }, 90_000);
 
-  it('returns empty pages array when no active pointers match requirementId', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-noop-'));
+  it("returns empty pages array when no active pointers match requirementId", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-noop-"));
     try {
       const deps = await makeTestDeps(formaHome);
       deps.listDesignPointers = async () => [];
@@ -865,34 +839,34 @@ describe('captureRequirementVzi multi-page filtering', () => {
 
 // ─── 6. Temp-dir cleanup on failure ──────────────────────────────────────────
 
-describe('captureRequirementVzi temp cleanup on failure', () => {
-  it('cleans up temp dir when HTML is missing (no partial vzi/)', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-vzi-cleanup-'));
+describe("captureRequirementVzi temp cleanup on failure", () => {
+  it("cleans up temp dir when HTML is missing (no partial vzi/)", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-cleanup-"));
     try {
-      const deps = await makeTestDeps(formaHome, 'desktop');
-      const productsRoot = join(formaHome, 'products');
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
 
       // Do NOT seed the HTML → readFile will throw
       const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
       deps.listDesignPointers = async () => [pointer];
 
-      await expect(
-        captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID }),
-      ).rejects.toThrow(FormaError);
+      await expect(captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID })).rejects.toThrow(
+        FormaError,
+      );
 
       // No partial vzi/ directory should exist
       const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
       await expect(readFile(vziPath)).rejects.toThrow();
 
       // No tmp dir should linger (glob check)
-      const artifactDir = join(productsRoot, PRODUCT_ID, 'od-project', 'artifacts', ARTIFACT_ID);
+      const artifactDir = join(productsRoot, PRODUCT_ID, "od-project", "artifacts", ARTIFACT_ID);
       let entries: string[] = [];
       try {
         entries = await readdir(artifactDir);
       } catch {
         // dir may not exist — that's fine
       }
-      const tmpEntries = entries.filter((e) => e.startsWith('vzi.tmp-'));
+      const tmpEntries = entries.filter((e) => e.startsWith("vzi.tmp-"));
       expect(tmpEntries).toHaveLength(0);
     } finally {
       await rm(formaHome, { recursive: true, force: true });

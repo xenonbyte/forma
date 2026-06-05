@@ -9,7 +9,7 @@ import {
   type Language,
   type Platform,
   type StyleMetadata,
-  type SystemStyleMetadata
+  type SystemStyleMetadata,
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
@@ -25,7 +25,7 @@ const platformOptions: Array<{ label: string; value: Platform }> = [
   { label: "platform.web", value: "web" },
   { label: "platform.mobile", value: "mobile" },
   { label: "platform.desktop", value: "desktop" },
-  { label: "platform.tablet", value: "tablet" }
+  { label: "platform.tablet", value: "tablet" },
 ];
 
 export function deriveDefaultLanguage(selected: Language[], current?: Language): Language | "" {
@@ -105,7 +105,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
       if (!productId) {
         const product = await client.createProduct({
           description: description.trim(),
-          name: name.trim()
+          name: name.trim(),
         });
         productId = product.id;
         setCreatedProductId(product.id);
@@ -115,7 +115,7 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
         languages: selectedLanguages,
         platform: platform as Platform,
         brand_style: styleName,
-        ...(systemStyleName ? { system_style: systemStyleName } : {})
+        ...(systemStyleName ? { system_style: systemStyleName } : {}),
       });
       navigate(`/products/${productId}`);
     } catch (nextError: unknown) {
@@ -172,7 +172,9 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
               <span>{t("product.style")}</span>
               <input name="brand_style" type="hidden" value={styleName} />
               <StylePickerDialog
-                disabledReason={stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined}
+                disabledReason={
+                  stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined
+                }
                 getStyle={client.getStyle}
                 onConfirm={setStyleName}
                 selectedStyleName={styleName}
@@ -185,7 +187,9 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
             {t("product.systemStyle")}
             <input name="system_style" type="hidden" value={systemStyleName} />
             <SystemStylePickerDialog
-              disabledReason={stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined}
+              disabledReason={
+                stylesLoading ? t("product.stylesLoading") : styleError ? t("product.stylesUnavailable") : undefined
+              }
               onConfirm={setSystemStyleName}
               selectedStyleName={systemStyleName}
               styles={systemStyles}
@@ -249,7 +253,9 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
           <StatePanel state="error" title={t("product.submissionRejected")}>
             {error.error_code} - {error.message}
             {createdProductId ? (
-              <span className="mt-2 block">{t("product.retryConfiguration").replace("{productId}", createdProductId)}</span>
+              <span className="mt-2 block">
+                {t("product.retryConfiguration").replace("{productId}", createdProductId)}
+              </span>
             ) : null}
           </StatePanel>
         ) : styleError ? (
@@ -270,7 +276,9 @@ export function ProductNew({ client = apiClient, navigate = browserNavigate }: P
   );
 
   function updateSelectedLanguage(language: Language, checked: boolean) {
-    const nextSelected = checked ? [...selectedLanguages, language] : selectedLanguages.filter((selected) => selected !== language);
+    const nextSelected = checked
+      ? [...selectedLanguages, language]
+      : selectedLanguages.filter((selected) => selected !== language);
     setSelectedLanguages(nextSelected);
     setDefaultLanguage(deriveDefaultLanguage(nextSelected, defaultLanguage || undefined));
   }

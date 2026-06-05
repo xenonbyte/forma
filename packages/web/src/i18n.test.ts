@@ -11,7 +11,7 @@ describe("i18n", () => {
     const storage = new Map<string, string>();
     const localStorageLike = {
       getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => storage.set(key, value)
+      setItem: (key: string, value: string) => storage.set(key, value),
     };
 
     expect(getInitialLocale({ localStorage: localStorageLike, navigatorLanguage: "zh-CN" })).toBe("zh");
@@ -25,7 +25,7 @@ describe("i18n", () => {
     const storage = new Map<string, string>([["forma.locale", "zh"]]);
     const localStorageLike = {
       getItem: (key: string) => storage.get(key) ?? null,
-      setItem: (key: string, value: string) => storage.set(key, value)
+      setItem: (key: string, value: string) => storage.set(key, value),
     };
 
     expect(getInitialLocale({ localStorage: localStorageLike, navigatorLanguage: "ja-JP" })).toBe("zh");
@@ -39,7 +39,7 @@ describe("i18n", () => {
       },
       setItem: () => {
         throw new Error("storage write blocked");
-      }
+      },
     };
 
     expect(getInitialLocale({ localStorage: localStorageLike, navigatorLanguage: "zh-CN" })).toBe("zh");
@@ -55,8 +55,8 @@ describe("i18n", () => {
       get: () => ({
         get localStorage() {
           throw new Error("window storage blocked");
-        }
-      })
+        },
+      }),
     });
 
     try {
@@ -132,7 +132,7 @@ describe("i18n", () => {
       "templatePreview.keyboardUnsupported",
       "templatePreview.radius",
       "templatePreview.spacing",
-      "templatePreview.structure"
+      "templatePreview.structure",
     ];
 
     for (const locale of ["en", "zh"] satisfies Locale[]) {
@@ -163,7 +163,7 @@ describe("i18n", () => {
       "product.emptyIllustration",
       "product.noSystemStyle",
       "product.systemStyle",
-      "requirement.emptyIllustration"
+      "requirement.emptyIllustration",
     ];
 
     for (const locale of ["en", "zh"] satisfies Locale[]) {
@@ -211,7 +211,7 @@ describe("i18n", () => {
       "design.spacing",
       "design.unsupportedProperties",
       "design.usageIndex",
-      "design.view"
+      "design.view",
     ];
 
     for (const locale of ["en", "zh"] satisfies Locale[]) {

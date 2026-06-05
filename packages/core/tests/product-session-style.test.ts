@@ -13,7 +13,7 @@ import {
   readYaml,
   writeYamlAtomic,
   type ProductMutationContext,
-  type ProductMutationLock
+  type ProductMutationLock,
 } from "../src/index.js";
 
 type ProductDeletionPhase = "created" | "backed_up" | "session_written" | "index_written" | "moved" | "committed";
@@ -28,7 +28,14 @@ interface ProductDeletionStateForTest {
   phase: ProductDeletionPhase;
   backups: { products_yaml: "backups/products.yaml"; session_yaml?: "backups/session.yaml" };
   moved_paths: Array<{
-    kind: "product_data" | "product_artifact_storage" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
+    kind:
+      | "product_data"
+      | "product_artifact_storage"
+      | "component_library"
+      | "component_library_latest"
+      | "component_library_metadata"
+      | "component_library_versions"
+      | "component_library_sessions";
     original_path: string;
     staged_path: string;
     required: boolean;
@@ -72,27 +79,29 @@ async function seedStaleProductMutationLock(home: string): Promise<void> {
         scope: "existing-operation",
         acquired_at: staleTime,
         expires_at: staleTime,
-        heartbeat_at: staleTime
+        heartbeat_at: staleTime,
       },
       null,
-      2
+      2,
     ),
-    "utf8"
+    "utf8",
   );
 }
 
-function createRecordingLock(warning?: string): ProductMutationLock & { calls: Array<{ operation: string; product_id?: string }> } {
+function createRecordingLock(
+  warning?: string,
+): ProductMutationLock & { calls: Array<{ operation: string; product_id?: string }> } {
   const calls: Array<{ operation: string; product_id?: string }> = [];
   return {
     calls,
     async run<T>(
       input: { operation: string; product_id?: string },
-      fn: (context: ProductMutationContext) => Promise<T>
+      fn: (context: ProductMutationContext) => Promise<T>,
     ): Promise<T> {
       calls.push(input);
       const context = { ...input, warnings: warning ? [warning] : [] };
       return fn(context);
-    }
+    },
   };
 }
 
@@ -100,13 +109,13 @@ function createLateWarningLock(lateWarning: string): ProductMutationLock {
   return {
     async run<T>(
       input: { operation: string; product_id?: string },
-      fn: (context: ProductMutationContext) => Promise<T>
+      fn: (context: ProductMutationContext) => Promise<T>,
     ): Promise<T> {
       const context = { operation: input.operation, product_id: input.product_id, warnings: [] };
       const result = await fn(context);
       context.warnings.push(lateWarning);
       return result;
-    }
+    },
   };
 }
 
@@ -120,7 +129,7 @@ async function createStoreWithStyle() {
   const store = await createTestStore();
   return {
     store,
-    brand_style: "linear"
+    brand_style: "linear",
   };
 }
 
@@ -128,7 +137,7 @@ function createStoreWithDeletionHooks(home: string, productDeletionHooks: Record
   return createFormaStore({
     home,
     bundledStylesDir: resolve("styles"),
-    productDeletionHooks
+    productDeletionHooks,
   } as Parameters<typeof createFormaStore>[0] & { productDeletionHooks: Record<string, unknown> });
 }
 
@@ -142,12 +151,16 @@ async function seedReadyProduct(store: Awaited<ReturnType<typeof createTestStore
     platform: "mobile",
     brand_style: "linear",
     languages: ["en"],
-    default_language: "en"
+    default_language: "en",
   });
   return product;
 }
 
-async function writeComponentLibrary(home: string, productId: string, contents = { children: [{ id: "button", type: "component" }] }) {
+async function writeComponentLibrary(
+  home: string,
+  productId: string,
+  contents = { children: [{ id: "button", type: "component" }] },
+) {
   await mkdir(join(home, "library"), { recursive: true });
   await mkdir(join(home, "library", `${productId}.versions`), { recursive: true });
   const text = JSON.stringify(contents);
@@ -167,9 +180,9 @@ async function writeComponentLibrary(home: string, productId: string, contents =
       "    components:",
       "      - key: button",
       "        name: Button",
-      ""
+      "",
     ].join("\n"),
-    "utf8"
+    "utf8",
   );
 }
 
@@ -182,7 +195,7 @@ async function writeTerminalDesignSession(
     recordStatus: string;
     auditPath: string;
     scope?: string;
-  }
+  },
 ): Promise<void> {
   const sessionDir = join(home, "data", productId, "sessions", input.sessionId);
   await mkdir(sessionDir, { recursive: true });
@@ -190,11 +203,11 @@ async function writeTerminalDesignSession(
   await writeYamlAtomic(join(sessionDir, "design_session.yaml"), {
     session_id: input.sessionId,
     scope: input.scope ?? "requirement",
-    status: input.recordStatus
+    status: input.recordStatus,
   });
   await writeYamlAtomic(join(home, "data", productId, "sessions", "local-active.yaml"), {
     session_id: input.sessionId,
-    session_record_path: `data/${productId}/sessions/${input.sessionId}/design_session.yaml`
+    session_record_path: `data/${productId}/sessions/${input.sessionId}/design_session.yaml`,
   });
   await writeYamlAtomic(join(home, "data", productId, "sessions", "active-design-session.yaml"), {
     session_id: input.sessionId,
@@ -204,7 +217,7 @@ async function writeTerminalDesignSession(
     canvas_path: `data/${productId}/sessions/${input.sessionId}/canvas.pen`,
     staging_path: `data/${productId}/sessions/${input.sessionId}`,
     status: input.status,
-    audit_link: input.auditPath
+    audit_link: input.auditPath,
   });
 }
 
@@ -245,18 +258,18 @@ function deletionState(input: {
         kind: "product_data",
         original_path: `data/${input.productId}`,
         staged_path: `staged/data/${input.productId}`,
-        required: true
+        required: true,
       },
       {
         kind: "component_library",
         original_path: `library/${input.productId}.lib.pen`,
         staged_path: `staged/library/${input.productId}.lib.pen`,
-        required: false
-      }
+        required: false,
+      },
     ],
     missing_paths: input.missingPaths ?? [],
     session_was_current: input.sessionWasCurrent ?? true,
-    warnings: input.warnings ?? []
+    warnings: input.warnings ?? [],
   };
 }
 
@@ -301,7 +314,12 @@ describe("product session and style services", () => {
     const products = new ProductService({ home: store.home });
     const sessions = new SessionService({ home: store.home, products });
     const product = await products.createProduct({ name: "Shop App", description: "Mobile shop" });
-    await products.initProductConfig(product.id, { platform: "mobile", brand_style, languages: ["en"], default_language: "en" });
+    await products.initProductConfig(product.id, {
+      platform: "mobile",
+      brand_style,
+      languages: ["en"],
+      default_language: "en",
+    });
     const release = deferred();
     const events: string[] = [];
     const hold = getProductMutationLock(store.home).run({ operation: "test_hold" }, async () => {
@@ -337,7 +355,7 @@ describe("product session and style services", () => {
       platform: "mobile",
       brand_style,
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
     await writeComponentLibrary(store.home, product.id, { children: [{ id: "button" }] });
     await sessions.setCurrentProduct(product.id);
@@ -345,7 +363,7 @@ describe("product session and style services", () => {
     expect(productMutationLock.calls).toEqual([
       { operation: "create_product" },
       { operation: "init_product_config", product_id: product.id },
-      { operation: "set_current_product", product_id: product.id }
+      { operation: "set_current_product", product_id: product.id },
     ]);
   });
 
@@ -358,7 +376,7 @@ describe("product session and style services", () => {
       home,
       bundledStylesDir: resolve("styles"),
       productMutationLock,
-      onProductMutationWarning: (warning) => warnings.push(warning)
+      onProductMutationWarning: (warning) => warnings.push(warning),
     });
 
     await store.products.createProduct({ name: "Shop App", description: "Mobile shop" });
@@ -366,12 +384,12 @@ describe("product session and style services", () => {
       store.runProductMutation({ operation: "manual_operation", product_id: "P-123abc" }, async (context) => {
         context.warnings.push("manual warning");
         return "ok";
-      })
+      }),
     ).resolves.toBe("ok");
 
     expect(productMutationLock.calls).toEqual([
       { operation: "create_product" },
-      { operation: "manual_operation", product_id: "P-123abc" }
+      { operation: "manual_operation", product_id: "P-123abc" },
     ]);
     expect(warnings).toEqual(["lock warning", "lock warning", "manual warning"]);
   });
@@ -382,17 +400,19 @@ describe("product session and style services", () => {
     const warnings: string[] = [];
     const productMutationLock: ProductMutationLock = {
       async run(): Promise<never> {
-        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held", { warnings: ["stale lock removed"] });
-      }
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held", {
+          warnings: ["stale lock removed"],
+        });
+      },
     };
     const products = new ProductService({
       home,
       productMutationLock,
-      onProductMutationWarning: (warning) => warnings.push(warning)
+      onProductMutationWarning: (warning) => warnings.push(warning),
     });
 
     await expect(products.createProduct({ name: "Shop App", description: "Mobile shop" })).rejects.toMatchObject({
-      code: "PRODUCT_MUTATION_LOCKED"
+      code: "PRODUCT_MUTATION_LOCKED",
     });
     expect(warnings).toEqual(["stale lock removed"]);
   });
@@ -451,7 +471,7 @@ describe("product session and style services", () => {
     const products = new ProductService({
       home,
       productMutationLock: createLateWarningLock("late service warning"),
-      onProductMutationWarning: (warning) => warnings.push(warning)
+      onProductMutationWarning: (warning) => warnings.push(warning),
     });
 
     await products.createProduct({ name: "Shop App", description: "Mobile shop" });
@@ -463,7 +483,11 @@ describe("product session and style services", () => {
     const home = await mkdtemp(join(tmpdir(), "forma-store-lock-"));
     await markNormalizationCommitted(home);
     const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => undefined);
-    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles"), productMutationLock: createRecordingLock() });
+    const store = await createFormaStore({
+      home,
+      bundledStylesDir: resolve("styles"),
+      productMutationLock: createRecordingLock(),
+    });
 
     try {
       await store.runProductMutation({ operation: "manual_warning" }, async (context) => {
@@ -484,7 +508,7 @@ describe("product session and style services", () => {
       home,
       bundledStylesDir: resolve("styles"),
       productMutationLock: createLateWarningLock("late store warning"),
-      onProductMutationWarning: (warning) => warnings.push(warning)
+      onProductMutationWarning: (warning) => warnings.push(warning),
     });
 
     await store.runProductMutation({ operation: "manual_late_warning" }, async () => "ok");
@@ -499,8 +523,8 @@ describe("product session and style services", () => {
     await expect(store.sessions.setCurrentProduct(product.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
       details: {
-        missing: ["platform", "brand_style", "languages"]
-      }
+        missing: ["platform", "brand_style", "languages"],
+      },
     });
   });
 
@@ -513,15 +537,15 @@ describe("product session and style services", () => {
         platform: "web",
         brand_style,
         languages: ["zh-CN", "en"],
-        default_language: "en"
-      })
+        default_language: "en",
+      }),
     ).resolves.toMatchObject({
       languages: ["zh-CN", "en"],
-      default_language: "en"
+      default_language: "en",
     });
     await expect(store.products.getProduct(product.id)).resolves.toMatchObject({
       languages: ["zh-CN", "en"],
-      default_language: "en"
+      default_language: "en",
     });
 
     await expect(
@@ -529,8 +553,8 @@ describe("product session and style services", () => {
         platform: "web",
         brand_style,
         languages: ["zh-CN"],
-        default_language: "en"
-      })
+        default_language: "en",
+      }),
     ).rejects.toThrow();
   });
 
@@ -540,20 +564,13 @@ describe("product session and style services", () => {
 
     await writeFile(
       join(store.home, "data", product.id, "product.yaml"),
-      [
-        `id: ${product.id}`,
-        "name: Shop App",
-        "description: Mobile shop",
-        "languages:",
-        "  - en",
-        ""
-      ].join("\n")
+      [`id: ${product.id}`, "name: Shop App", "description: Mobile shop", "languages:", "  - en", ""].join("\n"),
     );
     await expect(store.products.getProduct(product.id)).rejects.toThrow();
 
     await writeFile(
       join(store.home, "data", product.id, "product.yaml"),
-      [`id: ${product.id}`, "name: Shop App", "description: Mobile shop", "default_language: en", ""].join("\n")
+      [`id: ${product.id}`, "name: Shop App", "description: Mobile shop", "default_language: en", ""].join("\n"),
     );
     await expect(store.products.getProduct(product.id)).rejects.toThrow();
   });
@@ -566,7 +583,7 @@ describe("product session and style services", () => {
       platform: "mobile",
       brand_style: "linear",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
     await writeComponentLibrary(store.home, product.id);
     await store.sessions.setCurrentProduct(product.id);
@@ -581,7 +598,7 @@ describe("product session and style services", () => {
       platform: "mobile",
       brand_style,
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
 
     await store.sessions.setCurrentProduct(product.id);
@@ -608,8 +625,8 @@ describe("product session and style services", () => {
         "languages:",
         "  - en",
         "default_language: en",
-        ""
-      ].join("\n")
+        "",
+      ].join("\n"),
     );
     await writeFile(
       join(store.home, "data", missingBrandStyle.id, "product.yaml"),
@@ -621,8 +638,8 @@ describe("product session and style services", () => {
         "languages:",
         "  - en",
         "default_language: en",
-        ""
-      ].join("\n")
+        "",
+      ].join("\n"),
     );
     await writeFile(
       join(store.home, "data", missingLanguages.id, "product.yaml"),
@@ -632,8 +649,8 @@ describe("product session and style services", () => {
         "description: Demo",
         "platform: web",
         "brand_style: linear",
-        ""
-      ].join("\n")
+        "",
+      ].join("\n"),
     );
     await writeFile(
       join(store.home, "data", missingDefaultLanguage.id, "product.yaml"),
@@ -645,8 +662,8 @@ describe("product session and style services", () => {
         "brand_style: linear",
         "languages:",
         "  - en",
-        ""
-      ].join("\n")
+        "",
+      ].join("\n"),
     );
     await writeFile(
       join(store.home, "data", invalidDefaultLanguage.id, "product.yaml"),
@@ -659,27 +676,27 @@ describe("product session and style services", () => {
         "languages:",
         "  - zh-CN",
         "default_language: en",
-        ""
-      ].join("\n")
+        "",
+      ].join("\n"),
     );
 
     await expect(store.sessions.setCurrentProduct(missingPlatform.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { missing: ["platform"] }
+      details: { missing: ["platform"] },
     });
     await expect(store.sessions.setCurrentProduct(missingBrandStyle.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { missing: ["brand_style"] }
+      details: { missing: ["brand_style"] },
     });
     await expect(store.sessions.setCurrentProduct(missingLanguages.id)).rejects.toMatchObject({
       code: "PRODUCT_CONFIG_INCOMPLETE",
-      details: { missing: ["languages"] }
+      details: { missing: ["languages"] },
     });
     await expect(store.sessions.setCurrentProduct(missingDefaultLanguage.id)).rejects.toThrow(
-      "languages and default_language must be configured together"
+      "languages and default_language must be configured together",
     );
     await expect(store.sessions.setCurrentProduct(invalidDefaultLanguage.id)).rejects.toThrow(
-      "default_language must be included in languages"
+      "default_language must be included in languages",
     );
   });
 
@@ -690,19 +707,19 @@ describe("product session and style services", () => {
     expect(await store.products.getProduct(product.id)).toMatchObject({
       id: product.id,
       name: "Shop App",
-      description: "Mobile shop"
+      description: "Mobile shop",
     });
     expect(await store.products.listProducts()).toEqual([
-      { id: product.id, name: "Shop App", description: "Mobile shop" }
+      { id: product.id, name: "Shop App", description: "Mobile shop" },
     ]);
 
     await expect(readYaml(join(store.home, "data", "products.yaml"))).resolves.toEqual({
-      products: [{ id: product.id, name: "Shop App", description: "Mobile shop" }]
+      products: [{ id: product.id, name: "Shop App", description: "Mobile shop" }],
     });
     await expect(readYaml(join(store.home, "data", product.id, "product.yaml"))).resolves.toMatchObject({
       id: product.id,
       name: "Shop App",
-      description: "Mobile shop"
+      description: "Mobile shop",
     });
   });
 
@@ -710,7 +727,15 @@ describe("product session and style services", () => {
     const store = await createTestStore();
     const product = await seedReadyProduct(store);
     await writeComponentLibrary(store.home, product.id);
-    const artifactRoot = join(store.home, "data", "products", product.id, "od-project", "artifacts", "AbCdEfGhIjKlMnOp");
+    const artifactRoot = join(
+      store.home,
+      "data",
+      "products",
+      product.id,
+      "od-project",
+      "artifacts",
+      "AbCdEfGhIjKlMnOp",
+    );
     await mkdir(artifactRoot, { recursive: true });
     await writeFile(join(artifactRoot, "manifest.json"), "{}\n", "utf8");
 
@@ -719,7 +744,7 @@ describe("product session and style services", () => {
       deleted: true,
       session_cleared: false,
       cleanup_pending: false,
-      recovery_warnings: []
+      recovery_warnings: [],
     });
 
     expect(await store.products.listProducts()).toEqual([]);
@@ -728,26 +753,31 @@ describe("product session and style services", () => {
     await expect(access(join(store.home, "library", `${product.id}.lib.pen`))).rejects.toThrow();
   });
 
-  it.each(["committed", "discarded"] as const)("deleteProduct ignores terminal legacy %s design sessions", async (status) => {
-    const store = await createTestStore();
-    const product = await seedReadyProduct(store);
-    const sessionId = `S-terminal-${status}`;
-    const auditPath = `data/${product.id}/sessions/${sessionId}/audit.yaml`;
-    await mkdir(join(store.home, "data", product.id, "sessions", sessionId), { recursive: true });
-    await writeFile(join(store.home, auditPath), `session_id: ${sessionId}\nstatus: ${status}\n`, "utf8");
-    await writeTerminalDesignSession(store.home, product.id, {
-      sessionId,
-      status,
-      recordStatus: status,
-      auditPath
-    });
+  it.each(["committed", "discarded"] as const)(
+    "deleteProduct ignores terminal legacy %s design sessions",
+    async (status) => {
+      const store = await createTestStore();
+      const product = await seedReadyProduct(store);
+      const sessionId = `S-terminal-${status}`;
+      const auditPath = `data/${product.id}/sessions/${sessionId}/audit.yaml`;
+      await mkdir(join(store.home, "data", product.id, "sessions", sessionId), { recursive: true });
+      await writeFile(join(store.home, auditPath), `session_id: ${sessionId}\nstatus: ${status}\n`, "utf8");
+      await writeTerminalDesignSession(store.home, product.id, {
+        sessionId,
+        status,
+        recordStatus: status,
+        auditPath,
+      });
 
-    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).resolves.toMatchObject({
-      product_id: product.id,
-      deleted: true
-    });
-    await expect(access(join(store.home, "data", product.id))).rejects.toThrow();
-  });
+      await expect(
+        store.deleteProduct({ product_id: product.id, confirm_product_id: product.id }),
+      ).resolves.toMatchObject({
+        product_id: product.id,
+        deleted: true,
+      });
+      await expect(access(join(store.home, "data", product.id))).rejects.toThrow();
+    },
+  );
 
   it("rejects mismatched delete confirmation before lock, recovery, reads, or writes", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-delete-invalid-"));
@@ -757,9 +787,11 @@ describe("product session and style services", () => {
     await mkdir(join(home, "tmp", "deletions", "unsafe", "staged"), { recursive: true });
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
-    await expect(store.deleteProduct({ product_id: "P-123abc", confirm_product_id: "P-456def" })).rejects.toMatchObject({
-      code: "INVALID_INPUT"
-    });
+    await expect(store.deleteProduct({ product_id: "P-123abc", confirm_product_id: "P-456def" })).rejects.toMatchObject(
+      {
+        code: "INVALID_INPUT",
+      },
+    );
 
     expect(productMutationLock.calls).toEqual([]);
     expect(await pathExists(join(home, "tmp", "deletions", "unsafe", "note.txt"))).toBe(true);
@@ -775,9 +807,9 @@ describe("product session and style services", () => {
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
     await expect(
-      store.deleteProduct({ product_id: "P-123abc" } as { product_id: string; confirm_product_id: string })
+      store.deleteProduct({ product_id: "P-123abc" } as { product_id: string; confirm_product_id: string }),
     ).rejects.toMatchObject({
-      code: "INVALID_INPUT"
+      code: "INVALID_INPUT",
     });
 
     expect(productMutationLock.calls).toEqual([]);
@@ -794,7 +826,7 @@ describe("product session and style services", () => {
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
     await expect(store.deleteProduct({ product_id: "P-123abc", confirm_product_id: "" })).rejects.toMatchObject({
-      code: "INVALID_INPUT"
+      code: "INVALID_INPUT",
     });
 
     expect(productMutationLock.calls).toEqual([]);
@@ -811,9 +843,9 @@ describe("product session and style services", () => {
     await writeFile(join(home, "tmp", "deletions", "unsafe", "note.txt"), "unsafe", "utf8");
 
     await expect(
-      store.deleteProduct({ product_id: "not-a-product", confirm_product_id: "not-a-product" })
+      store.deleteProduct({ product_id: "not-a-product", confirm_product_id: "not-a-product" }),
     ).rejects.toMatchObject({
-      code: "INVALID_INPUT"
+      code: "INVALID_INPUT",
     });
 
     expect(productMutationLock.calls).toEqual([]);
@@ -829,9 +861,11 @@ describe("product session and style services", () => {
     const product = await seedReadyProduct(store);
     productMutationLock.calls.length = 0;
 
-    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).resolves.toMatchObject({
+    await expect(
+      store.deleteProduct({ product_id: product.id, confirm_product_id: product.id }),
+    ).resolves.toMatchObject({
       product_id: product.id,
-      recovery_warnings: ["lock warning"]
+      recovery_warnings: ["lock warning"],
     });
     expect(productMutationLock.calls).toEqual([{ operation: "delete_product", product_id: product.id }]);
   });
@@ -839,9 +873,11 @@ describe("product session and style services", () => {
   it("throws PRODUCT_NOT_FOUND without new staging when the product is missing after recovery", async () => {
     const store = await createTestStore();
 
-    await expect(store.deleteProduct({ product_id: "P-123abc", confirm_product_id: "P-123abc" })).rejects.toMatchObject({
-      code: "PRODUCT_NOT_FOUND"
-    });
+    await expect(store.deleteProduct({ product_id: "P-123abc", confirm_product_id: "P-123abc" })).rejects.toMatchObject(
+      {
+        code: "PRODUCT_NOT_FOUND",
+      },
+    );
 
     const deletionsDir = join(store.home, "tmp", "deletions");
     const operations = (await readdir(deletionsDir).catch(() => [])) as string[];
@@ -854,9 +890,11 @@ describe("product session and style services", () => {
     const other = await seedReadyProduct(store, "Other");
     await store.sessions.setCurrentProduct(current.id);
 
-    await expect(store.deleteProduct({ product_id: current.id, confirm_product_id: current.id })).resolves.toMatchObject({
+    await expect(
+      store.deleteProduct({ product_id: current.id, confirm_product_id: current.id }),
+    ).resolves.toMatchObject({
       product_id: current.id,
-      session_cleared: true
+      session_cleared: true,
     });
     expect(await store.sessions.getCurrentSession()).toEqual({ current_product: null });
 
@@ -864,7 +902,7 @@ describe("product session and style services", () => {
     const stale = await seedReadyProduct(store, "Stale");
     await expect(store.deleteProduct({ product_id: stale.id, confirm_product_id: stale.id })).resolves.toMatchObject({
       product_id: stale.id,
-      session_cleared: false
+      session_cleared: false,
     });
     expect(await store.sessions.getCurrentSession()).toEqual({ current_product: other.id });
   });
@@ -881,7 +919,7 @@ describe("product session and style services", () => {
           failCleanup = false;
           throw new Error(`cleanup unavailable for ${home} at ${operationDir}`);
         }
-      }
+      },
     });
     const product = await seedReadyProduct(store);
     await writeComponentLibrary(store.home, product.id);
@@ -891,7 +929,7 @@ describe("product session and style services", () => {
       product_id: product.id,
       deleted: true,
       cleanup_pending: true,
-      recovery_warnings: [expect.stringContaining("cleanup unavailable")]
+      recovery_warnings: [expect.stringContaining("cleanup unavailable")],
     });
     expect(result.recovery_warnings.join("\n")).not.toContain(home);
     expect(result.recovery_warnings.join("\n")).not.toContain(cleanupOperationDir);
@@ -900,7 +938,7 @@ describe("product session and style services", () => {
     await expect(store.recoverPendingProductDeletes()).resolves.toMatchObject({
       recovered: 0,
       cleaned: 1,
-      warnings: []
+      warnings: [],
     });
     expect(await readdir(join(home, "tmp", "deletions"))).toEqual([]);
   });
@@ -914,21 +952,23 @@ describe("product session and style services", () => {
           await rm(join(home, "tmp", "deletions", state.operation_id, "backups", "products.yaml"), { force: true });
           throw new FormaError("INVALID_INPUT", "delete side failed", { cause: "original failure" });
         }
-      }
+      },
     });
     const product = await seedReadyProduct(store);
 
-    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject({
-      code: "PRODUCT_DELETION_RECOVERY_FAILED",
-      details: {
-        operation_id: expect.any(String),
-        product_id: product.id,
-        error_code: "INVALID_INPUT",
-        message: "delete side failed",
-        cause: { cause: "original failure" },
-        rollback_error: expect.stringContaining("backup is missing")
-      }
-    });
+    await expect(store.deleteProduct({ product_id: product.id, confirm_product_id: product.id })).rejects.toMatchObject(
+      {
+        code: "PRODUCT_DELETION_RECOVERY_FAILED",
+        details: {
+          operation_id: expect.any(String),
+          product_id: product.id,
+          error_code: "INVALID_INPUT",
+          message: "delete side failed",
+          cause: { cause: "original failure" },
+          rollback_error: expect.stringContaining("backup is missing"),
+        },
+      },
+    );
   });
 
   it("rolls back uncommitted staging by restoring products index, session, product data, and component library", async () => {
@@ -939,24 +979,37 @@ describe("product session and style services", () => {
     const operationId = "op-uncommitted";
     const operationDir = await writeDeletionState(
       store.home,
-      deletionState({ operationId, productId: product.id, phase: "index_written" })
+      deletionState({ operationId, productId: product.id, phase: "index_written" }),
     );
     await mkdir(join(operationDir, "backups"), { recursive: true });
-    await writeFile(join(operationDir, "backups", "products.yaml"), await readFile(join(store.home, "data", "products.yaml"), "utf8"));
-    await writeFile(join(operationDir, "backups", "session.yaml"), await readFile(join(store.home, "session.yaml"), "utf8"));
+    await writeFile(
+      join(operationDir, "backups", "products.yaml"),
+      await readFile(join(store.home, "data", "products.yaml"), "utf8"),
+    );
+    await writeFile(
+      join(operationDir, "backups", "session.yaml"),
+      await readFile(join(store.home, "session.yaml"), "utf8"),
+    );
     await writeFile(join(store.home, "data", "products.yaml"), "products: []\n", "utf8");
     await writeFile(join(store.home, "session.yaml"), "current_product: null\n", "utf8");
     await mkdir(join(operationDir, "staged", "data"), { recursive: true });
     await mkdir(join(operationDir, "staged", "library"), { recursive: true });
     await rename(join(store.home, "data", product.id), join(operationDir, "staged", "data", product.id));
-    await rename(join(store.home, "library", `${product.id}.lib.pen`), join(operationDir, "staged", "library", `${product.id}.lib.pen`));
+    await rename(
+      join(store.home, "library", `${product.id}.lib.pen`),
+      join(operationDir, "staged", "library", `${product.id}.lib.pen`),
+    );
 
-    await expect(store.recoverPendingProductDeletes()).resolves.toMatchObject({ recovered: 1, cleaned: 0, warnings: [] });
+    await expect(store.recoverPendingProductDeletes()).resolves.toMatchObject({
+      recovered: 1,
+      cleaned: 0,
+      warnings: [],
+    });
 
     await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
     expect(await store.sessions.getCurrentSession()).toEqual({ current_product: product.id });
     expect(JSON.parse(await readFile(join(store.home, "library", `${product.id}.lib.pen`), "utf8"))).toEqual({
-      children: [{ id: "original" }]
+      children: [{ id: "original" }],
     });
     await expect(access(operationDir)).rejects.toThrow();
   });
@@ -973,14 +1026,14 @@ describe("product session and style services", () => {
         backups: { products_yaml: "backups/products.yaml" },
         movedPaths: [],
         missingPaths: [],
-        sessionWasCurrent: false
-      })
+        sessionWasCurrent: false,
+      }),
     );
 
     await expect(store.recoverPendingProductDeletes()).resolves.toMatchObject({
       recovered: 1,
       cleaned: 0,
-      warnings: []
+      warnings: [],
     });
 
     await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
@@ -998,7 +1051,7 @@ describe("product session and style services", () => {
     await expect(store.recoverPendingProductDeletes()).resolves.toMatchObject({
       recovered: 0,
       cleaned: 1,
-      warnings: [expect.stringContaining("missing or corrupt state"), "recover lock warning"]
+      warnings: [expect.stringContaining("missing or corrupt state"), "recover lock warning"],
     });
     expect(productMutationLock.calls).toEqual([{ operation: "recover_product_deletes" }]);
   });
@@ -1024,7 +1077,7 @@ describe("product session and style services", () => {
     await writeFile(join(store.home, "tmp", "deletions", "unsafe", "staged", "payload"), "unknown", "utf8");
 
     await expect(store.recoverPendingProductDeletes()).rejects.toMatchObject({
-      code: "PRODUCT_DELETION_RECOVERY_FAILED"
+      code: "PRODUCT_DELETION_RECOVERY_FAILED",
     });
 
     await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
@@ -1040,17 +1093,17 @@ describe("product session and style services", () => {
         operationId: "op-committed-phase-mismatch",
         productId: product.id,
         phase: "index_written",
-        committed: true
-      })
+        committed: true,
+      }),
     );
     await mkdir(join(operationDir, "backups"), { recursive: true });
     await writeFile(
       join(operationDir, "backups", "products.yaml"),
-      await readFile(join(store.home, "data", "products.yaml"), "utf8")
+      await readFile(join(store.home, "data", "products.yaml"), "utf8"),
     );
 
     await expect(store.recoverPendingProductDeletes()).rejects.toMatchObject({
-      code: "PRODUCT_DELETION_RECOVERY_FAILED"
+      code: "PRODUCT_DELETION_RECOVERY_FAILED",
     });
 
     await expect(store.products.getProduct(product.id)).resolves.toMatchObject({ id: product.id });
@@ -1067,9 +1120,11 @@ describe("product session and style services", () => {
           snapshots.push(JSON.parse(JSON.stringify(state)) as ProductDeletionStateForTest);
           expect(await pathExists(join(home, "data", state.product_id))).toBe(true);
           expect(await pathExists(join(home, "library", `${state.product_id}.lib.pen`))).toBe(true);
-          expect(await pathExists(join(home, "tmp", "deletions", state.operation_id, "staged", "data", state.product_id))).toBe(false);
+          expect(
+            await pathExists(join(home, "tmp", "deletions", state.operation_id, "staged", "data", state.product_id)),
+          ).toBe(false);
         }
-      }
+      },
     });
     const product = await seedReadyProduct(store);
     await writeComponentLibrary(home, product.id);
@@ -1082,30 +1137,29 @@ describe("product session and style services", () => {
         kind: "product_data",
         original_path: `data/${product.id}`,
         staged_path: `staged/data/${product.id}`,
-        required: true
+        required: true,
       },
       {
         kind: "component_library_latest",
         original_path: `library/${product.id}.lib.pen`,
         staged_path: `staged/library/${product.id}.lib.pen`,
-        required: false
+        required: false,
       },
       {
         kind: "component_library_metadata",
         original_path: `library/${product.id}.components.yaml`,
         staged_path: `staged/library/${product.id}.components.yaml`,
-        required: false
+        required: false,
       },
       {
         kind: "component_library_versions",
         original_path: `library/${product.id}.versions`,
         staged_path: `staged/library/${product.id}.versions`,
-        required: false
-      }
+        required: false,
+      },
     ]);
     expect(snapshots[0]!.missing_paths).toEqual([`library/${product.id}.sessions`]);
   });
-
 
   it("does not return products removed from products.yaml even if product.yaml remains", async () => {
     const store = await createTestStore();
@@ -1114,7 +1168,7 @@ describe("product session and style services", () => {
 
     await expect(store.products.getProduct(product.id)).rejects.toMatchObject({
       code: "PRODUCT_NOT_FOUND",
-      details: { product_id: product.id }
+      details: { product_id: product.id },
     });
   });
 
@@ -1137,11 +1191,14 @@ describe("product session and style services", () => {
           await assertConsistent(state.phase, state.product_id);
         }
       },
-      beforeMovePath: async (entry: ProductDeletionStateForTest["moved_paths"][number], state: ProductDeletionStateForTest) => {
+      beforeMovePath: async (
+        entry: ProductDeletionStateForTest["moved_paths"][number],
+        state: ProductDeletionStateForTest,
+      ) => {
         if (entry.kind === "product_data") {
           await assertConsistent("before_first_move", state.product_id);
         }
-      }
+      },
     });
     const product = await seedReadyProduct(store);
     await store.sessions.setCurrentProduct(product.id);
@@ -1153,7 +1210,7 @@ describe("product session and style services", () => {
       `backed_up:${product.id}:true:true`,
       "session_written:null:true:true",
       "index_written:null:false:true",
-      "before_first_move:null:false:true"
+      "before_first_move:null:false:true",
     ]);
   });
 
@@ -1165,10 +1222,14 @@ describe("product session and style services", () => {
     const operationId = "op-after-first-move";
     const operationDir = await writeDeletionState(
       store.home,
-      deletionState({ operationId, productId: product.id, phase: "index_written" })
+      deletionState({ operationId, productId: product.id, phase: "index_written" }),
     );
     await mkdir(join(operationDir, "backups"), { recursive: true });
-    await writeFile(join(operationDir, "backups", "products.yaml"), `products:\n  - id: ${product.id}\n    name: Shop App\n    description: Mobile shop\n`, "utf8");
+    await writeFile(
+      join(operationDir, "backups", "products.yaml"),
+      `products:\n  - id: ${product.id}\n    name: Shop App\n    description: Mobile shop\n`,
+      "utf8",
+    );
     await writeFile(join(operationDir, "backups", "session.yaml"), `current_product: ${product.id}\n`, "utf8");
     await writeFile(join(store.home, "data", "products.yaml"), "products: []\n", "utf8");
     await writeFile(join(store.home, "session.yaml"), "current_product: null\n", "utf8");
@@ -1189,10 +1250,14 @@ describe("product session and style services", () => {
     const operationId = "op-before-phase-update";
     const operationDir = await writeDeletionState(
       store.home,
-      deletionState({ operationId, productId: product.id, phase: "backed_up" })
+      deletionState({ operationId, productId: product.id, phase: "backed_up" }),
     );
     await mkdir(join(operationDir, "backups"), { recursive: true });
-    await writeFile(join(operationDir, "backups", "products.yaml"), `products:\n  - id: ${product.id}\n    name: Shop App\n    description: Mobile shop\n`, "utf8");
+    await writeFile(
+      join(operationDir, "backups", "products.yaml"),
+      `products:\n  - id: ${product.id}\n    name: Shop App\n    description: Mobile shop\n`,
+      "utf8",
+    );
     await writeFile(join(operationDir, "backups", "session.yaml"), `current_product: ${product.id}\n`, "utf8");
     await writeFile(join(store.home, "data", "products.yaml"), "products: []\n", "utf8");
     await writeFile(join(store.home, "session.yaml"), "current_product: null\n", "utf8");
@@ -1219,24 +1284,31 @@ describe("product session and style services", () => {
             kind: "component_library",
             original_path: `library/${product.id}.lib.pen`,
             staged_path: `staged/library/${product.id}.lib.pen`,
-            required: false
-          }
+            required: false,
+          },
         ],
         backups: { products_yaml: "backups/products.yaml" },
-        sessionWasCurrent: false
-      })
+        sessionWasCurrent: false,
+      }),
     );
     await mkdir(join(operationDir, "backups"), { recursive: true });
     await mkdir(join(operationDir, "staged", "library"), { recursive: true });
-    await writeFile(join(operationDir, "backups", "products.yaml"), await readFile(join(store.home, "data", "products.yaml"), "utf8"));
-    await writeFile(join(operationDir, "staged", "library", `${product.id}.lib.pen`), JSON.stringify({ children: [{ id: "staged" }] }), "utf8");
+    await writeFile(
+      join(operationDir, "backups", "products.yaml"),
+      await readFile(join(store.home, "data", "products.yaml"), "utf8"),
+    );
+    await writeFile(
+      join(operationDir, "staged", "library", `${product.id}.lib.pen`),
+      JSON.stringify({ children: [{ id: "staged" }] }),
+      "utf8",
+    );
 
     const result = await store.recoverPendingProductDeletes();
 
     expect(result.recovered).toBe(1);
     expect(result.warnings).toEqual([expect.stringContaining("duplicate staged path")]);
     expect(JSON.parse(await readFile(join(store.home, "library", `${product.id}.lib.pen`), "utf8"))).toEqual({
-      children: [{ id: "original" }]
+      children: [{ id: "original" }],
     });
   });
 
@@ -1246,16 +1318,19 @@ describe("product session and style services", () => {
     const operationId = "op-missing-required";
     const operationDir = await writeDeletionState(
       store.home,
-      deletionState({ operationId, productId: product.id, phase: "index_written" })
+      deletionState({ operationId, productId: product.id, phase: "index_written" }),
     );
     await mkdir(join(operationDir, "backups"), { recursive: true });
-    await writeFile(join(operationDir, "backups", "products.yaml"), await readFile(join(store.home, "data", "products.yaml"), "utf8"));
+    await writeFile(
+      join(operationDir, "backups", "products.yaml"),
+      await readFile(join(store.home, "data", "products.yaml"), "utf8"),
+    );
     await writeFile(join(operationDir, "backups", "session.yaml"), "current_product: null\n", "utf8");
     await writeFile(join(store.home, "data", "products.yaml"), "products: []\n", "utf8");
     await rename(join(store.home, "data", product.id), join(operationDir, "lost-product-data"));
 
     await expect(store.recoverPendingProductDeletes()).rejects.toMatchObject({
-      code: "PRODUCT_DELETION_RECOVERY_FAILED"
+      code: "PRODUCT_DELETION_RECOVERY_FAILED",
     });
   });
 
@@ -1282,8 +1357,8 @@ describe("product session and style services", () => {
         platform: "mobile",
         brand_style: "",
         languages: ["en"],
-        default_language: "en"
-      })
+        default_language: "en",
+      }),
     ).rejects.toThrow();
   });
 
@@ -1297,15 +1372,17 @@ describe("product session and style services", () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: "agentic",
-          design_md_path: "styles/agentic/DESIGN.md"
+          design_md_path: "styles/agentic/DESIGN.md",
         }),
         expect.objectContaining({
           name: "claude",
-          design_md_path: "styles/claude/DESIGN.md"
-        })
-      ])
+          design_md_path: "styles/claude/DESIGN.md",
+        }),
+      ]),
     );
-    expect(await readFile(join(store.home, "styles", "_preview-template.pen"), "utf8")).toContain("Forma Style Preview");
+    expect(await readFile(join(store.home, "styles", "_preview-template.pen"), "utf8")).toContain(
+      "Forma Style Preview",
+    );
 
     const agentic = await store.styles.getStyle("agentic");
     expect(agentic.metadata).toMatchObject({ name: "agentic" });
@@ -1333,6 +1410,4 @@ describe("product session and style services", () => {
 
     expect(await readFile(join(store.home, "styles", "agentic", "DESIGN.md"), "utf8")).toBe("# Local Agentic\n");
   });
-
 });
-

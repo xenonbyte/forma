@@ -4,25 +4,28 @@ import type { ViewerGroup, ViewerTile } from "@xenonbyte/forma-viewer";
 
 function tile(id: string, pageId: string, variant: string, width = 1000, height = 600): ViewerTile {
   return {
-    id, kind: "design-page", pageId, pageName: pageId, variant,
-    title: id, version: 1, width, height,
+    id,
+    kind: "design-page",
+    pageId,
+    pageName: pageId,
+    variant,
+    title: id,
+    version: 1,
+    width,
+    height,
     htmlBundle: { artifactId: id, version: 1, kind: "bundle" },
     previewImages: {
       "1x": { artifactId: id, version: 1, kind: "preview", density: "1x" },
-      "2x": { artifactId: id, version: 1, kind: "preview", density: "2x" }
-    }
+      "2x": { artifactId: id, version: 1, kind: "preview", density: "2x" },
+    },
   };
 }
 
 describe("layoutTiles", () => {
-  const tiles: ViewerTile[] = [
-    tile("a", "login", "default"),
-    tile("b", "login", "wide"),
-    tile("c", "home", "default")
-  ];
+  const tiles: ViewerTile[] = [tile("a", "login", "default"), tile("b", "login", "wide"), tile("c", "home", "default")];
   const groups: ViewerGroup[] = [
     { pageId: "login", pageName: "login", tileIds: ["a", "b"] },
-    { pageId: "home", pageName: "home", tileIds: ["c"] }
+    { pageId: "home", pageName: "home", tileIds: ["c"] },
   ];
 
   it("places each group on its own row", () => {

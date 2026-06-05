@@ -26,7 +26,10 @@ export interface CollectedFile {
   error?: string;
 }
 
-async function readMaybeTail(absolutePath: string, tailBytes: number | undefined): Promise<{ text: string; bytes: number }> {
+async function readMaybeTail(
+  absolutePath: string,
+  tailBytes: number | undefined,
+): Promise<{ text: string; bytes: number }> {
   if (tailBytes == null || tailBytes <= 0) {
     const buf = await readFile(absolutePath);
     return { text: buf.toString("utf8"), bytes: buf.byteLength };
@@ -70,9 +73,7 @@ export async function collectLogSources(sources: LogSource[], opts: RedactionOpt
   return await Promise.all(sources.map((source) => collectLogSource(source, opts)));
 }
 
-const DEFAULT_CRASH_DIRS_DARWIN = [
-  "/Library/Logs/DiagnosticReports",
-];
+const DEFAULT_CRASH_DIRS_DARWIN = ["/Library/Logs/DiagnosticReports"];
 
 export interface CrashReportLookup {
   /** Filenames must contain at least one of these substrings (case-insensitive). */
@@ -115,9 +116,7 @@ export async function findMacOSCrashReports(lookup: CrashReportLookup): Promise<
         if (!info.isFile()) continue;
         if (info.mtimeMs < cutoff) continue;
         found.push({ absolutePath, mtimeMs: info.mtimeMs, name: entry });
-      } catch {
-        continue;
-      }
+      } catch {}
     }
   }
 

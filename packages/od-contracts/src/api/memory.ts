@@ -9,16 +9,11 @@
 // llm_wiki, gbrain, memU. Kept deliberately small so every read/write
 // stays a plain `cat` / `editor` round trip — no DB, no fancy schema.
 
-import type { MemoryTreeNode } from './automations.js';
+import type { MemoryTreeNode } from "./automations.js";
 
-export type MemoryType = 'user' | 'feedback' | 'project' | 'reference';
+export type MemoryType = "user" | "feedback" | "project" | "reference";
 
-export const MEMORY_TYPES: readonly MemoryType[] = [
-  'user',
-  'feedback',
-  'project',
-  'reference',
-] as const;
+export const MEMORY_TYPES: readonly MemoryType[] = ["user", "feedback", "project", "reference"] as const;
 
 // Listing payload — frontmatter only, no body. The settings panel pulls
 // the full body lazily through `GET /api/memory/:id` when the user
@@ -49,7 +44,7 @@ export interface MemorySuggestion {
   type: MemoryType;
   body: string;
   source?: {
-    kind: 'connector';
+    kind: "connector";
     connectorId?: string;
     connectorName?: string;
     accountLabel?: string;
@@ -86,13 +81,7 @@ export interface MemoryListResponse {
  *  same options as the chat picker above it. The daemon routes both
  *  ollama and senseaudio through the same callOpenAI path since the
  *  wire protocol is identical. */
-export type MemoryExtractionProvider =
-  | 'anthropic'
-  | 'openai'
-  | 'azure'
-  | 'google'
-  | 'ollama'
-  | 'senseaudio';
+export type MemoryExtractionProvider = "anthropic" | "openai" | "azure" | "google" | "ollama" | "senseaudio";
 
 /** Masked version of MemoryExtractionConfig returned by GET endpoints —
  *  the api key field is replaced with a 4-char tail so the settings UI
@@ -274,12 +263,7 @@ export interface MemorySystemPromptResponse {
 // mutates memory (chat-driven extraction, manual settings edits, LLM
 // extractor, or `curl` POSTs). The web UI subscribes to this so changes
 // in any tab show up in any other open tab without polling.
-export type MemoryChangeKind =
-  | 'upsert'
-  | 'delete'
-  | 'index'
-  | 'config'
-  | 'extract';
+export type MemoryChangeKind = "upsert" | "delete" | "index" | "config" | "extract";
 
 export interface MemoryChangeEvent {
   kind: MemoryChangeKind;
@@ -293,7 +277,7 @@ export interface MemoryChangeEvent {
   count?: number;
   /** Where the change came from. Useful for UX (e.g., suppress toasts on
    *  manual edits since the user just clicked Save themselves). */
-  source?: 'heuristic' | 'llm' | 'manual' | 'connector';
+  source?: "heuristic" | "llm" | "manual" | "connector";
   /** Only on `kind: 'config'` — the new enabled flag. */
   enabled?: boolean;
   /** Unix milliseconds. */
@@ -318,7 +302,7 @@ export interface MemoryChangeEvent {
 
 /** Which extractor produced the attempt. `'llm'` is the legacy default
  *  for records written before this field existed. */
-export type MemoryExtractionKind = 'heuristic' | 'llm' | 'connector';
+export type MemoryExtractionKind = "heuristic" | "llm" | "connector";
 
 // POST /api/memory/connectors/suggest and /extract — read approved,
 // read-only data from selected connected apps and feed the compacted result
@@ -341,7 +325,7 @@ export interface ConnectorMemoryExtractionResult {
   connectorId: string;
   connectorName: string;
   accountLabel?: string;
-  status: 'succeeded' | 'skipped' | 'failed';
+  status: "succeeded" | "skipped" | "failed";
   toolName?: string;
   toolTitle?: string;
   summary: string;
@@ -363,16 +347,16 @@ export interface ConnectorMemorySuggestionResponse {
 }
 
 export type MemoryExtractionPhase =
-  | 'running'
-  | 'success'
-  | 'skipped'
-  | 'failed'
+  | "running"
+  | "success"
+  | "skipped"
+  | "failed"
   // Pseudo-phase emitted only on the SSE `extraction` channel when a row
   // is removed from the buffer (manual delete or full clear). Persisted
   // records never carry these phases — the daemon evicts them straight
   // out of the ring buffer rather than rewriting them in place.
-  | 'deleted'
-  | 'cleared';
+  | "deleted"
+  | "cleared";
 
 /** Why an attempt was skipped before any LLM call (or, for the regex
  *  extractor, before any pattern was tested). Surface this in the UI so
@@ -381,11 +365,11 @@ export type MemoryExtractionPhase =
  *  growing. `'no-match'` is heuristic-only — the regex ran but every
  *  pattern produced 0 captures. */
 export type MemoryExtractionSkipReason =
-  | 'no-provider'
-  | 'memory-disabled'
-  | 'chat-disabled'
-  | 'empty-message'
-  | 'no-match';
+  | "no-provider"
+  | "memory-disabled"
+  | "chat-disabled"
+  | "empty-message"
+  | "no-match";
 
 export interface MemoryExtractionRecord {
   /** Stable id for the attempt. UUID-ish; safe to use as a React key. */
@@ -416,12 +400,7 @@ export interface MemoryExtractionRecord {
      *  chat" extraction in API mode; `'chat-cli'` = the current Local
      *  CLI run in background one-shot mode for "Same as chat"
      *  extraction in CLI mode. */
-    credentialSource:
-      | 'memory-config'
-      | 'env'
-      | 'media-config'
-      | 'chat-byok'
-      | 'chat-cli';
+    credentialSource: "memory-config" | "env" | "media-config" | "chat-byok" | "chat-cli";
   };
   /** First ~120 chars of the user's message for display in the list. */
   userMessagePreview: string;

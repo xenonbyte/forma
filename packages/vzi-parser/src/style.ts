@@ -1,5 +1,5 @@
-import type { IRElementType, IRStyles } from '@vzi-core/types';
-import { IRElementType as ElementType } from '@vzi-core/types';
+import type { IRElementType, IRStyles } from "@vzi-core/types";
+import { IRElementType as ElementType } from "@vzi-core/types";
 
 /**
  * CSS 变量（自定义属性）提取结果
@@ -74,17 +74,19 @@ export class CSSVariableParser {
    * @param value 样式值
    * @returns 解析后的值（如果有变量则返回变量信息，否则返回原值）
    */
-  parseStyleValue(value: string): { type: 'literal'; value: string } | { type: 'variable'; variable: CSSVariable; fallback?: string; raw: string } {
+  parseStyleValue(
+    value: string,
+  ): { type: "literal"; value: string } | { type: "variable"; variable: CSSVariable; fallback?: string; raw: string } {
     const varInfo = this.parseVarReference(value);
 
     if (!varInfo) {
-      return { type: 'literal', value };
+      return { type: "literal", value };
     }
 
     const variable = this.variables.get(varInfo.variableName);
     return {
-      type: 'variable',
-      variable: variable || { name: varInfo.variableName, value: '' },
+      type: "variable",
+      variable: variable || { name: varInfo.variableName, value: "" },
       fallback: varInfo.fallback,
       raw: value,
     };
@@ -97,7 +99,7 @@ export class CSSVariableParser {
    * @returns 替换变量后的值
    */
   resolveValue(value: string, resolvedValues?: Map<string, string>): string {
-    if (!value || !value.includes('var(')) {
+    if (!value || !value.includes("var(")) {
       return value;
     }
 
@@ -105,7 +107,7 @@ export class CSSVariableParser {
     return value.replace(
       /var\s*\(\s*(--[a-zA-Z0-9_-]+)\s*(?:,\s*([^)]+))?\s*\)/g,
       (match: string, varName: string, fallback?: string) => {
-      // 优先使用传入的解析值
+        // 优先使用传入的解析值
         if (resolvedValues?.has(varName)) {
           const resolved = resolvedValues.get(varName);
           if (resolved) {
@@ -126,7 +128,7 @@ export class CSSVariableParser {
 
         // 无法解析，返回原始值
         return match;
-      }
+      },
     );
   }
 
@@ -164,7 +166,7 @@ export function extractCSSVariableReferences(styles: IRStyles): Map<string, stri
   const references = new Map<string, string[]>();
 
   for (const [property, value] of Object.entries(styles)) {
-    if (typeof value === 'string' && value.includes('var(')) {
+    if (typeof value === "string" && value.includes("var(")) {
       const varRegex = /var\s*\(\s*(--[a-zA-Z0-9_-]+)/g;
       let match;
 
@@ -186,43 +188,43 @@ export function extractCSSVariableReferences(styles: IRStyles): Map<string, stri
  */
 export function extractElementType(tagName: string, className?: string): IRElementType {
   const lowerTag = tagName.toLowerCase();
-  const cls = (className || '').toLowerCase();
+  const cls = (className || "").toLowerCase();
 
-  if (lowerTag === 'img' || lowerTag === 'svg' || cls.includes('image')) {
+  if (lowerTag === "img" || lowerTag === "svg" || cls.includes("image")) {
     return ElementType.IMAGE;
   }
 
-  if (lowerTag === 'button' || cls.includes('btn') || cls.includes('button')) {
+  if (lowerTag === "button" || cls.includes("btn") || cls.includes("button")) {
     return ElementType.BUTTON;
   }
 
-  if (lowerTag === 'input' || lowerTag === 'textarea' || lowerTag === 'select') {
+  if (lowerTag === "input" || lowerTag === "textarea" || lowerTag === "select") {
     return ElementType.INPUT;
   }
 
-  if (lowerTag === 'a' || cls.includes('link')) {
+  if (lowerTag === "a" || cls.includes("link")) {
     return ElementType.LINK;
   }
 
   if (
-    lowerTag === 'span' ||
-    lowerTag === 'p' ||
-    lowerTag === 'h1' ||
-    lowerTag === 'h2' ||
-    lowerTag === 'h3' ||
-    lowerTag === 'h4' ||
-    lowerTag === 'h5' ||
-    lowerTag === 'h6' ||
-    lowerTag === 'label' ||
-    lowerTag === 'strong' ||
-    lowerTag === 'em' ||
-    lowerTag === 'small' ||
-    lowerTag === 'b' ||
-    lowerTag === 'i' ||
-    lowerTag === 'code' ||
-    lowerTag === 'pre' ||
-    lowerTag === 'blockquote' ||
-    lowerTag === 'li'
+    lowerTag === "span" ||
+    lowerTag === "p" ||
+    lowerTag === "h1" ||
+    lowerTag === "h2" ||
+    lowerTag === "h3" ||
+    lowerTag === "h4" ||
+    lowerTag === "h5" ||
+    lowerTag === "h6" ||
+    lowerTag === "label" ||
+    lowerTag === "strong" ||
+    lowerTag === "em" ||
+    lowerTag === "small" ||
+    lowerTag === "b" ||
+    lowerTag === "i" ||
+    lowerTag === "code" ||
+    lowerTag === "pre" ||
+    lowerTag === "blockquote" ||
+    lowerTag === "li"
   ) {
     return ElementType.TEXT;
   }
@@ -241,17 +243,17 @@ export function parseInlineStyle(style: string): IRStyles {
   }
 
   style
-    .split(';')
+    .split(";")
     .map((part) => part.trim())
     .filter(Boolean)
     .forEach((entry) => {
-      const [rawKey, ...rawValue] = entry.split(':');
+      const [rawKey, ...rawValue] = entry.split(":");
       if (!rawKey || rawValue.length === 0) {
         return;
       }
 
       const key = toCamelCase(rawKey.trim());
-      const value = rawValue.join(':').trim();
+      const value = rawValue.join(":").trim();
       if (!value) {
         return;
       }
@@ -273,7 +275,7 @@ function tryParseNumeric(value: string): string | number {
   }
 
   if (/^-?\d+(\.\d+)?px$/.test(value)) {
-    return Number(value.replace(/px$/, ''));
+    return Number(value.replace(/px$/, ""));
   }
 
   return value;

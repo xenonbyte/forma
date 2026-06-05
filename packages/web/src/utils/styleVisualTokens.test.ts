@@ -16,14 +16,14 @@ typography:
     fontFamily: "Acme Sans"
 ---
 `,
-        tokensCss: ":root { --surface: #fff7ed; --ink: #111827; --secondary: #f97316; }"
-      })
+        tokensCss: ":root { --surface: #fff7ed; --ink: #111827; --secondary: #f97316; }",
+      }),
     ).toEqual({
       backgroundColor: "#fff7ed",
       fontFamily: "Acme Sans",
       primaryColor: "#3b82f6",
       secondaryColor: "#f97316",
-      textColor: "#111827"
+      textColor: "#111827",
     });
   });
 
@@ -38,11 +38,11 @@ typography:
   body: "Bad;Font"
 ---
 `,
-        tokensCss: ":root { --primary: #111827; --secondary: #ffffff; }"
-      })
+        tokensCss: ":root { --primary: #111827; --secondary: #ffffff; }",
+      }),
     ).toEqual({
       primaryColor: "#111827",
-      secondaryColor: "#ffffff"
+      secondaryColor: "#ffffff",
     });
   });
 });
