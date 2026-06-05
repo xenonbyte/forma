@@ -30,15 +30,25 @@ const designPointerSchema = z
 
 export type DesignPointer = z.infer<typeof designPointerSchema>;
 
-const productIndexEntrySchema = z.object({
-  id: productIdSchema,
-  name: z.string().min(1),
-  description: z.string(),
-});
+const productIndexEntrySchema = z
+  .object({
+    id: productIdSchema,
+    name: z.string().min(1),
+    description: z.string(),
+  })
+  .strict();
 
-const productIndexSchema = z.object({
-  products: z.array(productIndexEntrySchema),
-});
+const productIndexSchema = z
+  .object({
+    products: z.array(productIndexEntrySchema),
+  })
+  .strict();
+
+const productRequirementPointerSchema = z
+  .object({
+    latestArtifactId: z.string().optional(),
+  })
+  .strict();
 
 const productSchema = productIndexEntrySchema
   .extend({
@@ -47,17 +57,11 @@ const productSchema = productIndexEntrySchema
     system_style: z.string().min(1).optional(),
     languages: z.array(z.enum(languages)).optional(),
     default_language: z.enum(languages).optional(),
-    requirements: z
-      .record(
-        z.string(),
-        z.object({
-          latestArtifactId: z.string().optional(),
-        }),
-      )
-      .optional(),
+    requirements: z.record(z.string(), productRequirementPointerSchema).optional(),
     designSystemArtifactId: z.string().optional(),
     designPointers: z.array(designPointerSchema).optional(),
   })
+  .strict()
   .superRefine((product, context) => {
     const hasLanguages = product.languages !== undefined;
     const hasDefaultLanguage = product.default_language !== undefined;
@@ -115,6 +119,7 @@ const productConfigSchema = z
     languages: z.array(z.enum(languages)).min(1),
     default_language: z.enum(languages),
   })
+  .strict()
   .superRefine((config, context) => {
     if (!config.languages.includes(config.default_language)) {
       context.addIssue({

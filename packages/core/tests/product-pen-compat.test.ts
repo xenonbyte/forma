@@ -1,16 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { expect, describe, it } from "vitest";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomBytes } from "node:crypto";
 
-// Import the ProductService to load products from disk
-// We need to test that product.yaml with .pen fields loads without error
-// and without console output.
-
-describe("SPEC-PLAN-017: product.yaml unknown field backward compat", () => {
-  it("loads product.yaml with unknown legacy fields, drops them silently, no console output", async () => {
-    // Find and import ProductService
+describe("product.yaml strict field validation", () => {
+  it("rejects product.yaml with unknown legacy fields", async () => {
     const { ProductService } = await import("../src/product.js");
     const { getProductMutationLock } = await import("../src/product-mutation-lock.js");
 
@@ -21,7 +16,6 @@ describe("SPEC-PLAN-017: product.yaml unknown field backward compat", () => {
 
     await mkdir(productDir, { recursive: true });
 
-    // Write a product.yaml that includes unknown legacy fields
     const productYaml = `
 id: ${productId}
 name: Test Product
@@ -61,31 +55,9 @@ legacy_canvas_path: /old/integration/path
       productMutationLock: lock,
     });
 
-    // Capture console output
-    const consoleLogs: string[] = [];
-    const origLog = console.log;
-    const origWarn = console.warn;
-    const origError = console.error;
-    console.log = (...args: unknown[]) => consoleLogs.push(args.join(" "));
-    console.warn = (...args: unknown[]) => consoleLogs.push(args.join(" "));
-    console.error = (...args: unknown[]) => consoleLogs.push(args.join(" "));
-
     try {
-      const product = await service.getProduct(productId);
-
-      // Unknown legacy fields must not appear in loaded product
-      expect((product as unknown as Record<string, unknown>).legacy_integration_id).toBeUndefined();
-      expect((product as unknown as Record<string, unknown>).legacy_canvas_path).toBeUndefined();
-
-      // No console output related to unknown fields
-      const unknownRelated = consoleLogs.filter(
-        (l) => l.includes("legacy_integration_id") || l.includes("legacy_canvas_path"),
-      );
-      expect(unknownRelated).toHaveLength(0);
+      await expect(service.getProduct(productId)).rejects.toThrow(/Unrecognized key/);
     } finally {
-      console.log = origLog;
-      console.warn = origWarn;
-      console.error = origError;
       await rm(testHome, { recursive: true, force: true });
     }
   });
