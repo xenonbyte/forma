@@ -7,15 +7,7 @@
     "defaultBranch": "main"
   },
   "files": {
-    "includes": [
-      "**",
-      "!pnpm-lock.yaml",
-      "!styles/**",
-      "!craft/**",
-      "!spikes/**",
-      "!design-version/**",
-      "!**/*.tsbuildinfo"
-    ]
+    "includes": ["**", "!pnpm-lock.yaml", "!styles", "!craft", "!spikes", "!design-version", "!**/*.tsbuildinfo"]
   },
   "formatter": {
     "enabled": true,

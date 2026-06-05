@@ -34,13 +34,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Report-only for now: the existing codebase predates Biome and carries a
-      # backlog (mostly web a11y rules). This surfaces lint/format drift on
-      # changed files without blocking. Flip to a blocking gate after the
-      # one-time `pnpm format` normalization + backlog cleanup land.
-      - name: Biome (report-only)
+      # Formatting is a BLOCKING gate: the whole repo is normalized via
+      # `pnpm format`, so any drift fails CI.
+      - name: Biome format check (blocking)
+        run: pnpm exec biome format .
+
+      # Linting stays report-only on changed files: the codebase still carries a
+      # lint backlog (~33 recommended rules, see docs/tech-debt.md). Promote to a
+      # blocking gate after that backlog is worked down.
+      - name: Biome lint (report-only)
         continue-on-error: true
-        run: pnpm exec biome ci --changed --since=origin/${{ github.base_ref || 'main' }} .
+        run: pnpm exec biome lint --changed --since=origin/${{ github.base_ref || 'main' }} .
 
       # Playwright Chromium powers the browser test projects (viewer, desktop-shell)
       # and `--with-deps` installs the shared OS libraries both browsers need.

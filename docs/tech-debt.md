@@ -21,15 +21,37 @@ the existing test suite as a guardrail, one file at a time.
 ## Lint/format rollout (Biome)
 
 Biome 2.x is configured (`biome.json`) with the formatter and `recommended`
-linter, but the pre-existing codebase carries a backlog (mostly web a11y rules
-and a few intentional control-character regexes). Rollout is staged:
+linter. Rollout is staged by concern:
 
-1. CI runs Biome **report-only** on changed files (`biome ci --changed`); it does
-   not block the gate yet.
-2. A dedicated, separately-committed `pnpm format` normalization pass + backlog
-   cleanup should land before flipping the CI Biome step to blocking.
+- **Formatter — BLOCKING.** The whole repo was normalized once with `pnpm format`,
+  so CI runs `biome format .` as a blocking gate; any formatting drift fails CI.
+- **Linter — report-only.** CI runs `biome lint --changed` (non-blocking) because
+  `recommended` still flags a backlog of ~33 rules / ~1000 findings across the
+  pre-existing code. Promoting the linter to blocking is future work.
 
 Local: `pnpm lint` (full report), `pnpm lint:fix`, `pnpm format`.
+
+### Lint backlog — promote linter to blocking after clearing these
+
+Work down per rule, then flip the CI `Biome lint` step to blocking (drop
+`continue-on-error`, use `biome ci .`). Many are auto-fixable with
+`biome check --write` / `--unsafe`; some are intentional (e.g.
+`noControlCharactersInRegex` guards NUL-handling) and should be suppressed inline
+rather than globally.
+
+- **Auto-fixable (run `biome check --write --unsafe`, then review):** `useLiteralKeys`,
+  `useOptionalChain`, `useNodejsImportProtocol`, `useParseIntRadix`, `noGlobalIsNan`,
+  `noUselessSwitchCase`, `noUnusedImports`, `noUnusedVariables`.
+- **Needs judgement:** `noNonNullAssertion` (~200), `noExplicitAny`,
+  `noAssignInExpressions`, `noImplicitAnyLet`, `noConfusingVoidType`,
+  `noShadowRestrictedNames`, `noThenProperty`, `useIterableCallbackReturn`,
+  `noUnusedFunctionParameters`, `noUnusedPrivateClassMembers`, `useUniqueElementIds`,
+  `useTemplate`, `noImportantStyles`, `noControlCharactersInRegex` (intentional).
+- **a11y (web):** `useSemanticElements`, `useKeyWithClickEvents`, `useButtonType`,
+  `noSvgWithoutTitle`, `noRedundantRoles`, `noNoninteractiveTabindex`,
+  `noStaticElementInteractions`, `useAriaPropsSupportedByRole`.
+- **React correctness (fix, don't suppress):** `useHookAtTopLevel`,
+  `useExhaustiveDependencies`, `noArrayIndexKey`.
 
 ## Package publish & versioning policy
 
