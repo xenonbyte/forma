@@ -2,7 +2,6 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createFormaStore: vi.fn(),
-  readSchemaNormalizationRecoveryState: vi.fn(),
   serverInstances: [] as Array<{ registerTool: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn> }>,
   transportInstances: [] as object[],
 }));
@@ -23,26 +22,13 @@ vi.mock("@xenonbyte/forma-core", () => {
     }
   }
 
-  class SchemaNormalizationStartupError extends Error {
-    readonly code: string;
-
-    constructor(public readonly state: Record<string, unknown>) {
-      super(String(state.message ?? "Schema normalization startup blocked"));
-      this.name = "SchemaNormalizationStartupError";
-      this.code = String(state.code ?? "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED");
-    }
-  }
-
   return {
     FormaError,
-    SchemaNormalizationStartupError,
     PencilService: class {
       generatePageDesign = vi.fn();
     },
     assertProductConfig: vi.fn(),
     createFormaStore: mocks.createFormaStore,
-    isSchemaNormalizationStartupError: (error: unknown) => error instanceof SchemaNormalizationStartupError,
-    readSchemaNormalizationRecoveryState: mocks.readSchemaNormalizationRecoveryState,
     formaCoreVersion: "0.0.0-test",
     languages: ["en", "zh-CN"],
     platforms: ["web", "mobile"],
@@ -128,15 +114,6 @@ describe("MCP server startup", () => {
     mocks.serverInstances.length = 0;
     mocks.transportInstances.length = 0;
     mocks.createFormaStore.mockReturnValue(fakeStore());
-    mocks.readSchemaNormalizationRecoveryState.mockResolvedValue({
-      mode: "normal",
-      status: "committed",
-      message: "v6 schema normalization committed",
-      home: "/tmp/forma",
-      restore_status: "none",
-      failed_files: [],
-      recovery_actions: [],
-    });
   });
 
   afterEach(() => {
@@ -228,49 +205,6 @@ describe("MCP server startup", () => {
 
     await expect(createFormaMcpServer()).rejects.toThrow("recovery failed");
     expectNoToolRegistrations();
-  });
-
-  it("registers limited status and blocked tool handlers when schema normalization preflight blocks startup", async () => {
-    const state = {
-      mode: "preflight_only",
-      status: "preflight_required",
-      code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
-      message: "v6 schema normalization preflight is required",
-      home: "/tmp/custom-home",
-      preflight_status: "missing",
-      preflight_reason: "report_missing",
-      restore_status: "none",
-      failed_files: [],
-      recovery_actions: ["run_schema_normalization_dry_run", "run_v6_schema_cutover"],
-    };
-    const rereadState = {
-      ...state,
-      preflight_status: "stale",
-      preflight_reason: "report_stale",
-    };
-    const { SchemaNormalizationStartupError } = await import("@xenonbyte/forma-core");
-    mocks.createFormaStore.mockRejectedValue(new SchemaNormalizationStartupError(state));
-    mocks.readSchemaNormalizationRecoveryState.mockResolvedValue(rereadState);
-    const { createFormaMcpServer } = await importIndex();
-
-    await createFormaMcpServer({ home: "/tmp/custom-home" });
-    const server = mocks.serverInstances[0]!;
-    const statusCall = server.registerTool.mock.calls.find((call) => call[0] === "fm-status");
-    const blockedCall = server.registerTool.mock.calls.find((call) => call[0] === "list_products");
-
-    expect(statusCall).toBeTruthy();
-    expect(blockedCall).toBeTruthy();
-    const statusResult = await statusCall![2]({});
-    const blockedResult = await blockedCall![2]({});
-
-    expect(JSON.parse(statusResult.content[0]!.text)).toEqual({ schema_normalization: state });
-    expect(mocks.readSchemaNormalizationRecoveryState).not.toHaveBeenCalled();
-    expect(blockedResult.isError).toBe(true);
-    expect(JSON.parse(blockedResult.content[0]!.text)).toEqual({
-      error_code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
-      message: "Schema normalization preflight required",
-      details: state,
-    });
   });
 
   it("keeps unrelated store startup errors fatal", async () => {

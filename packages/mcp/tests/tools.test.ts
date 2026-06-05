@@ -564,7 +564,6 @@ describe("MCP forma tools", () => {
 
   it("sessions.getCurrentSession never points to a product while delete_product is clearing or removing it", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-delete-session-"));
-    await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
     const observations: Array<{ phase: string; current_product: string | null }> = [];
     let store: Awaited<ReturnType<typeof createFormaStore>>;
     const productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]> = {
@@ -3124,7 +3123,6 @@ describe("design-handoff tools (Task 8)", () => {
   it("get_page_ui returns ARTIFACT_NOT_FOUND when VZI file is missing", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-handoff-missing-"));
     try {
-      await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
       const store = fakeStore({
         home,
         requirements: {

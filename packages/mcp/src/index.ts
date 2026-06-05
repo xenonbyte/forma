@@ -2,8 +2,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer, StdioServerTransport } from "@modelcontextprotocol/server";
-import { createFormaStore, formaCoreVersion, isSchemaNormalizationStartupError } from "@xenonbyte/forma-core";
-import { createFormaTools, registerFormaTools, registerLimitedFormaTools } from "./tools.js";
+import { createFormaStore, formaCoreVersion } from "@xenonbyte/forma-core";
+import { createFormaTools, registerFormaTools } from "./tools.js";
 
 export { formaCoreVersion } from "@xenonbyte/forma-core";
 export {
@@ -29,20 +29,10 @@ export interface FormaMcpLogger {
 
 export async function createFormaMcpServer(options: CreateFormaMcpServerOptions = {}): Promise<McpServer> {
   const home = options.home ?? defaultFormaHome();
-  let store;
-  try {
-    store = await createFormaStore({
-      home,
-      bundledStylesDir: options.bundledStylesDir,
-    });
-  } catch (error) {
-    if (!isSchemaNormalizationStartupError(error)) {
-      throw error;
-    }
-    const server = new McpServer({ name: "forma", version: formaCoreVersion });
-    registerLimitedFormaTools(server, error.state);
-    return server;
-  }
+  const store = await createFormaStore({
+    home,
+    bundledStylesDir: options.bundledStylesDir,
+  });
 
   const recovery = await store.recoverPendingProductDeletes();
   for (const warning of recovery.warnings) {

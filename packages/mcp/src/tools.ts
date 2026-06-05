@@ -18,7 +18,6 @@ import {
   platforms,
   type ArtifactManifest,
   type FormaStore,
-  type SchemaNormalizationRecoveryState,
 } from "@xenonbyte/forma-core";
 import { PuppeteerParser } from "@vzi-core/parser";
 import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
@@ -499,30 +498,6 @@ export function registerFormaTools(server: FormaMcpServerLike, tools: FormaTools
         inputSchema: formaToolInputSchemas[name],
       },
       tools[name],
-    );
-  }
-}
-
-export function registerLimitedFormaTools(server: FormaMcpServerLike, state: SchemaNormalizationRecoveryState): void {
-  server.registerTool(
-    "fm-status",
-    {
-      title: "Fm Status",
-      description: "Read Forma schema normalization startup status.",
-      inputSchema: emptySchema,
-    },
-    async () => successResult({ schema_normalization: state }),
-  );
-
-  for (const name of formaToolNames) {
-    server.registerTool(
-      name,
-      {
-        title: titleFromToolName(name),
-        description: descriptions[name],
-        inputSchema: z.any(),
-      },
-      async () => normalizationBlockedResult(state),
     );
   }
 }
@@ -1070,23 +1045,6 @@ function successResult(data: unknown): FormaToolResult {
 
 function errorResult(error: unknown): FormaToolResult {
   return { isError: true, content: [{ type: "text", text: JSON.stringify(toFormaErrorPayload(error)) }] };
-}
-
-function normalizationBlockedResult(state: SchemaNormalizationRecoveryState): FormaToolResult {
-  const preflight = state.code === "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED";
-  return {
-    isError: true,
-    content: [
-      {
-        type: "text",
-        text: JSON.stringify({
-          error_code: preflight ? "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED" : "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
-          message: preflight ? "Schema normalization preflight required" : "Schema normalization recovery required",
-          details: state,
-        }),
-      },
-    ],
-  };
 }
 
 function toFormaErrorPayload(error: unknown): {
