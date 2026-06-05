@@ -110,6 +110,20 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
 - `recoverPendingProductDeletes` —— 产品删除恢复。
 - `normalizeKind` / `normalizeFormaExtension` —— artifact manifest 字段规范化。
 
+## 移除前安全核查（已通过）
+
+实现前已用 grep + 符号核查确认删除面与活跃功能无隐藏耦合（[TOOL] 2026-06-05）：
+
+1. **导出符号全为迁移专属**：`schema-normalization.ts` 的全部 `export` 均为 `SchemaNormalization* / *V6Normalization* / normalizeFormaHomeForV6 / V6_SCHEMA_NORMALIZER_VERSION`；内部 helper（`asRecord` / `stringValue` / `arrayOfRecords` / `hashUnknown` 等）**未导出** → 整文件删除不会断任何外部 import。
+2. **使用者集合精确闭合**：源码引用仅 `core/store.ts`、`cli/index.ts`、`server/app.ts`、`server/routes.ts`、`mcp/index.ts`、`mcp/tools.ts`，与删除范围完全一致；`dist/*.d.ts` 为构建产物（rebuild 重生）。
+3. **保留清单三者独立**：`validateStrictStoreReadModels`（`store.ts:318`）函数体仅依赖 products / requirements / copy 服务与 `FormaError`，不引用任何迁移 import → 删 `store.ts` 迁移 import 与门禁后照常工作；`normalizeKind` / `normalizeFormaExtension`（`artifact-manifest.ts:93,98`）、`recoverPendingProductDeletes` 与迁移文件无关。
+4. **generate 流程无耦合**：`design-save.ts` 无任何 schema-normalization 引用，`generate_requirement_design` / `generate_components` 不受影响。
+5. **前端无耦合**：`web` / `desktop` / `viewer` 未调用 `recovery/schema-normalization` API、未依赖 `limited` / `preflight_only` / `recovery_only` 状态；v6-11 的 recovery/preflight pages 在代码中**未实现**（纯设计文档）。唯一命中 `web/src/i18n.ts` 的 `componentRefreshPreflight` 属组件刷新，无关。
+
+**补充提醒**：`store.ts:308–317` 注释明确引用「schema-normalization recovery path … migrating legacy layouts」，删除时一并更新（属 core 节「清理相关注释」）。
+
+**结论：可安全移除**，删除面与活跃功能之间无隐藏耦合，无需保留任何兼容垫片。
+
 ## 行为变化对照
 
 | 场景 | 改动前 | 改动后 |
