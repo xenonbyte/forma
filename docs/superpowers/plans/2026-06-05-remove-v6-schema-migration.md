@@ -291,7 +291,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `packages/mcp/src/index.ts`, `packages/mcp/src/tools.ts`
-- Test: `packages/mcp/tests/index.test.ts`
+- Test: `packages/mcp/tests/index.test.ts`, `packages/mcp/tests/tools.test.ts`
 
 - [ ] **Step 1: 简化 index.ts 启动并删除迁移 import**
 
@@ -346,7 +346,7 @@ import { createFormaTools, registerFormaTools } from "./tools.js";
 - 删除 `registerLimitedFormaTools` 函数（约 line 506-528）。
 - 删除 `normalizationBlockedResult` 函数（约 line 1075-1090）。
 
-- [ ] **Step 3: 删除 index.test.ts 的 mock 迁移符号与 limited 用例**
+- [ ] **Step 3: 删除 MCP limited 测试覆盖**
 
 在 `packages/mcp/tests/index.test.ts`：
 - 删除 hoisted mock 中的 `readSchemaNormalizationRecoveryState: vi.fn(),`（line 5）。
@@ -354,15 +354,23 @@ import { createFormaTools, registerFormaTools } from "./tools.js";
 - 删除 `describe("MCP server startup")` 的 `beforeEach` 中的 `mocks.readSchemaNormalizationRecoveryState.mockResolvedValue({ ... });`（line 131-139）。
 - 删除整个 `it("registers limited status and blocked tool handlers when schema normalization preflight blocks startup", ...)` 用例（line 233 起，至其闭合 `});`）。
 
+在 `packages/mcp/tests/tools.test.ts`：
+- 检查是否存在 direct limited tools 覆盖：
+  ```bash
+  rg -n "registerLimitedFormaTools|normalizationBlockedResult|schema normalization.*limited|limited.*schema normalization" packages/mcp/tests/tools.test.ts
+  ```
+- 当前预期：无 direct limited tools 用例；若实现时出现命中，随本 Task 删除对应用例、mock/helper，并保留与 `recoverPendingProductDeletes`、`normalizeKind`、`normalizeFormaExtension` 无关的正常工具用例。
+- 不在本 Task 清理 `.v6-schema-cutover-committed` marker；core 启动门禁尚未删除，marker 清理由 Task 6 统一处理。
+
 - [ ] **Step 4: 运行 mcp 测试确认通过**
 
-Run: `pnpm exec vitest run packages/mcp/tests/index.test.ts`
-Expected: PASS（limited 用例移除；delete-recovery 相关用例全绿）
+Run: `pnpm exec vitest run packages/mcp/tests/index.test.ts packages/mcp/tests/tools.test.ts`
+Expected: PASS（limited 启动/工具覆盖已移除或确认不存在；delete-recovery、工具 schema 与正常 handler 用例全绿）
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/mcp/src/index.ts packages/mcp/src/tools.ts packages/mcp/tests/index.test.ts
+git add packages/mcp/src/index.ts packages/mcp/src/tools.ts packages/mcp/tests/index.test.ts packages/mcp/tests/tools.test.ts
 git commit -m "refactor(mcp): remove schema normalization limited tools
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -658,7 +666,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - cli 4 命令/run/parseNormalizationArgs/usage → Task 1 ✅
 - server routes 4 函数 + app.ts limited 链路 → Task 2 ✅
 - mcp index/tools limited → Task 3 ✅
-- 测试（startup 用例保留、迁移用例删除、committed marker 清理）→ Task 1/2/3/4/6 ✅
+- 测试（startup 用例保留、迁移用例删除、MCP tools 覆盖核查、committed marker 清理）→ Task 1/2/3/4/6 ✅
 - 文档（删 01/03、更新 index/02/04/05/08/10/11/12 + README/CLAUDE.md/AGENT/MCP/tech-debt + design-version/DESIGN-v6.md + desktop/VERIFICATION）→ Task 7 ✅
 - 保留清单（strict 校验、产品删除恢复、normalizeKind/normalizeFormaExtension）→ Task 8 Step 3 冒烟核验 ✅
 - 验证策略（build/typecheck/test + grep 正则）→ Task 5/8 ✅
