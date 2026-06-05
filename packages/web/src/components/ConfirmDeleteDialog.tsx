@@ -12,7 +12,14 @@ export interface ConfirmDeleteDialogProps {
   onConfirm(confirmProductId: string): void;
 }
 
-export function ConfirmDeleteDialog({ busy = false, error, onCancel, onConfirm, open, product }: ConfirmDeleteDialogProps) {
+export function ConfirmDeleteDialog({
+  busy = false,
+  error,
+  onCancel,
+  onConfirm,
+  open,
+  product,
+}: ConfirmDeleteDialogProps) {
   const t = useT();
   const [confirmation, setConfirmation] = useState("");
   const canConfirm = open && !busy && confirmation === product.id;
@@ -44,14 +51,24 @@ export function ConfirmDeleteDialog({ busy = false, error, onCancel, onConfirm, 
   }
 
   return (
-    <div aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 px-4 py-6" role="dialog">
+    <div
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-zinc-950/40 px-4 py-6"
+      role="dialog"
+    >
       <section className="w-full max-w-md rounded-lg border border-zinc-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-4 py-3">
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-normal text-red-700">{t("product.dangerZone")}</p>
             <h2 className="mt-1 text-base font-semibold tracking-normal text-zinc-950">{t("deleteDialog.title")}</h2>
           </div>
-          <button aria-label={t("action.close")} className={iconButtonClasses} disabled={busy} onClick={onCancel} type="button">
+          <button
+            aria-label={t("action.close")}
+            className={iconButtonClasses}
+            disabled={busy}
+            onClick={onCancel}
+            type="button"
+          >
             <span aria-hidden="true">x</span>
           </button>
         </div>
@@ -85,14 +102,24 @@ export function ConfirmDeleteDialog({ busy = false, error, onCancel, onConfirm, 
             />
           </label>
 
-          {error ? <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error.error_code} - {error.message}</p> : null}
+          {error ? (
+            <p className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error.error_code} - {error.message}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-col-reverse gap-2 border-t border-zinc-200 px-4 py-3 sm:flex-row sm:justify-end">
           <button className={secondaryButtonClasses} disabled={busy} onClick={onCancel} type="button">
             {t("action.cancel")}
           </button>
-          <button className={dangerButtonClasses} data-confirm-delete-final="true" disabled={!canConfirm} onClick={() => onConfirm(confirmation)} type="button">
+          <button
+            className={dangerButtonClasses}
+            data-confirm-delete-final="true"
+            disabled={!canConfirm}
+            onClick={() => onConfirm(confirmation)}
+            type="button"
+          >
             {busy ? t("action.deleting") : t("action.deleteProduct")}
           </button>
         </div>

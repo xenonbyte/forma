@@ -6,7 +6,7 @@ import {
   type ApiErrorInfo,
   type BrandStyleContent,
   type FormaApiClient,
-  type StyleMetadata
+  type StyleMetadata,
 } from "../api.js";
 import { StatePanel } from "../components/Layout.js";
 import { StyleCard } from "../components/StyleCard.js";
@@ -39,7 +39,7 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
         setState({ error: formatApiError(error), status: "error" });
       }
     },
-    [client]
+    [client],
   );
 
   useEffect(() => {
@@ -48,7 +48,7 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
 
   const filteredStyles = useMemo(
     () => (state.status === "ready" ? filterStylesByControls(state.styles, { query }) : []),
-    [query, state]
+    [query, state],
   );
 
   if (state.status === "loading") {
@@ -72,7 +72,12 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
       <div className="max-w-xl">
         <label className="grid gap-1 text-sm font-medium text-zinc-700">
           Search
-          <input className={inputClasses} onChange={(event) => setQuery(event.target.value)} placeholder="Name or description" value={query} />
+          <input
+            className={inputClasses}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Name or description"
+            value={query}
+          />
         </label>
       </div>
 
@@ -100,13 +105,14 @@ export function StyleLibrary({ client = apiClient }: StyleLibraryProps) {
   );
 }
 
-export function filterStylesByControls(
-  styles: StyleMetadata[],
-  controls: { query: string }
-): StyleMetadata[] {
+export function filterStylesByControls(styles: StyleMetadata[], controls: { query: string }): StyleMetadata[] {
   const normalizedQuery = controls.query.trim().toLowerCase();
   return styles.filter((style) => {
-    return normalizedQuery.length === 0 || style.name.toLowerCase().includes(normalizedQuery) || style.description.toLowerCase().includes(normalizedQuery);
+    return (
+      normalizedQuery.length === 0 ||
+      style.name.toLowerCase().includes(normalizedQuery) ||
+      style.description.toLowerCase().includes(normalizedQuery)
+    );
   });
 }
 
@@ -115,13 +121,13 @@ const inputClasses =
 
 async function loadStyleVisualTokens(
   client: Pick<FormaApiClient, "getStyle">,
-  styles: StyleMetadata[]
+  styles: StyleMetadata[],
 ): Promise<Record<string, StyleVisualTokens>> {
   const settled = await Promise.allSettled(
     styles.map(async (style): Promise<[string, StyleVisualTokens]> => {
       const detail: BrandStyleContent = await client.getStyle(style.name);
       return [style.name, extractStyleVisualTokens({ designMd: detail.designMd, tokensCss: detail.tokensCss })];
-    })
+    }),
   );
 
   return Object.fromEntries(
@@ -130,6 +136,6 @@ async function loadStyleVisualTokens(
         return [result.value];
       }
       return [];
-    })
+    }),
   );
 }

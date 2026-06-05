@@ -9,8 +9,8 @@
 // daemon persists the same shape to <dataDir>/mcp-config.json and rewrites
 // per-spawn config files (e.g. project-cwd `.mcp.json` for Claude Code).
 
-export type McpTransport = 'stdio' | 'sse' | 'http';
-export type McpAuthMode = 'none' | 'oauth';
+export type McpTransport = "stdio" | "sse" | "http";
+export type McpAuthMode = "none" | "oauth";
 
 export interface McpServerConfig {
   /** Stable slug (lowercase, alphanumeric + dash/underscore). Doubles as the
@@ -64,14 +64,14 @@ export interface McpTemplateField {
  * category requires a matching entry in `CATEGORY_ORDER` on the web side
  * so the group has a label / display order. */
 export type McpTemplateCategory =
-  | 'image-generation'
-  | 'image-editing'
-  | 'web-capture'
-  | 'design-systems'
-  | 'ui-components'
-  | 'data-viz'
-  | 'publishing'
-  | 'utilities';
+  | "image-generation"
+  | "image-editing"
+  | "web-capture"
+  | "design-systems"
+  | "ui-components"
+  | "data-viz"
+  | "publishing"
+  | "utilities";
 
 /** A built-in MCP server preset surfaced in the Settings UI's "Add MCP
  * server" picker. Selecting one fills in the form with defaults; the
@@ -162,5 +162,5 @@ export interface DisconnectMcpOAuthRequest {
 /** Shape of the `postMessage` payload the OAuth callback page emits to
  * its opener (and broadcasts on the `open-design-mcp-oauth` channel). */
 export type McpOAuthPostMessage =
-  | { type: 'mcp-oauth'; ok: true; serverId: string | null }
-  | { type: 'mcp-oauth'; ok: false; message: string | null };
+  | { type: "mcp-oauth"; ok: true; serverId: string | null }
+  | { type: "mcp-oauth"; ok: false; message: string | null };

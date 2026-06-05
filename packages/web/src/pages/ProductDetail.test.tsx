@@ -8,7 +8,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as productDetail from "./ProductDetail.js";
 import { ProductDetail } from "./ProductDetail.js";
-import { ApiError, type ArchiveRequirementResult, type FormaApiClient, type Product, type ProductBaseline, type RequirementWithDocument, type StyleMetadata } from "../api.js";
+import {
+  ApiError,
+  type ArchiveRequirementResult,
+  type FormaApiClient,
+  type Product,
+  type ProductBaseline,
+  type RequirementWithDocument,
+  type StyleMetadata,
+} from "../api.js";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { localeStorageKey, setLocale as setAppLocale } from "../i18n.js";
 
@@ -19,7 +27,7 @@ const style: StyleMetadata = {
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
   tokens_css_path: "styles/linear/tokens.css",
-  components_html_path: "styles/linear/components.html"
+  components_html_path: "styles/linear/components.html",
 };
 
 const configuredProduct: Product = {
@@ -35,13 +43,13 @@ const configuredProduct: Product = {
 const incompleteProduct: Product = {
   id: "P-123abc",
   name: "Checkout App",
-  description: "Mobile checkout workbench"
+  description: "Mobile checkout workbench",
 };
 
 const baseline: ProductBaseline = {
   product_id: "P-123abc",
   pages: [],
-  navigation: []
+  navigation: [],
 };
 
 const activeRequirement: RequirementWithDocument = {
@@ -53,7 +61,7 @@ const activeRequirement: RequirementWithDocument = {
   updated_at: "2026-05-17T01:00:00.000Z",
   pages: [],
   navigation: [],
-  document_md: "# Checkout update"
+  document_md: "# Checkout update",
 };
 
 const roots: Root[] = [];
@@ -103,16 +111,32 @@ describe("ProductDetailSummaryPanels", () => {
           baseline: {
             product_id: "P-123abc",
             pages: [
-              { id: "home", name: "Home", features: "", copy: [], fields: "", interactions: "", source_requirements: ["R-12345678"] },
-              { id: "checkout", name: "Checkout", features: "", copy: [], fields: "", interactions: "", source_requirements: ["R-12345678"] }
+              {
+                id: "home",
+                name: "Home",
+                features: "",
+                copy: [],
+                fields: "",
+                interactions: "",
+                source_requirements: ["R-12345678"],
+              },
+              {
+                id: "checkout",
+                name: "Checkout",
+                features: "",
+                copy: [],
+                fields: "",
+                interactions: "",
+                source_requirements: ["R-12345678"],
+              },
             ],
-            navigation: [{ from: "home", to: "checkout" }]
+            navigation: [{ from: "home", to: "checkout" }],
           },
-          status: "ready"
+          status: "ready",
         }}
         productId="P-123abc"
         requirementCount={1}
-      />
+      />,
     );
 
     expect(html).toContain("2 pages");
@@ -125,16 +149,16 @@ describe("ProductDetailSummaryPanels", () => {
       productDetail as {
         focusHashTarget?: (
           hash: string,
-          root: { getElementById: (id: string) => Pick<HTMLElement, "focus" | "scrollIntoView"> | null }
+          root: { getElementById: (id: string) => Pick<HTMLElement, "focus" | "scrollIntoView"> | null },
         ) => boolean;
       }
     ).focusHashTarget;
     const target = {
       focus: vi.fn(),
-      scrollIntoView: vi.fn()
+      scrollIntoView: vi.fn(),
     };
     const root = {
-      getElementById: vi.fn(() => target)
+      getElementById: vi.fn(() => target),
     };
 
     expect(focusHashTarget).toBeTypeOf("function");
@@ -169,7 +193,7 @@ describe("ProductDetail", () => {
         <LocaleProvider>
           <LocaleSwitch />
           <ProductDetail client={client} params={{ productId: "P-123abc" }} />
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });
@@ -217,7 +241,10 @@ describe("ProductDetail", () => {
     expect(form.querySelectorAll("textarea")).toHaveLength(0);
 
     await act(async () => {
-      setInputValue(required(form.querySelector<HTMLInputElement>('input[name="requirement_title"]'), "requirement title input"), " Checkout update ");
+      setInputValue(
+        required(form.querySelector<HTMLInputElement>('input[name="requirement_title"]'), "requirement title input"),
+        " Checkout update ",
+      );
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await flushPromises();
     });
@@ -225,7 +252,10 @@ describe("ProductDetail", () => {
     expect(client.createEmptyRequirement).toHaveBeenCalledWith("P-123abc", { title: "Checkout update" });
     expect(client.createRequirement).not.toHaveBeenCalled();
     expect(client.listRequirements).toHaveBeenCalledTimes(2);
-    expect(required(form.querySelector<HTMLInputElement>('input[name="requirement_title"]'), "requirement title input").value).toBe("");
+    expect(
+      required(form.querySelector<HTMLInputElement>('input[name="requirement_title"]'), "requirement title input")
+        .value,
+    ).toBe("");
   });
 
   it("renders a completion form for missing product configuration and submits it", async () => {
@@ -237,19 +267,34 @@ describe("ProductDetail", () => {
       await flushPromises();
     });
 
-    const form = required(container.querySelector<HTMLFormElement>('form[data-product-config-form="true"]'), "product configuration form");
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-product-config-form="true"]'),
+      "product configuration form",
+    );
     expect(client.listStyles).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      setSelectValue(
+        required(form.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"),
+        "web",
+      );
       setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
-      required(form.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
-      required(form.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
+      required(
+        form.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+        "English language input",
+      ).click();
+      required(
+        form.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'),
+        "Simplified Chinese language input",
+      ).click();
       await flushPromises();
     });
 
     await act(async () => {
-      setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="default_language"]'), "default language select"), "zh-CN");
+      setSelectValue(
+        required(form.querySelector<HTMLSelectElement>('select[name="default_language"]'), "default language select"),
+        "zh-CN",
+      );
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await flushPromises();
     });
@@ -258,7 +303,7 @@ describe("ProductDetail", () => {
       platform: "web",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
   });
 
@@ -272,7 +317,10 @@ describe("ProductDetail", () => {
       await flushPromises();
     });
 
-    const form = required(container.querySelector<HTMLFormElement>('form[data-product-config-form="true"]'), "product configuration form");
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-product-config-form="true"]'),
+      "product configuration form",
+    );
 
     await fillProductConfigForm(form);
 
@@ -282,7 +330,9 @@ describe("ProductDetail", () => {
     });
 
     expect(container.textContent).toContain("CONFIG_FAILED - Style configuration failed");
-    expect(required(form.querySelector<HTMLButtonElement>('button[type="submit"]'), "submit button").disabled).toBe(false);
+    expect(required(form.querySelector<HTMLButtonElement>('button[type="submit"]'), "submit button").disabled).toBe(
+      false,
+    );
 
     await act(async () => {
       form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
@@ -294,7 +344,7 @@ describe("ProductDetail", () => {
       platform: "web",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
   });
 
@@ -311,14 +361,23 @@ describe("ProductDetail", () => {
     expect(container.textContent).toContain("Danger zone");
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'), "detail delete action").click();
+      required(
+        container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'),
+        "detail delete action",
+      ).click();
       await flushPromises();
     });
 
-    const input = required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input");
+    const input = required(
+      container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'),
+      "confirmation input",
+    );
     await act(async () => {
       setInputValue(input, "P-123abc");
-      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      required(
+        container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'),
+        "final delete button",
+      ).click();
       await flushPromises();
     });
 
@@ -327,7 +386,7 @@ describe("ProductDetail", () => {
       cleanupPending: true,
       productId: "P-123abc",
       recoveryWarnings: ["Recovered orphaned requirement index"],
-      sessionCleared: true
+      sessionCleared: true,
     });
   });
 
@@ -335,8 +394,20 @@ describe("ProductDetail", () => {
     const client = createClient({ product: configuredProduct, requirements: [activeRequirement] });
     client.archiveRequirement.mockResolvedValueOnce({
       requirement: { ...activeRequirement, status: "archived" },
-      icons: { pages: [{ pageId: "home", artifactId: "A-001", count: 3 }, { pageId: "checkout", artifactId: "A-002", count: 2 }], totalIcons: 5 },
-      vzi: { pages: [{ pageId: "home", artifactId: "A-001", elementCount: 8 }, { pageId: "checkout", artifactId: "A-002", elementCount: 4 }], totalElements: 12 }
+      icons: {
+        pages: [
+          { pageId: "home", artifactId: "A-001", count: 3 },
+          { pageId: "checkout", artifactId: "A-002", count: 2 },
+        ],
+        totalIcons: 5,
+      },
+      vzi: {
+        pages: [
+          { pageId: "home", artifactId: "A-001", elementCount: 8 },
+          { pageId: "checkout", artifactId: "A-002", elementCount: 4 },
+        ],
+        totalElements: 12,
+      },
     });
     const { container, root } = createTestRoot();
 
@@ -359,7 +430,7 @@ describe("ProductDetail", () => {
 
     expect(client.archiveRequirement).toHaveBeenCalledWith("P-123abc", "R-12345678");
     // Archive completion summary panel should appear with icon count and UI element count
-    const resultPanel = container.querySelector('[data-archive-result]');
+    const resultPanel = container.querySelector("[data-archive-result]");
     expect(resultPanel).not.toBeNull();
     expect(resultPanel?.textContent).toContain("5");
     expect(resultPanel?.textContent).toContain("2");
@@ -368,7 +439,9 @@ describe("ProductDetail", () => {
 
   it("shows archive error message in actionError area without changing requirement status", async () => {
     const client = createClient({ product: configuredProduct, requirements: [activeRequirement] });
-    client.archiveRequirement.mockRejectedValueOnce(new ApiError("ARCHIVE_FAILED", "Archive generation failed", {}, 500));
+    client.archiveRequirement.mockRejectedValueOnce(
+      new ApiError("ARCHIVE_FAILED", "Archive generation failed", {}, 500),
+    );
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -428,13 +501,22 @@ describe("ProductDetail", () => {
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'), "detail delete action").click();
+      required(
+        container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'),
+        "detail delete action",
+      ).click();
       await flushPromises();
     });
 
     await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"), "P-123abc");
-      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      setInputValue(
+        required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"),
+        "P-123abc",
+      );
+      required(
+        container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'),
+        "final delete button",
+      ).click();
       await flushPromises();
     });
 
@@ -445,21 +527,23 @@ describe("ProductDetail", () => {
 
 function createClient({ product, requirements }: { product: Product; requirements: RequirementWithDocument[] }) {
   return {
-    archiveRequirement: vi.fn(async (_productId, requirementId): Promise<ArchiveRequirementResult> => ({
-      requirement: requirements.find((requirement) => requirement.id === requirementId) ?? activeRequirement,
-      icons: { pages: [], totalIcons: 0 },
-      vzi: { pages: [], totalElements: 0 }
-    })),
+    archiveRequirement: vi.fn(
+      async (_productId, requirementId): Promise<ArchiveRequirementResult> => ({
+        requirement: requirements.find((requirement) => requirement.id === requirementId) ?? activeRequirement,
+        icons: { pages: [], totalIcons: 0 },
+        vzi: { pages: [], totalElements: 0 },
+      }),
+    ),
     configureProduct: vi.fn(async (_productId, input) => ({
       ...product,
       platform: input.platform,
       brand_style: input.brand_style,
       languages: input.languages,
-      default_language: input.default_language
+      default_language: input.default_language,
     })),
     createEmptyRequirement: vi.fn(async (_productId, input) => ({
       ...activeRequirement,
-      title: input.title
+      title: input.title,
     })),
     createRequirement: vi.fn(async () => activeRequirement),
     deleteProduct: vi.fn(async () => ({
@@ -467,12 +551,12 @@ function createClient({ product, requirements }: { product: Product; requirement
       deleted: true as const,
       session_cleared: true,
       cleanup_pending: true,
-      recovery_warnings: ["Recovered orphaned requirement index"]
+      recovery_warnings: ["Recovered orphaned requirement index"],
     })),
     getBaseline: vi.fn(async () => baseline),
     getProduct: vi.fn(async () => product),
     listRequirements: vi.fn(async () => requirements),
-    listStyles: vi.fn(async () => [style])
+    listStyles: vi.fn(async () => [style]),
   } satisfies Pick<
     FormaApiClient,
     | "archiveRequirement"
@@ -514,15 +598,27 @@ function required<T extends Element>(element: T | null, label: string): T {
 
 async function fillProductConfigForm(form: HTMLFormElement) {
   await act(async () => {
-    setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+    setSelectValue(
+      required(form.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"),
+      "web",
+    );
     setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="style"]'), "style select"), "linear");
-    required(form.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
-    required(form.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
+    required(
+      form.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+      "English language input",
+    ).click();
+    required(
+      form.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'),
+      "Simplified Chinese language input",
+    ).click();
     await flushPromises();
   });
 
   await act(async () => {
-    setSelectValue(required(form.querySelector<HTMLSelectElement>('select[name="default_language"]'), "default language select"), "zh-CN");
+    setSelectValue(
+      required(form.querySelector<HTMLSelectElement>('select[name="default_language"]'), "default language select"),
+      "zh-CN",
+    );
     await flushPromises();
   });
 }

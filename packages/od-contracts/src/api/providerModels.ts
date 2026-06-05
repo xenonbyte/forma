@@ -1,10 +1,7 @@
-import type { ConnectionTestKind, ConnectionTestProtocol } from './connectionTest';
-import type { AgentModelOption } from './registry';
+import type { ConnectionTestKind, ConnectionTestProtocol } from "./connectionTest";
+import type { AgentModelOption } from "./registry";
 
-export type ProviderModelsKind =
-  | ConnectionTestKind
-  | 'no_models'
-  | 'unsupported_protocol';
+export type ProviderModelsKind = ConnectionTestKind | "no_models" | "unsupported_protocol";
 
 export interface ProviderModelsRequest {
   protocol: ConnectionTestProtocol;

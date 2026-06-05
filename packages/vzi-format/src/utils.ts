@@ -4,12 +4,8 @@
  * 任务 3.27-3.28: 实现文件格式验证、令牌提取
  */
 
-import type { IRElement, IRStyles } from '@vzi-core/types';
-import type {
-  ColorToken,
-  FontToken,
-  ColorCategory,
-} from './types';
+import type { IRElement, IRStyles } from "@vzi-core/types";
+import type { ColorToken, FontToken, ColorCategory } from "./types";
 
 /**
  * 验证 VZI 文件格式
@@ -26,7 +22,7 @@ export function validateVZIFile(buffer: Buffer | Uint8Array): {
 
   // 检查最小大小
   if (buf.length < 256) {
-    errors.push('File too small to contain valid VZI header');
+    errors.push("File too small to contain valid VZI header");
     return { valid: false, errors, warnings };
   }
 
@@ -53,11 +49,11 @@ export function validateVZIFile(buffer: Buffer | Uint8Array): {
   const blockCount = buf.readUInt32LE(18);
 
   if (elementCount === 0) {
-    warnings.push('File contains no elements');
+    warnings.push("File contains no elements");
   }
 
   if (blockCount === 0) {
-    errors.push('File contains no data blocks');
+    errors.push("File contains no data blocks");
   }
 
   // 与 VZIDecoder.validateHeaderOffsets 对齐的偏移量边界检查
@@ -70,9 +66,7 @@ export function validateVZIFile(buffer: Buffer | Uint8Array): {
     const metadataLength = buf.readUInt32LE(30);
     const metadataEnd = metadataOffset + metadataLength;
     if (metadataOffset < 256 || metadataEnd > buf.length) {
-      errors.push(
-        `Invalid metadataOffset: ${metadataOffset}+${metadataLength} out of bounds (buffer: ${buf.length})`
-      );
+      errors.push(`Invalid metadataOffset: ${metadataOffset}+${metadataLength} out of bounds (buffer: ${buf.length})`);
     }
 
     const blockIndexOffset = Number(buf.readBigUInt64LE(34));
@@ -80,15 +74,13 @@ export function validateVZIFile(buffer: Buffer | Uint8Array): {
     const blockIndexEnd = blockIndexOffset + blockIndexLength;
     if (blockIndexOffset < 256 || blockIndexEnd > buf.length) {
       errors.push(
-        `Invalid blockIndexOffset: ${blockIndexOffset}+${blockIndexLength} out of bounds (buffer: ${buf.length})`
+        `Invalid blockIndexOffset: ${blockIndexOffset}+${blockIndexLength} out of bounds (buffer: ${buf.length})`,
       );
     }
 
     const dataOffset = Number(buf.readBigUInt64LE(46));
     if (dataOffset < 256 || dataOffset > buf.length) {
-      errors.push(
-        `Invalid dataOffset: ${dataOffset} out of bounds (buffer: ${buf.length})`
-      );
+      errors.push(`Invalid dataOffset: ${dataOffset} out of bounds (buffer: ${buf.length})`);
     }
   }
 
@@ -112,7 +104,7 @@ export function getVZIFileInfo(buffer: Buffer | Uint8Array): {
 } {
   const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
   if (buf.length < 256) {
-    throw new Error('File too small to contain valid VZI header');
+    throw new Error("File too small to contain valid VZI header");
   }
 
   const version = buf.readUInt16LE(4);
@@ -131,7 +123,7 @@ export function getVZIFileInfo(buffer: Buffer | Uint8Array): {
     if (blockIndexOffset > 0 && blockIndexLength > 0) {
       // 简单检查块索引中是否包含 spatial 类型
       const indexBuffer = buf.slice(blockIndexOffset, blockIndexOffset + blockIndexLength);
-      hasSpatialIndex = indexBuffer.includes(Buffer.from('spatial'));
+      hasSpatialIndex = indexBuffer.includes(Buffer.from("spatial"));
     }
   } catch {
     // 忽略解析错误
@@ -180,7 +172,7 @@ export function extractTokens(elements: Map<string, IRElement>): {
       value,
       name: `color_${colorIndex++}`,
       category: categorizeColor(value),
-      usage: Array.from(data.usages).join(', '),
+      usage: Array.from(data.usages).join(", "),
       frequency: data.count,
     });
   }
@@ -192,12 +184,12 @@ export function extractTokens(elements: Map<string, IRElement>): {
   const fonts: FontToken[] = [];
 
   for (const [key, data] of fontMap) {
-    const [fontFamily, fontWeight, fontSize] = key.split('|');
+    const [fontFamily, fontWeight, fontSize] = key.split("|");
     fonts.push({
       fontFamily,
       fontWeight: fontWeight ? parseInt(fontWeight) : undefined,
       fontSize: fontSize ? parseFloat(fontSize) : undefined,
-      usage: Array.from(data.usages).join(', '),
+      usage: Array.from(data.usages).join(", "),
       frequency: data.count,
     });
   }
@@ -212,28 +204,28 @@ export function extractTokens(elements: Map<string, IRElement>): {
  */
 function extractColorsFromStyles(
   styles: IRStyles,
-  colorMap: Map<string, { count: number; usages: Set<string> }>
+  colorMap: Map<string, { count: number; usages: Set<string> }>,
 ): void {
   const colorProperties = [
-    'color',
-    'backgroundColor',
-    'borderColor',
-    'borderTopColor',
-    'borderRightColor',
-    'borderBottomColor',
-    'borderLeftColor',
-    'outlineColor',
-    'textDecorationColor',
-    'columnRuleColor',
-    'accentColor',
-    'caretColor',
-    'fill',
-    'stroke',
+    "color",
+    "backgroundColor",
+    "borderColor",
+    "borderTopColor",
+    "borderRightColor",
+    "borderBottomColor",
+    "borderLeftColor",
+    "outlineColor",
+    "textDecorationColor",
+    "columnRuleColor",
+    "accentColor",
+    "caretColor",
+    "fill",
+    "stroke",
   ];
 
   for (const prop of colorProperties) {
     const value = styles[prop];
-    if (value && typeof value === 'string') {
+    if (value && typeof value === "string") {
       const colorValue = normalizeColor(value);
       if (colorValue) {
         const existing = colorMap.get(colorValue) || { count: 0, usages: new Set() };
@@ -248,16 +240,13 @@ function extractColorsFromStyles(
 /**
  * 从样式中提取字体
  */
-function extractFontsFromStyles(
-  styles: IRStyles,
-  fontMap: Map<string, { count: number; usages: Set<string> }>
-): void {
+function extractFontsFromStyles(styles: IRStyles, fontMap: Map<string, { count: number; usages: Set<string> }>): void {
   const fontFamily = styles.fontFamily;
-  if (fontFamily && typeof fontFamily === 'string') {
-    const key = `${fontFamily}|${styles.fontWeight || ''}|${styles.fontSize || ''}`;
+  if (fontFamily && typeof fontFamily === "string") {
+    const key = `${fontFamily}|${styles.fontWeight || ""}|${styles.fontSize || ""}`;
     const existing = fontMap.get(key) || { count: 0, usages: new Set() };
     existing.count++;
-    existing.usages.add('text');
+    existing.usages.add("text");
     fontMap.set(key, existing);
   }
 }
@@ -267,12 +256,12 @@ function extractFontsFromStyles(
  */
 function normalizeColor(value: string): string | null {
   // 跳过 CSS 变量和关键字
-  if (value.startsWith('var(') || value === 'inherit' || value === 'initial' || value === 'transparent') {
+  if (value.startsWith("var(") || value === "inherit" || value === "initial" || value === "transparent") {
     return null;
   }
 
   // 标准化十六进制颜色
-  if (value.startsWith('#')) {
+  if (value.startsWith("#")) {
     const hex = value.slice(1);
     if (hex.length === 3) {
       // 扩展 #RGB 为 #RRGGBB
@@ -283,13 +272,13 @@ function normalizeColor(value: string): string | null {
   }
 
   // 标准化 rgb/rgba
-  if (value.startsWith('rgb')) {
-    return value.replace(/\s+/g, '').toLowerCase();
+  if (value.startsWith("rgb")) {
+    return value.replace(/\s+/g, "").toLowerCase();
   }
 
   // 标准化 hsl/hsla
-  if (value.startsWith('hsl')) {
-    return value.replace(/\s+/g, '').toLowerCase();
+  if (value.startsWith("hsl")) {
+    return value.replace(/\s+/g, "").toLowerCase();
   }
 
   // 命名颜色保持原样
@@ -303,40 +292,37 @@ function categorizeColor(value: string): ColorCategory {
   // 简单的分类逻辑
   const lowerValue = value.toLowerCase();
 
-  if (lowerValue.includes('background') || lowerValue.includes('bg')) {
-    return 'background';
+  if (lowerValue.includes("background") || lowerValue.includes("bg")) {
+    return "background";
   }
 
-  if (lowerValue.includes('text') || lowerValue.includes('font')) {
-    return 'text';
+  if (lowerValue.includes("text") || lowerValue.includes("font")) {
+    return "text";
   }
 
-  if (lowerValue.includes('border') || lowerValue.includes('stroke')) {
-    return 'border';
+  if (lowerValue.includes("border") || lowerValue.includes("stroke")) {
+    return "border";
   }
 
-  if (lowerValue.includes('primary') || lowerValue.includes('brand')) {
-    return 'primary';
+  if (lowerValue.includes("primary") || lowerValue.includes("brand")) {
+    return "primary";
   }
 
-  if (lowerValue.includes('secondary')) {
-    return 'secondary';
+  if (lowerValue.includes("secondary")) {
+    return "secondary";
   }
 
-  if (lowerValue.includes('accent') || lowerValue.includes('highlight')) {
-    return 'accent';
+  if (lowerValue.includes("accent") || lowerValue.includes("highlight")) {
+    return "accent";
   }
 
-  return 'other';
+  return "other";
 }
 
 /**
  * 合并相似的令牌
  */
-export function mergeSimilarTokens(
-  colors: ColorToken[],
-  threshold: number = 10
-): ColorToken[] {
+export function mergeSimilarTokens(colors: ColorToken[], threshold: number = 10): ColorToken[] {
   const merged: ColorToken[] = [];
   const used = new Set<number>();
 
@@ -353,7 +339,7 @@ export function mergeSimilarTokens(
       const other = colors[j];
       if (colorDistance(token.value, other.value) < threshold) {
         similar.push(other);
-        relatedTokens.push(other.name || '');
+        relatedTokens.push(other.name || "");
         used.add(j);
       }
     }
@@ -382,11 +368,7 @@ function colorDistance(color1: string, color2: string): number {
   }
 
   // 欧几里得距离
-  return Math.sqrt(
-    Math.pow(rgb1.r - rgb2.r, 2) +
-    Math.pow(rgb1.g - rgb2.g, 2) +
-    Math.pow(rgb1.b - rgb2.b, 2)
-  );
+  return Math.sqrt((rgb1.r - rgb2.r) ** 2 + (rgb1.g - rgb2.g) ** 2 + (rgb1.b - rgb2.b) ** 2);
 }
 
 /**
@@ -394,7 +376,7 @@ function colorDistance(color1: string, color2: string): number {
  */
 function parseColor(value: string): { r: number; g: number; b: number } | null {
   // 十六进制
-  if (value.startsWith('#')) {
+  if (value.startsWith("#")) {
     const hex = value.slice(1);
     if (hex.length === 6) {
       return {

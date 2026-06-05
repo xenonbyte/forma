@@ -8,7 +8,7 @@ import {
   readYamlUnknown,
   writeYamlAtomic,
   type AgentInstallPlatform,
-  type InstallServiceOptions
+  type InstallServiceOptions,
 } from "@xenonbyte/forma-core";
 import { runCli, type CliEnv } from "../src/index.js";
 
@@ -81,7 +81,7 @@ describe("runCli", () => {
     const env = await testEnv();
     await seedLegacyRuntime(env.state.formaHome);
     const baselinePath = join(env.state.formaHome, "data", "P-123abc", "baseline", "baseline.yaml");
-    const baseline = await readYamlUnknown(baselinePath) as { pages: Array<Record<string, unknown>> };
+    const baseline = (await readYamlUnknown(baselinePath)) as { pages: Array<Record<string, unknown>> };
     delete baseline.pages[0]!.semantic_contract;
     delete baseline.pages[0]!.semantic_contract_coverage;
     await writeYamlAtomic(baselinePath, baseline);
@@ -91,9 +91,13 @@ describe("runCli", () => {
     expect(result.exitCode).toBe(0);
     const reportPath = result.stdout.match(/report: (.+)$/m)?.[1];
     expect(reportPath).toBeTruthy();
-    const report = await readYamlUnknown(join(env.state.formaHome, reportPath!)) as {
+    const report = (await readYamlUnknown(join(env.state.formaHome, reportPath!))) as {
       generated_baseline_contract_count: number;
-      candidates: Array<{ candidate: { pages?: Array<Record<string, unknown>> }; path: string; validation_status: string }>;
+      candidates: Array<{
+        candidate: { pages?: Array<Record<string, unknown>> };
+        path: string;
+        validation_status: string;
+      }>;
     };
     const baselineCandidate = report.candidates.find((candidate) => candidate.path.endsWith("/baseline/baseline.yaml"));
     expect(report.generated_baseline_contract_count).toBe(1);
@@ -103,21 +107,26 @@ describe("runCli", () => {
       fields: [],
       actions: [],
       component_keys: [],
-      navigation: []
+      navigation: [],
     });
   });
 
   it("runs v6-schema-cutover after dry-run and writes committed marker", async () => {
     const env = await testEnv();
     await seedLegacyRuntime(env.state.formaHome, { productPatch: { components_initialized: true } });
-    await expect(runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env)).resolves.toMatchObject({ exitCode: 0 });
+    await expect(runCli(["schema-normalization-dry-run", "--home", env.state.formaHome], env)).resolves.toMatchObject({
+      exitCode: 0,
+    });
 
     const result = await runCli(["v6-schema-cutover", "--home", env.state.formaHome], env);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain("normalization-backups/");
     await expect(access(join(env.state.formaHome, ".v6-schema-cutover-committed"))).resolves.toBeUndefined();
-    const product = await readYamlUnknown(join(env.state.formaHome, "data", "P-123abc", "product.yaml")) as Record<string, unknown>;
+    const product = (await readYamlUnknown(join(env.state.formaHome, "data", "P-123abc", "product.yaml"))) as Record<
+      string,
+      unknown
+    >;
     expect(product).not.toHaveProperty("components_initialized");
   });
 
@@ -128,7 +137,10 @@ describe("runCli", () => {
     const reportPath = dryRun.stdout.match(/report: (.+)$/m)?.[1];
     expect(reportPath).toBeTruthy();
 
-    const result = await runCli(["v6-schema-cutover", "--home", env.state.formaHome, "--report", join(env.state.formaHome, reportPath!)], env);
+    const result = await runCli(
+      ["v6-schema-cutover", "--home", env.state.formaHome, "--report", join(env.state.formaHome, reportPath!)],
+      env,
+    );
 
     expect(result.exitCode).toBe(0);
     await expect(access(join(env.state.formaHome, ".v6-schema-cutover-committed"))).resolves.toBeUndefined();
@@ -141,7 +153,16 @@ describe("runCli", () => {
     const reportPath = dryRun.stdout.match(/report: (.+)$/m)?.[1];
     expect(reportPath).toBeTruthy();
 
-    const result = await runCli(["v6-schema-cutover", "--home", env.state.formaHome, "--preflight-report", join(env.state.formaHome, reportPath!)], env);
+    const result = await runCli(
+      [
+        "v6-schema-cutover",
+        "--home",
+        env.state.formaHome,
+        "--preflight-report",
+        join(env.state.formaHome, reportPath!),
+      ],
+      env,
+    );
 
     expect(result.exitCode).toBe(0);
     await expect(access(join(env.state.formaHome, ".v6-schema-cutover-committed"))).resolves.toBeUndefined();
@@ -156,8 +177,14 @@ describe("runCli", () => {
     const selected = `normalization-backups/${(await readdir(backupDir))[0]!}`;
 
     const outside = await mkdtemp();
-    const rejected = await runCli(["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", outside], env);
-    const recovered = await runCli(["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", selected], env);
+    const rejected = await runCli(
+      ["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", outside],
+      env,
+    );
+    const recovered = await runCli(
+      ["recover-v6-normalization-journal", "--home", env.state.formaHome, "--backup-dir", selected],
+      env,
+    );
 
     expect(rejected.exitCode).toBe(1);
     expect(rejected.stderr).toContain("backup-dir");
@@ -173,16 +200,22 @@ describe("runCli", () => {
     const backupRoot = join(env.state.formaHome, "normalization-backups");
     const backupDir = join(backupRoot, (await readdir(backupRoot))[0]!);
 
-    const missingConfirm = await runCli(["restore-v6-normalization-backup", "--home", env.state.formaHome, "--backup-dir", backupDir], env);
-    const restored = await runCli([
-      "restore-v6-normalization-backup",
-      "--home",
-      env.state.formaHome,
-      "--backup-dir",
-      backupDir,
-      "--confirm",
-      "restore_v6_backup"
-    ], env);
+    const missingConfirm = await runCli(
+      ["restore-v6-normalization-backup", "--home", env.state.formaHome, "--backup-dir", backupDir],
+      env,
+    );
+    const restored = await runCli(
+      [
+        "restore-v6-normalization-backup",
+        "--home",
+        env.state.formaHome,
+        "--backup-dir",
+        backupDir,
+        "--confirm",
+        "restore_v6_backup",
+      ],
+      env,
+    );
 
     expect(missingConfirm.exitCode).toBe(1);
     expect(missingConfirm.stderr).toContain("restore_v6_backup");
@@ -204,19 +237,19 @@ describe("runCli", () => {
               home: env.state.formaHome,
               token: options?.token,
               started_at: "2026-05-17T12:00:00.000Z",
-              log: options?.logFile
-            })
+              log: options?.logFile,
+            }),
           ),
-          "utf8"
+          "utf8",
         );
         return { pid: 4242, message: "server started" };
-      }
+      },
     });
 
     const result = await runCli(["serve", "start"], env);
 
     expect(env.state.startedServers).toEqual([
-      expect.objectContaining({ detached: true, token: "test-token", logFile: join(env.state.formaHome, "serve.log") })
+      expect.objectContaining({ detached: true, token: "test-token", logFile: join(env.state.formaHome, "serve.log") }),
     ]);
     await expect(readFile(join(env.state.formaHome, "serve.pid"), "utf8").then(JSON.parse)).resolves.toMatchObject({
       marker: "xenonbyte.forma.serve",
@@ -224,16 +257,18 @@ describe("runCli", () => {
       home: env.state.formaHome,
       token: "test-token",
       started_at: "2026-05-17T12:00:00.000Z",
-      log: join(env.state.formaHome, "serve.log")
+      log: join(env.state.formaHome, "serve.log"),
     });
-    await expect(readFile(join(env.state.formaHome, "serve.state.json"), "utf8").then(JSON.parse)).resolves.toMatchObject({
+    await expect(
+      readFile(join(env.state.formaHome, "serve.state.json"), "utf8").then(JSON.parse),
+    ).resolves.toMatchObject({
       marker: "xenonbyte.forma.serve",
       pid: 4242,
       home: env.state.formaHome,
-      token: "test-token"
+      token: "test-token",
     });
     await expect(readFile(join(env.state.formaHome, "serve.log"), "utf8")).resolves.toContain(
-      "2026-05-17T12:00:00.000Z forma serve start pid=4242"
+      "2026-05-17T12:00:00.000Z forma serve start pid=4242",
     );
     expect(result.stdout).toContain("server started");
   });
@@ -253,14 +288,14 @@ describe("runCli", () => {
               home: env.state.formaHome,
               token: "spawn-token",
               started_at: "2026-05-17T00:00:00.000Z",
-              log: join(env.state.formaHome, "serve.log")
-            })
+              log: join(env.state.formaHome, "serve.log"),
+            }),
           ),
-          "utf8"
+          "utf8",
         );
         return { pid: 2222 };
       },
-      useDefaultStartServer: true
+      useDefaultStartServer: true,
     });
 
     const first = await runCli(["serve", "start"], env);
@@ -273,12 +308,12 @@ describe("runCli", () => {
       formaHome: env.state.formaHome,
       logFile: join(env.state.formaHome, "serve.log"),
       runtimeFile: join(env.state.formaHome, "serve.state.json"),
-      token: "spawn-token"
+      token: "spawn-token",
     });
     await expect(readFile(join(env.state.formaHome, "serve.pid"), "utf8").then(JSON.parse)).resolves.toMatchObject({
       pid: 2222,
       home: env.state.formaHome,
-      token: "spawn-token"
+      token: "spawn-token",
     });
     expect(second.exitCode).toBe(1);
     expect(second.stderr).toContain("Forma server is already running");
@@ -291,7 +326,7 @@ describe("runCli", () => {
       startWebServer: async (options) => {
         webStarts.push(options);
       },
-      useDefaultStartServer: true
+      useDefaultStartServer: true,
     });
 
     const result = await runCli(
@@ -303,9 +338,9 @@ describe("runCli", () => {
         "--serve-home",
         env.state.formaHome,
         "--serve-started-at",
-        "2026-05-17T00:00:00.000Z"
+        "2026-05-17T00:00:00.000Z",
       ],
-      env
+      env,
     );
 
     expect(result.exitCode).toBe(0);
@@ -313,8 +348,8 @@ describe("runCli", () => {
       {
         home: env.state.formaHome,
         bundledStylesDir: expect.stringMatching(/packages\/cli\/dist\/assets\/styles$/),
-        webAssetsDir: expect.stringMatching(/packages\/cli\/dist\/assets\/web$/)
-      }
+        webAssetsDir: expect.stringMatching(/packages\/cli\/dist\/assets\/web$/),
+      },
     ]);
   });
 
@@ -330,9 +365,9 @@ describe("runCli", () => {
         "--serve-home",
         join(env.state.home, "other-forma-home"),
         "--serve-started-at",
-        "2026-05-17T00:00:00.000Z"
+        "2026-05-17T00:00:00.000Z",
       ],
-      env
+      env,
     );
 
     expect(result.exitCode).toBe(1);
@@ -344,7 +379,7 @@ describe("runCli", () => {
       spawnDetachedServer: async () => {
         throw new Error("listen failed");
       },
-      useDefaultStartServer: true
+      useDefaultStartServer: true,
     });
 
     const result = await runCli(["serve", "start"], env);
@@ -358,7 +393,7 @@ describe("runCli", () => {
   it("serve start fails if detached spawn returns before runtime ready state exists", async () => {
     const env = await testEnv({
       spawnDetachedServer: async () => ({ pid: 3333 }),
-      useDefaultStartServer: true
+      useDefaultStartServer: true,
     });
 
     const result = await runCli(["serve", "start"], env);
@@ -371,11 +406,15 @@ describe("runCli", () => {
   it("serve stop kills only a valid Forma metadata pid and removes it", async () => {
     const env = await testEnv({ isPidAlive: (pid) => pid === 9876 });
     await mkdir(env.state.formaHome, { recursive: true });
-    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 9876 })), "utf8");
+    await writeFile(
+      join(env.state.formaHome, "serve.pid"),
+      JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 9876 })),
+      "utf8",
+    );
     await writeFile(
       join(env.state.formaHome, "serve.state.json"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 9876 })),
-      "utf8"
+      "utf8",
     );
 
     const result = await runCli(["serve", "stop"], env);
@@ -392,14 +431,18 @@ describe("runCli", () => {
       killProcess: async (pid) => {
         env.state.killed.push(pid);
         throw Object.assign(new Error("permission denied"), { code: "EPERM" });
-      }
+      },
     });
     await mkdir(env.state.formaHome, { recursive: true });
-    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 9876 })), "utf8");
+    await writeFile(
+      join(env.state.formaHome, "serve.pid"),
+      JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 9876 })),
+      "utf8",
+    );
     await writeFile(
       join(env.state.formaHome, "serve.state.json"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 9876 })),
-      "utf8"
+      "utf8",
     );
 
     const result = await runCli(["serve", "stop"], env);
@@ -414,7 +457,7 @@ describe("runCli", () => {
   it("does not report or kill a naked pid file", async () => {
     const env = await testEnv({
       useDefaultServerStatus: true,
-      isPidAlive: () => true
+      isPidAlive: () => true,
     });
     await mkdir(env.state.formaHome, { recursive: true });
     await writeFile(join(env.state.formaHome, "serve.pid"), `${process.pid}\n`, "utf8");
@@ -433,10 +476,14 @@ describe("runCli", () => {
   it("does not report or kill a valid-looking pidfile without runtime state", async () => {
     const env = await testEnv({
       useDefaultServerStatus: true,
-      isPidAlive: () => true
+      isPidAlive: () => true,
     });
     await mkdir(env.state.formaHome, { recursive: true });
-    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 7654 })), "utf8");
+    await writeFile(
+      join(env.state.formaHome, "serve.pid"),
+      JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 7654 })),
+      "utf8",
+    );
 
     const status = await runCli(["status"], env);
     const stop = await runCli(["serve", "stop"], env);
@@ -452,18 +499,18 @@ describe("runCli", () => {
   it("does not report or kill when pidfile and runtime state tokens differ", async () => {
     const env = await testEnv({
       useDefaultServerStatus: true,
-      isPidAlive: () => true
+      isPidAlive: () => true,
     });
     await mkdir(env.state.formaHome, { recursive: true });
     await writeFile(
       join(env.state.formaHome, "serve.pid"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 4567, token: "pid-token" })),
-      "utf8"
+      "utf8",
     );
     await writeFile(
       join(env.state.formaHome, "serve.state.json"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 4567, token: "runtime-token" })),
-      "utf8"
+      "utf8",
     );
 
     const status = await runCli(["status"], env);
@@ -480,14 +527,18 @@ describe("runCli", () => {
     const env = await testEnv({
       useDefaultServerStatus: true,
       isPidAlive: () => true,
-      verifyServerProcess: async () => false
+      verifyServerProcess: async () => false,
     });
     await mkdir(env.state.formaHome, { recursive: true });
-    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 6789 })), "utf8");
+    await writeFile(
+      join(env.state.formaHome, "serve.pid"),
+      JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 6789 })),
+      "utf8",
+    );
     await writeFile(
       join(env.state.formaHome, "serve.state.json"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 6789 })),
-      "utf8"
+      "utf8",
     );
 
     const status = await runCli(["status"], env);
@@ -511,15 +562,15 @@ describe("runCli", () => {
         formaServerCommandLine({
           token: "other-token",
           home: otherHome,
-          startedAt
-        })
+          startedAt,
+        }),
     });
     const metadata = serveMetadata({
       home: env.state.formaHome,
       pid: 5432,
       token: "home-a-token",
       started_at: startedAt,
-      log: join(env.state.formaHome, "serve.log")
+      log: join(env.state.formaHome, "serve.log"),
     });
     await mkdir(env.state.formaHome, { recursive: true });
     await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(metadata), "utf8");
@@ -539,13 +590,13 @@ describe("runCli", () => {
     const env = await testEnv({
       useDefaultServerStatus: true,
       isPidAlive: (pid) => pid === 2468,
-      verifyServerProcess: async () => true
+      verifyServerProcess: async () => true,
     });
     await mkdir(env.state.formaHome, { recursive: true });
     await writeFile(
       join(env.state.formaHome, "serve.state.json"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 2468 })),
-      "utf8"
+      "utf8",
     );
 
     const status = await runCli(["status"], env);
@@ -561,13 +612,13 @@ describe("runCli", () => {
     const env = await testEnv({
       useDefaultServerStatus: true,
       isPidAlive: () => true,
-      verifyServerProcess: async () => false
+      verifyServerProcess: async () => false,
     });
     await mkdir(env.state.formaHome, { recursive: true });
     await writeFile(
       join(env.state.formaHome, "serve.state.json"),
       JSON.stringify(serveMetadata({ home: env.state.formaHome, pid: 1357 })),
-      "utf8"
+      "utf8",
     );
 
     const status = await runCli(["status"], env);
@@ -596,7 +647,7 @@ describe("runCli", () => {
 
     expect(env.state.installServiceOptions[0]).toMatchObject({
       formaHome: env.state.formaHome,
-      templatesDir: expect.stringMatching(/packages\/cli\/dist\/assets\/agent\/templates$/)
+      templatesDir: expect.stringMatching(/packages\/cli\/dist\/assets\/agent\/templates$/),
     });
   });
 
@@ -611,7 +662,7 @@ describe("runCli", () => {
     await expect(runCli(["install", "--platform", "claude"], env)).resolves.toMatchObject({ exitCode: 0 });
 
     expect(env.state.installServiceOptions[0]).toMatchObject({
-      mcpCommand: { command: "forma", args: ["mcp"] }
+      mcpCommand: { command: "forma", args: ["mcp"] },
     });
   });
 
@@ -624,8 +675,8 @@ describe("runCli", () => {
     expect(env.state.installServiceOptions[0]).toMatchObject({
       mcpCommand: {
         command: process.execPath,
-        args: [expect.stringMatching(/packages\/cli\/bin\/forma\.js$/), "mcp"]
-      }
+        args: [expect.stringMatching(/packages\/cli\/bin\/forma\.js$/), "mcp"],
+      },
     });
   });
 
@@ -642,7 +693,7 @@ describe("runCli", () => {
   it("prints status with data directory, installed platforms, and server state", async () => {
     const env = await testEnv({
       installedPlatforms: async () => ["claude", "gemini"],
-      isServerRunning: async () => true
+      isServerRunning: async () => true,
     });
 
     const result = await runCli(["status"], env);
@@ -657,7 +708,7 @@ describe("runCli", () => {
   it("prints status when one platform manifest is damaged", async () => {
     const env = await testEnv({
       useDefaultInstalledPlatforms: true,
-      useDefaultServerStatus: true
+      useDefaultServerStatus: true,
     });
     const manifestsDir = join(env.state.formaHome, "manifests");
     await mkdir(manifestsDir, { recursive: true });
@@ -671,9 +722,9 @@ describe("runCli", () => {
         "backups: []",
         "config_paths: []",
         "installed_at: '2026-05-17T00:00:00.000Z'",
-        ""
+        "",
       ].join("\n"),
-      "utf8"
+      "utf8",
     );
 
     const result = await runCli(["status"], env);
@@ -706,7 +757,7 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
     killed: [],
     installed: [],
     uninstalled: [],
-    installServiceOptions: []
+    installServiceOptions: [],
   };
   states.push(state);
 
@@ -717,7 +768,9 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
     now: overrides.now ?? (() => new Date("2026-05-17T00:00:00.000Z")),
     createServeToken: overrides.createServeToken,
     isPidAlive: overrides.isPidAlive,
-    verifyServerProcess: overrides.useDefaultVerifyServerProcess ? undefined : overrides.verifyServerProcess ?? (async () => true),
+    verifyServerProcess: overrides.useDefaultVerifyServerProcess
+      ? undefined
+      : (overrides.verifyServerProcess ?? (async () => true)),
     readProcessCommand: overrides.readProcessCommand,
     spawnDetachedServer: overrides.spawnDetachedServer,
     startWebServer: overrides.startWebServer,
@@ -747,18 +800,18 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
           },
           uninstallPlatforms: async (platforms) => {
             state.uninstalled.push([...platforms]);
-          }
+          },
         };
       }),
     installedPlatforms: overrides.useDefaultInstalledPlatforms
       ? undefined
-      : overrides.installedPlatforms ??
+      : (overrides.installedPlatforms ??
         (async () => {
           return state.installed.at(-1) ?? [];
-        }),
+        })),
     isServerRunning: overrides.useDefaultServerStatus
       ? undefined
-      : overrides.isServerRunning ??
+      : (overrides.isServerRunning ??
         (async () => {
           try {
             await access(join(formaHome, "serve.pid"));
@@ -766,12 +819,12 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
           } catch {
             return false;
           }
-        }),
+        })),
     killProcess:
       overrides.killProcess ??
       (async (pid) => {
         state.killed.push(pid);
-      })
+      }),
   };
 
   return env;
@@ -779,17 +832,17 @@ async function testEnv(overrides: TestEnvOverrides = {}): Promise<CliEnv & { sta
 
 async function seedLegacyRuntime(
   home: string,
-  options: { productPatch?: Record<string, unknown>; pagePatch?: Record<string, unknown> } = {}
+  options: { productPatch?: Record<string, unknown>; pagePatch?: Record<string, unknown> } = {},
 ): Promise<void> {
   const createdAt = "2026-05-21T00:00:00.000Z";
   await writeYamlAtomic(join(home, "data", "products.yaml"), {
-    products: [{ id: "P-123abc", name: "Shop", description: "Shop app" }]
+    products: [{ id: "P-123abc", name: "Shop", description: "Shop app" }],
   });
   await writeYamlAtomic(join(home, "data", "P-123abc", "product.yaml"), {
     id: "P-123abc",
     name: "Shop",
     description: "Shop app",
-    ...options.productPatch
+    ...options.productPatch,
   });
   await writeYamlAtomic(join(home, "data", "P-123abc", "R-11111111", "requirement.yaml"), {
     id: "R-11111111",
@@ -808,10 +861,10 @@ async function seedLegacyRuntime(
         copy: [{ context: "cta", text: "Sign in" }],
         semantic_contract: minimalSemanticContract(),
         semantic_contract_coverage: "explicit",
-        ...options.pagePatch
-      }
+        ...options.pagePatch,
+      },
     ],
-    navigation: []
+    navigation: [],
   });
   await writeYamlAtomic(join(home, "data", "P-123abc", "baseline", "baseline.yaml"), {
     product_id: "P-123abc",
@@ -825,10 +878,10 @@ async function seedLegacyRuntime(
         interactions: "free-text interaction notes",
         semantic_contract: minimalSemanticContract(),
         semantic_contract_coverage: "explicit",
-        source_requirements: ["R-11111111"]
-      }
+        source_requirements: ["R-11111111"],
+      },
     ],
-    navigation: []
+    navigation: [],
   });
 }
 
@@ -838,11 +891,13 @@ function minimalSemanticContract() {
     allowed_copy: ["Sign in"],
     component_keys: [],
     fields: [],
-    navigation: []
+    navigation: [],
   };
 }
 
-function serveMetadata(overrides: Partial<{ home: string; pid: number; token: string; started_at: string; log: string }> = {}) {
+function serveMetadata(
+  overrides: Partial<{ home: string; pid: number; token: string; started_at: string; log: string }> = {},
+) {
   return {
     schema_version: 1,
     marker: "xenonbyte.forma.serve",
@@ -850,7 +905,7 @@ function serveMetadata(overrides: Partial<{ home: string; pid: number; token: st
     pid: overrides.pid ?? 1234,
     token: overrides.token ?? "test-token",
     started_at: overrides.started_at ?? "2026-05-17T00:00:00.000Z",
-    log: overrides.log ?? "/tmp/forma-serve.log"
+    log: overrides.log ?? "/tmp/forma-serve.log",
   };
 }
 
@@ -870,6 +925,6 @@ function formaServerCommandLine(options: { token: string; home: string; startedA
     "--serve-home",
     options.home,
     "--serve-started-at",
-    options.startedAt
+    options.startedAt,
   ].join(" ");
 }

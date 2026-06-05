@@ -4,9 +4,11 @@ import { describe, expect, it } from "vitest";
 import { formatGenericErrorForLog, sanitizeGenericErrorForLog } from "../../../scripts/smoke-pencil-error.js";
 
 async function readRootPackageJson() {
-  return readPackageJson("package.json") as Promise<PackageJson & {
-    scripts?: Record<string, string>;
-  }>;
+  return readPackageJson("package.json") as Promise<
+    PackageJson & {
+      scripts?: Record<string, string>;
+    }
+  >;
 }
 
 interface PackageJson {
@@ -68,9 +70,9 @@ describe("smoke-pencil script", () => {
           "apiKey=key-123",
           "refresh-token=refresh-123",
           "cookie=session-cookie",
-          "email=person@example.com"
-        ].join(" ")
-      )
+          "email=person@example.com",
+        ].join(" "),
+      ),
     );
 
     expect(sanitized).toContain("session_id=<redacted>");
@@ -81,13 +83,25 @@ describe("smoke-pencil script", () => {
     expect(sanitized).toContain("apiKey=<redacted>");
     expect(sanitized).toContain("refresh-token=<redacted>");
     expect(sanitized).toContain("cookie=<redacted>");
-    for (const leaked of ["sess-123", "acct-42", "user-99", "tok-abc", "plain", "key-123", "refresh-123", "session-cookie", "person@example.com"]) {
+    for (const leaked of [
+      "sess-123",
+      "acct-42",
+      "user-99",
+      "tok-abc",
+      "plain",
+      "key-123",
+      "refresh-123",
+      "session-cookie",
+      "person@example.com",
+    ]) {
       expect(sanitized).not.toContain(leaked);
     }
   });
 
   it("keeps command failure output to exit code only", () => {
-    const formatted = formatGenericErrorForLog(Object.assign(new Error("token=plain session_id=sess-123"), { exitCode: 17 }));
+    const formatted = formatGenericErrorForLog(
+      Object.assign(new Error("token=plain session_id=sess-123"), { exitCode: 17 }),
+    );
 
     expect(formatted).toBe("Unexpected error: command failed (exitCode=17)");
   });
@@ -102,7 +116,7 @@ describe("npm publish package configuration", () => {
     { file: "packages/core/package.json", directory: "packages/core", files: ["dist"] },
     { file: "packages/mcp/package.json", directory: "packages/mcp", files: ["dist"] },
     { file: "packages/server/package.json", directory: "packages/server", files: ["dist"] },
-    { file: "packages/cli/package.json", directory: "packages/cli", files: ["bin", "dist"] }
+    { file: "packages/cli/package.json", directory: "packages/cli", files: ["bin", "dist"] },
   ] as const;
 
   it("keeps publishable packages explicit and public", async () => {
@@ -118,7 +132,7 @@ describe("npm publish package configuration", () => {
       expect(packageJson.repository).toEqual({
         type: "git",
         url: repositoryUrl,
-        directory: entry.directory
+        directory: entry.directory,
       });
       expect(packageJson.homepage).toBe(homepage);
       expect(packageJson.bugs?.url).toBe(bugsUrl);
@@ -128,11 +142,11 @@ describe("npm publish package configuration", () => {
   it("keeps private workspace-only packages unpublished", async () => {
     await expect(readPackageJson("packages/agent/package.json")).resolves.toMatchObject({
       name: "@xenonbyte/forma-agent",
-      private: true
+      private: true,
     });
     await expect(readPackageJson("packages/web/package.json")).resolves.toMatchObject({
       name: "@xenonbyte/forma-web",
-      private: true
+      private: true,
     });
   });
 
@@ -158,10 +172,10 @@ describe("npm publish package configuration", () => {
       expect(publishScript).toContain(`--filter ${packageName} publish`);
     }
     expect(publishScript.indexOf("@vzi-core/transformer publish")).toBeLessThan(
-      publishScript.indexOf("@xenonbyte/forma-core publish")
+      publishScript.indexOf("@xenonbyte/forma-core publish"),
     );
     expect(publishScript.indexOf("@vzi-core/transformer publish")).toBeLessThan(
-      publishScript.indexOf("@xenonbyte/forma-mcp publish")
+      publishScript.indexOf("@xenonbyte/forma-mcp publish"),
     );
     expect(publishScript).not.toContain("@xenonbyte/forma-agent publish");
     expect(cliPackage.dependencies).not.toHaveProperty("@xenonbyte/forma-agent");

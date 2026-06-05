@@ -1,9 +1,5 @@
-import {
-  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
-  type InputField,
-  type PluginManifest,
-} from '@xenonbyte/od-contracts';
-import { parseFrontmatter, type FrontmatterObject, type FrontmatterValue } from '../parsers/frontmatter.js';
+import { OPEN_DESIGN_PLUGIN_SPEC_VERSION, type InputField, type PluginManifest } from "@xenonbyte/od-contracts";
+import { parseFrontmatter, type FrontmatterObject, type FrontmatterValue } from "../parsers/frontmatter.js";
 
 // Adapter from a portable SKILL.md (with optional `od:` frontmatter, see
 // docs/skills-protocol.md) to a synthesized PluginManifest. Spec invariant
@@ -31,51 +27,49 @@ export interface AgentSkillAdapterResult {
   bodyMarkdown: string;
 }
 
-const ROLE_PARAMETER_KEYS = ['od.parameters'];
+const ROLE_PARAMETER_KEYS = ["od.parameters"];
 
-export function adaptAgentSkill(
-  rawSkillMd: string,
-  opts: AgentSkillAdapterOptions,
-): AgentSkillAdapterResult {
+export function adaptAgentSkill(rawSkillMd: string, opts: AgentSkillAdapterOptions): AgentSkillAdapterResult {
   const { data: frontmatter, body } = parseFrontmatter(rawSkillMd);
-  const od = isObject(frontmatter['od']) ? frontmatter['od'] : {};
+  const od = isObject(frontmatter["od"]) ? frontmatter["od"] : {};
   const warnings: string[] = [];
 
-  const name = stringOr(frontmatter['name'], opts.folderId).trim() || opts.folderId;
+  const name = stringOr(frontmatter["name"], opts.folderId).trim() || opts.folderId;
   const title = humanizeName(name);
-  const description = stringOr(frontmatter['description'], '');
-  const version = stringOr(frontmatter['version'], '0.0.0');
-  const compatPath = opts.compatPath ?? './SKILL.md';
+  const description = stringOr(frontmatter["description"], "");
+  const version = stringOr(frontmatter["version"], "0.0.0");
+  const compatPath = opts.compatPath ?? "./SKILL.md";
 
-  const designSystemFm = isObject(od['design_system']) ? od['design_system'] : null;
+  const designSystemFm = isObject(od["design_system"]) ? od["design_system"] : null;
   const designSystem = designSystemFm
     ? {
-        ref: stringOr(designSystemFm['ref'], '') || undefined,
-        primary: typeof designSystemFm['primary'] === 'boolean' ? (designSystemFm['primary'] as boolean) : undefined,
+        ref: stringOr(designSystemFm["ref"], "") || undefined,
+        primary: typeof designSystemFm["primary"] === "boolean" ? (designSystemFm["primary"] as boolean) : undefined,
       }
     : undefined;
 
-  const craftFm = isObject(od['craft']) ? od['craft'] : null;
-  const craftRequires = craftFm && Array.isArray(craftFm['requires'])
-    ? (craftFm['requires'] as FrontmatterValue[]).filter((v): v is string => typeof v === 'string')
-    : undefined;
+  const craftFm = isObject(od["craft"]) ? od["craft"] : null;
+  const craftRequires =
+    craftFm && Array.isArray(craftFm["requires"])
+      ? (craftFm["requires"] as FrontmatterValue[]).filter((v): v is string => typeof v === "string")
+      : undefined;
 
-  const inputs: InputField[] | undefined = mapInputs(od['inputs'], warnings);
+  const inputs: InputField[] | undefined = mapInputs(od["inputs"], warnings);
 
   // od.parameters are deferred to Phase 4 per spec §5.4; record a warning so
   // doctor surfaces them instead of silently dropping.
   for (const key of ROLE_PARAMETER_KEYS) {
-    const [namespace, sub] = key.split('.');
-    if (namespace === 'od' && sub && Array.isArray(od[sub])) {
+    const [namespace, sub] = key.split(".");
+    if (namespace === "od" && sub && Array.isArray(od[sub])) {
       warnings.push(`SKILL.md ${key} is preserved as adapter metadata; v1 manifest does not expose live sliders`);
     }
   }
 
-  const previewFm = isObject(od['preview']) ? od['preview'] : null;
+  const previewFm = isObject(od["preview"]) ? od["preview"] : null;
   const preview = previewFm
     ? {
-        type: stringOr(previewFm['type'], '') || undefined,
-        entry: stringOr(previewFm['entry'], '') || undefined,
+        type: stringOr(previewFm["type"], "") || undefined,
+        entry: stringOr(previewFm["entry"], "") || undefined,
       }
     : undefined;
 
@@ -87,11 +81,15 @@ export function adaptAgentSkill(
     description: description || undefined,
     compat: { agentSkills: [{ path: compatPath }] },
     od: {
-      kind: 'skill',
-      taskKind: stringOr(od['taskKind'], 'new-generation') as PluginManifest['od'] extends infer T ? T extends { taskKind?: infer K } ? K : never : never,
-      mode: stringOr(od['mode'], '') || undefined,
-      platform: stringOr(od['platform'], '') || undefined,
-      scenario: stringOr(od['scenario'], '') || undefined,
+      kind: "skill",
+      taskKind: stringOr(od["taskKind"], "new-generation") as PluginManifest["od"] extends infer T
+        ? T extends { taskKind?: infer K }
+          ? K
+          : never
+        : never,
+      mode: stringOr(od["mode"], "") || undefined,
+      platform: stringOr(od["platform"], "") || undefined,
+      scenario: stringOr(od["scenario"], "") || undefined,
       preview,
       useCase: { query: examplePromptFromFrontmatter(frontmatter, body) },
       context: {
@@ -106,21 +104,21 @@ export function adaptAgentSkill(
 }
 
 function isObject(value: FrontmatterValue | undefined): value is FrontmatterObject {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringOr(value: FrontmatterValue | undefined, fallback: string): string {
-  return typeof value === 'string' ? value : fallback;
+  return typeof value === "string" ? value : fallback;
 }
 
 function humanizeName(name: string): string {
   return name
-    .replace(/[-_]+/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
     .trim()
-    .split(' ')
+    .split(" ")
     .map((part) => (part.length === 0 ? part : part.charAt(0).toUpperCase() + part.slice(1)))
-    .join(' ');
+    .join(" ");
 }
 
 function mapInputs(value: FrontmatterValue | undefined, warnings: string[]): InputField[] | undefined {
@@ -128,30 +126,31 @@ function mapInputs(value: FrontmatterValue | undefined, warnings: string[]): Inp
   const out: InputField[] = [];
   for (const raw of value) {
     if (!isObject(raw)) continue;
-    const name = stringOr(raw['name'], '').trim();
+    const name = stringOr(raw["name"], "").trim();
     if (!name) continue;
-    const t = stringOr(raw['type'], 'string');
-    let mappedType: InputField['type'];
-    if (t === 'integer') mappedType = 'number';
-    else if (t === 'enum') mappedType = 'select';
-    else if (t === 'upload') mappedType = 'file';
-    else if (t === 'string' || t === 'text' || t === 'select' || t === 'number' || t === 'boolean' || t === 'file') mappedType = t;
+    const t = stringOr(raw["type"], "string");
+    let mappedType: InputField["type"];
+    if (t === "integer") mappedType = "number";
+    else if (t === "enum") mappedType = "select";
+    else if (t === "upload") mappedType = "file";
+    else if (t === "string" || t === "text" || t === "select" || t === "number" || t === "boolean" || t === "file")
+      mappedType = t;
     else {
       warnings.push(`SKILL.md inputs[${name}].type='${t}' is not in the v1 input vocabulary; falling back to 'string'`);
-      mappedType = 'string';
+      mappedType = "string";
     }
-    const optionsSrc = raw['options'] ?? raw['values'];
+    const optionsSrc = raw["options"] ?? raw["values"];
     const options = Array.isArray(optionsSrc)
-      ? optionsSrc.filter((v): v is string => typeof v === 'string')
+      ? optionsSrc.filter((v): v is string => typeof v === "string")
       : undefined;
     const field: InputField = {
       name,
-      label: stringOr(raw['label'], '') || undefined,
+      label: stringOr(raw["label"], "") || undefined,
       type: mappedType,
-      required: typeof raw['required'] === 'boolean' ? (raw['required'] as boolean) : undefined,
+      required: typeof raw["required"] === "boolean" ? (raw["required"] as boolean) : undefined,
       options: options && options.length > 0 ? options : undefined,
-      placeholder: stringOr(raw['placeholder'], '') || undefined,
-      default: raw['default'] ?? undefined,
+      placeholder: stringOr(raw["placeholder"], "") || undefined,
+      default: raw["default"] ?? undefined,
     };
     out.push(field);
   }
@@ -159,15 +158,19 @@ function mapInputs(value: FrontmatterValue | undefined, warnings: string[]): Inp
 }
 
 function examplePromptFromFrontmatter(fm: FrontmatterObject, body: string): string {
-  const od = isObject(fm['od']) ? fm['od'] : {};
-  const direct = stringOr(od['example_prompt'], '').trim();
+  const od = isObject(fm["od"]) ? fm["od"] : {};
+  const direct = stringOr(od["example_prompt"], "").trim();
   if (direct) return direct;
-  const desc = stringOr(fm['description'], '').trim();
+  const desc = stringOr(fm["description"], "").trim();
   if (desc) {
-    const firstLine = desc.split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? '';
+    const firstLine =
+      desc
+        .split(/\r?\n/)
+        .find((line) => line.trim().length > 0)
+        ?.trim() ?? "";
     if (firstLine) return firstLine;
   }
   // Last resort — use the first non-frontmatter heading from the body.
   const heading = /^#\s+(.+)$/m.exec(body);
-  return heading?.[1]?.trim() ?? '';
+  return heading?.[1]?.trim() ?? "";
 }

@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { preprocessTailwindCSS } from '../src/tailwind-preprocessor.js';
+import { describe, expect, it } from "vitest";
+import { preprocessTailwindCSS } from "../src/tailwind-preprocessor.js";
 
-describe('preprocessTailwindCSS', () => {
-  it('parses pretty-printed nested tailwind.config objects before compiling utilities', async () => {
+describe("preprocessTailwindCSS", () => {
+  it("parses pretty-printed nested tailwind.config objects before compiling utilities", async () => {
     const result = await preprocessTailwindCSS(`<!DOCTYPE html>
 <html>
 <head>
@@ -25,8 +25,8 @@ describe('preprocessTailwindCSS', () => {
 </html>`);
 
     expect(result.hasTailwind).toBe(true);
-    expect(result.generatedCSS).toContain('.bg-brand');
-    expect(result.generatedCSS).toContain('rgb(18 52 86');
-    expect(result.html).not.toContain('cdn.tailwindcss.com');
+    expect(result.generatedCSS).toContain(".bg-brand");
+    expect(result.generatedCSS).toContain("rgb(18 52 86");
+    expect(result.html).not.toContain("cdn.tailwindcss.com");
   });
 });

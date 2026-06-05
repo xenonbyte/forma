@@ -1,5 +1,5 @@
-import type { IRStyles } from '@vzi-core/types';
-import type { GlobalVarsExtraction, McpDesignTokens } from './types';
+import type { IRStyles } from "@vzi-core/types";
+import type { GlobalVarsExtraction, McpDesignTokens } from "./types";
 
 interface ColorInfo {
   value: string;
@@ -42,23 +42,20 @@ function isValidColor(value: string | undefined | null): value is string {
   if (!value) return false;
   const normalized = value.trim().toLowerCase();
   if (!COLOR_REGEX.test(normalized)) return false;
-  return normalized !== 'transparent' && normalized !== 'inherit' && normalized !== 'initial';
+  return normalized !== "transparent" && normalized !== "inherit" && normalized !== "initial";
 }
 
 function normalizeColor(color: string): string {
   return color.toLowerCase().trim();
 }
 
-function generateColorName(
-  category: McpDesignTokens['colors'][number]['category'],
-  index: number
-): string {
+function generateColorName(category: McpDesignTokens["colors"][number]["category"], index: number): string {
   return `${category}-${index}`;
 }
 
 function parseRgb(color: string): { r: number; g: number; b: number } | undefined {
   const normalized = color.trim().toLowerCase();
-  if (normalized.startsWith('#')) {
+  if (normalized.startsWith("#")) {
     const hex = normalized.slice(1);
     if (hex.length === 3) {
       return {
@@ -80,7 +77,7 @@ function parseRgb(color: string): { r: number; g: number; b: number } | undefine
   const rgb = normalized.match(/^rgba?\(([^)]+)\)$/);
   if (rgb) {
     const parts = rgb[1]
-      .split(',')
+      .split(",")
       .map((part) => Number(part.trim()))
       .filter((value) => Number.isFinite(value));
     if (parts.length >= 3) {
@@ -125,56 +122,53 @@ function isNeutralColor(rgb: { r: number; g: number; b: number }, hsl: { h: numb
   return hsl.s < 0.12 || channelSpread < 14;
 }
 
-function categorizeByUsage(
-  color: string,
-  usages: Set<string>
-): McpDesignTokens['colors'][number]['category'] {
+function categorizeByUsage(color: string, usages: Set<string>): McpDesignTokens["colors"][number]["category"] {
   const usageList = Array.from(usages);
-  const hasBackground = usageList.some((usage) => usage.toLowerCase().includes('background'));
-  const hasText = usageList.some((usage) => usage === 'color' || usage.toLowerCase().includes('text'));
-  const hasBorder = usageList.some((usage) => usage.toLowerCase().includes('border'));
+  const hasBackground = usageList.some((usage) => usage.toLowerCase().includes("background"));
+  const hasText = usageList.some((usage) => usage === "color" || usage.toLowerCase().includes("text"));
+  const hasBorder = usageList.some((usage) => usage.toLowerCase().includes("border"));
 
   const rgb = parseRgb(color);
   if (!rgb) {
-    if (hasBackground) return 'background';
-    if (hasText) return 'text';
-    if (hasBorder) return 'border';
-    return 'other';
+    if (hasBackground) return "background";
+    if (hasText) return "text";
+    if (hasBorder) return "border";
+    return "other";
   }
 
   const hsl = rgbToHsl(rgb);
   const neutral = isNeutralColor(rgb, hsl);
 
   if (neutral) {
-    if (hasBackground && !hasBorder) return 'background';
-    if (hasText && !hasBackground && !hasBorder) return 'text';
-    if (hasBorder && !hasBackground) return 'border';
-    if (hasBackground && hasBorder) return 'background';
-    if (hsl.l > 0.82) return 'background';
-    if (hsl.l < 0.38) return 'text';
-    if (hasBorder) return 'border';
-    return 'background';
+    if (hasBackground && !hasBorder) return "background";
+    if (hasText && !hasBackground && !hasBorder) return "text";
+    if (hasBorder && !hasBackground) return "border";
+    if (hasBackground && hasBorder) return "background";
+    if (hsl.l > 0.82) return "background";
+    if (hsl.l < 0.38) return "text";
+    if (hasBorder) return "border";
+    return "background";
   }
 
-  if (hsl.h >= 0 && hsl.h < 22) return 'danger';
-  if (hsl.h >= 22 && hsl.h < 58) return 'warning';
-  if (hsl.h >= 58 && hsl.h < 88) return 'warning';
-  if (hsl.h >= 88 && hsl.h < 165) return 'success';
-  if (hsl.h >= 165 && hsl.h < 245) return 'primary';
-  if (hsl.h >= 245 && hsl.h < 320) return 'secondary';
-  if (hsl.h >= 320) return 'accent';
+  if (hsl.h >= 0 && hsl.h < 22) return "danger";
+  if (hsl.h >= 22 && hsl.h < 58) return "warning";
+  if (hsl.h >= 58 && hsl.h < 88) return "warning";
+  if (hsl.h >= 88 && hsl.h < 165) return "success";
+  if (hsl.h >= 165 && hsl.h < 245) return "primary";
+  if (hsl.h >= 245 && hsl.h < 320) return "secondary";
+  if (hsl.h >= 320) return "accent";
 
-  if (hasBackground) return 'background';
-  if (hasText) return 'text';
-  if (hasBorder) return 'border';
-  return 'accent';
+  if (hasBackground) return "background";
+  if (hasText) return "text";
+  if (hasBorder) return "border";
+  return "accent";
 }
 
 function parseNumericStyleValue(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
-  if (typeof value !== 'string') return undefined;
+  if (typeof value !== "string") return undefined;
   const match = value.trim().match(/^-?\d*\.?\d+/);
   if (!match) return undefined;
   const numeric = Number(match[0]);
@@ -182,34 +176,30 @@ function parseNumericStyleValue(value: unknown): number | undefined {
 }
 
 function extractNumericValues(value: string | number): number[] {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return value > 0 ? [value] : [];
   }
 
   const matches = value.match(/-?\d*\.?\d+/g);
   if (!matches) return [];
-  return matches
-    .map((item) => Number(item))
-    .filter((item) => Number.isFinite(item) && item > 0);
+  return matches.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0);
 }
 
-function extractColors(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): McpDesignTokens['colors'] {
+function extractColors(elements: Iterable<{ id: string; styles: IRStyles }>): McpDesignTokens["colors"] {
   const colorMap = new Map<string, ColorInfo>();
 
   for (const element of elements) {
     const styles = element.styles;
     const colorProperties = [
-      'color',
-      'backgroundColor',
-      'borderColor',
-      'borderTopColor',
-      'borderRightColor',
-      'borderBottomColor',
-      'borderLeftColor',
-      'outlineColor',
-      'textDecorationColor',
+      "color",
+      "backgroundColor",
+      "borderColor",
+      "borderTopColor",
+      "borderRightColor",
+      "borderBottomColor",
+      "borderLeftColor",
+      "outlineColor",
+      "textDecorationColor",
     ];
 
     for (const prop of colorProperties) {
@@ -231,8 +221,8 @@ function extractColors(
     }
   }
 
-  const colors: McpDesignTokens['colors'] = [];
-  const categoryIndex = new Map<McpDesignTokens['colors'][number]['category'], number>();
+  const colors: McpDesignTokens["colors"] = [];
+  const categoryIndex = new Map<McpDesignTokens["colors"][number]["category"], number>();
   const sortedColors = Array.from(colorMap.values()).sort((a, b) => b.count - a.count);
 
   for (const info of sortedColors) {
@@ -250,9 +240,7 @@ function extractColors(
   return colors;
 }
 
-function extractFonts(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): McpDesignTokens['fonts'] {
+function extractFonts(elements: Iterable<{ id: string; styles: IRStyles }>): McpDesignTokens["fonts"] {
   const fontMap = new Map<string, FontInfo>();
 
   for (const element of elements) {
@@ -293,32 +281,30 @@ function extractFonts(
     }));
 }
 
-function extractSpacing(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): McpDesignTokens['spacing'] {
+function extractSpacing(elements: Iterable<{ id: string; styles: IRStyles }>): McpDesignTokens["spacing"] {
   const spacingMap = new Map<string, SpacingInfo>();
 
   for (const element of elements) {
     const styles = element.styles;
     const spacingProperties = [
-      'margin',
-      'marginTop',
-      'marginRight',
-      'marginBottom',
-      'marginLeft',
-      'padding',
-      'paddingTop',
-      'paddingRight',
-      'paddingBottom',
-      'paddingLeft',
-      'gap',
-      'rowGap',
-      'columnGap',
+      "margin",
+      "marginTop",
+      "marginRight",
+      "marginBottom",
+      "marginLeft",
+      "padding",
+      "paddingTop",
+      "paddingRight",
+      "paddingBottom",
+      "paddingLeft",
+      "gap",
+      "rowGap",
+      "columnGap",
     ];
 
     for (const prop of spacingProperties) {
       const value = styles[prop];
-      if (value === undefined || value === null || value === '') continue;
+      if (value === undefined || value === null || value === "") continue;
 
       for (const numeric of extractNumericValues(value as string | number)) {
         const key = `${numeric}px`;
@@ -341,35 +327,33 @@ function extractSpacing(
 }
 
 function normalizeTokenValue(value: string | number): string | null {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     if (!Number.isFinite(value)) return null;
     return `${value}px`;
   }
-  if (typeof value !== 'string') return null;
+  if (typeof value !== "string") return null;
   const normalized = value.trim();
   if (!normalized) return null;
   return normalized;
 }
 
-function extractRadii(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): NonNullable<McpDesignTokens['radii']> {
+function extractRadii(elements: Iterable<{ id: string; styles: IRStyles }>): NonNullable<McpDesignTokens["radii"]> {
   const radiusMap = new Map<string, RadiusInfo>();
   const radiusProps = [
-    'borderRadius',
-    'borderTopLeftRadius',
-    'borderTopRightRadius',
-    'borderBottomLeftRadius',
-    'borderBottomRightRadius',
+    "borderRadius",
+    "borderTopLeftRadius",
+    "borderTopRightRadius",
+    "borderBottomLeftRadius",
+    "borderBottomRightRadius",
   ];
 
   for (const element of elements) {
     const styles = element.styles;
     for (const prop of radiusProps) {
       const raw = styles[prop];
-      if (raw === undefined || raw === null || raw === '') continue;
+      if (raw === undefined || raw === null || raw === "") continue;
       const value = normalizeTokenValue(raw as string | number);
-      if (!value || value === '0' || value === '0px') continue;
+      if (!value || value === "0" || value === "0px") continue;
       const existing = radiusMap.get(value);
       if (existing) {
         existing.count++;
@@ -387,15 +371,13 @@ function extractRadii(
     }));
 }
 
-function extractShadows(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): NonNullable<McpDesignTokens['shadows']> {
+function extractShadows(elements: Iterable<{ id: string; styles: IRStyles }>): NonNullable<McpDesignTokens["shadows"]> {
   const shadowMap = new Map<string, ShadowInfo>();
   for (const element of elements) {
     const shadow = element.styles.boxShadow;
-    if (typeof shadow !== 'string') continue;
+    if (typeof shadow !== "string") continue;
     const normalized = shadow.trim();
-    if (!normalized || normalized.toLowerCase() === 'none') continue;
+    if (!normalized || normalized.toLowerCase() === "none") continue;
     const existing = shadowMap.get(normalized);
     if (existing) {
       existing.count++;
@@ -413,16 +395,16 @@ function extractShadows(
 }
 
 function extractGradients(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): NonNullable<McpDesignTokens['gradients']> {
+  elements: Iterable<{ id: string; styles: IRStyles }>,
+): NonNullable<McpDesignTokens["gradients"]> {
   const gradientMap = new Map<string, GradientInfo>();
   const gradientPattern = /gradient\(/i;
 
   for (const element of elements) {
     const bg = element.styles.backgroundImage;
-    if (typeof bg !== 'string') continue;
+    if (typeof bg !== "string") continue;
     const normalized = bg.trim();
-    if (!normalized || normalized.toLowerCase() === 'none') continue;
+    if (!normalized || normalized.toLowerCase() === "none") continue;
     if (!gradientPattern.test(normalized)) continue;
     const existing = gradientMap.get(normalized);
     if (existing) {
@@ -441,7 +423,7 @@ function extractGradients(
 }
 
 function generateCssVariables(tokens: McpDesignTokens): string {
-  const lines: string[] = [':root {'];
+  const lines: string[] = [":root {"];
 
   for (const color of tokens.colors) {
     lines.push(`  --${color.name}: ${color.value};`);
@@ -449,7 +431,7 @@ function generateCssVariables(tokens: McpDesignTokens): string {
 
   let fontIndex = 0;
   for (const font of tokens.fonts) {
-    const varName = fontIndex === 0 ? 'font-primary' : `font-${fontIndex}`;
+    const varName = fontIndex === 0 ? "font-primary" : `font-${fontIndex}`;
     lines.push(`  --${varName}: ${font.fontFamily};`);
     if (font.fontSize) lines.push(`  --${varName}-size: ${font.fontSize}px;`);
     if (font.fontWeight) lines.push(`  --${varName}-weight: ${font.fontWeight};`);
@@ -468,13 +450,11 @@ function generateCssVariables(tokens: McpDesignTokens): string {
     radiusIndex++;
   }
 
-  lines.push('}');
-  return lines.join('\n');
+  lines.push("}");
+  return lines.join("\n");
 }
 
-export function extractGlobalVars(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): GlobalVarsExtraction {
+export function extractGlobalVars(elements: Iterable<{ id: string; styles: IRStyles }>): GlobalVarsExtraction {
   const elementsArray = Array.from(elements);
   const tokens: McpDesignTokens = {
     colors: extractColors(elementsArray),
@@ -492,20 +472,14 @@ export function extractGlobalVars(
   };
 }
 
-export function extractColorVars(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): McpDesignTokens['colors'] {
+export function extractColorVars(elements: Iterable<{ id: string; styles: IRStyles }>): McpDesignTokens["colors"] {
   return extractColors(elements);
 }
 
-export function extractFontVars(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): McpDesignTokens['fonts'] {
+export function extractFontVars(elements: Iterable<{ id: string; styles: IRStyles }>): McpDesignTokens["fonts"] {
   return extractFonts(elements);
 }
 
-export function extractSpacingVars(
-  elements: Iterable<{ id: string; styles: IRStyles }>
-): McpDesignTokens['spacing'] {
+export function extractSpacingVars(elements: Iterable<{ id: string; styles: IRStyles }>): McpDesignTokens["spacing"] {
   return extractSpacing(elements);
 }

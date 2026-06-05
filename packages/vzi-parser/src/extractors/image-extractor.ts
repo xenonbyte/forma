@@ -4,7 +4,7 @@
  * 在浏览器上下文中提取图片元素的元数据
  */
 
-import type { ImageData } from '@vzi-core/types';
+import type { ImageData } from "@vzi-core/types";
 
 /**
  * 提取图片数据
@@ -12,7 +12,7 @@ import type { ImageData } from '@vzi-core/types';
  * 注意：此函数设计为在浏览器上下文中执行（Puppeteer page.evaluate）
  */
 export function extractImageData(imgElement: HTMLImageElement): ImageData | undefined {
-  if (!imgElement || imgElement.tagName.toLowerCase() !== 'img') {
+  if (!imgElement || imgElement.tagName.toLowerCase() !== "img") {
     return undefined;
   }
 
@@ -24,26 +24,26 @@ export function extractImageData(imgElement: HTMLImageElement): ImageData | unde
   }
 
   // 检测是否为 base64
-  const isBase64 = src.startsWith('data:');
+  const isBase64 = src.startsWith("data:");
 
   // 从 src 推断格式
-  let format: ImageData['format'];
+  let format: ImageData["format"];
   if (isBase64) {
     // 从 data URL 提取格式
     const match = src.match(/^data:image\/(png|jpg|jpeg|svg\+xml|webp|gif|bmp)/i);
     if (match) {
       const formatStr = match[1].toLowerCase();
-      if (formatStr === 'svg+xml') {
-        format = 'svg';
+      if (formatStr === "svg+xml") {
+        format = "svg";
       } else {
-        format = formatStr as ImageData['format'];
+        format = formatStr as ImageData["format"];
       }
     }
   } else {
     // 从 URL 提取格式
     const match = src.match(/\.(png|jpg|jpeg|svg|webp|gif|bmp)(\?|#|$)/i);
     if (match) {
-      format = match[1].toLowerCase() as ImageData['format'];
+      format = match[1].toLowerCase() as ImageData["format"];
     }
   }
 

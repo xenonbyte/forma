@@ -5,26 +5,26 @@
  * Preview rendering uses headless browser — may need dangerouslyDisableSandbox.
  */
 
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { randomBytes } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import sharp from 'sharp';
-import { createFormaStore } from '../src/store.js';
-import { saveDesignArtifact, type SaveDesignInput } from '../src/design-save.js';
-import { FormaError } from '../src/errors.js';
-import { getFormaPaths } from '../src/paths.js';
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomBytes } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import sharp from "sharp";
+import { createFormaStore } from "../src/store.js";
+import { saveDesignArtifact, type SaveDesignInput } from "../src/design-save.js";
+import { FormaError } from "../src/errors.js";
+import { getFormaPaths } from "../src/paths.js";
 
 /** Required for createFormaStore to not throw SchemaNormalizationStartupError */
 async function markNormalizationCommitted(home: string): Promise<void> {
-  await writeFile(join(home, '.v6-schema-cutover-committed'), 'committed\n', 'utf8');
+  await writeFile(join(home, ".v6-schema-cutover-committed"), "committed\n", "utf8");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeHome(): string {
-  return join(tmpdir(), `forma-design-save-test-${randomBytes(6).toString('hex')}`);
+  return join(tmpdir(), `forma-design-save-test-${randomBytes(6).toString("hex")}`);
 }
 
 /**
@@ -37,7 +37,7 @@ async function makeDataPng(): Promise<string> {
   })
     .png()
     .toBuffer();
-  return `data:image/png;base64,${buf.toString('base64')}`;
+  return `data:image/png;base64,${buf.toString("base64")}`;
 }
 
 /**
@@ -47,7 +47,7 @@ async function makeDataPng(): Promise<string> {
  */
 function makeScriptSvgDataUrl(): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="10" height="10"/></svg>`;
-  return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
 // ─── Test state ───────────────────────────────────────────────────────────────
@@ -65,7 +65,7 @@ beforeEach(async () => {
   await markNormalizationCommitted(home);
   store = await createFormaStore({ home });
   // Create a product to write artifacts under
-  const product = await store.products.createProduct({ name: 'Test Product', description: 'desc' });
+  const product = await store.products.createProduct({ name: "Test Product", description: "desc" });
   productId = product.id;
 }, 30000);
 
@@ -80,13 +80,13 @@ async function makeCleanInput(overrides: Partial<SaveDesignInput> = {}): Promise
   const html = `<!doctype html><html><body style="margin:0"><img src="${dataPng}" alt="test"></body></html>`;
   return {
     productId,
-    kind: 'design-page' as const,
+    kind: "design-page" as const,
     html,
-    title: 'Test Design Page',
+    title: "Test Design Page",
     forma: {
-      requirementId: 'req-001',
-      pageId: 'page-001',
-      variant: 'default',
+      requirementId: "req-001",
+      pageId: "page-001",
+      variant: "default",
     },
     ...overrides,
   };
@@ -104,7 +104,7 @@ function makeDeps() {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('saveDesignArtifact', () => {
+describe("saveDesignArtifact", () => {
   it('clean HTML + data:image/png → returns {artifactId, version:1, previewStatus:"ready"}, bundle on disk has index.html + assets/* + preview/1x.png + 2x.png, forma fields correct, design pointer created', async () => {
     const input = await makeCleanInput();
     const deps = makeDeps();
@@ -114,105 +114,98 @@ describe('saveDesignArtifact', () => {
     // Result shape
     expect(result.artifactId).toBeTruthy();
     expect(result.version).toBe(1);
-    expect(result.previewStatus).toBe('ready');
+    expect(result.previewStatus).toBe("ready");
 
     // Bundle on disk: version dir has index.html
     const { productsRoot } = deps;
-    const versionDir = join(
-      productsRoot,
-      productId,
-      'od-project',
-      'artifacts',
-      result.artifactId,
-      'v1',
-    );
-    const indexHtml = await readFile(join(versionDir, 'index.html'), 'utf8');
+    const versionDir = join(productsRoot, productId, "od-project", "artifacts", result.artifactId, "v1");
+    const indexHtml = await readFile(join(versionDir, "index.html"), "utf8");
     expect(indexHtml).toBeTruthy();
     // index.html should not have data: URLs anymore (localized)
-    expect(indexHtml).not.toContain('data:image/png;base64,');
+    expect(indexHtml).not.toContain("data:image/png;base64,");
 
     // assets/ dir has at least one file
-    const assetsDir = join(versionDir, 'assets');
-    const { readdir } = await import('node:fs/promises');
+    const assetsDir = join(versionDir, "assets");
+    const { readdir } = await import("node:fs/promises");
     const assetFiles = await readdir(assetsDir);
     expect(assetFiles.length).toBeGreaterThan(0);
 
     // preview pngs exist
-    expect(await readFile(join(versionDir, 'preview', '1x.png'))).toBeTruthy();
-    expect(await readFile(join(versionDir, 'preview', '2x.png'))).toBeTruthy();
+    expect(await readFile(join(versionDir, "preview", "1x.png"))).toBeTruthy();
+    expect(await readFile(join(versionDir, "preview", "2x.png"))).toBeTruthy();
 
     // manifest has correct forma fields
-    const manifestJson = await readFile(join(versionDir, 'manifest.json'), 'utf8');
+    const manifestJson = await readFile(join(versionDir, "manifest.json"), "utf8");
     const manifest = JSON.parse(manifestJson);
-    expect(manifest.kind).toBe('design-page');
-    expect(manifest.forma.variant).toBe('default');
-    expect(manifest.forma.requirementId).toBe('req-001');
-    expect(manifest.forma.preview.status).toBe('ready');
+    expect(manifest.kind).toBe("design-page");
+    expect(manifest.forma.variant).toBe("default");
+    expect(manifest.forma.requirementId).toBe("req-001");
+    expect(manifest.forma.preview.status).toBe("ready");
     expect(Array.isArray(manifest.forma.assets)).toBe(true);
     expect(manifest.forma.assets.length).toBeGreaterThan(0);
 
     // Design pointer was created
-    const pointer = await store.products.getDesignPointer(productId, 'req-001', 'page-001', 'default');
+    const pointer = await store.products.getDesignPointer(productId, "req-001", "page-001", "default");
     expect(pointer).toBeTruthy();
     expect(pointer!.artifactId).toBe(result.artifactId);
     expect(pointer!.version).toBe(1);
-    expect(pointer!.designStatus).toBe('active');
+    expect(pointer!.designStatus).toBe("active");
   }, 90000);
 
-  it('HTML with <script> → throws ARTIFACT_NOT_STATIC', async () => {
+  it("HTML with <script> → throws ARTIFACT_NOT_STATIC", async () => {
     const deps = makeDeps();
     const input: SaveDesignInput = {
       productId,
-      kind: 'design-page' as const,
-      html: '<!doctype html><html><body><script>alert(1)</script></body></html>',
-      title: 'Bad Design',
-      forma: { requirementId: 'req-002', pageId: 'page-002', variant: 'default' },
+      kind: "design-page" as const,
+      html: "<!doctype html><html><body><script>alert(1)</script></body></html>",
+      title: "Bad Design",
+      forma: { requirementId: "req-002", pageId: "page-002", variant: "default" },
     };
 
     await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy((err: unknown) => {
       if (!(err instanceof FormaError)) return false;
-      return err.code === 'ARTIFACT_NOT_STATIC';
+      return err.code === "ARTIFACT_NOT_STATIC";
     });
   }, 30000);
 
-  it('HTML with remote <img src=https://...> → throws ARTIFACT_REMOTE_RESOURCE', async () => {
+  it("HTML with remote <img src=https://...> → throws ARTIFACT_REMOTE_RESOURCE", async () => {
     const deps = makeDeps();
     const input: SaveDesignInput = {
       productId,
-      kind: 'design-page' as const,
+      kind: "design-page" as const,
       html: '<!doctype html><html><body><img src="https://example.com/img.png"></body></html>',
-      title: 'Remote Design',
-      forma: { requirementId: 'req-003', pageId: 'page-003', variant: 'default' },
+      title: "Remote Design",
+      forma: { requirementId: "req-003", pageId: "page-003", variant: "default" },
     };
 
     await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy((err: unknown) => {
       if (!(err instanceof FormaError)) return false;
-      return err.code === 'ARTIFACT_REMOTE_RESOURCE';
+      return err.code === "ARTIFACT_REMOTE_RESOURCE";
     });
   }, 30000);
 
-  it('data:SVG containing <script> inlined in HTML → localize makes it a .svg file → saveDesignArtifact throws ARTIFACT_NOT_STATIC', async () => {
+  it("data:SVG containing <script> inlined in HTML → localize makes it a .svg file → saveDesignArtifact throws ARTIFACT_NOT_STATIC", async () => {
     const deps = makeDeps();
     const svgDataUrl = makeScriptSvgDataUrl();
     const html = `<!doctype html><html><body><img src="${svgDataUrl}"></body></html>`;
     const input: SaveDesignInput = {
       productId,
-      kind: 'design-page' as const,
+      kind: "design-page" as const,
       html,
-      title: 'SVG Script Design',
-      forma: { requirementId: 'req-004', pageId: 'page-004', variant: 'default' },
+      title: "SVG Script Design",
+      forma: { requirementId: "req-004", pageId: "page-004", variant: "default" },
     };
 
     await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy((err: unknown) => {
       if (!(err instanceof FormaError)) return false;
-      return err.code === 'ARTIFACT_NOT_STATIC';
+      return err.code === "ARTIFACT_NOT_STATIC";
     });
   }, 30000);
 
-  it('same artifactId saved twice → second result is version 2; pointer now points to v2', async () => {
+  it("same artifactId saved twice → second result is version 2; pointer now points to v2", async () => {
     const deps = makeDeps();
     const input1 = await makeCleanInput({
-      forma: { requirementId: 'req-005', pageId: 'page-005', variant: 'default' },
+      forma: { requirementId: "req-005", pageId: "page-005", variant: "default" },
     });
 
     const result1 = await saveDesignArtifact(deps, input1);
@@ -220,7 +213,7 @@ describe('saveDesignArtifact', () => {
 
     const input2 = await makeCleanInput({
       artifactId: result1.artifactId,
-      forma: { requirementId: 'req-005', pageId: 'page-005', variant: 'default' },
+      forma: { requirementId: "req-005", pageId: "page-005", variant: "default" },
     });
 
     const result2 = await saveDesignArtifact(deps, input2);
@@ -228,21 +221,21 @@ describe('saveDesignArtifact', () => {
     expect(result2.version).toBe(2);
 
     // Pointer now points to v2
-    const pointer = await store.products.getDesignPointer(productId, 'req-005', 'page-005', 'default');
+    const pointer = await store.products.getDesignPointer(productId, "req-005", "page-005", "default");
     expect(pointer!.version).toBe(2);
     expect(pointer!.artifactId).toBe(result1.artifactId);
   }, 120000);
 
-  it('component-library kind → no design pointer created; form has no requirementId/pageId/variant in pointer', async () => {
+  it("component-library kind → no design pointer created; form has no requirementId/pageId/variant in pointer", async () => {
     const dataPng = await makeDataPng();
     const html = `<!doctype html><html><body><img src="${dataPng}" alt="comp"></body></html>`;
     const deps = makeDeps();
     const input: SaveDesignInput = {
       productId,
-      kind: 'component-library' as const,
+      kind: "component-library" as const,
       html,
-      title: 'My Components',
-      forma: { brandStyle: 'light' },
+      title: "My Components",
+      forma: { brandStyle: "light" },
     };
 
     const result = await saveDesignArtifact(deps, input);
@@ -256,51 +249,51 @@ describe('saveDesignArtifact', () => {
 
   it('design-page without variant → variant defaults to "default" in manifest', async () => {
     const input = await makeCleanInput({
-      forma: { requirementId: 'req-006', pageId: 'page-006' }, // no variant
+      forma: { requirementId: "req-006", pageId: "page-006" }, // no variant
     });
     const deps = makeDeps();
 
     const result = await saveDesignArtifact(deps, input);
     const { productsRoot } = deps;
     const manifestJson = await readFile(
-      join(productsRoot, productId, 'od-project', 'artifacts', result.artifactId, 'v1', 'manifest.json'),
-      'utf8',
+      join(productsRoot, productId, "od-project", "artifacts", result.artifactId, "v1", "manifest.json"),
+      "utf8",
     );
     const manifest = JSON.parse(manifestJson);
-    expect(manifest.forma.variant).toBe('default');
+    expect(manifest.forma.variant).toBe("default");
 
     // Pointer should be created with variant='default'
-    const pointer = await store.products.getDesignPointer(productId, 'req-006', 'page-006', 'default');
+    const pointer = await store.products.getDesignPointer(productId, "req-006", "page-006", "default");
     expect(pointer).toBeTruthy();
   }, 90000);
 
-  it('persists deterministic craft checks into manifest.forma.quality.craftChecks', async () => {
+  it("persists deterministic craft checks into manifest.forma.quality.craftChecks", async () => {
     const input = await makeCleanInput({
       html: `<!doctype html><html><body style="margin:0;background:#ffffff">
         <h1 style="color:#111111;font-size:32px;font-family:Inter">Quality Title</h1>
         <p style="color:#222222;font-size:16px;font-family:Inter">Readable body text</p>
       </body></html>`,
-      forma: { requirementId: 'req-q1', pageId: 'page-q1', variant: 'default' },
+      forma: { requirementId: "req-q1", pageId: "page-q1", variant: "default" },
     });
     const deps = makeDeps();
     const result = await saveDesignArtifact(deps, input);
-    expect(result.previewStatus).toBe('ready');
+    expect(result.previewStatus).toBe("ready");
 
     const { productsRoot } = deps;
     const manifestJson = await readFile(
-      join(productsRoot, productId, 'od-project', 'artifacts', result.artifactId, 'v1', 'manifest.json'),
-      'utf8',
+      join(productsRoot, productId, "od-project", "artifacts", result.artifactId, "v1", "manifest.json"),
+      "utf8",
     );
     const manifest = JSON.parse(manifestJson);
     const checks = manifest.forma.quality?.craftChecks;
     expect(Array.isArray(checks)).toBe(true);
     const ids = checks.map((c: { id: string }) => c.id).sort();
-    expect(ids).toEqual(['color-palette', 'contrast-aa', 'font-families', 'type-scale']);
-    const contrast = checks.find((c: { id: string }) => c.id === 'contrast-aa');
+    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "type-scale"]);
+    const contrast = checks.find((c: { id: string }) => c.id === "contrast-aa");
     expect(contrast?.detail).toMatch(/\d+ text node/);
     for (const c of checks) {
-      expect(typeof c.id).toBe('string');
-      expect(typeof c.passed).toBe('boolean');
+      expect(typeof c.id).toBe("string");
+      expect(typeof c.passed).toBe("boolean");
     }
   }, 90000);
 });

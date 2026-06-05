@@ -129,11 +129,11 @@ export function normalizeIpcPath(ipc: unknown): string {
   return ipc;
 }
 
-export function resolveNamespace<TStamp extends SidecarStampShape>(options: NamespaceResolutionOptions<TStamp>): string {
+export function resolveNamespace<TStamp extends SidecarStampShape>(
+  options: NamespaceResolutionOptions<TStamp>,
+): string {
   return options.contract.normalizeNamespace(
-    options.namespace ??
-      options.env?.[options.contract.env.namespace] ??
-      options.contract.defaults.namespace,
+    options.namespace ?? options.env?.[options.contract.env.namespace] ?? options.contract.defaults.namespace,
   );
 }
 
@@ -189,7 +189,11 @@ export function resolveRuntimeRoot<TStamp extends SidecarStampShape>({
   return join(resolveNamespaceRoot({ base, contract, namespace }), "runs", runId);
 }
 
-export function resolvePointerPath<TStamp extends SidecarStampShape>({ base, contract, namespace }: RuntimePathRequest<TStamp>): string {
+export function resolvePointerPath<TStamp extends SidecarStampShape>({
+  base,
+  contract,
+  namespace,
+}: RuntimePathRequest<TStamp>): string {
   return join(resolveNamespaceRoot({ base, contract, namespace }), "current.json");
 }
 
@@ -369,7 +373,12 @@ function jsonIpcError(error: unknown): { code?: string; message: string } {
   };
 }
 
-async function allocateForcedPort(port: number, label: string, host: string, reserved: Set<number>): Promise<PortAllocation> {
+async function allocateForcedPort(
+  port: number,
+  label: string,
+  host: string,
+  reserved: Set<number>,
+): Promise<PortAllocation> {
   if (reserved.has(port)) {
     throw new Error(`forced ${label} port ${port} conflicts with another managed port`);
   }
@@ -551,7 +560,11 @@ export async function requestJsonIpc<T = any>(
       if (newlineIndex < 0) return;
       socket.end();
       settle(() => {
-        const response = JSON.parse(buffer.slice(0, newlineIndex)) as { error?: { message?: string }; ok: boolean; result?: T };
+        const response = JSON.parse(buffer.slice(0, newlineIndex)) as {
+          error?: { message?: string };
+          ok: boolean;
+          result?: T;
+        };
         if (!response.ok) {
           rejectRequest(new Error(response.error?.message ?? "IPC request failed"));
           return;

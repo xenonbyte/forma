@@ -19,9 +19,7 @@ export type OpenDesignHostFailure = {
   reason: string;
 };
 
-export type OpenDesignHostActionResult =
-  | { ok: true }
-  | OpenDesignHostFailure;
+export type OpenDesignHostActionResult = { ok: true } | OpenDesignHostFailure;
 
 export type OpenDesignHostProjectImportInit = {
   designSystemId?: string | null;
@@ -296,9 +294,7 @@ export function normalizeOpenDesignHostProjectImportResult(input: unknown): Open
   }
   if (input.ok !== true) {
     if (input.canceled === true) return { canceled: true, ok: false };
-    const reason = typeof input.reason === "string" && input.reason.length > 0
-      ? input.reason
-      : "unknown failure";
+    const reason = typeof input.reason === "string" && input.reason.length > 0 ? input.reason : "unknown failure";
     return failure(reason, input.details);
   }
 
@@ -331,9 +327,7 @@ export function normalizeOpenDesignHostProjectReplaceWorkingDirResult(
   }
   if (input.ok !== true) {
     if (input.canceled === true) return { canceled: true, ok: false };
-    const reason = typeof input.reason === "string" && input.reason.length > 0
-      ? input.reason
-      : "unknown failure";
+    const reason = typeof input.reason === "string" && input.reason.length > 0 ? input.reason : "unknown failure";
     return failure(reason, input.details);
   }
 
@@ -368,7 +362,9 @@ export function isOpenDesignHostAvailable(scope: OpenDesignHostGlobalScope = glo
   return getOpenDesignHost(scope) != null;
 }
 
-export function detectOpenDesignHostClientType(scope: OpenDesignHostGlobalScope = globalThis): OpenDesignHostClientType | "web" {
+export function detectOpenDesignHostClientType(
+  scope: OpenDesignHostGlobalScope = globalThis,
+): OpenDesignHostClientType | "web" {
   return getOpenDesignHost(scope)?.client.type ?? "web";
 }
 
@@ -376,7 +372,10 @@ function unavailable(reason: string): OpenDesignHostFailure {
   return failure(reason);
 }
 
-export async function openHostExternalUrl(url: string, scope: OpenDesignHostGlobalScope = globalThis): Promise<OpenDesignHostActionResult> {
+export async function openHostExternalUrl(
+  url: string,
+  scope: OpenDesignHostGlobalScope = globalThis,
+): Promise<OpenDesignHostActionResult> {
   const host = getOpenDesignHost(scope);
   if (host == null) return unavailable("Open Design host is not available");
   try {
@@ -386,7 +385,10 @@ export async function openHostExternalUrl(url: string, scope: OpenDesignHostGlob
   }
 }
 
-export async function openHostProjectPath(projectId: string, scope: OpenDesignHostGlobalScope = globalThis): Promise<OpenDesignHostActionResult> {
+export async function openHostProjectPath(
+  projectId: string,
+  scope: OpenDesignHostGlobalScope = globalThis,
+): Promise<OpenDesignHostActionResult> {
   const host = getOpenDesignHost(scope);
   if (host == null) return unavailable("Open Design host is not available");
   try {
@@ -437,7 +439,10 @@ export async function printHostPdf(
   }
 }
 
-export function setHostPetVisible(visible: boolean, scope: OpenDesignHostGlobalScope = globalThis): OpenDesignHostActionResult {
+export function setHostPetVisible(
+  visible: boolean,
+  scope: OpenDesignHostGlobalScope = globalThis,
+): OpenDesignHostActionResult {
   const host = getOpenDesignHost(scope);
   if (host == null) return unavailable("Open Design host is not available");
   try {

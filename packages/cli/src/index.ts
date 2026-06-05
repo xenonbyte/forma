@@ -15,7 +15,7 @@ import {
   type AgentInstallPlatform,
   type FormaMcpCommand,
   type InstallManifest,
-  type InstallServiceOptions
+  type InstallServiceOptions,
 } from "@xenonbyte/forma-core";
 import { start as startMcpServer } from "@xenonbyte/forma-mcp";
 import { start as startWebServer } from "@xenonbyte/forma-server";
@@ -239,7 +239,14 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
     const token = env.createServeToken();
     const logFile = serveLogFile(env.formaHome);
     const runtimeFile = serveRuntimeFile(env.formaHome);
-    const started = await env.startServer({ detached: true, formaHome: env.formaHome, logFile, runtimeFile, startedAt, token });
+    const started = await env.startServer({
+      detached: true,
+      formaHome: env.formaHome,
+      logFile,
+      runtimeFile,
+      startedAt,
+      token,
+    });
     const pid = startedPid(started);
     if (!pid) {
       throw new Error("Detached Forma server start did not return a pid");
@@ -248,7 +255,9 @@ async function runServe(args: string[], env: RuntimeCliEnv, output: CliOutput): 
     const readyState = await readOwnedServeState(env, metadata);
     if (readyState.kind !== "valid") {
       await removeServeStateFiles(env);
-      throw new Error(`Detached Forma server did not publish matching runtime state: ${readyState.kind === "invalid" ? readyState.reason : "runtime state missing"}`);
+      throw new Error(
+        `Detached Forma server did not publish matching runtime state: ${readyState.kind === "invalid" ? readyState.reason : "runtime state missing"}`,
+      );
     }
     await writeServePidState(env, metadata);
     await env.appendText(logFile, `${startedAt} forma serve start pid=${pid}\n`);
@@ -295,7 +304,11 @@ async function runSchemaNormalizationDryRun(args: string[], env: RuntimeCliEnv, 
 async function runV6SchemaCutoverCommand(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
   const options = parseNormalizationArgs(args, { backupDir: false, confirm: false });
   const home = options.home ?? env.formaHome;
-  const result = await normalizeFormaHomeForV6(home, { mode: "cutover", createdAt: env.now().toISOString(), reportPath: options.report });
+  const result = await normalizeFormaHomeForV6(home, {
+    mode: "cutover",
+    createdAt: env.now().toISOString(),
+    reportPath: options.report,
+  });
   if (result.status !== "committed") {
     output.stderr(`${result.code ?? "SCHEMA_NORMALIZATION_CUTOVER_FAILED"}: ${result.message}\n`);
     return output.result(1);
@@ -304,7 +317,11 @@ async function runV6SchemaCutoverCommand(args: string[], env: RuntimeCliEnv, out
   return output.result(0);
 }
 
-async function runRecoverV6NormalizationJournal(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+async function runRecoverV6NormalizationJournal(
+  args: string[],
+  env: RuntimeCliEnv,
+  output: CliOutput,
+): Promise<CliResult> {
   const options = parseNormalizationArgs(args, { backupDir: true, confirm: false });
   const home = options.home ?? env.formaHome;
   const result = await recoverV6NormalizationJournal(home, options.backupDir!);
@@ -312,7 +329,11 @@ async function runRecoverV6NormalizationJournal(args: string[], env: RuntimeCliE
   return output.result(result.status === "restored" ? 0 : 1);
 }
 
-async function runRestoreV6NormalizationBackup(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+async function runRestoreV6NormalizationBackup(
+  args: string[],
+  env: RuntimeCliEnv,
+  output: CliOutput,
+): Promise<CliResult> {
   const options = parseNormalizationArgs(args, { backupDir: true, confirm: true });
   const home = options.home ?? env.formaHome;
   const result = await restoreV6NormalizationBackup(home, options.backupDir!, { confirm: options.confirm ?? "" });
@@ -323,10 +344,7 @@ async function runRestoreV6NormalizationBackup(args: string[], env: RuntimeCliEn
 async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
   assertNoExtraArgs(args);
 
-  const [installed, serverStatus] = await Promise.all([
-    env.getInstalledPlatforms(),
-    env.getServerStatus()
-  ]);
+  const [installed, serverStatus] = await Promise.all([env.getInstalledPlatforms(), env.getServerStatus()]);
 
   for (const warning of installed.warnings) {
     output.stderr(`${warning}\n`);
@@ -336,7 +354,9 @@ async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput):
   }
 
   output.stdout(`Data directory: ${env.formaHome}\n`);
-  output.stdout(`Installed platforms: ${installed.platforms.length > 0 ? formatPlatforms(installed.platforms) : "none"}\n`);
+  output.stdout(
+    `Installed platforms: ${installed.platforms.length > 0 ? formatPlatforms(installed.platforms) : "none"}\n`,
+  );
   output.stdout(`Web server: ${serverStatus.running ? "running" : "stopped"}\n`);
   return output.result(0);
 }
@@ -400,7 +420,13 @@ async function runForegroundServeChild(args: string[], env: RuntimeCliEnv, outpu
   return output.result(0);
 }
 
-function createServeMetadata(state: { home: string; pid: number; token: string; startedAt: string; logFile: string }): ServeMetadata {
+function createServeMetadata(state: {
+  home: string;
+  pid: number;
+  token: string;
+  startedAt: string;
+  logFile: string;
+}): ServeMetadata {
   return {
     schema_version: 1,
     marker: servePidMarker,
@@ -408,7 +434,7 @@ function createServeMetadata(state: { home: string; pid: number; token: string; 
     pid: state.pid,
     token: state.token,
     started_at: state.startedAt,
-    log: state.logFile
+    log: state.logFile,
   };
 }
 
@@ -417,10 +443,7 @@ async function writeServePidState(env: RuntimeCliEnv, metadata: ServeMetadata): 
 }
 
 async function removeServeStateFiles(env: RuntimeCliEnv): Promise<void> {
-  await Promise.all([
-    env.removeFile(servePidFile(env.formaHome)),
-    env.removeFile(serveRuntimeFile(env.formaHome))
-  ]);
+  await Promise.all([env.removeFile(servePidFile(env.formaHome)), env.removeFile(serveRuntimeFile(env.formaHome))]);
 }
 
 function parseForegroundServeArgs(args: string[]): { token?: string; home?: string; startedAt?: string } {
@@ -508,7 +531,7 @@ function parsePlatformArgs(args: string[]): AgentInstallPlatform[] {
 
 function parseNormalizationArgs(
   args: string[],
-  required: { backupDir: boolean; confirm: boolean }
+  required: { backupDir: boolean; confirm: boolean },
 ): { home?: string; backupDir?: string; confirm?: string; report?: string } {
   const options: { home?: string; backupDir?: string; confirm?: string; report?: string } = {};
   for (let index = 0; index < args.length; index += 1) {
@@ -555,10 +578,16 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
     return await (env.verifyServerProcess?.(metadata) ?? defaultVerifyServerProcess(metadata, readProcessCommand));
   };
   const spawnDetachedServer = env.spawnDetachedServer ?? defaultSpawnDetachedServer;
-  const launchWebServer = env.startWebServer ?? ((options: { home: string; bundledStylesDir?: string; webAssetsDir?: string }) => startWebServer(options));
+  const launchWebServer =
+    env.startWebServer ??
+    ((options: { home: string; bundledStylesDir?: string; webAssetsDir?: string }) => startWebServer(options));
   const bundledStylesDir = packageBundledStylesDir();
   const webAssetsDir = packageWebAssetsDir();
-  const installServiceOptions = { formaHome, templatesDir: packageAgentTemplatesDir(), mcpCommand: resolveInstallMcpCommand() };
+  const installServiceOptions = {
+    formaHome,
+    templatesDir: packageAgentTemplatesDir(),
+    mcpCommand: resolveInstallMcpCommand(),
+  };
   const runtimeEnv: RuntimeCliEnv = {
     formaHome,
     currentPid,
@@ -574,13 +603,16 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
             logFile: options.logFile ?? serveLogFile(formaHome),
             runtimeFile: options.runtimeFile ?? serveRuntimeFile(formaHome),
             startedAt: options.startedAt ?? new Date().toISOString(),
-            token: options.token ?? randomUUID()
+            token: options.token ?? randomUUID(),
           });
         }
         await launchWebServer({ home: formaHome, bundledStylesDir, webAssetsDir });
         return undefined;
       }),
-    createInstallService: () => (env.createInstallService ? env.createInstallService(installServiceOptions) : new InstallService(installServiceOptions)),
+    createInstallService: () =>
+      env.createInstallService
+        ? env.createInstallService(installServiceOptions)
+        : new InstallService(installServiceOptions),
     getInstalledPlatforms: env.installedPlatforms
       ? async () => ({ platforms: await env.installedPlatforms!(), warnings: [] })
       : () => readInstalledPlatforms(formaHome, pathExists),
@@ -607,14 +639,14 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
       }),
     removeFile: env.removeFile ?? ((file) => rm(file, { force: true })),
     mkdir: env.mkdir ?? ((dir) => mkdir(dir, { recursive: true }).then(() => undefined)),
-    pathExists
+    pathExists,
   };
   return runtimeEnv;
 }
 
 async function readInstalledPlatforms(
   formaHome: string,
-  pathExists: (file: string) => Promise<boolean>
+  pathExists: (file: string) => Promise<boolean>,
 ): Promise<CliInstalledPlatformsStatus> {
   const manifestsDir = join(formaHome, "manifests");
   const installed: AgentInstallPlatform[] = [];
@@ -643,7 +675,7 @@ async function readServerStatus(
   readText: (file: string) => Promise<string>,
   pathExists: (file: string) => Promise<boolean>,
   isPidAlive: (pid: number) => boolean,
-  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>
+  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>,
 ): Promise<CliServerStatus> {
   const state = await readOwnedServeStateFromPaths(formaHome, readText, pathExists);
   if (state.kind === "missing") {
@@ -678,7 +710,7 @@ async function readVerifiedServeState(env: RuntimeCliEnv): Promise<ServeState> {
 async function verifyServeOwnership(
   metadata: ServeMetadata,
   isPidAlive: (pid: number) => boolean,
-  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>
+  verifyServerProcess: (metadata: ServeMetadata) => Promise<boolean>,
 ): Promise<{ ok: true } | { ok: false; reason: string }> {
   if (!isPidAlive(metadata.pid)) {
     return { ok: false, reason: `Forma server process ${metadata.pid} is not running` };
@@ -693,7 +725,7 @@ async function readOwnedServeStateFromPaths(
   formaHome: string,
   readText: (file: string) => Promise<string>,
   pathExists: (file: string) => Promise<boolean>,
-  expected?: ServeMetadata
+  expected?: ServeMetadata,
 ): Promise<ServeState> {
   const pidState = expected
     ? { kind: "valid" as const, metadata: expected }
@@ -728,7 +760,7 @@ async function readServeStateFromPaths(
   file: string,
   readText: (file: string) => Promise<string>,
   pathExists: (file: string) => Promise<boolean>,
-  expectedHome?: string
+  expectedHome?: string,
 ): Promise<ServeState> {
   if (!(await pathExists(file))) {
     return { kind: "missing" };
@@ -779,8 +811,8 @@ function parseServeMetadata(value: unknown, file: string, expectedHome?: string)
       pid: value.pid,
       token: value.token,
       started_at: value.started_at,
-      log: value.log
-    }
+      log: value.log,
+    },
   };
 }
 
@@ -815,7 +847,13 @@ function serveMetadataMatches(left: ServeMetadata, right: ServeMetadata): boolea
 }
 
 function startedPid(result: CliServerStartResult): number | undefined {
-  if (result && typeof result === "object" && typeof result.pid === "number" && Number.isInteger(result.pid) && result.pid > 0) {
+  if (
+    result &&
+    typeof result === "object" &&
+    typeof result.pid === "number" &&
+    Number.isInteger(result.pid) &&
+    result.pid > 0
+  ) {
     return result.pid;
   }
   return undefined;
@@ -855,8 +893,10 @@ function usage(): string {
     "  install [--platform claude,codex,gemini]",
     "  uninstall [--platform claude,codex,gemini]",
     "  status",
-    "  version"
-  ].join("\n").concat("\n");
+    "  version",
+  ]
+    .join("\n")
+    .concat("\n");
 }
 
 interface CliOutput {
@@ -877,7 +917,7 @@ function createOutput(): CliOutput {
     },
     result(exitCode) {
       return { stdout, stderr, exitCode };
-    }
+    },
   };
 }
 
@@ -930,7 +970,9 @@ function packageWebAssetsDir(): string {
   return packageAssetPath("web");
 }
 
-async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions): Promise<CliSpawnDetachedServerResult> {
+async function defaultSpawnDetachedServer(
+  options: CliSpawnDetachedServerOptions,
+): Promise<CliSpawnDetachedServerResult> {
   await mkdir(dirname(options.logFile), { recursive: true });
   const logFd = openSync(options.logFile, "a");
   let childPid: number | undefined;
@@ -946,7 +988,7 @@ async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions
         "--serve-home",
         options.formaHome,
         "--serve-started-at",
-        options.startedAt
+        options.startedAt,
       ],
       {
         cwd: process.cwd(),
@@ -957,10 +999,10 @@ async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions
           FORMA_SERVE_LOG_FILE: options.logFile,
           FORMA_SERVE_READY_FILE: options.runtimeFile,
           FORMA_SERVE_STARTED_AT: options.startedAt,
-          FORMA_SERVE_TOKEN: options.token
+          FORMA_SERVE_TOKEN: options.token,
         },
-        stdio: ["ignore", logFd, logFd]
-      }
+        stdio: ["ignore", logFd, logFd],
+      },
     );
     if (!child.pid) {
       throw new Error("Background Forma server did not expose a pid");
@@ -985,7 +1027,7 @@ async function defaultSpawnDetachedServer(options: CliSpawnDetachedServerOptions
 
 async function waitForDetachedServerReady(
   child: ReturnType<typeof spawn>,
-  options: CliSpawnDetachedServerOptions
+  options: CliSpawnDetachedServerOptions,
 ): Promise<void> {
   const timeoutMs = options.readyTimeoutMs ?? 5000;
   const expected = createServeMetadata({
@@ -993,7 +1035,7 @@ async function waitForDetachedServerReady(
     home: options.formaHome,
     token: options.token,
     startedAt: options.startedAt,
-    logFile: options.logFile
+    logFile: options.logFile,
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -1022,7 +1064,12 @@ async function waitForDetachedServerReady(
       }
       checking = true;
       try {
-        const state = await readServeStateFromPaths(options.runtimeFile, (file) => readFile(file, "utf8"), defaultPathExists, options.formaHome);
+        const state = await readServeStateFromPaths(
+          options.runtimeFile,
+          (file) => readFile(file, "utf8"),
+          defaultPathExists,
+          options.formaHome,
+        );
         if (state.kind === "valid" && serveMetadataMatches(expected, state.metadata)) {
           finish();
         }
@@ -1037,7 +1084,11 @@ async function waitForDetachedServerReady(
       finish(error);
     };
     const onExit = (code: number | null, signal: NodeJS.Signals | null): void => {
-      finish(new Error(`Background Forma server exited before ready (${code === null ? `signal ${signal}` : `code ${code}`})`));
+      finish(
+        new Error(
+          `Background Forma server exited before ready (${code === null ? `signal ${signal}` : `code ${code}`})`,
+        ),
+      );
     };
 
     const interval = setInterval(() => {
@@ -1071,7 +1122,10 @@ function defaultIsPidAlive(pid: number): boolean {
   }
 }
 
-async function defaultVerifyServerProcess(metadata: ServeMetadata, readProcessCommand: (pid: number) => Promise<string>): Promise<boolean> {
+async function defaultVerifyServerProcess(
+  metadata: ServeMetadata,
+  readProcessCommand: (pid: number) => Promise<string>,
+): Promise<boolean> {
   try {
     const command = await readProcessCommand(metadata.pid);
     return (

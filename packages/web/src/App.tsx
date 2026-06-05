@@ -8,18 +8,18 @@ const navItems: NavItem[] = [
   {
     href: "/products",
     label: "Product list",
-    meta: "Sessions and requirements"
+    meta: "Sessions and requirements",
   },
   {
     href: "/styles",
     label: "Style templates",
-    meta: "Design libraries"
+    meta: "Design libraries",
   },
   {
     href: "/settings",
     label: "Settings",
-    meta: "Preferences"
-  }
+    meta: "Preferences",
+  },
 ];
 
 export function App() {
@@ -40,7 +40,9 @@ function AppShell({ match }: { match: RouteMatch }) {
     setBreadcrumbLabels((current) => (current[key] === label ? current : { ...current, [key]: label }));
   }, []);
   const headerAction =
-    match.route.path === "/products" ? <PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink> : undefined;
+    match.route.path === "/products" ? (
+      <PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>
+    ) : undefined;
   const breadcrumbs = routeBreadcrumbs(match, t, breadcrumbLabels);
 
   return (
@@ -52,16 +54,26 @@ function AppShell({ match }: { match: RouteMatch }) {
       routeContext={match.route.context}
       title={match.route.title(match.params)}
     >
-      <Page hash={match.hash} navigationState={match.navigationState} onBreadcrumbLabel={onBreadcrumbLabel} params={match.params} route={match.route} />
+      <Page
+        hash={match.hash}
+        navigationState={match.navigationState}
+        onBreadcrumbLabel={onBreadcrumbLabel}
+        params={match.params}
+        route={match.route}
+      />
     </Layout>
   );
 }
 
-function routeBreadcrumbs(match: RouteMatch, t: (key: string) => string, labels: Record<string, string>): BreadcrumbItem[] {
+function routeBreadcrumbs(
+  match: RouteMatch,
+  t: (key: string) => string,
+  labels: Record<string, string>,
+): BreadcrumbItem[] {
   const productId = match.params.productId;
   const requirementId = match.params.reqId;
-  const productName = productId ? labels[`product:${productId}`] ?? productId : "";
-  const requirementName = requirementId ? labels[`requirement:${requirementId}`] ?? requirementId : "";
+  const productName = productId ? (labels[`product:${productId}`] ?? productId) : "";
+  const requirementName = requirementId ? (labels[`requirement:${requirementId}`] ?? requirementId) : "";
   const productsRoot: BreadcrumbItem = { href: "/products", label: t("nav.products") };
   const stylesRoot: BreadcrumbItem = { href: "/styles", label: t("nav.styles") };
 
@@ -75,17 +87,28 @@ function routeBreadcrumbs(match: RouteMatch, t: (key: string) => string, labels:
     return [productsRoot, { label: productName }];
   }
   if (productId && match.route.path === "/products/:productId/baseline") {
-    return [productsRoot, { href: `/products/${encodeURIComponent(productId)}`, label: productName }, { label: t("requirement.baseline") }];
+    return [
+      productsRoot,
+      { href: `/products/${encodeURIComponent(productId)}`, label: productName },
+      { label: t("requirement.baseline") },
+    ];
   }
   if (productId && requirementId && match.route.path === "/products/:productId/requirements/:reqId") {
-    return [productsRoot, { href: `/products/${encodeURIComponent(productId)}`, label: productName }, { label: requirementName }];
+    return [
+      productsRoot,
+      { href: `/products/${encodeURIComponent(productId)}`, label: productName },
+      { label: requirementName },
+    ];
   }
   if (productId && requirementId && match.route.path.includes("/requirements/:reqId/")) {
     return [
       productsRoot,
       { href: `/products/${encodeURIComponent(productId)}`, label: productName },
-      { href: `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`, label: requirementName },
-      { label: t("design.view") }
+      {
+        href: `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`,
+        label: requirementName,
+      },
+      { label: t("design.view") },
     ];
   }
   if (match.route.path === "/styles") {

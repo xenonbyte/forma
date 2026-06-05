@@ -4,9 +4,9 @@
  * 负责绘制选中元素的尺寸标签（宽 × 高）
  */
 
-import type { CanvasKit, Canvas, Paint } from 'canvaskit-wasm';
-import type { SelectionStyle, ElementBounds } from '../types';
-import { FontManager } from '../../FontManager';
+import type { CanvasKit, Canvas, Paint } from "canvaskit-wasm";
+import type { SelectionStyle, ElementBounds } from "../types";
+import { FontManager } from "../../FontManager";
 
 /**
  * 尺寸标注渲染器选项
@@ -47,17 +47,13 @@ export class DimensionRenderer {
 
     // 标签背景画笔（使用选中框颜色）
     this.labelBackgroundPaint = new ck.Paint();
-    this.labelBackgroundPaint.setColor(
-      this.parseColor(this.style.dimensionLabelBgColor || this.style.strokeColor)
-    );
+    this.labelBackgroundPaint.setColor(this.parseColor(this.style.dimensionLabelBgColor || this.style.strokeColor));
     this.labelBackgroundPaint.setStyle(ck.PaintStyle.Fill);
     this.labelBackgroundPaint.setAntiAlias(true);
 
     // 标签文字画笔
     this.labelPaint = new ck.Paint();
-    this.labelPaint.setColor(
-      this.parseColor(this.style.dimensionLabelTextColor || '#ffffff')
-    );
+    this.labelPaint.setColor(this.parseColor(this.style.dimensionLabelTextColor || "#ffffff"));
     this.labelPaint.setAntiAlias(true);
   }
 
@@ -101,17 +97,9 @@ export class DimensionRenderer {
    * 「世界字号栅格化再缩放」带来的亚像素抖动；同时按 devicePixelRatio 补偿，
    * 使其在 Retina 上仍是可读的 ~12 CSS px。
    */
-  private renderLabel(
-    canvas: Canvas,
-    text: string,
-    anchorWorldX: number,
-    anchorWorldY: number
-  ): void {
+  private renderLabel(canvas: Canvas, text: string, anchorWorldX: number, anchorWorldY: number): void {
     const ck = this.canvasKit;
-    const dpr =
-      typeof window !== 'undefined' && window.devicePixelRatio
-        ? window.devicePixelRatio
-        : 1;
+    const dpr = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
 
     // 切换到以锚点为原点的设备像素空间。
     canvas.save();
@@ -149,13 +137,7 @@ export class DimensionRenderer {
     canvas.drawPath(bgPath, this.labelBackgroundPaint!);
     bgPath.delete();
 
-    canvas.drawText(
-      text,
-      labelLeft + padH,
-      labelTop + labelHeight - padV - 2 * dpr,
-      this.labelPaint!,
-      font
-    );
+    canvas.drawText(text, labelLeft + padH, labelTop + labelHeight - padV - 2 * dpr, this.labelPaint!, font);
 
     font.delete();
     canvas.restore();

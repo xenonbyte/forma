@@ -5,18 +5,18 @@
 /**
  * 元素类型（使用字符串字面量联合类型）
  */
-export type IRElementType = 'container' | 'text' | 'image' | 'button' | 'input' | 'link';
+export type IRElementType = "container" | "text" | "image" | "button" | "input" | "link";
 
 /**
  * @deprecated 使用 IRElementType 字符串字面量类型
  */
 export const IRElementType = {
-  CONTAINER: 'container' as const,
-  TEXT: 'text' as const,
-  IMAGE: 'image' as const,
-  BUTTON: 'button' as const,
-  INPUT: 'input' as const,
-  LINK: 'link' as const,
+  CONTAINER: "container" as const,
+  TEXT: "text" as const,
+  IMAGE: "image" as const,
+  BUTTON: "button" as const,
+  INPUT: "input" as const,
+  LINK: "link" as const,
 };
 
 export interface IRBounds {
@@ -163,7 +163,7 @@ export interface SVGPath {
   /** 线帽样式 */
   strokeLinecap?: string;
   /** 填充规则 */
-  fillRule?: 'nonzero' | 'evenodd';
+  fillRule?: "nonzero" | "evenodd";
   /** 透明度 */
   opacity?: number;
 }
@@ -240,7 +240,7 @@ export interface ImageData {
   /** 图片原始高度 */
   naturalHeight: number;
   /** 图片格式 */
-  format?: 'png' | 'jpg' | 'jpeg' | 'svg' | 'webp' | 'gif' | 'bmp';
+  format?: "png" | "jpg" | "jpeg" | "svg" | "webp" | "gif" | "bmp";
   /** 是否为 base64 内联图片 */
   isBase64?: boolean;
   /** alt 文本 */

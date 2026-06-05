@@ -29,11 +29,11 @@ function createRecordingLock(): ProductMutationLock & { calls: Array<{ operation
     calls,
     async run<T>(
       input: { operation: string; product_id?: string },
-      fn: (context: ProductMutationContext) => Promise<T>
+      fn: (context: ProductMutationContext) => Promise<T>,
     ): Promise<T> {
       calls.push(input);
       return fn({ ...input, warnings: [] });
-    }
+    },
   };
 }
 
@@ -73,7 +73,7 @@ describe("CopyService", () => {
     let completed = false;
     const save = copy
       .saveTranslations(productId, requirementId, [
-        { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] }
+        { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] },
       ])
       .then(() => {
         completed = true;
@@ -93,23 +93,23 @@ describe("CopyService", () => {
     const copy = new CopyService({ home, productMutationLock });
 
     await copy.saveTranslations(productId, requirementId, [
-      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] }
+      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] },
     ]);
     await copy.updatePageTranslations(productId, requirementId, "login", [
-      { context: "submit_button", texts: { en: "Sign in" } }
+      { context: "submit_button", texts: { en: "Sign in" } },
     ]);
     await copy.mergeTranslations(
       productId,
       requirementId,
       { login: [{ context: "submit_button", text: "Login" }] },
       { login: [{ context: "submit_button", text: "Sign in" }] },
-      []
+      [],
     );
 
     expect(productMutationLock.calls).toEqual([
       { operation: "save_translations", product_id: productId },
       { operation: "update_page_translations", product_id: productId },
-      { operation: "merge_translations", product_id: productId }
+      { operation: "merge_translations", product_id: productId },
     ]);
   });
 
@@ -118,7 +118,7 @@ describe("CopyService", () => {
     const productMutationLock = createRecordingLock();
     const copy = new CopyService({ home, productMutationLock });
     await copy.saveTranslations(productId, requirementId, [
-      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] }
+      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Login" } }] },
     ]);
     productMutationLock.calls.length = 0;
     copy.saveTranslations = async () => {
@@ -126,12 +126,12 @@ describe("CopyService", () => {
     };
 
     await copy.updatePageTranslations(productId, requirementId, "login", [
-      { context: "submit_button", texts: { en: "Sign in" } }
+      { context: "submit_button", texts: { en: "Sign in" } },
     ]);
 
     expect(productMutationLock.calls).toEqual([{ operation: "update_page_translations", product_id: productId }]);
     await expect(copy.getTranslations(productId, requirementId)).resolves.toEqual([
-      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Sign in" } }] }
+      { page_id: "login", entries: [{ context: "submit_button", texts: { en: "Sign in" } }] },
     ]);
   });
 
@@ -146,8 +146,8 @@ describe("CopyService", () => {
     const translations = [
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Login", ja: "ログイン" } }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Login", ja: "ログイン" } }],
+      },
     ];
 
     await copy.saveTranslations(productId, requirementId, translations);
@@ -162,17 +162,17 @@ describe("CopyService", () => {
         page_id: "login",
         entries: [
           { context: "submit_button", texts: { en: "Login" }, outdated: true },
-          { context: "forgot_link", texts: { en: "Forgot password?" }, outdated: true }
-        ]
+          { context: "forgot_link", texts: { en: "Forgot password?" }, outdated: true },
+        ],
       },
       {
         page_id: "settings",
-        entries: [{ context: "save_button", texts: { en: "Save" }, outdated: true }]
-      }
+        entries: [{ context: "save_button", texts: { en: "Save" }, outdated: true }],
+      },
     ]);
 
     await copy.updatePageTranslations(productId, requirementId, "login", [
-      { context: "submit_button", texts: { en: "Sign in" }, outdated: true }
+      { context: "submit_button", texts: { en: "Sign in" }, outdated: true },
     ]);
 
     const updated = [
@@ -180,13 +180,13 @@ describe("CopyService", () => {
         page_id: "login",
         entries: [
           { context: "forgot_link", texts: { en: "Forgot password?" }, outdated: true },
-          { context: "submit_button", texts: { en: "Sign in" } }
-        ]
+          { context: "submit_button", texts: { en: "Sign in" } },
+        ],
       },
       {
         page_id: "settings",
-        entries: [{ context: "save_button", texts: { en: "Save" }, outdated: true }]
-      }
+        entries: [{ context: "save_button", texts: { en: "Save" }, outdated: true }],
+      },
     ];
     await expect(copy.getTranslations(productId, requirementId)).resolves.toEqual(updated);
   });
@@ -196,19 +196,19 @@ describe("CopyService", () => {
     await copy.saveTranslations(productId, requirementId, [
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Login", ja: "ログイン" }, outdated: true }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Login", ja: "ログイン" }, outdated: true }],
+      },
     ]);
 
     await copy.updatePageTranslations(productId, requirementId, "login", [
-      { context: "submit_button", texts: { en: "Sign in" } }
+      { context: "submit_button", texts: { en: "Sign in" } },
     ]);
 
     await expect(copy.getTranslations(productId, requirementId)).resolves.toEqual([
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Sign in", ja: "ログイン" } }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Sign in", ja: "ログイン" } }],
+      },
     ]);
   });
 
@@ -221,8 +221,8 @@ describe("CopyService", () => {
     await copy.saveTranslations(productId, requirementId, [
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Login" } }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Login" } }],
+      },
     ]);
 
     const merged = await copy.mergeTranslations(
@@ -230,13 +230,13 @@ describe("CopyService", () => {
       requirementId,
       { login: [{ context: "submit_button", text: "登录" }] },
       { login: [{ context: "submit_button", text: "立即登录" }] },
-      []
+      [],
     );
 
     expect(merged[0]?.entries[0]).toMatchObject({
       context: "submit_button",
       outdated: true,
-      texts: { en: "Login" }
+      texts: { en: "Login" },
     });
   });
 
@@ -247,9 +247,9 @@ describe("CopyService", () => {
         page_id: "login",
         entries: [
           { context: "submit_button", texts: { en: "Login" } },
-          { context: "forgot_link", texts: { en: "Forgot password?" } }
-        ]
-      }
+          { context: "forgot_link", texts: { en: "Forgot password?" } },
+        ],
+      },
     ]);
 
     const merged = await copy.mergeTranslations(
@@ -258,11 +258,11 @@ describe("CopyService", () => {
       {
         login: [
           { context: "submit_button", text: "登录" },
-          { context: "forgot_link", text: "忘记密码？" }
-        ]
+          { context: "forgot_link", text: "忘记密码？" },
+        ],
       },
       { login: [{ context: "submit_button", text: "登录" }] },
-      []
+      [],
     );
 
     expect(merged).toEqual([
@@ -270,9 +270,9 @@ describe("CopyService", () => {
         page_id: "login",
         entries: [
           { context: "forgot_link", texts: { en: "Forgot password?" } },
-          { context: "submit_button", texts: { en: "Login" } }
-        ]
-      }
+          { context: "submit_button", texts: { en: "Login" } },
+        ],
+      },
     ]);
   });
 
@@ -281,8 +281,8 @@ describe("CopyService", () => {
     await copy.saveTranslations(productId, requirementId, [
       {
         page_id: "login",
-        entries: [{ context: "forgot_link", texts: { en: "Forgot password?" } }]
-      }
+        entries: [{ context: "forgot_link", texts: { en: "Forgot password?" } }],
+      },
     ]);
 
     const merged = await copy.mergeTranslations(
@@ -292,17 +292,17 @@ describe("CopyService", () => {
       {
         login: [
           { context: "submit_button", text: "登录" },
-          { context: "forgot_link", text: "忘记密码？" }
-        ]
+          { context: "forgot_link", text: "忘记密码？" },
+        ],
       },
-      []
+      [],
     );
 
     expect(merged).toEqual([
       {
         page_id: "login",
-        entries: [{ context: "forgot_link", texts: { en: "Forgot password?" }, outdated: true }]
-      }
+        entries: [{ context: "forgot_link", texts: { en: "Forgot password?" }, outdated: true }],
+      },
     ]);
   });
 
@@ -311,8 +311,8 @@ describe("CopyService", () => {
     await copy.saveTranslations(productId, requirementId, [
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Login" } }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Login" } }],
+      },
     ]);
 
     const merged = await copy.mergeTranslations(
@@ -323,16 +323,16 @@ describe("CopyService", () => {
       [
         {
           page_id: "login",
-          entries: [{ context: "submit_button", texts: { en: "Sign in" }, outdated: true }]
-        }
-      ]
+          entries: [{ context: "submit_button", texts: { en: "Sign in" }, outdated: true }],
+        },
+      ],
     );
 
     expect(merged).toEqual([
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Sign in" } }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Sign in" } }],
+      },
     ]);
   });
 
@@ -343,8 +343,8 @@ describe("CopyService", () => {
     await copy.saveTranslations(productId, requirementId, [
       {
         page_id: "login",
-        entries: [{ context: "submit_button", texts: { en: "Login" } }]
-      }
+        entries: [{ context: "submit_button", texts: { en: "Login" } }],
+      },
     ]);
     expect(await fileExists(file)).toBe(true);
 

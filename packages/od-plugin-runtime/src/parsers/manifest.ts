@@ -1,8 +1,4 @@
-import {
-  OPEN_DESIGN_PLUGIN_SPEC_VERSION,
-  PluginManifestSchema,
-  type PluginManifest,
-} from '@xenonbyte/od-contracts';
+import { OPEN_DESIGN_PLUGIN_SPEC_VERSION, PluginManifestSchema, type PluginManifest } from "@xenonbyte/od-contracts";
 
 export interface ManifestParseSuccess {
   ok: true;
@@ -42,7 +38,7 @@ export function parseManifestObject(value: unknown): ManifestParseResult {
     return {
       ok: false,
       warnings: [],
-      errors: result.error.issues.map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`),
+      errors: result.error.issues.map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`),
     };
   }
   return {

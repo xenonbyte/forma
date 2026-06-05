@@ -11,7 +11,7 @@ const inputs: NormalizeArtifactInput[] = [
     title: "登录页 默认",
     version: 2,
     width: 1280,
-    height: 800
+    height: 800,
   },
   {
     artifactId: "art-login",
@@ -22,7 +22,7 @@ const inputs: NormalizeArtifactInput[] = [
     title: "登录页 宽屏",
     version: 2,
     width: 1440,
-    height: 900
+    height: 900,
   },
   {
     artifactId: "art-home",
@@ -33,8 +33,8 @@ const inputs: NormalizeArtifactInput[] = [
     title: "首页",
     version: 1,
     width: 1280,
-    height: 800
-  }
+    height: 800,
+  },
 ];
 
 describe("buildViewerModel", () => {
@@ -51,7 +51,7 @@ describe("buildViewerModel", () => {
     expect(tile?.htmlBundle).toEqual({ artifactId: "art-home", version: 1, kind: "bundle" });
     expect(tile?.previewImages).toEqual({
       "1x": { artifactId: "art-home", version: 1, kind: "preview", density: "1x" },
-      "2x": { artifactId: "art-home", version: 1, kind: "preview", density: "2x" }
+      "2x": { artifactId: "art-home", version: 1, kind: "preview", density: "2x" },
     });
   });
 

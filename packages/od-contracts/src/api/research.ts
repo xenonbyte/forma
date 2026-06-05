@@ -4,7 +4,7 @@
  * `od research search` to retrieve JSON findings.
  */
 
-export type ResearchDepth = 'shallow' | 'medium' | 'deep';
+export type ResearchDepth = "shallow" | "medium" | "deep";
 
 export interface ResearchOptions {
   enabled: boolean;

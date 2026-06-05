@@ -4,8 +4,8 @@
  * 包含所有公开 API 的类型定义
  */
 
-import type { IRElement, IRBounds } from '@vzi-core/types';
-import type { Annotation, ColorToken, FontToken } from './design-tokens';
+import type { IRElement, IRBounds } from "@vzi-core/types";
+import type { Annotation, ColorToken, FontToken } from "./design-tokens";
 
 // ============================================
 // 渲染器属性
@@ -20,7 +20,7 @@ export type RendererData = IRData | TransformResultData;
  * IR 数据
  */
 export interface IRData {
-  type: 'ir';
+  type: "ir";
   ir: {
     version: string;
     rootElementId: string;
@@ -36,7 +36,7 @@ export interface IRData {
  * 转换结果数据
  */
 export interface TransformResultData {
-  type: 'transform-result';
+  type: "transform-result";
   metadata: {
     name: string;
     viewportWidth: number;
@@ -126,19 +126,19 @@ export interface RendererState {
  * 渲染器动作
  */
 export type RendererAction =
-  | { type: 'SET_SCALE'; scale: number }
-  | { type: 'SET_POSITION'; x: number; y: number }
-  | { type: 'ZOOM_TO'; scale: number; centerX: number; centerY: number }
-  | { type: 'SELECT_ELEMENT'; elementId: string | null }
-  | { type: 'HOVER_ELEMENT'; elementId: string | null }
-  | { type: 'START_DRAG' }
-  | { type: 'END_DRAG' }
-  | { type: 'START_SELECTION'; rect: IRBounds }
-  | { type: 'UPDATE_SELECTION'; rect: IRBounds }
-  | { type: 'END_SELECTION' }
-  | { type: 'TOGGLE_GRID' }
-  | { type: 'TOGGLE_RULERS' }
-  | { type: 'TOGGLE_ANNOTATIONS' };
+  | { type: "SET_SCALE"; scale: number }
+  | { type: "SET_POSITION"; x: number; y: number }
+  | { type: "ZOOM_TO"; scale: number; centerX: number; centerY: number }
+  | { type: "SELECT_ELEMENT"; elementId: string | null }
+  | { type: "HOVER_ELEMENT"; elementId: string | null }
+  | { type: "START_DRAG" }
+  | { type: "END_DRAG" }
+  | { type: "START_SELECTION"; rect: IRBounds }
+  | { type: "UPDATE_SELECTION"; rect: IRBounds }
+  | { type: "END_SELECTION" }
+  | { type: "TOGGLE_GRID" }
+  | { type: "TOGGLE_RULERS" }
+  | { type: "TOGGLE_ANNOTATIONS" };
 
 // ============================================
 // 元素渲染
@@ -173,7 +173,7 @@ export interface RenderedElementStyle {
   /** 边框宽度 */
   borderWidth?: number;
   /** 边框样式 */
-  borderStyle?: 'solid' | 'dashed' | 'dotted' | 'none';
+  borderStyle?: "solid" | "dashed" | "dotted" | "none";
   /** 边框圆角 */
   borderRadius?: number | [number, number, number, number];
   /** 透明度 */
@@ -187,11 +187,11 @@ export interface RenderedElementStyle {
   fontFamily?: string;
   fontSize?: number;
   fontWeight?: number | string;
-  fontStyle?: 'normal' | 'italic';
+  fontStyle?: "normal" | "italic";
   lineHeight?: number;
   letterSpacing?: number;
-  textAlign?: 'left' | 'center' | 'right';
-  verticalAlign?: 'top' | 'middle' | 'bottom';
+  textAlign?: "left" | "center" | "right";
+  verticalAlign?: "top" | "middle" | "bottom";
   color?: string;
   textDecoration?: string;
 }
@@ -279,9 +279,9 @@ export interface RulerConfig {
  */
 export interface ExportOptions {
   /** 导出格式 */
-  format: 'png' | 'jpeg' | 'pdf';
+  format: "png" | "jpeg" | "pdf";
   /** 导出区域 */
-  region?: 'all' | 'viewport' | 'selection';
+  region?: "all" | "viewport" | "selection";
   /** 缩放比例（用于控制导出质量） */
   pixelRatio?: number;
   /** 背景色 */
@@ -303,7 +303,7 @@ export interface ExportResult {
   /** 高度 */
   height: number;
   /** 格式 */
-  format: 'png' | 'jpeg' | 'pdf';
+  format: "png" | "jpeg" | "pdf";
 }
 
 // ============================================
@@ -342,19 +342,17 @@ export interface CacheConfig {
  * 渲染器事件映射
  */
 export interface RendererEventMap {
-  'element:select': { elementId: string | null; element: IRElement | null };
-  'element:hover': { elementId: string | null; element: IRElement | null };
-  'viewport:change': ViewportState;
-  'scale:change': number;
-  'position:change': { x: number; y: number };
-  'selection:complete': { elementIds: string[] };
-  'export:complete': ExportResult;
-  'export:error': Error;
+  "element:select": { elementId: string | null; element: IRElement | null };
+  "element:hover": { elementId: string | null; element: IRElement | null };
+  "viewport:change": ViewportState;
+  "scale:change": number;
+  "position:change": { x: number; y: number };
+  "selection:complete": { elementIds: string[] };
+  "export:complete": ExportResult;
+  "export:error": Error;
 }
 
 /**
  * 事件处理器
  */
-export type RendererEventHandler<K extends keyof RendererEventMap> = (
-  event: RendererEventMap[K]
-) => void;
+export type RendererEventHandler<K extends keyof RendererEventMap> = (event: RendererEventMap[K]) => void;

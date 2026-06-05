@@ -1,4 +1,4 @@
-import type { ArtifactFormaExtension } from './artifact-manifest.js';
+import type { ArtifactFormaExtension } from "./artifact-manifest.js";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -7,7 +7,7 @@ type Result = { ok: true } | { ok: false; error: string };
  * 约束：每个 asset.path 必须出现在 supportingFiles 中，避免双源漂移。
  */
 export function validateAssetsAgainstSupportingFiles(
-  forma: Pick<ArtifactFormaExtension, 'assets'>,
+  forma: Pick<ArtifactFormaExtension, "assets">,
   supportingFiles: string[] | undefined,
 ): Result {
   const assets = forma.assets ?? [];

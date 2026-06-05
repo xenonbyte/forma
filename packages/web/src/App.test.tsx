@@ -51,7 +51,7 @@ describe("App routing", () => {
           return jsonResponse([]);
         }
         return jsonResponse({ error_code: "NOT_FOUND", message: path }, 404);
-      })
+      }),
     );
 
     window.history.replaceState(
@@ -60,11 +60,11 @@ describe("App routing", () => {
           cleanupPending: true,
           productId: "P-123abc",
           recoveryWarnings: ["Recovered orphaned requirement index"],
-          sessionCleared: true
-        }
+          sessionCleared: true,
+        },
       },
       "",
-      "/products"
+      "/products",
     );
 
     const { container, root } = createTestRoot();
@@ -98,6 +98,6 @@ async function flushPromises() {
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     headers: { "content-type": "application/json" },
-    status
+    status,
   });
 }

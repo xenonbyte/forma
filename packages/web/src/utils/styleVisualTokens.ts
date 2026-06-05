@@ -13,7 +13,10 @@ export interface ExtractStyleVisualTokensInput {
   tokensCss?: string;
 }
 
-export function extractStyleVisualTokens({ designMd = "", tokensCss = "" }: ExtractStyleVisualTokensInput): StyleVisualTokens {
+export function extractStyleVisualTokens({
+  designMd = "",
+  tokensCss = "",
+}: ExtractStyleVisualTokensInput): StyleVisualTokens {
   const parsed = parseDesignMd(designMd);
   const cssVars = parseCssVariables(tokensCss);
 
@@ -22,53 +25,101 @@ export function extractStyleVisualTokens({ designMd = "", tokensCss = "" }: Extr
       firstResolved(
         [
           pick(parsed.colors, ["background", "canvas", "surface", "page", "app-background", "bg"]),
-          pickCssVar(cssVars, ["--background", "--color-background", "--canvas", "--color-canvas", "--surface", "--color-surface", "--page-background"])
+          pickCssVar(cssVars, [
+            "--background",
+            "--color-background",
+            "--canvas",
+            "--color-canvas",
+            "--surface",
+            "--color-surface",
+            "--page-background",
+          ]),
         ],
         parsed,
-        cssVars
-      )
+        cssVars,
+      ),
     ),
     fontFamily: safeFontFamily(
       firstResolved(
         [
-          pick(parsed.typography, ["font-body", "body", "body-md", "body-lg", "font-heading", "heading", "heading-md", "display"]),
+          pick(parsed.typography, [
+            "font-body",
+            "body",
+            "body-md",
+            "body-lg",
+            "font-heading",
+            "heading",
+            "heading-md",
+            "display",
+          ]),
           pickByName(parsed.typography, ["body", "heading", "display"]),
-          pickCssVar(cssVars, ["--font-body", "--font-family-body", "--body-font", "--font-sans", "--font-heading", "--font-family-heading"])
+          pickCssVar(cssVars, [
+            "--font-body",
+            "--font-family-body",
+            "--body-font",
+            "--font-sans",
+            "--font-heading",
+            "--font-family-heading",
+          ]),
         ],
         parsed,
-        cssVars
-      )
+        cssVars,
+      ),
     ),
     primaryColor: safeCssColor(
       firstResolved(
         [
           pick(parsed.colors, ["primary", "brand", "accent", "action"]),
-          pickCssVar(cssVars, ["--primary", "--color-primary", "--brand", "--color-brand", "--accent", "--color-accent", "--action"])
+          pickCssVar(cssVars, [
+            "--primary",
+            "--color-primary",
+            "--brand",
+            "--color-brand",
+            "--accent",
+            "--color-accent",
+            "--action",
+          ]),
         ],
         parsed,
-        cssVars
-      )
+        cssVars,
+      ),
     ),
     secondaryColor: safeCssColor(
       firstResolved(
         [
           pick(parsed.colors, ["secondary", "accent-secondary", "support", "muted-accent"]),
-          pickCssVar(cssVars, ["--secondary", "--color-secondary", "--accent-secondary", "--color-accent-secondary", "--support", "--muted-accent"])
+          pickCssVar(cssVars, [
+            "--secondary",
+            "--color-secondary",
+            "--accent-secondary",
+            "--color-accent-secondary",
+            "--support",
+            "--muted-accent",
+          ]),
         ],
         parsed,
-        cssVars
-      )
+        cssVars,
+      ),
     ),
     textColor: safeCssColor(
       firstResolved(
         [
           pick(parsed.colors, ["text-primary", "text", "foreground", "ink", "body", "content"]),
-          pickCssVar(cssVars, ["--text-primary", "--color-text-primary", "--text", "--color-text", "--foreground", "--color-foreground", "--ink", "--color-ink"])
+          pickCssVar(cssVars, [
+            "--text-primary",
+            "--color-text-primary",
+            "--text",
+            "--color-text",
+            "--foreground",
+            "--color-foreground",
+            "--ink",
+            "--color-ink",
+          ]),
         ],
         parsed,
-        cssVars
-      )
-    )
+        cssVars,
+      ),
+    ),
   });
 }
 
@@ -93,7 +144,11 @@ function compactVisualTokens(tokens: StyleVisualTokens): StyleVisualTokens {
   return Object.fromEntries(Object.entries(tokens).filter(([, value]) => value !== undefined)) as StyleVisualTokens;
 }
 
-function firstResolved(values: Array<string | undefined>, parsed: ParsedDesignMd, cssVars: Record<string, string>): string | undefined {
+function firstResolved(
+  values: Array<string | undefined>,
+  parsed: ParsedDesignMd,
+  cssVars: Record<string, string>,
+): string | undefined {
   for (const value of values) {
     const resolved = resolveValue(value, parsed, cssVars, new Set());
     if (resolved) {
@@ -104,7 +159,12 @@ function firstResolved(values: Array<string | undefined>, parsed: ParsedDesignMd
   return undefined;
 }
 
-function resolveValue(value: string | undefined, parsed: ParsedDesignMd, cssVars: Record<string, string>, seen: Set<string>): string | undefined {
+function resolveValue(
+  value: string | undefined,
+  parsed: ParsedDesignMd,
+  cssVars: Record<string, string>,
+  seen: Set<string>,
+): string | undefined {
   const trimmed = value?.trim();
   if (!trimmed) {
     return undefined;
@@ -171,7 +231,9 @@ function pick(record: Record<string, string>, keys: string[]): string | undefine
 }
 
 function pickByName(record: Record<string, string>, fragments: string[]): string | undefined {
-  const entry = Object.entries(record).find(([key, value]) => value.trim().length > 0 && fragments.some((fragment) => key.toLowerCase().includes(fragment)));
+  const entry = Object.entries(record).find(
+    ([key, value]) => value.trim().length > 0 && fragments.some((fragment) => key.toLowerCase().includes(fragment)),
+  );
   return entry?.[1];
 }
 

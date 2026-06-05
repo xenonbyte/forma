@@ -27,7 +27,7 @@ import {
   type ExportArchiveAssetsResult,
   type Language,
   type Platform,
-  type SchemaNormalizationRecoveryState
+  type SchemaNormalizationRecoveryState,
 } from "@xenonbyte/forma-core";
 
 type UnknownRecord = Record<string, unknown>;
@@ -68,21 +68,25 @@ interface BaselinePageRecord {
   source_requirements: string[];
 }
 
-const ALLOWED_MUTATION_ORIGINS = new Set([
-  "http://localhost:5173",
-  "http://localhost:4173"
-]);
+const ALLOWED_MUTATION_ORIGINS = new Set(["http://localhost:5173", "http://localhost:4173"]);
 
 export interface FormaRoutesStore {
   home: string;
   artifacts: {
     readArtifact(productId: string, artifactId: string): Promise<{ manifest: ArtifactManifest; etag: string }>;
-    readArtifactVersion(productId: string, artifactId: string, version: number): Promise<{ manifest: ArtifactManifest; etag: string }>;
+    readArtifactVersion(
+      productId: string,
+      artifactId: string,
+      version: number,
+    ): Promise<{ manifest: ArtifactManifest; etag: string }>;
     listArtifacts(productId: string): Promise<Array<{ artifactId: string }>>;
     listArtifactVersions(productId: string, artifactId: string): Promise<number[]>;
   };
   copy: {
-    getTranslations(productId: string, requirementId: string): Promise<Array<{ page_id: string; entries?: unknown[]; [key: string]: unknown }>>;
+    getTranslations(
+      productId: string,
+      requirementId: string,
+    ): Promise<Array<{ page_id: string; entries?: unknown[]; [key: string]: unknown }>>;
   };
   deleteProduct(input: { product_id: string; confirm_product_id: string }): Promise<unknown>;
   /**
@@ -93,7 +97,13 @@ export interface FormaRoutesStore {
   exportArchiveAssets?: (productId: string, requirementId: string) => Promise<ExportArchiveAssetsResult>;
   products: {
     createProduct(input: { name: string; description: string }): Promise<unknown>;
-    getProduct(productId: string): Promise<{ id: string; platform?: string; designSystemArtifactId?: string; requirements?: Record<string, { latestArtifactId?: string }>; [key: string]: unknown }>;
+    getProduct(productId: string): Promise<{
+      id: string;
+      platform?: string;
+      designSystemArtifactId?: string;
+      requirements?: Record<string, { latestArtifactId?: string }>;
+      [key: string]: unknown;
+    }>;
     initProductConfig(productId: string, config: unknown): Promise<unknown>;
     listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
     listDesignPointers(productId: string): Promise<DesignPointer[]>;
@@ -108,7 +118,7 @@ export interface FormaRoutesStore {
   };
   runProductMutation?<T>(
     input: { operation: string; product_id?: string },
-    fn: (context: { warnings: string[] }) => Promise<T>
+    fn: (context: { warnings: string[] }) => Promise<T>,
   ): Promise<T>;
   styles: {
     getStyle(name: string): Promise<BrandStyleContent>;
@@ -128,7 +138,7 @@ export class RouteHttpError extends Error {
     public readonly code: string,
     message: string,
     public readonly details: Record<string, unknown> = {},
-    public readonly statusCode: number = 500
+    public readonly statusCode: number = 500,
   ) {
     super(message);
     this.name = "RouteHttpError";
@@ -175,7 +185,7 @@ export function sendNormalizationBlocked(reply: FastifyReply, state: SchemaNorma
   reply.status(409).send({
     error_code: preflight ? "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED" : "SCHEMA_NORMALIZATION_RECOVERY_REQUIRED",
     message: preflight ? "Schema normalization preflight required" : "Schema normalization recovery required",
-    details: state
+    details: state,
   });
 }
 
@@ -232,19 +242,21 @@ function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): bool
   const formaClientStr = Array.isArray(formaClient) ? formaClient[0] : (formaClient ?? null);
   const allowed = isOriginAllowed(originStr, request);
 
-  console.log(JSON.stringify({
-    timestamp: new Date().toISOString(),
-    route: request.url,
-    origin: originStr ?? null,
-    "x-forma-client": formaClientStr,
-    allowed
-  }));
+  console.log(
+    JSON.stringify({
+      timestamp: new Date().toISOString(),
+      route: request.url,
+      origin: originStr ?? null,
+      "x-forma-client": formaClientStr,
+      allowed,
+    }),
+  );
 
   if (!allowed) {
     reply.status(403).send({
       error_code: "ARTIFACT_FORBIDDEN_ORIGIN",
       message: "Origin not allowed for mutation routes",
-      details: { origin: originStr ?? null }
+      details: { origin: originStr ?? null },
     });
     return false;
   }
@@ -252,7 +264,11 @@ function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): bool
   return true;
 }
 
-export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, options: RegisterRoutesOptions = {}): void {
+export function registerRoutes(
+  app: FastifyInstance,
+  store: FormaRoutesStore,
+  options: RegisterRoutesOptions = {},
+): void {
   const authenticatedApi = options.authenticatedApi === true;
 
   // ─── Product routes ────────────────────────────────────────────────────────
@@ -264,18 +280,20 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
     const body = objectBody(request.body);
     return store.products.createProduct({
       name: requiredString(body, "name"),
-      description: requiredString(body, "description")
+      description: requiredString(body, "description"),
     });
   });
 
-  app.get<{ Params: { id: string } }>("/api/products/:id", async (request) => store.products.getProduct(request.params.id));
+  app.get<{ Params: { id: string } }>("/api/products/:id", async (request) =>
+    store.products.getProduct(request.params.id),
+  );
 
   app.delete<{ Params: { id: string }; Body: unknown }>("/api/products/:id", async (request, reply) => {
     if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
     return store.deleteProduct({
       product_id: request.params.id,
-      confirm_product_id: requiredString(body, "confirm_product_id")
+      confirm_product_id: requiredString(body, "confirm_product_id"),
     });
   });
 
@@ -286,7 +304,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
       platform: requiredPlatform(body, "platform"),
       brand_style: requiredString(body, "brand_style"),
       languages: requiredStringArray(body, "languages") as Language[],
-      default_language: requiredString(body, "default_language") as Language
+      default_language: requiredString(body, "default_language") as Language,
     };
     if (body["system_style"] !== undefined) {
       config["system_style"] = requiredString(body, "system_style");
@@ -297,7 +315,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
   // ─── Requirement routes ────────────────────────────────────────────────────
 
   app.get<{ Params: { id: string } }>("/api/products/:id/requirements", async (request) =>
-    store.requirements.getRequirementHistory(request.params.id)
+    store.requirements.getRequirementHistory(request.params.id),
   );
 
   app.post<{ Params: { id: string }; Body: unknown }>("/api/products/:id/requirements", async (request, reply) => {
@@ -307,88 +325,99 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
     return store.requirements.createEmptyRequirement(request.params.id, requiredString(body, "title"));
   });
 
-  app.post<{ Params: { id: string; reqId: string }; Body: unknown }>("/api/products/:id/requirements/:reqId/save", async (request, reply) => {
-    if (!checkMutationOrigin(request, reply)) return;
-    await getOwnedRequirement(store, request.params.id, request.params.reqId);
-    const body = objectBody(request.body);
-    const input = { ...body, requirement_id: request.params.reqId } as Parameters<typeof store.requirements.saveRequirement>[0];
-    return store.requirements.saveRequirement(input);
-  });
+  app.post<{ Params: { id: string; reqId: string }; Body: unknown }>(
+    "/api/products/:id/requirements/:reqId/save",
+    async (request, reply) => {
+      if (!checkMutationOrigin(request, reply)) return;
+      await getOwnedRequirement(store, request.params.id, request.params.reqId);
+      const body = objectBody(request.body);
+      const input = { ...body, requirement_id: request.params.reqId } as Parameters<
+        typeof store.requirements.saveRequirement
+      >[0];
+      return store.requirements.saveRequirement(input);
+    },
+  );
 
-  app.put<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId/archive", async (request, reply) => {
-    if (!checkMutationOrigin(request, reply)) return;
-    const productId = request.params.id;
-    const requirementId = request.params.reqId;
+  app.put<{ Params: { id: string; reqId: string } }>(
+    "/api/products/:id/requirements/:reqId/archive",
+    async (request, reply) => {
+      if (!checkMutationOrigin(request, reply)) return;
+      const productId = request.params.id;
+      const requirementId = request.params.reqId;
 
-    // Ownership check (also gives us the current requirement status)
-    const requirement = await getOwnedRequirement(store, productId, requirementId);
+      // Ownership check (also gives us the current requirement status)
+      const requirement = await getOwnedRequirement(store, productId, requirementId);
 
-    // Precheck: only active requirements can be archived
-    if (requirement.status !== "active") {
-      throw new RouteHttpError(
-        "REQUIREMENT_STATUS_INVALID",
-        "Requirement status invalid",
-        { requirement_id: requirementId, status: requirement.status },
-        409
-      );
-    }
-
-    // Phase 1: generate handoff assets (icons + VZI) BEFORE committing archived status.
-    // If generation fails, the error propagates and archiveRequirement is NOT called.
-    const generateAssets: (pid: string, rid: string) => Promise<ExportArchiveAssetsResult> =
-      store.exportArchiveAssets ??
-      ((pid, rid) => {
-        const productsRoot = getFormaPaths(store.home).productsDir;
-        const deps = makeExportArchiveAssetsDeps(
-          productsRoot,
-          async (productId) => {
-            const product = await store.products.getProduct(productId);
-            return product.platform as Platform | undefined;
-          },
-          (productId) => resolveArchiveDesignPointers(store, productId),
-          async (productId, requirementId) => {
-            const current = await getOwnedRequirement(store, productId, requirementId);
-            return current.pages.map((page) => page.page_id);
-          }
+      // Precheck: only active requirements can be archived
+      if (requirement.status !== "active") {
+        throw new RouteHttpError(
+          "REQUIREMENT_STATUS_INVALID",
+          "Requirement status invalid",
+          { requirement_id: requirementId, status: requirement.status },
+          409,
         );
-        return exportArchiveAssets(deps, { productId: pid, requirementId: rid, generatedFrom: "requirement-archive" });
-      });
-
-    const archiveWithAssets = async (recheckStatus: boolean) => {
-      if (recheckStatus) {
-        const current = await getOwnedRequirement(store, productId, requirementId);
-        if (current.status !== "active") {
-          throw new RouteHttpError(
-            "REQUIREMENT_STATUS_INVALID",
-            "Requirement status invalid",
-            { requirement_id: requirementId, status: current.status },
-            409
-          );
-        }
       }
 
-      const assets = await generateAssets(productId, requirementId);
-      const archiveRequirementLocked = store.requirements.archiveRequirementLocked;
-      const archived = archiveRequirementLocked
-        ? await archiveRequirementLocked.call(store.requirements, requirementId)
-        : await store.requirements.archiveRequirement(requirementId);
-      const archivedRequirement = await store.requirements.getRequirement({ requirement_id: archived.id });
+      // Phase 1: generate handoff assets (icons + VZI) BEFORE committing archived status.
+      // If generation fails, the error propagates and archiveRequirement is NOT called.
+      const generateAssets: (pid: string, rid: string) => Promise<ExportArchiveAssetsResult> =
+        store.exportArchiveAssets ??
+        ((pid, rid) => {
+          const productsRoot = getFormaPaths(store.home).productsDir;
+          const deps = makeExportArchiveAssetsDeps(
+            productsRoot,
+            async (productId) => {
+              const product = await store.products.getProduct(productId);
+              return product.platform as Platform | undefined;
+            },
+            (productId) => resolveArchiveDesignPointers(store, productId),
+            async (productId, requirementId) => {
+              const current = await getOwnedRequirement(store, productId, requirementId);
+              return current.pages.map((page) => page.page_id);
+            },
+          );
+          return exportArchiveAssets(deps, {
+            productId: pid,
+            requirementId: rid,
+            generatedFrom: "requirement-archive",
+          });
+        });
 
-      return { requirement: archivedRequirement, icons: assets.icons, vzi: assets.vzi };
-    };
+      const archiveWithAssets = async (recheckStatus: boolean) => {
+        if (recheckStatus) {
+          const current = await getOwnedRequirement(store, productId, requirementId);
+          if (current.status !== "active") {
+            throw new RouteHttpError(
+              "REQUIREMENT_STATUS_INVALID",
+              "Requirement status invalid",
+              { requirement_id: requirementId, status: current.status },
+              409,
+            );
+          }
+        }
 
-    if (store.runProductMutation && store.requirements.archiveRequirementLocked) {
-      return await store.runProductMutation(
-        { operation: "archive_requirement", product_id: productId },
-        () => archiveWithAssets(true)
-      );
-    }
+        const assets = await generateAssets(productId, requirementId);
+        const archiveRequirementLocked = store.requirements.archiveRequirementLocked;
+        const archived = archiveRequirementLocked
+          ? await archiveRequirementLocked.call(store.requirements, requirementId)
+          : await store.requirements.archiveRequirement(requirementId);
+        const archivedRequirement = await store.requirements.getRequirement({ requirement_id: archived.id });
 
-    return await archiveWithAssets(false);
-  });
+        return { requirement: archivedRequirement, icons: assets.icons, vzi: assets.vzi };
+      };
+
+      if (store.runProductMutation && store.requirements.archiveRequirementLocked) {
+        return await store.runProductMutation({ operation: "archive_requirement", product_id: productId }, () =>
+          archiveWithAssets(true),
+        );
+      }
+
+      return await archiveWithAssets(false);
+    },
+  );
 
   app.get<{ Params: { id: string; reqId: string } }>("/api/products/:id/requirements/:reqId", async (request) =>
-    getOwnedRequirement(store, request.params.id, request.params.reqId)
+    getOwnedRequirement(store, request.params.id, request.params.reqId),
   );
 
   // ─── Annotation handoff routes ─────────────────────────────────────────────
@@ -449,7 +478,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
         vziFile = getArtifactVziPath(productsDir, pid, aid);
         vziDir = getArtifactVziDir(productsDir, pid, aid);
       } catch {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
       const servedFile = await resolveServedFile(vziDir, vziFile, artifactDir);
@@ -480,7 +511,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
         vziFile = getArtifactVziPath(productsDir, pid, aid);
         vziDir = getArtifactVziDir(productsDir, pid, aid);
       } catch {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
       const servedFile = await resolveServedFile(vziDir, vziFile, artifactDir);
@@ -512,17 +545,23 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
         artifactDir = getArtifactDir(productsDir, pid, aid);
         iconsDir = getArtifactIconsDir(productsDir, pid, aid);
       } catch {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
       const resolvedFile = resolve(iconsDir, relPath);
       if (!isSameOrChildPath(resolve(iconsDir), resolvedFile)) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes icons directory", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes icons directory", details: {} });
         return;
       }
       const contentType = ICON_ALLOWED_CONTENT_TYPES.get(extname(resolvedFile).toLowerCase());
       if (!contentType) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Unsupported icon content type", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Unsupported icon content type", details: {} });
         return;
       }
       const servedFile = await resolveServedFile(iconsDir, resolvedFile, artifactDir);
@@ -541,37 +580,44 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
   // ─── Baseline compatibility routes ────────────────────────────────────────
 
   app.get<{ Params: { id: string } }>("/api/products/:id/baseline", async (request) =>
-    getProductBaseline(store, request.params.id)
+    getProductBaseline(store, request.params.id),
   );
 
-  app.get<{ Params: { id: string; pageId: string } }>("/api/products/:id/baseline/pages/:pageId/image", async (request) =>
-    getBaselineImageMetadata(store, request.params.id, request.params.pageId)
+  app.get<{ Params: { id: string; pageId: string } }>(
+    "/api/products/:id/baseline/pages/:pageId/image",
+    async (request) => getBaselineImageMetadata(store, request.params.id, request.params.pageId),
   );
 
   app.get<{ Params: { id: string; pageId: string }; Querystring: { requirement_id?: string } }>(
     "/api/products/:id/baseline/pages/:pageId/copy",
-    async (request) => getBaselinePageCopy(store, request.params.id, request.params.pageId, request.query.requirement_id)
+    async (request) =>
+      getBaselinePageCopy(store, request.params.id, request.params.pageId, request.query.requirement_id),
   );
 
-  app.get<{ Params: { id: string; pageId: string } }>("/api/products/:id/baseline/pages/:pageId/annotations", async (request) => {
-    const page = await getBaselinePage(store, request.params.id, request.params.pageId);
-    return {
-      product_id: request.params.id,
-      baseline_page_id: request.params.pageId,
-      annotations: [{
-        id: page.id,
-        name: page.name,
-        type: "baseline_page",
-        content: {
-          features: page.features,
-          copy: page.copy,
-          fields: page.fields,
-          interactions: page.interactions
-        },
-        source_requirements: page.source_requirements
-      }]
-    };
-  });
+  app.get<{ Params: { id: string; pageId: string } }>(
+    "/api/products/:id/baseline/pages/:pageId/annotations",
+    async (request) => {
+      const page = await getBaselinePage(store, request.params.id, request.params.pageId);
+      return {
+        product_id: request.params.id,
+        baseline_page_id: request.params.pageId,
+        annotations: [
+          {
+            id: page.id,
+            name: page.name,
+            type: "baseline_page",
+            content: {
+              features: page.features,
+              copy: page.copy,
+              fields: page.fields,
+              interactions: page.interactions,
+            },
+            source_requirements: page.source_requirements,
+          },
+        ],
+      };
+    },
+  );
 
   // ─── Artifact routes (SPEC-IF-HTTP-001 ~ 003) ─────────────────────────────
 
@@ -611,29 +657,26 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
           page_id: forma?.pageId,
           variant: forma?.variant,
           ...(typeof version === "number" ? { current_version: version } : {}),
-          superseded
+          superseded,
         });
       }
       return { artifacts };
-    }
+    },
   );
 
   // SPEC-IF-HTTP-002: get artifact manifest
-  app.get<{ Params: { pid: string; aid: string } }>(
-    "/api/products/:pid/artifacts/:aid",
-    async (request, reply) => {
-      const { pid, aid } = request.params;
-      const { pointerVersions } = await loadArtifactPointers(store, pid);
-      const { manifest, etag } = await resolveCurrentArtifact(store, pid, aid, pointerVersions);
-      reply.header("ETag", etag);
-      reply.header("Cache-Control", "private, max-age=300");
-      return {
-        manifest,
-        supportingFiles: manifest.supportingFiles ?? [],
-        preview_url: artifactPreviewUrl(pid, aid, "2x")
-      };
-    }
-  );
+  app.get<{ Params: { pid: string; aid: string } }>("/api/products/:pid/artifacts/:aid", async (request, reply) => {
+    const { pid, aid } = request.params;
+    const { pointerVersions } = await loadArtifactPointers(store, pid);
+    const { manifest, etag } = await resolveCurrentArtifact(store, pid, aid, pointerVersions);
+    reply.header("ETag", etag);
+    reply.header("Cache-Control", "private, max-age=300");
+    return {
+      manifest,
+      supportingFiles: manifest.supportingFiles ?? [],
+      preview_url: artifactPreviewUrl(pid, aid, "2x"),
+    };
+  });
 
   // SPEC-IF-HTTP-003: preview PNG. Falls back to the artifact's current version
   // when no flat (legacy) preview exists, so versioned artifacts are previewable.
@@ -642,7 +685,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
     async (request, reply) => {
       const { pid, aid, res } = request.params;
       if (res !== "1x" && res !== "2x") {
-        reply.status(404).send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview resolution not found", details: {} });
+        reply
+          .status(404)
+          .send({ error_code: "ARTIFACT_NOT_FOUND", message: "Preview resolution not found", details: {} });
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
@@ -650,7 +695,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
       try {
         artifactDir = getArtifactDir(productsDir, pid, aid);
       } catch {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
       const previewPath = await resolveCurrentPreviewPath(store, productsDir, pid, aid, res);
@@ -670,7 +717,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
       setArtifactCacheHeaders(reply, authenticatedApi);
       setArtifactSecurityHeaders(reply);
       reply.send(content);
-    }
+    },
   );
 
   // ─── Versioned artifact bundle route ──────────────────────────────────────
@@ -682,7 +729,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
       const relPath = request.params["*"];
       const version = Number(v);
       if (!Number.isInteger(version) || version < 1) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact version", details: { version: v } });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact version", details: { version: v } });
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
@@ -692,16 +741,22 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
         artifactDir = getArtifactDir(productsDir, pid, aid);
         versionDir = getArtifactVersionDir(productsDir, pid, aid, version);
       } catch {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
       if (!relPath || relPath.startsWith("/") || relPath.includes("\0")) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Bundle path is required", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Bundle path is required", details: {} });
         return;
       }
       const resolvedFile = resolve(versionDir, relPath);
       if (!isSameOrChildPath(resolve(versionDir), resolvedFile)) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes bundle directory", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes bundle directory", details: {} });
         return;
       }
       const servedFile = await resolveServedFile(versionDir, resolvedFile, artifactDir);
@@ -714,7 +769,7 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
       setArtifactCacheHeaders(reply, authenticatedApi);
       setArtifactSecurityHeaders(reply);
       reply.send(content);
-    }
+    },
   );
 
   // ─── Versioned artifact preview route ─────────────────────────────────────
@@ -724,12 +779,18 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
     async (request, reply) => {
       const { pid, aid, v, res } = request.params;
       if (res !== "1x.png" && res !== "2x.png") {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Preview resolution must be 1x.png or 2x.png", details: { res } });
+        reply.status(400).send({
+          error_code: "ARTIFACT_INVALID_INPUT",
+          message: "Preview resolution must be 1x.png or 2x.png",
+          details: { res },
+        });
         return;
       }
       const version = Number(v);
       if (!Number.isInteger(version) || version < 1) {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact version", details: { version: v } });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact version", details: { version: v } });
         return;
       }
       const productsDir = getFormaPaths(store.home).productsDir;
@@ -740,7 +801,9 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
         artifactDir = getArtifactDir(productsDir, pid, aid);
         previewPath = getArtifactVersionPreviewPath(productsDir, pid, aid, version, resolution);
       } catch {
-        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid artifact or product id", details: {} });
         return;
       }
       const servedFile = await resolveServedFile(dirname(previewPath), previewPath, artifactDir);
@@ -755,14 +818,16 @@ export function registerRoutes(app: FastifyInstance, store: FormaRoutesStore, op
       setArtifactCacheHeaders(reply, authenticatedApi);
       setArtifactSecurityHeaders(reply);
       reply.send(content);
-    }
+    },
   );
 
   // ─── Style routes ──────────────────────────────────────────────────────────
 
   app.get("/api/styles", async () => store.styles.listStyles());
 
-  app.get<{ Params: { name: string } }>("/api/styles/:name", async (request) => store.styles.getStyle(request.params.name));
+  app.get<{ Params: { name: string } }>("/api/styles/:name", async (request) =>
+    store.styles.getStyle(request.params.name),
+  );
 
   app.get("/api/system-styles", async () => store.styles.listSystemStyles());
 }
@@ -830,37 +895,36 @@ function isCompleteDesignPointer(pointer: ArchiveDesignPointerCandidate): pointe
   );
 }
 
-async function resolveArchiveDesignPointers(
-  store: FormaRoutesStore,
-  productId: string
-): Promise<DesignPointer[]> {
-  const pointers = await store.products.listDesignPointers(productId) as ArchiveDesignPointerCandidate[];
-  return Promise.all(pointers.map(async (pointer) => {
-    if (isCompleteDesignPointer(pointer)) {
-      return pointer;
-    }
+async function resolveArchiveDesignPointers(store: FormaRoutesStore, productId: string): Promise<DesignPointer[]> {
+  const pointers = (await store.products.listDesignPointers(productId)) as ArchiveDesignPointerCandidate[];
+  return Promise.all(
+    pointers.map(async (pointer) => {
+      if (isCompleteDesignPointer(pointer)) {
+        return pointer;
+      }
 
-    const { manifest } = await store.artifacts.readArtifactVersion(productId, pointer.artifactId, pointer.version);
-    const forma = normalizeFormaExtension(manifest.forma ?? {});
-    const requirementId = forma.requirementId ?? manifest.requirementId;
-    const pageId = forma.pageId;
-    if (!requirementId || !pageId) {
-      throw new FormaError("ARTIFACT_INVALID_INPUT", "Design pointer is missing requirement/page metadata", {
-        product_id: productId,
-        artifact_id: pointer.artifactId,
+      const { manifest } = await store.artifacts.readArtifactVersion(productId, pointer.artifactId, pointer.version);
+      const forma = normalizeFormaExtension(manifest.forma ?? {});
+      const requirementId = forma.requirementId ?? manifest.requirementId;
+      const pageId = forma.pageId;
+      if (!requirementId || !pageId) {
+        throw new FormaError("ARTIFACT_INVALID_INPUT", "Design pointer is missing requirement/page metadata", {
+          product_id: productId,
+          artifact_id: pointer.artifactId,
+          version: pointer.version,
+        });
+      }
+
+      return {
+        requirementId,
+        pageId,
+        variant: forma.variant ?? "default",
+        artifactId: pointer.artifactId,
         version: pointer.version,
-      });
-    }
-
-    return {
-      requirementId,
-      pageId,
-      variant: forma.variant ?? "default",
-      artifactId: pointer.artifactId,
-      version: pointer.version,
-      designStatus: "active",
-    };
-  }));
+        designStatus: "active",
+      };
+    }),
+  );
 }
 
 async function getOwnedRequirement(store: FormaStore, productId: string, requirementId: string) {
@@ -868,7 +932,7 @@ async function getOwnedRequirement(store: FormaStore, productId: string, require
   if (requirement.product_id !== productId) {
     throw new RouteNotFoundError("REQUIREMENT_NOT_FOUND", "Requirement not found", {
       product_id: productId,
-      requirement_id: requirementId
+      requirement_id: requirementId,
     });
   }
   return requirement;
@@ -898,12 +962,14 @@ async function getProductBaseline(store: FormaStore, productId: string) {
         id: pageId,
         name: stringValue(page.name) ?? existing?.name ?? pageId,
         features: stringValue(page.features) ?? existing?.features ?? "",
-        copy: Array.isArray(page.copy) ? page.copy : existing?.copy ?? [],
+        copy: Array.isArray(page.copy) ? page.copy : (existing?.copy ?? []),
         fields: stringValue(page.fields) ?? existing?.fields ?? "",
         interactions: stringValue(page.interactions) ?? existing?.interactions ?? "",
         ...(page.semantic_contract !== undefined ? { semantic_contract: page.semantic_contract } : {}),
-        ...(page.semantic_contract_coverage !== undefined ? { semantic_contract_coverage: page.semantic_contract_coverage } : {}),
-        source_requirements: uniqueStrings([...(existing?.source_requirements ?? []), requirement.id])
+        ...(page.semantic_contract_coverage !== undefined
+          ? { semantic_contract_coverage: page.semantic_contract_coverage }
+          : {}),
+        source_requirements: uniqueStrings([...(existing?.source_requirements ?? []), requirement.id]),
       });
     }
   }
@@ -911,14 +977,11 @@ async function getProductBaseline(store: FormaStore, productId: string) {
   return {
     product_id: productId,
     pages: [...pagesById.values()],
-    navigation
+    navigation,
   };
 }
 
-function mapRequirementNavigationToBaseline(
-  pages: RequirementPageRecord[],
-  navigation: unknown[]
-): unknown[] {
+function mapRequirementNavigationToBaseline(pages: RequirementPageRecord[], navigation: unknown[]): unknown[] {
   const pageToBaseline = new Map<string, string>();
   for (const page of pages) {
     const pageId = stringValue(page.page_id);
@@ -939,11 +1002,13 @@ function mapRequirementNavigationToBaseline(
     if (!fromRaw || !toRaw) {
       return [];
     }
-    return [{
-      ...item,
-      from: pageToBaseline.get(fromRaw) ?? fromRaw,
-      to: pageToBaseline.get(toRaw) ?? toRaw
-    }];
+    return [
+      {
+        ...item,
+        from: pageToBaseline.get(fromRaw) ?? fromRaw,
+        to: pageToBaseline.get(toRaw) ?? toRaw,
+      },
+    ];
   });
 }
 
@@ -953,7 +1018,7 @@ async function getBaselinePage(store: FormaStore, productId: string, pageId: str
   if (!page) {
     throw new RouteNotFoundError("BASELINE_PAGE_NOT_FOUND", "Baseline page not found", {
       product_id: productId,
-      page_id: pageId
+      page_id: pageId,
     });
   }
   return page;
@@ -963,14 +1028,14 @@ async function getBaselinePageCopy(
   store: FormaStore,
   productId: string,
   pageId: string,
-  requirementId: string | undefined
+  requirementId: string | undefined,
 ) {
   const baselinePage = await getBaselinePage(store, productId, pageId);
   const requirement = requirementId
     ? await getOwnedRequirement(store, productId, requirementId)
     : (await store.requirements.getRequirementHistory(productId))
-      .filter((item) => baselinePage.source_requirements.includes(item.id))
-      .sort(compareRequirementsNewestFirst)[0];
+        .filter((item) => baselinePage.source_requirements.includes(item.id))
+        .sort(compareRequirementsNewestFirst)[0];
 
   if (!requirement) {
     return emptyBaselinePageCopy(pageId);
@@ -986,7 +1051,7 @@ async function getBaselinePageCopy(
   return {
     page_id: pageId,
     default_language_copy: Array.isArray(requirementPage.copy) ? requirementPage.copy : [],
-    translations: pageTranslation?.entries ?? []
+    translations: pageTranslation?.entries ?? [],
   };
 }
 
@@ -1005,7 +1070,7 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
         product_id: productId,
         baseline_page_id: pageId,
         requirement_id: requirement.id,
-        preview_url: artifactPreviewUrl(productId, artifactId, "2x")
+        preview_url: artifactPreviewUrl(productId, artifactId, "2x"),
       };
     }
   }
@@ -1013,7 +1078,7 @@ async function getBaselineImageMetadata(store: FormaStore, productId: string, pa
   throw new RouteNotFoundError("BASELINE_IMAGE_NOT_FOUND", "Baseline image not found", {
     product_id: productId,
     page_id: pageId,
-    source_requirements: page.source_requirements
+    source_requirements: page.source_requirements,
   });
 }
 
@@ -1021,7 +1086,7 @@ function emptyBaselinePageCopy(pageId: string) {
   return {
     page_id: pageId,
     default_language_copy: [],
-    translations: []
+    translations: [],
   };
 }
 
@@ -1077,12 +1142,14 @@ const ICON_ALLOWED_CONTENT_TYPES = new Map<string, string>([
  */
 async function loadArtifactPointers(
   store: FormaRoutesStore,
-  productId: string
+  productId: string,
 ): Promise<{ currentPointerIds: Set<string>; pointerVersions: Map<string, number> }> {
   const product = await store.products.getProduct(productId);
   const requirementPointers = (product.requirements ?? {}) as Record<string, { latestArtifactId?: string }>;
   const currentPointerIds = new Set(
-    Object.values(requirementPointers).map((r) => r.latestArtifactId).filter((id): id is string => Boolean(id))
+    Object.values(requirementPointers)
+      .map((r) => r.latestArtifactId)
+      .filter((id): id is string => Boolean(id)),
   );
   const pointerVersions = new Map<string, number>();
   for (const pointer of await store.products.listDesignPointers(productId)) {
@@ -1100,7 +1167,7 @@ async function resolveCurrentArtifact(
   store: FormaRoutesStore,
   productId: string,
   artifactId: string,
-  pointerVersions: Map<string, number>
+  pointerVersions: Map<string, number>,
 ): Promise<{ manifest: ArtifactManifest; etag: string; version?: number }> {
   const versions = await store.artifacts.listArtifactVersions(productId, artifactId);
   if (versions.length > 0) {
@@ -1121,7 +1188,7 @@ async function resolveCurrentPreviewPath(
   productsDir: string,
   productId: string,
   artifactId: string,
-  res: "1x" | "2x"
+  res: "1x" | "2x",
 ): Promise<string | undefined> {
   const flatPreviewPath = join(getArtifactDir(productsDir, productId, artifactId), "preview", `${res}.png`);
   if (await fileExists(flatPreviewPath)) {
@@ -1170,21 +1237,21 @@ async function resolveRealDirectory(dir: string): Promise<{ realPath: string; ex
   const realParent = await realpath(dirname(lexicalPath));
   return {
     realPath: await realpath(lexicalPath),
-    expectedPath: resolve(realParent, basename(lexicalPath))
+    expectedPath: resolve(realParent, basename(lexicalPath)),
   };
 }
 
 async function resolveServedFile(
   rootDir: string,
   requestedFile: string,
-  containmentRootDir = rootDir
+  containmentRootDir = rootDir,
 ): Promise<ServedFileResolution> {
   if (rootDir.includes("\0") || requestedFile.includes("\0") || containmentRootDir.includes("\0")) {
     return {
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Invalid file path"
+      message: "Invalid file path",
     };
   }
 
@@ -1196,7 +1263,7 @@ async function resolveServedFile(
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Path escapes artifact directory"
+      message: "Path escapes artifact directory",
     };
   }
   if (!isSameOrChildPath(lexicalRoot, lexicalFile)) {
@@ -1204,7 +1271,7 @@ async function resolveServedFile(
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Path escapes artifact directory"
+      message: "Path escapes artifact directory",
     };
   }
 
@@ -1214,7 +1281,8 @@ async function resolveServedFile(
   let expectedRoot: string;
   let realFile: string;
   try {
-    ({ realPath: realContainmentRoot, expectedPath: expectedContainmentRoot } = await resolveRealDirectory(lexicalContainmentRoot));
+    ({ realPath: realContainmentRoot, expectedPath: expectedContainmentRoot } =
+      await resolveRealDirectory(lexicalContainmentRoot));
     ({ realPath: realRoot, expectedPath: expectedRoot } = await resolveRealDirectory(lexicalRoot));
     realFile = await realpath(lexicalFile);
   } catch (error) {
@@ -1223,7 +1291,7 @@ async function resolveServedFile(
         ok: false,
         statusCode: 404,
         error_code: "ARTIFACT_NOT_FOUND",
-        message: "File not found"
+        message: "File not found",
       };
     }
     throw error;
@@ -1234,7 +1302,7 @@ async function resolveServedFile(
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Path escapes artifact directory"
+      message: "Path escapes artifact directory",
     };
   }
 
@@ -1243,7 +1311,7 @@ async function resolveServedFile(
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Path escapes artifact directory"
+      message: "Path escapes artifact directory",
     };
   }
 
@@ -1252,7 +1320,7 @@ async function resolveServedFile(
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Path escapes artifact directory"
+      message: "Path escapes artifact directory",
     };
   }
 
@@ -1262,7 +1330,7 @@ async function resolveServedFile(
       ok: false,
       statusCode: 400,
       error_code: "ARTIFACT_INVALID_INPUT",
-      message: "Path is not a regular file"
+      message: "Path is not a regular file",
     };
   }
 
@@ -1273,7 +1341,7 @@ function sendServedFileError(reply: FastifyReply, result: Exclude<ServedFileReso
   reply.status(result.statusCode).send({
     error_code: result.error_code,
     message: result.message,
-    details: {}
+    details: {},
   });
 }
 

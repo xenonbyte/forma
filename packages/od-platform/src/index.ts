@@ -82,7 +82,10 @@ export function createProcessStampArgs<TStamp extends ProcessStampShape>(
 }
 
 function commandArgs(command: string): string[] {
-  return command.trim().split(/\s+/).filter((part) => part.length > 0);
+  return command
+    .trim()
+    .split(/\s+/)
+    .filter((part) => part.length > 0);
 }
 
 export function readFlagValue(args: readonly string[], flagName: string): string | null {
@@ -118,11 +121,10 @@ export function readProcessStampFromCommand<TStamp extends ProcessStampShape>(
   return readProcessStamp(commandArgs(command), contract);
 }
 
-export function matchesProcessStamp<TStamp extends ProcessStampShape, TCriteria extends Partial<TStamp> = Partial<TStamp>>(
-  stamp: TStamp,
-  criteria: TCriteria | undefined,
-  contract: ProcessStampContract<TStamp, TCriteria>,
-): boolean {
+export function matchesProcessStamp<
+  TStamp extends ProcessStampShape,
+  TCriteria extends Partial<TStamp> = Partial<TStamp>,
+>(stamp: TStamp, criteria: TCriteria | undefined, contract: ProcessStampContract<TStamp, TCriteria>): boolean {
   const normalizedStamp = contract.normalizeStamp(stamp);
   const normalizedCriteria = contract.normalizeStampCriteria(criteria ?? {});
   return contract.stampFields.every((field) => {
@@ -131,7 +133,10 @@ export function matchesProcessStamp<TStamp extends ProcessStampShape, TCriteria 
   });
 }
 
-export function matchesStampedProcess<TStamp extends ProcessStampShape, TCriteria extends Partial<TStamp> = Partial<TStamp>>(
+export function matchesStampedProcess<
+  TStamp extends ProcessStampShape,
+  TCriteria extends Partial<TStamp> = Partial<TStamp>,
+>(
   processInfo: Pick<ProcessSnapshot, "command">,
   criteria: TCriteria | undefined,
   contract: ProcessStampContract<TStamp, TCriteria>,
@@ -195,14 +200,21 @@ function buildCmdShimInvocation(command: string, args: string[], env: NodeJS.Pro
 
 const nodeLoadablePackageManagerExtensions = new Set([".js", ".cjs", ".mjs"]);
 
-export function createCommandInvocation({ args = [], command, env = process.env }: CommandInvocationRequest): CommandInvocation {
+export function createCommandInvocation({
+  args = [],
+  command,
+  env = process.env,
+}: CommandInvocationRequest): CommandInvocation {
   if (process.platform === "win32" && /\.(bat|cmd)$/i.test(command)) {
     return buildCmdShimInvocation(command, args, env);
   }
   return { args, command };
 }
 
-export function createPackageManagerInvocation(args: string[], env: NodeJS.ProcessEnv = process.env): CommandInvocation {
+export function createPackageManagerInvocation(
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): CommandInvocation {
   const execPath = env.npm_execpath;
   if (execPath) {
     if (nodeLoadablePackageManagerExtensions.has(extname(execPath).toLowerCase())) {
@@ -305,10 +317,15 @@ async function listWindowsProcessSnapshots(): Promise<ProcessSnapshot[]> {
     "Get-CimInstance Win32_Process | Select-Object ProcessId, ParentProcessId, CommandLine | ConvertTo-Json -Compress",
   ].join("; ");
   const stdout = await new Promise<string>((resolveList, rejectList) => {
-    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", command], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (error, out) => {
-      if (error) rejectList(error);
-      else resolveList(out);
-    });
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", command],
+      { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 },
+      (error, out) => {
+        if (error) rejectList(error);
+        else resolveList(out);
+      },
+    );
   });
   const payload = stdout.trim();
   if (!payload) return [];
@@ -326,9 +343,7 @@ async function listWindowsProcessSnapshots(): Promise<ProcessSnapshot[]> {
 
 export async function listProcessSnapshots(): Promise<ProcessSnapshot[]> {
   try {
-    return process.platform === "win32"
-      ? await listWindowsProcessSnapshots()
-      : await listPosixProcessSnapshots();
+    return process.platform === "win32" ? await listWindowsProcessSnapshots() : await listPosixProcessSnapshots();
   } catch {
     return [];
   }
@@ -387,12 +402,24 @@ export async function stopProcesses(pids: Array<number | null | undefined>): Pro
   signalProcesses(uniquePids, "SIGTERM");
   const remainingAfterTerm = await waitForProcessesToExit(uniquePids);
   if (remainingAfterTerm.length === 0) {
-    return { alreadyStopped: false, forcedPids: [], matchedPids: uniquePids, remainingPids: [], stoppedPids: uniquePids };
+    return {
+      alreadyStopped: false,
+      forcedPids: [],
+      matchedPids: uniquePids,
+      remainingPids: [],
+      stoppedPids: uniquePids,
+    };
   }
   signalProcesses(remainingAfterTerm, "SIGKILL");
   const remainingAfterKill = await waitForProcessesToExit(remainingAfterTerm);
   const stoppedPids = uniquePids.filter((pid) => !remainingAfterKill.includes(pid));
-  return { alreadyStopped: false, forcedPids: remainingAfterTerm, matchedPids: uniquePids, remainingPids: remainingAfterKill, stoppedPids };
+  return {
+    alreadyStopped: false,
+    forcedPids: remainingAfterTerm,
+    matchedPids: uniquePids,
+    remainingPids: remainingAfterKill,
+    stoppedPids,
+  };
 }
 
 export async function waitForHttpOk(url: string, { timeoutMs = 20000 }: HttpWaitOptions = {}): Promise<true> {
@@ -414,7 +441,10 @@ export async function waitForHttpOk(url: string, { timeoutMs = 20000 }: HttpWait
 export async function readLogTail(filePath: string, maxLines = 80): Promise<string[]> {
   try {
     const payload = await readFile(filePath, "utf8");
-    return payload.split(/\r?\n/).filter((line) => line.length > 0).slice(-maxLines);
+    return payload
+      .split(/\r?\n/)
+      .filter((line) => line.length > 0)
+      .slice(-maxLines);
   } catch {
     return [];
   }
@@ -456,9 +486,7 @@ function resolveUserScopedHome(raw: string | undefined, home: string): string | 
 // nvm, fnm, mise, ...) is silently undetected. Both the daemon resolver
 // and the packaged sidecar PATH builder consume this so the two layers
 // can never drift again.
-export function wellKnownUserToolchainBins(
-  options: WellKnownUserToolchainOptions = {},
-): string[] {
+export function wellKnownUserToolchainBins(options: WellKnownUserToolchainOptions = {}): string[] {
   const home = options.home ?? homedir();
   const includeSystemBins = options.includeSystemBins ?? process.platform !== "win32";
   const env = options.env ?? process.env;

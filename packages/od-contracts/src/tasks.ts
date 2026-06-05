@@ -1,11 +1,4 @@
-export const TASK_STATES = [
-  'queued',
-  'starting',
-  'running',
-  'succeeded',
-  'failed',
-  'cancelled',
-] as const;
+export const TASK_STATES = ["queued", "starting", "running", "succeeded", "failed", "cancelled"] as const;
 
 export type TaskState = (typeof TASK_STATES)[number];
 

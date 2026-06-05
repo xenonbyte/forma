@@ -5,7 +5,7 @@ import {
   formatApiError,
   type ApiErrorInfo,
   type FormaApiClient,
-  type RequirementWithDocument
+  type RequirementWithDocument,
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
@@ -82,9 +82,9 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
   const artifacts = state.artifacts;
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
-  const latestArtifact = artifacts.find((artifact) =>
-    artifact.requirement_id === requirementId && artifact.kind !== "design-system"
-  ) ?? null;
+  const latestArtifact =
+    artifacts.find((artifact) => artifact.requirement_id === requirementId && artifact.kind !== "design-system") ??
+    null;
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
@@ -125,10 +125,16 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
                   <div className="min-w-0">
                     <h2 className="truncate text-sm font-semibold text-zinc-950">{page.name}</h2>
                     <p className="mt-1 font-mono text-xs text-zinc-500">{page.page_id}</p>
-                    <p className="mt-1 text-xs text-zinc-500">{t("requirement.baseline")}: {page.baseline_page}</p>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {t("requirement.baseline")}: {page.baseline_page}
+                    </p>
                   </div>
                   <div className="flex items-center">
-                    {noUiChanges ? <span className="text-sm text-zinc-500">{t("requirement.noUiChanges")}</span> : <StatusBadge status={page.design_status} />}
+                    {noUiChanges ? (
+                      <span className="text-sm text-zinc-500">{t("requirement.noUiChanges")}</span>
+                    ) : (
+                      <StatusBadge status={page.design_status} />
+                    )}
                   </div>
                   <div className="flex items-center">
                     {noUiChanges ? (
@@ -185,7 +191,10 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
           ) : (
             <div className="space-y-2">
               {requirement.navigation.map((edge, index) => (
-                <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm" key={`${edge.from}-${edge.to}-${index}`}>
+                <div
+                  className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm"
+                  key={`${edge.from}-${edge.to}-${index}`}
+                >
                   <span className="font-mono text-zinc-700">{edge.from}</span>
                   <span className="px-2 text-zinc-400">{t("common.to")}</span>
                   <span className="font-mono text-zinc-700">{edge.to}</span>

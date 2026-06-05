@@ -13,7 +13,7 @@ import {
   type Product,
   type ProductBaseline,
   type RequirementWithDocument,
-  type StyleMetadata
+  type StyleMetadata,
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { ConfirmDeleteDialog } from "../components/ConfirmDeleteDialog.js";
@@ -60,7 +60,13 @@ type ProductDetailState =
   | { status: "loading" }
   | { baselineState: BaselineSummaryState; product: Product; requirementState: RequirementListState; status: "ready" };
 
-export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel, onNavigate, params }: ProductDetailProps) {
+export function ProductDetail({
+  client = apiClient,
+  hash = "",
+  onBreadcrumbLabel,
+  onNavigate,
+  params,
+}: ProductDetailProps) {
   const t = useT();
   const productId = params.productId ?? "";
   const [actionError, setActionError] = useState<ApiErrorInfo | null>(null);
@@ -81,7 +87,10 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
     client
       .getProduct(productId)
       .then(async (product) => {
-        const [requirementState, baselineState] = await Promise.all([loadRequirements(client, productId), loadBaseline(client, productId)]);
+        const [requirementState, baselineState] = await Promise.all([
+          loadRequirements(client, productId),
+          loadBaseline(client, productId),
+        ]);
         if (!cancelled) {
           setState({ baselineState, product, requirementState, status: "ready" });
         }
@@ -217,7 +226,10 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
           <Fact label={t("product.platform")} value={state.product.platform ?? t("common.notConfigured")} />
           <Fact label={t("product.style")} value={state.product.brand_style ?? t("common.notConfigured")} />
           <Fact label={t("product.languages")} value={languageSummary(state.product.languages, t)} />
-          <Fact label={t("product.defaultLanguage")} value={state.product.default_language ?? t("common.notConfigured")} />
+          <Fact
+            label={t("product.defaultLanguage")}
+            value={state.product.default_language ?? t("common.notConfigured")}
+          />
           <div>
             <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("product.configStatus")}</p>
             <div className="mt-2">
@@ -258,7 +270,10 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
             {state.requirementState.requirements.map((requirement) => (
               <div className="grid gap-3 py-3 lg:grid-cols-[minmax(0,1fr)_8rem_9rem_8rem_8rem]" key={requirement.id}>
                 <div className="min-w-0">
-                  <a className={`${textLinkClasses} truncate`} href={`/products/${productId}/requirements/${requirement.id}`}>
+                  <a
+                    className={`${textLinkClasses} truncate`}
+                    href={`/products/${productId}/requirements/${requirement.id}`}
+                  >
                     {requirement.title}
                   </a>
                   <p className="mt-1 font-mono text-xs text-zinc-500">{requirement.id}</p>
@@ -267,7 +282,8 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
                   <StatusBadge status={requirement.status} />
                 </div>
                 <p className="self-center text-sm text-zinc-600">
-                  {requirement.pages.length} {requirement.pages.length === 1 ? t("requirement.pageCountSingular") : t("requirement.pageCount")}
+                  {requirement.pages.length}{" "}
+                  {requirement.pages.length === 1 ? t("requirement.pageCountSingular") : t("requirement.pageCount")}
                 </p>
                 <button
                   className={secondaryButtonClasses}
@@ -311,7 +327,9 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
               />
             </label>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-zinc-500">{canCreateRequirement ? t("requirement.titleReady") : t("requirement.createNeedsTitle")}</p>
+              <p className="text-sm text-zinc-500">
+                {canCreateRequirement ? t("requirement.titleReady") : t("requirement.createNeedsTitle")}
+              </p>
               <button className={primaryButtonClasses} disabled={!canCreateRequirement} type="submit">
                 {creating ? t("action.creating") : t("action.createRequirement")}
               </button>
@@ -323,11 +341,20 @@ export function ProductDetail({ client = apiClient, hash = "", onBreadcrumbLabel
       <WorkSurface title={t("product.dangerZone")}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-sm leading-6 text-zinc-600">{t("product.dangerZoneHelp")}</p>
-          <button className={dangerButtonClasses} data-product-detail-delete="true" onClick={() => setDeleteOpen(true)} type="button">
+          <button
+            className={dangerButtonClasses}
+            data-product-detail-delete="true"
+            onClick={() => setDeleteOpen(true)}
+            type="button"
+          >
             {t("action.deleteProduct")}
           </button>
         </div>
-        {deleteError ? <p className="mt-3 text-sm text-red-700">{deleteError.error_code} - {deleteError.message}</p> : null}
+        {deleteError ? (
+          <p className="mt-3 text-sm text-red-700">
+            {deleteError.error_code} - {deleteError.message}
+          </p>
+        ) : null}
       </WorkSurface>
 
       <ConfirmDeleteDialog
@@ -352,7 +379,7 @@ function toDeleteNavigationState(result: DeleteProductResult): ProductDeleteNavi
     cleanupPending: result.cleanup_pending,
     productId: result.product_id,
     recoveryWarnings: result.recovery_warnings,
-    sessionCleared: result.session_cleared
+    sessionCleared: result.session_cleared,
   };
 }
 
@@ -375,10 +402,7 @@ function EmptyRequirementsIllustration({ label }: { label: string }) {
   );
 }
 
-export function focusHashTarget(
-  hash: string,
-  root: Pick<Document, "getElementById"> = document
-): boolean {
+export function focusHashTarget(hash: string, root: Pick<Document, "getElementById"> = document): boolean {
   const id = decodeHashId(hash);
   if (!id) {
     return false;
@@ -400,7 +424,7 @@ export function ProductDetailSummaryPanels({
   baselineState,
   productId,
   requirementCount,
-  requirementError
+  requirementError,
 }: {
   actionError: ApiErrorInfo | null;
   archiveResult?: ArchiveRequirementResult | null;
@@ -419,7 +443,10 @@ export function ProductDetailSummaryPanels({
             <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("requirement.baseline")}</p>
             {baselineState.status === "ready" ? (
               <p className="mt-2 text-sm font-semibold text-zinc-950">
-                {baselineState.baseline.pages.length} {baselineState.baseline.pages.length === 1 ? t("requirement.pageCountSingular") : t("requirement.pageCount")}
+                {baselineState.baseline.pages.length}{" "}
+                {baselineState.baseline.pages.length === 1
+                  ? t("requirement.pageCountSingular")
+                  : t("requirement.pageCount")}
               </p>
             ) : (
               <p className="mt-2 text-sm font-semibold text-red-700">{baselineState.error.error_code}</p>
@@ -430,7 +457,10 @@ export function ProductDetailSummaryPanels({
         {baselineState.status === "ready" ? (
           <p className="mt-2 text-sm text-zinc-600">
             {baselineState.baseline.navigation.length}{" "}
-            {baselineState.baseline.navigation.length === 1 ? t("product.baselineEdgeSingular") : t("product.baselineEdges")}.
+            {baselineState.baseline.navigation.length === 1
+              ? t("product.baselineEdgeSingular")
+              : t("product.baselineEdges")}
+            .
           </p>
         ) : (
           <p className="mt-2 text-sm text-red-700">{baselineState.error.message}</p>
@@ -479,7 +509,7 @@ function ProductConfigurationForm({
   onConfigured,
   onError,
   product,
-  productId
+  productId,
 }: {
   client: Pick<FormaApiClient, "configureProduct" | "listStyles">;
   onConfigured: (product: Product) => void;
@@ -489,7 +519,7 @@ function ProductConfigurationForm({
 }) {
   const t = useT();
   const [defaultLanguage, setDefaultLanguage] = useState<Language | "">(
-    deriveDefaultLanguage(product.languages ?? [], product.default_language)
+    deriveDefaultLanguage(product.languages ?? [], product.default_language),
   );
   const [listError, setListError] = useState<ApiErrorInfo | null>(null);
   const [platform, setPlatform] = useState<Platform | "">(product.platform ?? "");
@@ -501,7 +531,13 @@ function ProductConfigurationForm({
   const [stylesLoading, setStylesLoading] = useState(true);
   const styleOptions = ensureCurrentStyleByName(styles, product.brand_style);
   const canSubmit =
-    platform !== "" && styleName.length > 0 && selectedLanguages.length > 0 && defaultLanguage !== "" && !listError && !stylesLoading && !saving;
+    platform !== "" &&
+    styleName.length > 0 &&
+    selectedLanguages.length > 0 &&
+    defaultLanguage !== "" &&
+    !listError &&
+    !stylesLoading &&
+    !saving;
 
   useEffect(() => {
     let cancelled = false;
@@ -546,7 +582,7 @@ function ProductConfigurationForm({
         default_language: defaultLanguage as Language,
         languages: selectedLanguages,
         platform: platform as Platform,
-        brand_style: styleName
+        brand_style: styleName,
       });
       onConfigured(configured);
     } catch (error: unknown) {
@@ -559,7 +595,9 @@ function ProductConfigurationForm({
   }
 
   function updateSelectedLanguage(language: Language, checked: boolean) {
-    const nextSelected = checked ? [...selectedLanguages, language] : selectedLanguages.filter((selected) => selected !== language);
+    const nextSelected = checked
+      ? [...selectedLanguages, language]
+      : selectedLanguages.filter((selected) => selected !== language);
     setSelectedLanguages(nextSelected);
     setDefaultLanguage(deriveDefaultLanguage(nextSelected, defaultLanguage || undefined));
   }
@@ -643,8 +681,16 @@ function ProductConfigurationForm({
           </label>
         ) : null}
 
-        {listError ? <p className="text-sm text-red-700">{listError.error_code} - {listError.message}</p> : null}
-        {submitError ? <p className="text-sm text-red-700">{submitError.error_code} - {submitError.message}</p> : null}
+        {listError ? (
+          <p className="text-sm text-red-700">
+            {listError.error_code} - {listError.message}
+          </p>
+        ) : null}
+        {submitError ? (
+          <p className="text-sm text-red-700">
+            {submitError.error_code} - {submitError.message}
+          </p>
+        ) : null}
 
         <div className="flex justify-end">
           <button className={primaryButtonClasses} disabled={!canSubmit} type="submit">
@@ -684,7 +730,7 @@ function hasProductConfiguration(product: Product): boolean {
       product.languages &&
       product.languages.length > 0 &&
       product.default_language &&
-      product.languages.includes(product.default_language)
+      product.languages.includes(product.default_language),
   );
 }
 
@@ -700,10 +746,16 @@ function ensureCurrentStyleByName(styles: StyleMetadata[], currentStyleName: str
     return styles;
   }
   // Current style name not in list — add a minimal placeholder so the select doesn't show blank
-  return [{ name: currentStyleName, description: "", design_md_path: "", tokens_css_path: "", components_html_path: "" }, ...styles];
+  return [
+    { name: currentStyleName, description: "", design_md_path: "", tokens_css_path: "", components_html_path: "" },
+    ...styles,
+  ];
 }
 
-async function loadBaseline(client: Pick<FormaApiClient, "getBaseline">, productId: string): Promise<BaselineSummaryState> {
+async function loadBaseline(
+  client: Pick<FormaApiClient, "getBaseline">,
+  productId: string,
+): Promise<BaselineSummaryState> {
   try {
     return { baseline: await client.getBaseline(productId), status: "ready" };
   } catch (error: unknown) {
@@ -711,7 +763,10 @@ async function loadBaseline(client: Pick<FormaApiClient, "getBaseline">, product
   }
 }
 
-async function loadRequirements(client: Pick<FormaApiClient, "listRequirements">, productId: string): Promise<RequirementListState> {
+async function loadRequirements(
+  client: Pick<FormaApiClient, "listRequirements">,
+  productId: string,
+): Promise<RequirementListState> {
   try {
     return { requirements: await client.listRequirements(productId), status: "ready" };
   } catch (error: unknown) {
@@ -739,7 +794,7 @@ const platformOptions: Array<{ label: string; value: Platform }> = [
   { label: "platform.web", value: "web" },
   { label: "platform.mobile", value: "mobile" },
   { label: "platform.desktop", value: "desktop" },
-  { label: "platform.tablet", value: "tablet" }
+  { label: "platform.tablet", value: "tablet" },
 ];
 
 const inputClasses =

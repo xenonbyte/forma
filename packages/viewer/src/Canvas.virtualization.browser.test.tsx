@@ -34,7 +34,7 @@ const artifacts: NormalizeArtifactInput[] = Array.from({ length: 40 }, (_, i) =>
   title: `页 ${i}`,
   version: 1,
   width: 1200,
-  height: 900
+  height: 900,
 }));
 const resolver: ResourceResolver = { resolve: (ref) => `https://example.test/${ref.artifactId}/${ref.kind}` };
 
@@ -43,7 +43,9 @@ describe("Canvas viewport virtualization", () => {
     const model = buildViewerModel({ entry: "requirement", artifacts });
     const container = render(<Canvas model={model} mode="design" resolver={resolver} />);
     // Canvas 生产代码不得默认 fitView;默认/受控初始视口只覆盖局部区域。
-    await act(async () => { await sleep(80); });
+    await act(async () => {
+      await sleep(80);
+    });
     const renderedNodes = container.querySelectorAll(".react-flow__node");
     // onlyRenderVisibleElements 应让挂载节点数远小于 40
     expect(renderedNodes.length).toBeGreaterThan(0);

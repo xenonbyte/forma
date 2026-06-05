@@ -30,7 +30,7 @@ export class FormaError extends Error {
   constructor(
     public readonly code: FormaErrorCode,
     message: string,
-    public readonly details: Record<string, unknown> = {}
+    public readonly details: Record<string, unknown> = {},
   ) {
     super(message);
     this.name = "FormaError";

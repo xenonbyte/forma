@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Sidebar } from './Sidebar.js';
-import { TopBar } from './TopBar.js';
-import { WorkspacePane, type WorkspaceSelection } from './WorkspacePane.js';
-import { parseHash, buildHash, type Selection } from './router.js';
+import { useState, useEffect, useCallback } from "react";
+import { Sidebar } from "./Sidebar.js";
+import { TopBar } from "./TopBar.js";
+import { WorkspacePane, type WorkspaceSelection } from "./WorkspacePane.js";
+import { parseHash, buildHash, type Selection } from "./router.js";
 
 interface ProductRow {
   id: string;
@@ -30,12 +30,12 @@ interface PageState {
 
 function toWorkspaceSelection(sel: Selection): { productId: string | null; nav: WorkspaceSelection } {
   switch (sel.type) {
-    case 'requirement':
-      return { productId: sel.productId, nav: { type: 'requirement', reqId: sel.reqId } };
-    case 'page':
-      return { productId: sel.productId, nav: { type: 'page', reqId: sel.reqId, pageId: sel.pageId } };
-    case 'none':
-      return { productId: null, nav: { type: 'none' } };
+    case "requirement":
+      return { productId: sel.productId, nav: { type: "requirement", reqId: sel.reqId } };
+    case "page":
+      return { productId: sel.productId, nav: { type: "page", reqId: sel.reqId, pageId: sel.pageId } };
+    case "none":
+      return { productId: null, nav: { type: "none" } };
   }
 }
 
@@ -51,11 +51,11 @@ export function AppShell() {
   const [activeProductId, setActiveProductId] = useState<string | null>(null);
   const [requirements, setRequirements] = useState<RequirementRow[]>([]);
   const [pageState, setPageState] = useState<PageState>({ reqId: null, pages: [] });
-  const [baseUrl, setBaseUrl] = useState<string>('');
+  const [baseUrl, setBaseUrl] = useState<string>("");
   const [connected, setConnected] = useState<boolean>(true);
   const [startupReady, setStartupReady] = useState<boolean>(false);
-  const [nav, setNav] = useState<WorkspaceSelection>({ type: 'none' });
-  const activeReqId = nav.type === 'requirement' || nav.type === 'page' ? nav.reqId : null;
+  const [nav, setNav] = useState<WorkspaceSelection>({ type: "none" });
+  const activeReqId = nav.type === "requirement" || nav.type === "page" ? nav.reqId : null;
   const pages = pageState.reqId === activeReqId ? pageState.pages : [];
 
   // --- Startup: products, baseUrl, brand styles, default selection --------
@@ -69,10 +69,7 @@ export function AppShell() {
     let cancelled = false;
     void (async () => {
       try {
-        const [{ products: ps }, base] = await Promise.all([
-          forma.listProducts(),
-          forma.formaServerBaseUrl(),
-        ]);
+        const [{ products: ps }, base] = await Promise.all([forma.listProducts(), forma.formaServerBaseUrl()]);
         if (cancelled) return;
         setProducts(ps);
         setBaseUrl(base);
@@ -80,9 +77,8 @@ export function AppShell() {
         const hashSel = parseHash(window.location.hash);
         const fromHash = toWorkspaceSelection(hashSel);
         const hashProductExists =
-          (hashSel.type === 'requirement' || hashSel.type === 'page') && ps.some((p) => p.id === hashSel.productId);
-        const productId =
-          hashProductExists ? hashSel.productId : (ps[0]?.id ?? null);
+          (hashSel.type === "requirement" || hashSel.type === "page") && ps.some((p) => p.id === hashSel.productId);
+        const productId = hashProductExists ? hashSel.productId : (ps[0]?.id ?? null);
         setActiveProductId(productId);
         if (hashProductExists) {
           setNav(fromHash.nav);
@@ -108,20 +104,20 @@ export function AppShell() {
       const hashSel = parseHash(window.location.hash);
       const fromHash = toWorkspaceSelection(hashSel);
 
-      if (hashSel.type === 'requirement' || hashSel.type === 'page') {
+      if (hashSel.type === "requirement" || hashSel.type === "page") {
         if (!products.some((p) => p.id === hashSel.productId)) return;
         setActiveProductId(hashSel.productId);
         setNav(fromHash.nav);
         return;
       }
 
-      setActiveProductId((current) => current ?? (products[0]?.id ?? null));
-      setNav({ type: 'none' });
+      setActiveProductId((current) => current ?? products[0]?.id ?? null);
+      setNav({ type: "none" });
     };
 
-    window.addEventListener('hashchange', handleHashChange);
+    window.addEventListener("hashchange", handleHashChange);
     return () => {
-      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener("hashchange", handleHashChange);
     };
   }, [products]);
 
@@ -143,13 +139,10 @@ export function AppShell() {
         setRequirements(rs);
 
         setNav((current) => {
-          if (
-            (current.type === 'requirement' || current.type === 'page') &&
-            rs.some((r) => r.id === current.reqId)
-          ) {
+          if ((current.type === "requirement" || current.type === "page") && rs.some((r) => r.id === current.reqId)) {
             return current;
           }
-          return rs[0] ? { type: 'requirement', reqId: rs[0].id } : { type: 'none' };
+          return rs[0] ? { type: "requirement", reqId: rs[0].id } : { type: "none" };
         });
       } catch {
         if (!cancelled) {
@@ -180,10 +173,10 @@ export function AppShell() {
         const nextPages = (requirement.pages ?? []).map((p) => ({ page_id: p.page_id, name: p.name }));
         setPageState({ reqId: activeReqId, pages: nextPages });
         setNav((current) => {
-          if (current.type !== 'page' || current.reqId !== activeReqId) return current;
+          if (current.type !== "page" || current.reqId !== activeReqId) return current;
           return nextPages.some((p) => p.page_id === current.pageId)
             ? current
-            : { type: 'requirement', reqId: activeReqId };
+            : { type: "requirement", reqId: activeReqId };
         });
       } catch {
         if (!cancelled) setPageState({ reqId: activeReqId, pages: [] });
@@ -198,18 +191,18 @@ export function AppShell() {
   useEffect(() => {
     if (!startupReady) return;
     let sel: Selection;
-    if (nav.type === 'none') {
-      sel = { type: 'none' };
+    if (nav.type === "none") {
+      sel = { type: "none" };
     } else if (activeProductId) {
       sel =
-        nav.type === 'page'
-          ? { type: 'page', productId: activeProductId, reqId: nav.reqId, pageId: nav.pageId }
-          : { type: 'requirement', productId: activeProductId, reqId: nav.reqId };
+        nav.type === "page"
+          ? { type: "page", productId: activeProductId, reqId: nav.reqId, pageId: nav.pageId }
+          : { type: "requirement", productId: activeProductId, reqId: nav.reqId };
     } else {
       return;
     }
     const next = buildHash(sel);
-    const current = window.location.hash || buildHash({ type: 'none' });
+    const current = window.location.hash || buildHash({ type: "none" });
     if (current !== next) {
       window.location.hash = next;
     }
@@ -217,18 +210,18 @@ export function AppShell() {
 
   const handleSelectProduct = useCallback((productId: string) => {
     setActiveProductId(productId);
-    setNav({ type: 'none' });
+    setNav({ type: "none" });
     setRequirements([]);
     setPageState({ reqId: null, pages: [] });
   }, []);
 
   const activeProduct = products.find((p) => p.id === activeProductId) ?? null;
-  const productName = activeProduct?.name ?? '';
+  const productName = activeProduct?.name ?? "";
 
   const crumb = (() => {
     const req = requirements.find((r) => r.id === activeReqId);
-    if (!req) return '';
-    if (nav.type === 'page') {
+    if (!req) return "";
+    if (nav.type === "page") {
       const page = pages.find((p) => p.page_id === nav.pageId);
       return `${req.title} / ${page?.name ?? nav.pageId}`;
     }
@@ -248,7 +241,7 @@ export function AppShell() {
         onSelectProduct={handleSelectProduct}
       />
       <TopBar productName={productName} crumb={crumb} />
-      <WorkspacePane selection={nav} productId={activeProductId ?? ''} baseUrl={baseUrl} />
+      <WorkspacePane selection={nav} productId={activeProductId ?? ""} baseUrl={baseUrl} />
     </div>
   );
 }

@@ -22,9 +22,39 @@ afterEach(() => {
 });
 
 const artifacts: NormalizeArtifactInput[] = [
-  { artifactId: "a", kind: "design-page", pageId: "login", pageName: "登录页", variant: "default", title: "登录页 默认", version: 1, width: 600, height: 400 },
-  { artifactId: "a", kind: "design-page", pageId: "login", pageName: "登录页", variant: "wide", title: "登录页 宽屏", version: 1, width: 600, height: 400 },
-  { artifactId: "b", kind: "design-page", pageId: "home", pageName: "首页", variant: "default", title: "首页", version: 1, width: 600, height: 400 }
+  {
+    artifactId: "a",
+    kind: "design-page",
+    pageId: "login",
+    pageName: "登录页",
+    variant: "default",
+    title: "登录页 默认",
+    version: 1,
+    width: 600,
+    height: 400,
+  },
+  {
+    artifactId: "a",
+    kind: "design-page",
+    pageId: "login",
+    pageName: "登录页",
+    variant: "wide",
+    title: "登录页 宽屏",
+    version: 1,
+    width: 600,
+    height: 400,
+  },
+  {
+    artifactId: "b",
+    kind: "design-page",
+    pageId: "home",
+    pageName: "首页",
+    variant: "default",
+    title: "首页",
+    version: 1,
+    width: 600,
+    height: 400,
+  },
 ];
 
 describe("DesignList", () => {

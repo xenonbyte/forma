@@ -4,32 +4,32 @@
  * 渲染容器元素（container, button, input, link 等）
  */
 
-import type { CanvasKit, Canvas, Image, Paint, Path, Shader, ImageFilter } from 'canvaskit-wasm';
-import type { IElementRenderer, IRElement, Bounds, Styles } from './types';
-import { toCanvasKitColor } from '../converters/ColorConverter';
-import { createGradientShader } from '../converters/GradientConverter';
-import { parseBorder, createBorderPath, createBorderPaint } from '../converters/BorderConverter';
-import { parseShadow, createShadowFilters } from '../converters/ShadowConverter';
-import { textRenderer } from './TextRenderer';
-import { imageRenderer } from './ImageRenderer';
+import type { CanvasKit, Canvas, Image, Paint, Path, Shader, ImageFilter } from "canvaskit-wasm";
+import type { IElementRenderer, IRElement, Bounds, Styles } from "./types";
+import { toCanvasKitColor } from "../converters/ColorConverter";
+import { createGradientShader } from "../converters/GradientConverter";
+import { parseBorder, createBorderPath, createBorderPaint } from "../converters/BorderConverter";
+import { parseShadow, createShadowFilters } from "../converters/ShadowConverter";
+import { textRenderer } from "./TextRenderer";
+import { imageRenderer } from "./ImageRenderer";
 
 /**
  * 容器类型列表
  */
 const CONTAINER_TYPES = [
-  'container',
-  'button',
-  'input',
-  'link',
-  'div',
-  'span',
-  'section',
-  'article',
-  'header',
-  'footer',
-  'nav',
-  'main',
-  'aside',
+  "container",
+  "button",
+  "input",
+  "link",
+  "div",
+  "span",
+  "section",
+  "article",
+  "header",
+  "footer",
+  "nav",
+  "main",
+  "aside",
 ];
 
 /**
@@ -81,14 +81,14 @@ export class ContainerRenderer implements IElementRenderer {
    * 渲染容器类元素的内联文本（如 button 的 textContent）
    */
   private renderInlineText(canvas: Canvas, element: IRElement, CanvasKit: CanvasKit): void {
-    const text = (element.textContent || '').trim();
+    const text = (element.textContent || "").trim();
     if (!text) {
       return;
     }
 
     const textElement: IRElement = {
       id: `${element.id}__inline_text`,
-      type: 'text',
+      type: "text",
       bounds: {
         x: element.bounds.x,
         y: element.bounds.y,
@@ -107,12 +107,7 @@ export class ContainerRenderer implements IElementRenderer {
   /**
    * 渲染背景
    */
-  private renderBackground(
-    canvas: Canvas,
-    bounds: Bounds,
-    styles: Styles,
-    CanvasKit: CanvasKit
-  ): void {
+  private renderBackground(canvas: Canvas, bounds: Bounds, styles: Styles, CanvasKit: CanvasKit): void {
     let paint: Paint | null = null;
     let path: Path | null = null;
     let shader: Shader | null = null;
@@ -123,7 +118,7 @@ export class ContainerRenderer implements IElementRenderer {
       let hasFill = false;
 
       // 检查是否有渐变背景
-      if (styles.backgroundImage && styles.backgroundImage !== 'none') {
+      if (styles.backgroundImage && styles.backgroundImage !== "none") {
         shader = createGradientShader(styles.backgroundImage, bounds, CanvasKit);
         if (shader) {
           paint.setShader(shader);
@@ -142,11 +137,7 @@ export class ContainerRenderer implements IElementRenderer {
 
       paint.setStyle(CanvasKit.PaintStyle.Fill);
       const blurSigma = this.parseFilterBlurSigma(styles.filter);
-      if (
-        blurSigma > 0
-        && CanvasKit.ImageFilter
-        && typeof CanvasKit.ImageFilter.MakeBlur === 'function'
-      ) {
+      if (blurSigma > 0 && CanvasKit.ImageFilter && typeof CanvasKit.ImageFilter.MakeBlur === "function") {
         const tileMode = CanvasKit.TileMode?.Decal ?? CanvasKit.TileMode?.Clamp;
         blurFilter = CanvasKit.ImageFilter.MakeBlur(blurSigma, blurSigma, tileMode, null);
         if (blurFilter) {
@@ -174,15 +165,8 @@ export class ContainerRenderer implements IElementRenderer {
     }
   }
 
-  private renderBackgroundImage(
-    canvas: Canvas,
-    bounds: Bounds,
-    styles: Styles,
-    CanvasKit: CanvasKit
-  ): void {
-    const backgroundImage = typeof styles.backgroundImage === 'string'
-      ? styles.backgroundImage
-      : '';
+  private renderBackgroundImage(canvas: Canvas, bounds: Bounds, styles: Styles, CanvasKit: CanvasKit): void {
+    const backgroundImage = typeof styles.backgroundImage === "string" ? styles.backgroundImage : "";
     const imageUrl = this.extractBackgroundImageUrl(backgroundImage);
     if (!imageUrl) {
       return;
@@ -196,20 +180,8 @@ export class ContainerRenderer implements IElementRenderer {
     }
 
     const padding = this.parseBoxValues(styles.padding);
-    const originRect = this.resolveBackgroundBox(
-      bounds,
-      border.width,
-      padding,
-      styles.backgroundOrigin,
-      'padding-box'
-    );
-    const clipRect = this.resolveBackgroundBox(
-      bounds,
-      border.width,
-      padding,
-      styles.backgroundClip,
-      'border-box'
-    );
+    const originRect = this.resolveBackgroundBox(bounds, border.width, padding, styles.backgroundOrigin, "padding-box");
+    const clipRect = this.resolveBackgroundBox(bounds, border.width, padding, styles.backgroundClip, "border-box");
     if (originRect.width <= 0 || originRect.height <= 0 || clipRect.width <= 0 || clipRect.height <= 0) {
       return;
     }
@@ -218,7 +190,7 @@ export class ContainerRenderer implements IElementRenderer {
       image,
       originRect.width,
       originRect.height,
-      styles.backgroundSize
+      styles.backgroundSize,
     );
     if (renderSize.width <= 0 || renderSize.height <= 0) {
       return;
@@ -229,7 +201,7 @@ export class ContainerRenderer implements IElementRenderer {
       originRect.width,
       originRect.height,
       renderSize.width,
-      renderSize.height
+      renderSize.height,
     );
 
     const imageRect = {
@@ -247,15 +219,7 @@ export class ContainerRenderer implements IElementRenderer {
       canvas.save();
       try {
         canvas.clipPath(clipPath, CanvasKit.ClipOp.Intersect, true);
-        this.drawBackgroundImage(
-          canvas,
-          image,
-          imageRect,
-          originRect,
-          repeatMode,
-          paint,
-          CanvasKit
-        );
+        this.drawBackgroundImage(canvas, image, imageRect, originRect, repeatMode, paint, CanvasKit);
       } finally {
         canvas.restore();
       }
@@ -268,12 +232,7 @@ export class ContainerRenderer implements IElementRenderer {
   /**
    * 渲染边框
    */
-  private renderBorder(
-    canvas: Canvas,
-    bounds: Bounds,
-    styles: Styles,
-    CanvasKit: CanvasKit
-  ): void {
+  private renderBorder(canvas: Canvas, bounds: Bounds, styles: Styles, CanvasKit: CanvasKit): void {
     const border = parseBorder(styles);
     if (border.width <= 0) {
       return;
@@ -292,13 +251,8 @@ export class ContainerRenderer implements IElementRenderer {
   /**
    * 渲染阴影
    */
-  private renderShadow(
-    canvas: Canvas,
-    bounds: Bounds,
-    styles: Styles,
-    CanvasKit: CanvasKit
-  ): void {
-    if (!styles.boxShadow || styles.boxShadow === 'none') {
+  private renderShadow(canvas: Canvas, bounds: Bounds, styles: Styles, CanvasKit: CanvasKit): void {
+    if (!styles.boxShadow || styles.boxShadow === "none") {
       return;
     }
 
@@ -315,7 +269,7 @@ export class ContainerRenderer implements IElementRenderer {
     // 创建带阴影的绘制
     const paint = new CanvasKit.Paint();
     paint.setImageFilter(filter);
-    paint.setColor(toCanvasKitColor(styles.backgroundColor || '#000000', CanvasKit));
+    paint.setColor(toCanvasKitColor(styles.backgroundColor || "#000000", CanvasKit));
     paint.setStyle(CanvasKit.PaintStyle.Fill);
 
     const border = parseBorder(styles);
@@ -331,7 +285,7 @@ export class ContainerRenderer implements IElementRenderer {
   }
 
   private extractBackgroundImageUrl(backgroundImage: string): string | undefined {
-    if (!backgroundImage || backgroundImage === 'none') {
+    if (!backgroundImage || backgroundImage === "none") {
       return undefined;
     }
     const match = backgroundImage.match(/url\((['"]?)(.*?)\1\)/i);
@@ -346,10 +300,10 @@ export class ContainerRenderer implements IElementRenderer {
   }
 
   private parseBoxValues(value: string | number | undefined): [number, number, number, number] {
-    if (typeof value === 'number') {
+    if (typeof value === "number") {
       return [value, value, value, value];
     }
-    if (typeof value !== 'string') {
+    if (typeof value !== "string") {
       return [0, 0, 0, 0];
     }
     const tokens = value.trim().split(/\s+/).filter(Boolean);
@@ -370,7 +324,7 @@ export class ContainerRenderer implements IElementRenderer {
   }
 
   private parsePixelLength(value: string | number): number {
-    if (typeof value === 'number') {
+    if (typeof value === "number") {
       return value;
     }
     const parsed = Number.parseFloat(value);
@@ -380,13 +334,7 @@ export class ContainerRenderer implements IElementRenderer {
     return parsed;
   }
 
-  private insetRect(
-    rect: Bounds,
-    top: number,
-    right: number,
-    bottom: number,
-    left: number
-  ): Bounds {
+  private insetRect(rect: Bounds, top: number, right: number, bottom: number, left: number): Bounds {
     const width = Math.max(0, rect.width - left - right);
     const height = Math.max(0, rect.height - top - bottom);
     return {
@@ -402,21 +350,19 @@ export class ContainerRenderer implements IElementRenderer {
     borderWidth: number,
     padding: [number, number, number, number],
     boxValue: string | number | undefined,
-    fallback: 'border-box' | 'padding-box' | 'content-box'
+    fallback: "border-box" | "padding-box" | "content-box",
   ): Bounds {
-    const normalized = typeof boxValue === 'string'
-      ? boxValue.trim().toLowerCase()
-      : fallback;
-    if (normalized === 'content-box') {
+    const normalized = typeof boxValue === "string" ? boxValue.trim().toLowerCase() : fallback;
+    if (normalized === "content-box") {
       return this.insetRect(
         bounds,
         borderWidth + padding[0],
         borderWidth + padding[1],
         borderWidth + padding[2],
-        borderWidth + padding[3]
+        borderWidth + padding[3],
       );
     }
-    if (normalized === 'padding-box') {
+    if (normalized === "padding-box") {
       return this.insetRect(bounds, borderWidth, borderWidth, borderWidth, borderWidth);
     }
     return { ...bounds };
@@ -426,7 +372,7 @@ export class ContainerRenderer implements IElementRenderer {
     image: Image,
     boxWidth: number,
     boxHeight: number,
-    backgroundSize: string | number | undefined
+    backgroundSize: string | number | undefined,
   ): { width: number; height: number } {
     const intrinsicWidth = image.width();
     const intrinsicHeight = image.height();
@@ -434,24 +380,22 @@ export class ContainerRenderer implements IElementRenderer {
       return { width: 0, height: 0 };
     }
 
-    if (typeof backgroundSize === 'number') {
+    if (typeof backgroundSize === "number") {
       return { width: backgroundSize, height: backgroundSize };
     }
 
-    const normalized = typeof backgroundSize === 'string'
-      ? backgroundSize.trim().toLowerCase()
-      : '';
+    const normalized = typeof backgroundSize === "string" ? backgroundSize.trim().toLowerCase() : "";
 
-    if (!normalized || normalized === 'auto') {
+    if (!normalized || normalized === "auto") {
       return { width: intrinsicWidth, height: intrinsicHeight };
     }
 
-    if (normalized === 'contain') {
+    if (normalized === "contain") {
       const scale = Math.min(boxWidth / intrinsicWidth, boxHeight / intrinsicHeight);
       return { width: intrinsicWidth * scale, height: intrinsicHeight * scale };
     }
 
-    if (normalized === 'cover') {
+    if (normalized === "cover") {
       const scale = Math.max(boxWidth / intrinsicWidth, boxHeight / intrinsicHeight);
       return { width: intrinsicWidth * scale, height: intrinsicHeight * scale };
     }
@@ -478,10 +422,10 @@ export class ContainerRenderer implements IElementRenderer {
   }
 
   private parseBackgroundLength(token: string | undefined, basis: number): number | undefined {
-    if (!token || token === 'auto') {
+    if (!token || token === "auto") {
       return undefined;
     }
-    if (token.endsWith('%')) {
+    if (token.endsWith("%")) {
       const ratio = Number.parseFloat(token) / 100;
       return Number.isFinite(ratio) ? basis * ratio : undefined;
     }
@@ -494,51 +438,49 @@ export class ContainerRenderer implements IElementRenderer {
     boxWidth: number,
     boxHeight: number,
     imageWidth: number,
-    imageHeight: number
+    imageHeight: number,
   ): { x: number; y: number } {
-    const normalized = typeof value === 'string'
-      ? value.trim().toLowerCase()
-      : '';
+    const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
     const tokens = normalized ? normalized.split(/\s+/).filter(Boolean) : [];
 
-    let xToken = tokens[0] ?? '0%';
+    let xToken = tokens[0] ?? "0%";
     let yToken = tokens[1];
 
     if (!yToken) {
-      if (xToken === 'top' || xToken === 'bottom') {
+      if (xToken === "top" || xToken === "bottom") {
         yToken = xToken;
-        xToken = '50%';
-      } else if (xToken === 'left' || xToken === 'right' || xToken === 'center') {
-        yToken = '50%';
+        xToken = "50%";
+      } else if (xToken === "left" || xToken === "right" || xToken === "center") {
+        yToken = "50%";
       } else {
-        yToken = '0%';
+        yToken = "0%";
       }
     }
 
-    if ((xToken === 'top' || xToken === 'bottom') && (yToken === 'left' || yToken === 'right')) {
+    if ((xToken === "top" || xToken === "bottom") && (yToken === "left" || yToken === "right")) {
       const temp = xToken;
       xToken = yToken;
       yToken = temp;
     }
 
-    const x = this.resolveAxisPosition(xToken, boxWidth - imageWidth, 'x');
-    const y = this.resolveAxisPosition(yToken, boxHeight - imageHeight, 'y');
+    const x = this.resolveAxisPosition(xToken, boxWidth - imageWidth, "x");
+    const y = this.resolveAxisPosition(yToken, boxHeight - imageHeight, "y");
     return { x, y };
   }
 
-  private resolveAxisPosition(token: string, available: number, axis: 'x' | 'y'): number {
+  private resolveAxisPosition(token: string, available: number, axis: "x" | "y"): number {
     const normalized = token.toLowerCase();
-    if (normalized === 'center') {
+    if (normalized === "center") {
       return available * 0.5;
     }
-    if (axis === 'x') {
-      if (normalized === 'left') return 0;
-      if (normalized === 'right') return available;
+    if (axis === "x") {
+      if (normalized === "left") return 0;
+      if (normalized === "right") return available;
     } else {
-      if (normalized === 'top') return 0;
-      if (normalized === 'bottom') return available;
+      if (normalized === "top") return 0;
+      if (normalized === "bottom") return available;
     }
-    if (normalized.endsWith('%')) {
+    if (normalized.endsWith("%")) {
       const ratio = Number.parseFloat(normalized) / 100;
       return Number.isFinite(ratio) ? available * ratio : 0;
     }
@@ -546,42 +488,44 @@ export class ContainerRenderer implements IElementRenderer {
     return Number.isFinite(length) ? length : 0;
   }
 
-  private resolveBackgroundRepeat(value: string | number | undefined): 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat' {
-    if (typeof value !== 'string') {
-      return 'repeat';
+  private resolveBackgroundRepeat(
+    value: string | number | undefined,
+  ): "repeat" | "repeat-x" | "repeat-y" | "no-repeat" {
+    if (typeof value !== "string") {
+      return "repeat";
     }
     const normalized = value.trim().toLowerCase();
-    if (normalized === 'repeat-x') {
-      return 'repeat-x';
+    if (normalized === "repeat-x") {
+      return "repeat-x";
     }
-    if (normalized === 'repeat-y') {
-      return 'repeat-y';
+    if (normalized === "repeat-y") {
+      return "repeat-y";
     }
-    if (normalized === 'no-repeat') {
-      return 'no-repeat';
+    if (normalized === "no-repeat") {
+      return "no-repeat";
     }
-    if (normalized === 'repeat') {
-      return 'repeat';
+    if (normalized === "repeat") {
+      return "repeat";
     }
 
     const [xRepeat, yRepeat] = normalized.split(/\s+/);
-    if (xRepeat === 'repeat' && yRepeat === 'no-repeat') {
-      return 'repeat-x';
+    if (xRepeat === "repeat" && yRepeat === "no-repeat") {
+      return "repeat-x";
     }
-    if (xRepeat === 'no-repeat' && yRepeat === 'repeat') {
-      return 'repeat-y';
+    if (xRepeat === "no-repeat" && yRepeat === "repeat") {
+      return "repeat-y";
     }
-    if (xRepeat === 'no-repeat' && yRepeat === 'no-repeat') {
-      return 'no-repeat';
+    if (xRepeat === "no-repeat" && yRepeat === "no-repeat") {
+      return "no-repeat";
     }
-    return 'repeat';
+    return "repeat";
   }
 
   private createBackgroundClipPath(
     outerBounds: Bounds,
     clipBounds: Bounds,
     borderRadius: number[],
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): Path {
     const topInset = clipBounds.y - outerBounds.y;
     const leftInset = clipBounds.x - outerBounds.x;
@@ -601,17 +545,17 @@ export class ContainerRenderer implements IElementRenderer {
     image: Image,
     imageRect: Bounds,
     repeatBounds: Bounds,
-    repeatMode: 'repeat' | 'repeat-x' | 'repeat-y' | 'no-repeat',
+    repeatMode: "repeat" | "repeat-x" | "repeat-y" | "no-repeat",
     paint: Paint,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     if (imageRect.width <= 0 || imageRect.height <= 0) {
       return;
     }
 
     const srcRect = CanvasKit.LTRBRect(0, 0, image.width(), image.height());
-    const repeatX = repeatMode === 'repeat' || repeatMode === 'repeat-x';
-    const repeatY = repeatMode === 'repeat' || repeatMode === 'repeat-y';
+    const repeatX = repeatMode === "repeat" || repeatMode === "repeat-x";
+    const repeatY = repeatMode === "repeat" || repeatMode === "repeat-y";
 
     const xPositions = repeatX
       ? this.computeRepeatPositions(imageRect.x, imageRect.width, repeatBounds.x, repeatBounds.x + repeatBounds.width)
@@ -622,12 +566,7 @@ export class ContainerRenderer implements IElementRenderer {
 
     for (const y of yPositions) {
       for (const x of xPositions) {
-        const dstRect = CanvasKit.LTRBRect(
-          x,
-          y,
-          x + imageRect.width,
-          y + imageRect.height
-        );
+        const dstRect = CanvasKit.LTRBRect(x, y, x + imageRect.width, y + imageRect.height);
         canvas.drawImageRect(image, srcRect, dstRect, paint);
       }
     }
@@ -659,7 +598,7 @@ export class ContainerRenderer implements IElementRenderer {
 
   private isTransparentColor(color: string): boolean {
     const normalized = color.trim().toLowerCase();
-    if (normalized === 'transparent') {
+    if (normalized === "transparent") {
       return true;
     }
     const rgbaMatch = normalized.match(/^rgba\([^,]+,[^,]+,[^,]+,\s*([0-9.]+)\)$/);
@@ -674,7 +613,7 @@ export class ContainerRenderer implements IElementRenderer {
   }
 
   private parseFilterBlurSigma(filterValue: string | number | undefined): number {
-    if (typeof filterValue !== 'string') {
+    if (typeof filterValue !== "string") {
       return 0;
     }
 

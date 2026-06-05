@@ -11,6 +11,6 @@ export function createDesktopResourceResolver(baseUrl: string, productId: string
       if (ref.kind === "preview") return `${root}/preview/${ref.density ?? "1x"}.png`;
       if (ref.kind === "asset") return `${root}/bundle/${ref.path ?? ""}`;
       return `${root}/bundle/index.html`;
-    }
+    },
   };
 }

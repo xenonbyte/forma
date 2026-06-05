@@ -47,7 +47,9 @@ export function Layout({ breadcrumbs, children, currentPathname, headerAction, n
           }`}
           data-sidebar-collapsed={sidebarCollapsed ? "true" : "false"}
         >
-          <div className={`flex min-h-16 items-center py-3 ${sidebarCollapsed ? "px-4 md:justify-center md:px-0" : "justify-between gap-3 px-7"}`}>
+          <div
+            className={`flex min-h-16 items-center py-3 ${sidebarCollapsed ? "px-4 md:justify-center md:px-0" : "justify-between gap-3 px-7"}`}
+          >
             <div className={`min-w-0 ${sidebarCollapsed ? "md:hidden" : ""}`}>
               <a
                 className={`inline-flex rounded-md text-[21px] font-bold leading-none tracking-normal text-zinc-950 active:scale-95 ${focusClasses}`}
@@ -98,7 +100,9 @@ export function Layout({ breadcrumbs, children, currentPathname, headerAction, n
                   <span aria-hidden="true" className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
                     {navIcon(item.href)}
                   </span>
-                  <span className={`min-w-0 truncate text-sm font-medium ${sidebarCollapsed ? "md:hidden" : ""}`}>{label}</span>
+                  <span className={`min-w-0 truncate text-sm font-medium ${sidebarCollapsed ? "md:hidden" : ""}`}>
+                    {label}
+                  </span>
                 </a>
               );
             })}
@@ -111,7 +115,11 @@ export function Layout({ breadcrumbs, children, currentPathname, headerAction, n
               <div className="min-w-0 flex-1">
                 <HeaderBreadcrumbs breadcrumbs={headerBreadcrumbs} />
               </div>
-              {headerAction ? <div className="flex shrink-0 items-center justify-end text-xs font-medium text-zinc-500">{headerAction}</div> : null}
+              {headerAction ? (
+                <div className="flex shrink-0 items-center justify-end text-xs font-medium text-zinc-500">
+                  {headerAction}
+                </div>
+              ) : null}
             </div>
           </header>
 
@@ -233,9 +241,26 @@ function navIcon(href: string): JSX.Element {
   if (href === "/styles") {
     return (
       <svg aria-hidden="true" className="h-5 w-5" fill="none" viewBox="0 0 24 24">
-        <path d="M12 4.75 4.75 8.5 12 12.25l7.25-3.75L12 4.75Z" stroke="currentColor" strokeLinejoin="round" strokeWidth="1.7" />
-        <path d="m5.75 12 6.25 3.25L18.25 12" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
-        <path d="m5.75 15.35 6.25 3.25 6.25-3.25" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" />
+        <path
+          d="M12 4.75 4.75 8.5 12 12.25l7.25-3.75L12 4.75Z"
+          stroke="currentColor"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
+        <path
+          d="m5.75 12 6.25 3.25L18.25 12"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
+        <path
+          d="m5.75 15.35 6.25 3.25 6.25-3.25"
+          stroke="currentColor"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.7"
+        />
       </svg>
     );
   }
@@ -254,7 +279,9 @@ function navLinkClasses({ active, collapsed }: { active: boolean; collapsed: boo
     ? "bg-white text-zinc-950 shadow-[0_1px_3px_rgba(24,24,27,0.10)] ring-1 ring-zinc-200 md:bg-transparent md:shadow-none md:ring-0"
     : "bg-white text-zinc-950 shadow-[0_1px_3px_rgba(24,24,27,0.10)] ring-1 ring-zinc-200";
   const inactiveClasses = "text-zinc-700 hover:bg-zinc-200/80 hover:text-zinc-950";
-  const sizingClasses = collapsed ? "h-10 w-10 justify-center" : "h-11 w-11 justify-center md:w-full md:justify-start md:gap-3 md:px-3";
+  const sizingClasses = collapsed
+    ? "h-10 w-10 justify-center"
+    : "h-11 w-11 justify-center md:w-full md:justify-start md:gap-3 md:px-3";
 
   return `relative inline-flex shrink-0 items-center rounded-xl text-left transition active:scale-95 ${sizingClasses} ${focusClasses} ${
     active ? activeClasses : inactiveClasses
@@ -286,14 +313,14 @@ function routeLabel(value: string, t: (key: string) => string): string {
 const stateTone = {
   empty: {
     label: "text-zinc-500",
-    panel: "border-zinc-200 bg-white"
+    panel: "border-zinc-200 bg-white",
   },
   error: {
     label: "text-red-700",
-    panel: "border-red-200 bg-red-50"
+    panel: "border-red-200 bg-red-50",
   },
   loading: {
     label: "text-amber-700",
-    panel: "border-amber-200 bg-amber-50"
-  }
+    panel: "border-amber-200 bg-amber-50",
+  },
 };

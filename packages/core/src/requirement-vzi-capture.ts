@@ -22,31 +22,27 @@
  *   missing → 1024×1280, viewportSource = "default(desktop)"
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { randomBytes } from 'node:crypto';
-import { PuppeteerParser, VIEWPORT_PRESETS, type ViewportPreset } from '@vzi-core/parser';
-import { VZITransformer, buildVziContentFromTransformResult } from '@vzi-core/transformer';
-import { VZIEncoder } from '@vzi-core/format';
-import type { VZIContent, ImageAsset } from '@vzi-core/format';
-import { parse } from 'node-html-parser';
-import type { DesignPointer } from './product.js';
-import {
-  getArtifactVersionDir,
-  getArtifactVziDir,
-  getArtifactVziPath,
-} from './artifact-paths.js';
-import { FormaError } from './errors.js';
-import type { Platform } from './schemas.js';
-import type { ExportedPageIcons, ExportRequirementIconsResult } from './requirement-icon-export.js';
-import type { IconEntry, IconManifest } from './artifact-icon-extraction.js';
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { randomBytes } from "node:crypto";
+import { PuppeteerParser, VIEWPORT_PRESETS, type ViewportPreset } from "@vzi-core/parser";
+import { VZITransformer, buildVziContentFromTransformResult } from "@vzi-core/transformer";
+import { VZIEncoder } from "@vzi-core/format";
+import type { VZIContent, ImageAsset } from "@vzi-core/format";
+import { parse } from "node-html-parser";
+import type { DesignPointer } from "./product.js";
+import { getArtifactVersionDir, getArtifactVziDir, getArtifactVziPath } from "./artifact-paths.js";
+import { FormaError } from "./errors.js";
+import type { Platform } from "./schemas.js";
+import type { ExportedPageIcons, ExportRequirementIconsResult } from "./requirement-icon-export.js";
+import type { IconEntry, IconManifest } from "./artifact-icon-extraction.js";
 import {
   listCurrentRequirementDesignPointers,
   type GetRequirementPageIds,
-} from './requirement-design-pointer-filter.js';
+} from "./requirement-design-pointer-filter.js";
 
-const ICON_SOURCE_ORDER_ATTR = 'data-forma-icon-source-order';
+const ICON_SOURCE_ORDER_ATTR = "data-forma-icon-source-order";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -77,12 +73,7 @@ export interface CaptureRequirementVziInput {
 }
 
 /** Observable viewport source for the page capture. */
-export type ViewportSource =
-  | 'mobile'
-  | 'tablet'
-  | 'desktop'
-  | 'web'
-  | 'default(desktop)';
+export type ViewportSource = "mobile" | "tablet" | "desktop" | "web" | "default(desktop)";
 
 export interface CapturedPageVzi {
   pageId: string;
@@ -121,20 +112,20 @@ export function resolveViewport(platform: Platform | undefined): {
   height: number;
 } {
   switch (platform) {
-    case 'mobile':
-      return { preset: 'mobile', viewportSource: 'mobile', ...VIEWPORT_PRESETS.mobile };
-    case 'tablet':
-      return { preset: 'tablet', viewportSource: 'tablet', ...VIEWPORT_PRESETS.tablet };
-    case 'desktop':
-      return { preset: 'desktop', viewportSource: 'desktop', ...VIEWPORT_PRESETS.desktop };
-    case 'web':
+    case "mobile":
+      return { preset: "mobile", viewportSource: "mobile", ...VIEWPORT_PRESETS.mobile };
+    case "tablet":
+      return { preset: "tablet", viewportSource: "tablet", ...VIEWPORT_PRESETS.tablet };
+    case "desktop":
+      return { preset: "desktop", viewportSource: "desktop", ...VIEWPORT_PRESETS.desktop };
+    case "web":
       // web reuses the desktop preset
-      return { preset: 'desktop', viewportSource: 'web', ...VIEWPORT_PRESETS.desktop };
+      return { preset: "desktop", viewportSource: "web", ...VIEWPORT_PRESETS.desktop };
     default:
       // missing/undefined → default(desktop)
       return {
-        preset: 'desktop',
-        viewportSource: 'default(desktop)',
+        preset: "desktop",
+        viewportSource: "default(desktop)",
         ...VIEWPORT_PRESETS.desktop,
       };
   }
@@ -156,10 +147,7 @@ export function resolveViewport(platform: Platform | undefined): {
  * inline SVG elements in the VZI does not match the manifest icon count
  * (mismatch detected before archive commit).
  */
-function injectIconRefs(
-  content: VZIContent,
-  iconExportResult: ExportedPageIcons,
-): number {
+function injectIconRefs(content: VZIContent, iconExportResult: ExportedPageIcons): number {
   const { manifest, artifactId } = iconExportResult;
   const icons = manifest.icons;
 
@@ -167,25 +155,23 @@ function injectIconRefs(
     return 0;
   }
 
-  const inlineSvgElements = Array.from(content.elements.entries()).filter(
-    ([, el]) => el.svgData !== undefined,
-  );
+  const inlineSvgElements = Array.from(content.elements.entries()).filter(([, el]) => el.svgData !== undefined);
   const inlineSvgElementsBySourceOrder = new Map<number, (typeof inlineSvgElements)[number]>();
   for (const entry of inlineSvgElements) {
     const [, element] = entry;
     const sourceOrder = readIconSourceOrder(element);
     if (sourceOrder === undefined) {
       throw new FormaError(
-        'ARTIFACT_WRITE_FAIL',
+        "ARTIFACT_WRITE_FAIL",
         `Icon/VZI mapping mismatch for artifact ${artifactId}: ` +
-          'VZI inline SVG element is missing explicit source-order metadata. ' +
-          'Cannot safely link icon refs.',
+          "VZI inline SVG element is missing explicit source-order metadata. " +
+          "Cannot safely link icon refs.",
         { artifactId },
       );
     }
     if (inlineSvgElementsBySourceOrder.has(sourceOrder)) {
       throw new FormaError(
-        'ARTIFACT_WRITE_FAIL',
+        "ARTIFACT_WRITE_FAIL",
         `Icon/VZI mapping mismatch for artifact ${artifactId}: ` +
           `duplicate VZI inline SVG source-order ${sourceOrder}. Cannot safely link icon refs.`,
         { artifactId, sourceOrder },
@@ -198,7 +184,7 @@ function injectIconRefs(
 
   if (inlineSvgElements.length !== iconOccurrences.length) {
     throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
+      "ARTIFACT_WRITE_FAIL",
       `Icon/VZI mapping mismatch for artifact ${artifactId}: ` +
         `VZI has ${inlineSvgElements.length} inline SVG elements but icon manifest has ${iconOccurrences.length} source occurrences. ` +
         `Cannot safely link icon refs by document order.`,
@@ -215,10 +201,10 @@ function injectIconRefs(
     const match = inlineSvgElementsBySourceOrder.get(occurrence.sourceOrder);
     if (!match) {
       throw new FormaError(
-        'ARTIFACT_WRITE_FAIL',
+        "ARTIFACT_WRITE_FAIL",
         `Icon/VZI mapping mismatch for artifact ${artifactId}: ` +
           `no VZI inline SVG element found for source-order ${occurrence.sourceOrder}. ` +
-          'Cannot safely link icon refs.',
+          "Cannot safely link icon refs.",
         { artifactId, sourceOrder: occurrence.sourceOrder },
       );
     }
@@ -234,9 +220,9 @@ function injectIconRefs(
 
     const asset: ImageAsset = {
       id: assetId,
-      storageType: 'reference',
+      storageType: "reference",
       url: relativeSvgPath,
-      mimeType: 'image/svg+xml',
+      mimeType: "image/svg+xml",
       width: 0,
       height: 0,
       size: 0,
@@ -261,11 +247,9 @@ function injectIconRefs(
   return injected;
 }
 
-function readIconSourceOrder(element: {
-  source?: { dataAttributes?: Record<string, string> };
-}): number | undefined {
+function readIconSourceOrder(element: { source?: { dataAttributes?: Record<string, string> } }): number | undefined {
   const raw = element.source?.dataAttributes?.[ICON_SOURCE_ORDER_ATTR];
-  if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {
+  if (typeof raw !== "string" || !/^\d+$/.test(raw)) {
     return undefined;
   }
   const parsed = Number.parseInt(raw, 10);
@@ -274,7 +258,7 @@ function readIconSourceOrder(element: {
 
 function annotateInlineSvgSourceOrder(html: string): string {
   const root = parse(html, { comment: true });
-  const svgElements = root.querySelectorAll('svg');
+  const svgElements = root.querySelectorAll("svg");
   if (svgElements.length === 0) {
     return html;
   }
@@ -297,9 +281,7 @@ function iconOccurrencesInSourceOrder(manifest: IconManifest): Array<{ sourceOrd
         sourceOrder: instance.sourceOrder,
         icon: byId.get(instance.iconId) ?? byHash.get(instance.contentHash),
       }))
-      .filter((occurrence): occurrence is { sourceOrder: number; icon: IconEntry } =>
-        occurrence.icon !== undefined
-      );
+      .filter((occurrence): occurrence is { sourceOrder: number; icon: IconEntry } => occurrence.icon !== undefined);
   }
 
   return manifest.icons
@@ -313,7 +295,7 @@ function iconOccurrencesInSourceOrder(manifest: IconManifest): Array<{ sourceOrd
 // ─── Temp dir naming ──────────────────────────────────────────────────────────
 
 function tmpSiblingDir(vziDir: string): string {
-  const suffix = randomBytes(4).toString('hex');
+  const suffix = randomBytes(4).toString("hex");
   return `${vziDir}.tmp-${suffix}`;
 }
 
@@ -338,8 +320,7 @@ export async function captureRequirementVzi(
 
   // Resolve viewport from product platform
   const platform = await getProductPlatform(productId);
-  const { preset, viewportSource, width: viewportWidth, height: viewportHeight } =
-    resolveViewport(platform);
+  const { preset, viewportSource, width: viewportWidth, height: viewportHeight } = resolveViewport(platform);
 
   const pointers = await listCurrentRequirementDesignPointers(deps, productId, requirementId);
 
@@ -349,11 +330,11 @@ export async function captureRequirementVzi(
     const { artifactId, version, pageId, variant } = pointer;
 
     const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
-    const htmlPath = join(versionDir, 'index.html');
+    const htmlPath = join(versionDir, "index.html");
     const vziDir = getArtifactVziDir(productsRoot, productId, artifactId);
     const vziPath = getArtifactVziPath(productsRoot, productId, artifactId);
     const tmpDir = tmpSiblingDir(vziDir);
-    const tmpVziPath = join(tmpDir, 'page.vzi');
+    const tmpVziPath = join(tmpDir, "page.vzi");
 
     try {
       // ── 1. Read HTML ────────────────────────────────────────────────────────
@@ -361,16 +342,18 @@ export async function captureRequirementVzi(
       try {
         htmlBuf = await deps.readFile(htmlPath);
       } catch (err) {
-        throw new FormaError(
-          'ARTIFACT_NOT_FOUND',
-          `Could not read index.html for artifact ${artifactId} v${version}`,
-          { productId, artifactId, version, path: htmlPath, cause: String(err) },
-        );
+        throw new FormaError("ARTIFACT_NOT_FOUND", `Could not read index.html for artifact ${artifactId} v${version}`, {
+          productId,
+          artifactId,
+          version,
+          path: htmlPath,
+          cause: String(err),
+        });
       }
-      const html = annotateInlineSvgSourceOrder(htmlBuf.toString('utf8'));
+      const html = annotateInlineSvgSourceOrder(htmlBuf.toString("utf8"));
 
       // ── 2. Parse via Puppeteer ──────────────────────────────────────────────
-      let ir: import('@vzi-core/types').IntermediateRepresentation;
+      let ir: import("@vzi-core/types").IntermediateRepresentation;
       try {
         const parser = new PuppeteerParser({
           viewportPreset: preset,
@@ -383,27 +366,24 @@ export async function captureRequirementVzi(
           // dispose() error replace the original parse exception in the catch
           // below. Log and swallow any dispose failure so the real error propagates.
           await parser.dispose().catch((disposeErr) => {
-            console.warn(
-              `[vzi-capture] PuppeteerParser.dispose() failed (artifact ${artifactId}): `,
-              disposeErr,
-            );
+            console.warn(`[vzi-capture] PuppeteerParser.dispose() failed (artifact ${artifactId}): `, disposeErr);
           });
         }
       } catch (err) {
         throw new FormaError(
-          'ARTIFACT_WRITE_FAIL',
+          "ARTIFACT_WRITE_FAIL",
           `VZI parse failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
           { productId, artifactId, pageId, cause: String(err) },
         );
       }
 
       // ── 3. Transform IR → TransformResult ──────────────────────────────────
-      let transformResult: import('@vzi-core/transformer').TransformResult;
+      let transformResult: import("@vzi-core/transformer").TransformResult;
       try {
         const transformer = new VZITransformer({
           title: pageId,
-          createdBy: 'forma-vzi-capture',
-          sourceType: 'file',
+          createdBy: "forma-vzi-capture",
+          sourceType: "file",
           sourceIdentifier: `${productId}/${requirementId}/${artifactId}/v${version}`,
           enableAnnotations: true,
           enableTokenExtraction: true,
@@ -411,7 +391,7 @@ export async function captureRequirementVzi(
         transformResult = transformer.transform(ir);
       } catch (err) {
         throw new FormaError(
-          'ARTIFACT_WRITE_FAIL',
+          "ARTIFACT_WRITE_FAIL",
           `VZI transform failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
           { productId, artifactId, pageId, cause: String(err) },
         );
@@ -443,22 +423,20 @@ export async function captureRequirementVzi(
       // packages/core/tests/requirement-vzi-capture.test.ts asserts this contract.
       // If the encoder is ever updated and drops unknown fields, that test will catch it.
       const extMeta = content.metadata as typeof content.metadata & Record<string, unknown>;
-      extMeta['formaProductId'] = productId;
-      extMeta['formaRequirementId'] = requirementId;
-      extMeta['formaArtifactId'] = artifactId;
-      extMeta['formaVariant'] = variant;
-      extMeta['formaSourceVersion'] = `v${version}`;
-      extMeta['formaPlatform'] = platform ?? null;
-      extMeta['formaViewport'] = { width: viewportWidth, height: viewportHeight };
-      extMeta['formaViewportSource'] = viewportSource;
-      extMeta['formaGenerationSource'] = 'forma-vzi-capture';
+      extMeta["formaProductId"] = productId;
+      extMeta["formaRequirementId"] = requirementId;
+      extMeta["formaArtifactId"] = artifactId;
+      extMeta["formaVariant"] = variant;
+      extMeta["formaSourceVersion"] = `v${version}`;
+      extMeta["formaPlatform"] = platform ?? null;
+      extMeta["formaViewport"] = { width: viewportWidth, height: viewportHeight };
+      extMeta["formaViewportSource"] = viewportSource;
+      extMeta["formaGenerationSource"] = "forma-vzi-capture";
 
       // ── 5. Inject icon asset refs ──────────────────────────────────────────
       let iconRefsInjected = 0;
       if (iconExportResult) {
-        const pageIconResult = iconExportResult.pages.find(
-          (p) => p.artifactId === artifactId,
-        );
+        const pageIconResult = iconExportResult.pages.find((p) => p.artifactId === artifactId);
         if (pageIconResult && pageIconResult.manifest.icons.length > 0) {
           iconRefsInjected = injectIconRefs(content, pageIconResult);
         }
@@ -471,7 +449,7 @@ export async function captureRequirementVzi(
         vziBytes = encoder.encode(content);
       } catch (err) {
         throw new FormaError(
-          'ARTIFACT_WRITE_FAIL',
+          "ARTIFACT_WRITE_FAIL",
           `VZI encode failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
           { productId, artifactId, pageId, cause: String(err) },
         );
@@ -502,7 +480,7 @@ export async function captureRequirementVzi(
       // Re-wrap non-FormaError as FormaError
       if (err instanceof FormaError) throw err;
       throw new FormaError(
-        'ARTIFACT_WRITE_FAIL',
+        "ARTIFACT_WRITE_FAIL",
         `VZI capture failed for artifact ${artifactId}: ${err instanceof Error ? err.message : String(err)}`,
         { productId, artifactId, pageId, cause: String(err) },
       );

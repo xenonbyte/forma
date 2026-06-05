@@ -19,12 +19,12 @@ export const workspaceAliases: Record<string, string> = {
   "@xenonbyte/forma-mcp": new URL("./packages/mcp/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-server": new URL("./packages/server/src/index.ts", import.meta.url).pathname,
   "@xenonbyte/forma-web": new URL("./packages/web/src/App.tsx", import.meta.url).pathname,
-  "@xenonbyte/forma-viewer": new URL("./packages/viewer/src/index.ts", import.meta.url).pathname
+  "@xenonbyte/forma-viewer": new URL("./packages/viewer/src/index.ts", import.meta.url).pathname,
 };
 
 export default defineConfig({
   resolve: {
-    alias: workspaceAliases
+    alias: workspaceAliases,
   },
   test: {
     globals: true,
@@ -37,14 +37,10 @@ export default defineConfig({
           name: "unit",
           globals: true,
           environment: "node",
-          include: [
-            "packages/*/tests/**/*.test.ts",
-            "packages/web/src/**/*.test.ts",
-            "packages/web/src/**/*.test.tsx"
-          ],
+          include: ["packages/*/tests/**/*.test.ts", "packages/web/src/**/*.test.ts", "packages/web/src/**/*.test.tsx"],
           // 浏览器组件测试由下面的 viewer 项目跑;保留 vitest 默认排除(node_modules/dist/…)。
-          exclude: [...configDefaults.exclude, "**/*.browser.test.tsx"]
-        }
+          exclude: [...configDefaults.exclude, "**/*.browser.test.tsx"],
+        },
       },
       {
         // viewer 组件测试,真实浏览器(playwright/chromium)。
@@ -59,8 +55,8 @@ export default defineConfig({
             "react-dom/client",
             "react/jsx-runtime",
             "react/jsx-dev-runtime",
-            "@xyflow/react"
-          ]
+            "@xyflow/react",
+          ],
         },
         test: {
           name: "viewer",
@@ -70,9 +66,9 @@ export default defineConfig({
             enabled: true,
             provider: playwright(),
             headless: true,
-            instances: [{ browser: "chromium" }]
-          }
-        }
+            instances: [{ browser: "chromium" }],
+          },
+        },
       },
       {
         // P9.6 dogfood: render the desktop shell screens in real chromium and
@@ -89,8 +85,8 @@ export default defineConfig({
             "react-dom/client",
             "react/jsx-runtime",
             "react/jsx-dev-runtime",
-            "@xyflow/react"
-          ]
+            "@xyflow/react",
+          ],
         },
         test: {
           name: "desktop-shell",
@@ -100,10 +96,10 @@ export default defineConfig({
             enabled: true,
             provider: playwright(),
             headless: true,
-            instances: [{ browser: "chromium" }]
-          }
-        }
-      }
-    ]
-  }
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+    ],
+  },
 });

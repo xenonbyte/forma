@@ -4,14 +4,14 @@
  * 渲染 SVG 元素，支持 path、circle、rect、polygon
  */
 
-import type { CanvasKit, Canvas, Paint, Path } from 'canvaskit-wasm';
-import type { IElementRenderer, IRElement, Bounds, Styles } from './types';
-import { toCanvasKitColor } from '../converters/ColorConverter';
+import type { CanvasKit, Canvas, Paint, Path } from "canvaskit-wasm";
+import type { IElementRenderer, IRElement, Bounds, Styles } from "./types";
+import { toCanvasKitColor } from "../converters/ColorConverter";
 
 /**
  * SVG 类型列表
  */
-const SVG_TYPES = ['svg', 'path', 'circle', 'rect', 'polygon', 'line', 'ellipse', 'polyline'];
+const SVG_TYPES = ["svg", "path", "circle", "rect", "polygon", "line", "ellipse", "polyline"];
 
 /**
  * SVG 元素数据
@@ -123,7 +123,7 @@ export class SVGRenderer implements IElementRenderer {
         }
         this.renderSVGElement(canvas, parsed as SVGElementData, bounds, styles, CanvasKit);
       } catch (error) {
-        console.error('Failed to parse SVG data:', error);
+        console.error("Failed to parse SVG data:", error);
       }
     }
   }
@@ -140,9 +140,9 @@ export class SVGRenderer implements IElementRenderer {
 
   private parseViewBox(
     viewBox: string | undefined,
-    bounds: Bounds
+    bounds: Bounds,
   ): { minX: number; minY: number; width: number; height: number } {
-    if (typeof viewBox === 'string') {
+    if (typeof viewBox === "string") {
       const parts = viewBox
         .trim()
         .split(/[\s,]+/)
@@ -166,7 +166,7 @@ export class SVGRenderer implements IElementRenderer {
   }
 
   private parseDashArray(raw: string | undefined): number[] {
-    if (!raw || raw === 'none') {
+    if (!raw || raw === "none") {
       return [];
     }
     const parsed = raw
@@ -186,26 +186,26 @@ export class SVGRenderer implements IElementRenderer {
     if (!value) {
       return true;
     }
-    const normalized = value.trim().toLowerCase().replace(/\s+/g, '');
+    const normalized = value.trim().toLowerCase().replace(/\s+/g, "");
     return (
-      normalized === 'none' ||
-      normalized === 'transparent' ||
-      normalized === 'rgba(0,0,0,0)' ||
-      normalized === 'rgb(0,0,0,0)' ||
-      normalized === '#0000' ||
-      normalized === '#00000000' ||
-      normalized === 'hsla(0,0%,0%,0)'
+      normalized === "none" ||
+      normalized === "transparent" ||
+      normalized === "rgba(0,0,0,0)" ||
+      normalized === "rgb(0,0,0,0)" ||
+      normalized === "#0000" ||
+      normalized === "#00000000" ||
+      normalized === "hsla(0,0%,0%,0)"
     );
   }
 
   private applySVGTransform(canvas: Canvas, bounds: Bounds, styles: Styles): void {
-    const transform = typeof styles.transform === 'string' ? styles.transform : '';
+    const transform = typeof styles.transform === "string" ? styles.transform : "";
     const matrixMatch = transform.match(/^matrix\(([^)]+)\)$/);
     if (!matrixMatch) {
       return;
     }
     const values = matrixMatch[1]
-      .split(',')
+      .split(",")
       .map((token) => Number.parseFloat(token.trim()))
       .filter((value) => Number.isFinite(value));
     if (values.length < 4) {
@@ -215,7 +215,12 @@ export class SVGRenderer implements IElementRenderer {
     const eps = 0.001;
     let rotation: number | null = null;
 
-    if (Math.abs(a) <= eps && Math.abs(d) <= eps && Math.abs(Math.abs(b) - 1) <= eps && Math.abs(Math.abs(c) - 1) <= eps) {
+    if (
+      Math.abs(a) <= eps &&
+      Math.abs(d) <= eps &&
+      Math.abs(Math.abs(b) - 1) <= eps &&
+      Math.abs(Math.abs(c) - 1) <= eps
+    ) {
       rotation = b < 0 ? -90 : 90;
     } else if (Math.abs(a + 1) <= eps && Math.abs(d + 1) <= eps && Math.abs(b) <= eps && Math.abs(c) <= eps) {
       rotation = 180;
@@ -232,11 +237,7 @@ export class SVGRenderer implements IElementRenderer {
     canvas.translate(-cx, -cy);
   }
 
-  private createFillPaint(
-    fill: string | undefined,
-    opacity: number,
-    CanvasKit: CanvasKit
-  ): Paint | null {
+  private createFillPaint(fill: string | undefined, opacity: number, CanvasKit: CanvasKit): Paint | null {
     if (this.isTransparentColor(fill)) {
       return null;
     }
@@ -256,7 +257,7 @@ export class SVGRenderer implements IElementRenderer {
     strokeDashoffset: number | undefined,
     strokeLinecap: string | undefined,
     opacity: number,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): { paint: Paint } | null {
     if (this.isTransparentColor(stroke)) {
       return null;
@@ -267,9 +268,9 @@ export class SVGRenderer implements IElementRenderer {
     paint.setStyle(CanvasKit.PaintStyle.Stroke);
     paint.setColor(toCanvasKitColor(stroke!, CanvasKit));
     paint.setStrokeWidth(strokeWidth && strokeWidth > 0 ? strokeWidth : 1);
-    if (strokeLinecap === 'round' && CanvasKit.StrokeCap?.Round !== undefined) {
+    if (strokeLinecap === "round" && CanvasKit.StrokeCap?.Round !== undefined) {
       paint.setStrokeCap(CanvasKit.StrokeCap.Round);
-    } else if (strokeLinecap === 'square' && CanvasKit.StrokeCap?.Square !== undefined) {
+    } else if (strokeLinecap === "square" && CanvasKit.StrokeCap?.Square !== undefined) {
       paint.setStrokeCap(CanvasKit.StrokeCap.Square);
     } else if (CanvasKit.StrokeCap?.Butt !== undefined) {
       paint.setStrokeCap(CanvasKit.StrokeCap.Butt);
@@ -297,17 +298,14 @@ export class SVGRenderer implements IElementRenderer {
     svgData: SVGDataBundle,
     bounds: Bounds,
     styles: Styles,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     const viewBox = this.parseViewBox(svgData.viewBox, bounds);
     canvas.save();
     try {
       this.applySVGTransform(canvas, bounds, styles);
       canvas.translate(bounds.x, bounds.y);
-      canvas.scale(
-        bounds.width / Math.max(viewBox.width, 1),
-        bounds.height / Math.max(viewBox.height, 1)
-      );
+      canvas.scale(bounds.width / Math.max(viewBox.width, 1), bounds.height / Math.max(viewBox.height, 1));
       canvas.translate(-viewBox.minX, -viewBox.minY);
 
       for (const pathData of svgData.paths || []) {
@@ -320,7 +318,7 @@ export class SVGRenderer implements IElementRenderer {
           pathData.strokeDashoffset,
           pathData.strokeLinecap,
           opacity,
-          CanvasKit
+          CanvasKit,
         );
         try {
           this.renderPath(canvas, pathData.d, fillPaint, strokeResult?.paint || null, CanvasKit);
@@ -340,7 +338,7 @@ export class SVGRenderer implements IElementRenderer {
           circleData.strokeDashoffset,
           circleData.strokeLinecap,
           opacity,
-          CanvasKit
+          CanvasKit,
         );
         const path = new CanvasKit.Path();
         try {
@@ -368,7 +366,7 @@ export class SVGRenderer implements IElementRenderer {
           undefined,
           undefined,
           opacity,
-          CanvasKit
+          CanvasKit,
         );
         try {
           this.renderRect(
@@ -380,7 +378,7 @@ export class SVGRenderer implements IElementRenderer {
             rectData.rx || rectData.ry || 0,
             fillPaint,
             strokeResult?.paint || null,
-            CanvasKit
+            CanvasKit,
           );
         } finally {
           fillPaint?.delete();
@@ -398,16 +396,10 @@ export class SVGRenderer implements IElementRenderer {
           undefined,
           undefined,
           opacity,
-          CanvasKit
+          CanvasKit,
         );
         try {
-          this.renderPolygon(
-            canvas,
-            polygonData.points,
-            fillPaint,
-            strokeResult?.paint || null,
-            CanvasKit
-          );
+          this.renderPolygon(canvas, polygonData.points, fillPaint, strokeResult?.paint || null, CanvasKit);
         } finally {
           fillPaint?.delete();
           strokeResult?.paint.delete();
@@ -426,12 +418,12 @@ export class SVGRenderer implements IElementRenderer {
     svgData: SVGElementData,
     bounds: Bounds,
     styles: Styles,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     canvas.save();
 
     // 创建填充 Paint
-    const fill = (svgData.fill || styles.fill || styles.backgroundColor || '#000000') as string;
+    const fill = (svgData.fill || styles.fill || styles.backgroundColor || "#000000") as string;
     const fillPaint = new CanvasKit.Paint();
     fillPaint.setColor(toCanvasKitColor(fill, CanvasKit));
     fillPaint.setStyle(CanvasKit.PaintStyle.Fill);
@@ -447,9 +439,8 @@ export class SVGRenderer implements IElementRenderer {
       strokePaint.setColor(toCanvasKitColor(strokeColor, CanvasKit));
       strokePaint.setStyle(CanvasKit.PaintStyle.Stroke);
       const strokeWidthValue = svgData.strokeWidth || styles.strokeWidth || 1;
-      const strokeWidth: number = typeof strokeWidthValue === 'number'
-        ? strokeWidthValue
-        : parseFloat(String(strokeWidthValue));
+      const strokeWidth: number =
+        typeof strokeWidthValue === "number" ? strokeWidthValue : parseFloat(String(strokeWidthValue));
       strokePaint.setStrokeWidth(strokeWidth);
       const strokeColorArr = strokePaint.getColor();
       strokePaint.setColor([
@@ -463,11 +454,11 @@ export class SVGRenderer implements IElementRenderer {
     try {
       // 根据类型渲染
       switch (svgData.type) {
-        case 'path':
-          this.renderPath(canvas, svgData.d || '', fillPaint, strokePaint, CanvasKit);
+        case "path":
+          this.renderPath(canvas, svgData.d || "", fillPaint, strokePaint, CanvasKit);
           break;
 
-        case 'circle':
+        case "circle":
           this.renderCircle(
             canvas,
             svgData.cx || bounds.x + bounds.width / 2,
@@ -475,11 +466,11 @@ export class SVGRenderer implements IElementRenderer {
             svgData.r || Math.min(bounds.width, bounds.height) / 2,
             fillPaint,
             strokePaint,
-            CanvasKit
+            CanvasKit,
           );
           break;
 
-        case 'rect':
+        case "rect":
           this.renderRect(
             canvas,
             svgData.x || bounds.x,
@@ -489,22 +480,16 @@ export class SVGRenderer implements IElementRenderer {
             svgData.rx || svgData.ry || 0,
             fillPaint,
             strokePaint,
-            CanvasKit
+            CanvasKit,
           );
           break;
 
-        case 'polygon':
-        case 'polyline':
-          this.renderPolygon(
-            canvas,
-            svgData.points || '',
-            fillPaint,
-            strokePaint,
-            CanvasKit
-          );
+        case "polygon":
+        case "polyline":
+          this.renderPolygon(canvas, svgData.points || "", fillPaint, strokePaint, CanvasKit);
           break;
 
-        case 'line':
+        case "line":
           this.renderLine(
             canvas,
             svgData.x1 || 0,
@@ -512,11 +497,11 @@ export class SVGRenderer implements IElementRenderer {
             svgData.x2 || 0,
             svgData.y2 || 0,
             strokePaint,
-            CanvasKit
+            CanvasKit,
           );
           break;
 
-        case 'ellipse':
+        case "ellipse":
           this.renderEllipse(
             canvas,
             svgData.cx || bounds.x + bounds.width / 2,
@@ -525,7 +510,7 @@ export class SVGRenderer implements IElementRenderer {
             svgData.ry_ellipse || bounds.height / 2,
             fillPaint,
             strokePaint,
-            CanvasKit
+            CanvasKit,
           );
           break;
       }
@@ -544,7 +529,7 @@ export class SVGRenderer implements IElementRenderer {
     pathData: string,
     fillPaint: Paint | null,
     strokePaint: Paint | null,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     const path = this.parsePathData(pathData, CanvasKit);
     if (!path) {
@@ -569,7 +554,7 @@ export class SVGRenderer implements IElementRenderer {
     const pathFactory = CanvasKit.Path as unknown as {
       MakeFromSVGString?: (path: string) => Path | null;
     };
-    if (typeof pathFactory.MakeFromSVGString === 'function') {
+    if (typeof pathFactory.MakeFromSVGString === "function") {
       const nativePath = pathFactory.MakeFromSVGString(pathData);
       if (nativePath) {
         return nativePath;
@@ -595,8 +580,8 @@ export class SVGRenderer implements IElementRenderer {
       const args = this.parsePathArguments(cmd.substring(1));
 
       switch (type) {
-        case 'M': // moveto
-          if (cmd[0] === 'm') {
+        case "M": // moveto
+          if (cmd[0] === "m") {
             currentX += args[0];
             currentY += args[1];
           } else {
@@ -608,8 +593,8 @@ export class SVGRenderer implements IElementRenderer {
           path.moveTo(currentX, currentY);
           break;
 
-        case 'L': // lineto
-          if (cmd[0] === 'l') {
+        case "L": // lineto
+          if (cmd[0] === "l") {
             currentX += args[0];
             currentY += args[1];
           } else {
@@ -619,8 +604,8 @@ export class SVGRenderer implements IElementRenderer {
           path.lineTo(currentX, currentY);
           break;
 
-        case 'H': // horizontal lineto
-          if (cmd[0] === 'h') {
+        case "H": // horizontal lineto
+          if (cmd[0] === "h") {
             currentX += args[0];
           } else {
             currentX = args[0];
@@ -628,8 +613,8 @@ export class SVGRenderer implements IElementRenderer {
           path.lineTo(currentX, currentY);
           break;
 
-        case 'V': // vertical lineto
-          if (cmd[0] === 'v') {
+        case "V": // vertical lineto
+          if (cmd[0] === "v") {
             currentY += args[0];
           } else {
             currentY = args[0];
@@ -637,7 +622,7 @@ export class SVGRenderer implements IElementRenderer {
           path.lineTo(currentX, currentY);
           break;
 
-        case 'C': // curveto
+        case "C": // curveto
           if (args.length < 6) {
             break;
           }
@@ -649,7 +634,7 @@ export class SVGRenderer implements IElementRenderer {
             let x = args[i + 4];
             let y = args[i + 5];
 
-            if (cmd[0] === 'c') {
+            if (cmd[0] === "c") {
               x1 += currentX;
               y1 += currentY;
               x2 += currentX;
@@ -664,7 +649,7 @@ export class SVGRenderer implements IElementRenderer {
           }
           break;
 
-        case 'Z': // closepath
+        case "Z": // closepath
           path.close();
           currentX = startX;
           currentY = startY;
@@ -702,7 +687,7 @@ export class SVGRenderer implements IElementRenderer {
     r: number,
     fillPaint: Paint | null,
     strokePaint: Paint | null,
-    _CanvasKit: CanvasKit
+    _CanvasKit: CanvasKit,
   ): void {
     if (fillPaint && fillPaint.getColor()[3] > 0) {
       canvas.drawCircle(cx, cy, r, fillPaint);
@@ -725,7 +710,7 @@ export class SVGRenderer implements IElementRenderer {
     rx: number,
     fillPaint: Paint | null,
     strokePaint: Paint | null,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     const rect = CanvasKit.LTRBRect(x, y, x + width, y + height);
 
@@ -757,7 +742,7 @@ export class SVGRenderer implements IElementRenderer {
     pointsStr: string,
     fillPaint: Paint | null,
     strokePaint: Paint | null,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     const points = this.parsePoints(pointsStr);
     if (points.length < 2) {
@@ -812,7 +797,7 @@ export class SVGRenderer implements IElementRenderer {
     x2: number,
     y2: number,
     strokePaint: Paint | null,
-    _CanvasKit: CanvasKit
+    _CanvasKit: CanvasKit,
   ): void {
     if (!strokePaint) {
       return;
@@ -832,7 +817,7 @@ export class SVGRenderer implements IElementRenderer {
     ry: number,
     fillPaint: Paint | null,
     strokePaint: Paint | null,
-    CanvasKit: CanvasKit
+    CanvasKit: CanvasKit,
   ): void {
     const rect = CanvasKit.LTRBRect(cx - rx, cy - ry, cx + rx, cy + ry);
 

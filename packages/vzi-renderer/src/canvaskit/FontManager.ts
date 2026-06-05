@@ -5,8 +5,8 @@
  * 使用 IndexedDB 缓存字体数据，避免重复下载
  */
 
-import type { CanvasKit, Typeface, TypefaceFontProvider } from 'canvaskit-wasm';
-import { FontCache } from './FontCache';
+import type { CanvasKit, Typeface, TypefaceFontProvider } from "canvaskit-wasm";
+import { FontCache } from "./FontCache";
 
 export interface FontManagerOptions {
   /**
@@ -19,15 +19,10 @@ export interface FontReadyEvent {
   family: string;
 }
 
-export type FontDiagnosticLevel = 'info' | 'warn' | 'error';
+export type FontDiagnosticLevel = "info" | "warn" | "error";
 
 export interface FontDiagnosticEvent {
-  name:
-    | 'font-default-load-failed'
-    | 'font-source-failed'
-    | 'font-load-failed'
-    | 'font-fallback'
-    | 'font-ready';
+  name: "font-default-load-failed" | "font-source-failed" | "font-load-failed" | "font-fallback" | "font-ready";
   level: FontDiagnosticLevel;
   payload: Record<string, unknown>;
 }
@@ -44,11 +39,11 @@ function rendererDebugLog(message: string, payload?: unknown): void {
     return;
   }
   if (payload !== undefined) {
-    let serialized = '';
+    let serialized = "";
     try {
       serialized = JSON.stringify(payload);
     } catch {
-      serialized = '[unserializable payload]';
+      serialized = "[unserializable payload]";
     }
     // eslint-disable-next-line no-console
     console.log(`[VZI][FontManager] ${message} ${serialized}`);
@@ -64,15 +59,11 @@ function rendererDebugLog(message: string, payload?: unknown): void {
  * 注意：常见系统字体（Arial, sans-serif 等）不在此映射中，
  * 会直接使用默认字体（Noto Sans CJK），避免网络请求和 CORS 问题
  */
-const LOCAL_RUNTIME_ASSET_BASE = '/runtime-assets';
+const LOCAL_RUNTIME_ASSET_BASE = "/runtime-assets";
 const LOCAL_FONT_BASE = `${LOCAL_RUNTIME_ASSET_BASE}/fonts`;
 
 function isNodeRuntime(): boolean {
-  return (
-    typeof process !== 'undefined' &&
-    !!process.versions &&
-    !!process.versions.node
-  );
+  return typeof process !== "undefined" && !!process.versions && !!process.versions.node;
 }
 
 type NodeRequire = (id: string) => unknown;
@@ -108,7 +99,7 @@ function getNodeFs(): NodeFsModule | null {
   }
 
   try {
-    return requireFn('fs') as NodeFsModule;
+    return requireFn("fs") as NodeFsModule;
   } catch {
     return null;
   }
@@ -121,14 +112,14 @@ function getNodePath(): NodePathModule | null {
   }
 
   try {
-    return requireFn('path') as NodePathModule;
+    return requireFn("path") as NodePathModule;
   } catch {
     return null;
   }
 }
 
 function normalizeBaseUrl(base: string): string {
-  return base.endsWith('/') ? base.slice(0, -1) : base;
+  return base.endsWith("/") ? base.slice(0, -1) : base;
 }
 
 function getNodeLocalFontBaseCandidates(): string[] {
@@ -139,15 +130,15 @@ function getNodeLocalFontBaseCandidates(): string[] {
   }
 
   const candidates = new Set<string>();
-  const cwd = typeof process !== 'undefined' && typeof process.cwd === 'function' ? process.cwd() : '';
-  const startDirs = [cwd, nodePath.resolve(cwd, '..'), nodePath.resolve(cwd, '../..')].filter(Boolean);
+  const cwd = typeof process !== "undefined" && typeof process.cwd === "function" ? process.cwd() : "";
+  const startDirs = [cwd, nodePath.resolve(cwd, ".."), nodePath.resolve(cwd, "../..")].filter(Boolean);
 
   for (const startDir of startDirs) {
     for (const relativePath of [
-      '.runtime-cache/runtime-assets/fonts',
-      'runtime-assets/fonts',
-      'public/runtime-assets/fonts',
-      'packages/web/public/runtime-assets/fonts',
+      ".runtime-cache/runtime-assets/fonts",
+      "runtime-assets/fonts",
+      "public/runtime-assets/fonts",
+      "packages/web/public/runtime-assets/fonts",
     ]) {
       const candidate = nodePath.resolve(startDir, relativePath);
       if (nodeFs.existsSync(candidate)) {
@@ -170,13 +161,11 @@ function getLocalFontBaseCandidates(): string[] {
   };
 
   const explicitFontBase =
-    typeof globalConfig.__VZI_FONT_BASE_URL__ === 'string'
-      ? globalConfig.__VZI_FONT_BASE_URL__.trim()
-      : '';
+    typeof globalConfig.__VZI_FONT_BASE_URL__ === "string" ? globalConfig.__VZI_FONT_BASE_URL__.trim() : "";
   const runtimeAssetBase =
-    typeof globalConfig.__VZI_RUNTIME_ASSET_BASE_URL__ === 'string'
+    typeof globalConfig.__VZI_RUNTIME_ASSET_BASE_URL__ === "string"
       ? globalConfig.__VZI_RUNTIME_ASSET_BASE_URL__.trim()
-      : '';
+      : "";
 
   const candidates = new Set<string>();
 
@@ -188,9 +177,9 @@ function getLocalFontBaseCandidates(): string[] {
     candidates.add(`${normalizeBaseUrl(runtimeAssetBase)}/fonts`);
   }
 
-  if (typeof document !== 'undefined' && typeof document.baseURI === 'string') {
+  if (typeof document !== "undefined" && typeof document.baseURI === "string") {
     try {
-      const fromBaseUri = new URL('runtime-assets/fonts/', document.baseURI).toString();
+      const fromBaseUri = new URL("runtime-assets/fonts/", document.baseURI).toString();
       candidates.add(normalizeBaseUrl(fromBaseUri));
     } catch {
       // ignore invalid base URI
@@ -205,7 +194,7 @@ function getLocalFontBaseCandidates(): string[] {
 function withLocalFontFirst(localFile: string, urls: string[]): string[] {
   const nodePath = isNodeRuntime() ? getNodePath() : null;
   const localCandidates = getLocalFontBaseCandidates().map((base) =>
-    nodePath ? nodePath.join(base, localFile) : `${base}/${localFile}`
+    nodePath ? nodePath.join(base, localFile) : `${base}/${localFile}`,
   );
   const merged = [...localCandidates, ...urls];
   const deduped = new Set<string>();
@@ -236,17 +225,17 @@ function mergeUniqueUrls(...groups: string[][]): string[] {
 
 function isAllowedBrowserFontUrl(url: string): string | null {
   if (isNodeRuntime()) return null;
-  if (typeof document === 'undefined' || typeof document.baseURI !== 'string') return null;
+  if (typeof document === "undefined" || typeof document.baseURI !== "string") return null;
   try {
     const base = new URL(document.baseURI);
     const parsed = new URL(url, base);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return null;
     }
     if (parsed.origin !== base.origin) {
       return null;
     }
-    if (!parsed.pathname.includes('/runtime-assets/fonts/')) {
+    if (!parsed.pathname.includes("/runtime-assets/fonts/")) {
       return null;
     }
     return parsed.toString();
@@ -256,56 +245,53 @@ function isAllowedBrowserFontUrl(url: string): string | null {
 }
 
 const MATERIAL_SYMBOLS_OUTLINED_URLS = mergeUniqueUrls(
-  localFontUrls('MaterialSymbolsOutlined-Variable.ttf'),
-  localFontUrls('MaterialIcons-Regular.ttf'),
+  localFontUrls("MaterialSymbolsOutlined-Variable.ttf"),
+  localFontUrls("MaterialIcons-Regular.ttf"),
 );
 const MATERIAL_SYMBOLS_ROUNDED_URLS = mergeUniqueUrls(
-  localFontUrls('MaterialSymbolsRounded-Variable.ttf'),
-  localFontUrls('MaterialIcons-Regular.ttf'),
+  localFontUrls("MaterialSymbolsRounded-Variable.ttf"),
+  localFontUrls("MaterialIcons-Regular.ttf"),
 );
 const MATERIAL_SYMBOLS_SHARP_URLS = mergeUniqueUrls(
-  localFontUrls('MaterialSymbolsSharp-Variable.ttf'),
-  localFontUrls('MaterialIcons-Regular.ttf'),
+  localFontUrls("MaterialSymbolsSharp-Variable.ttf"),
+  localFontUrls("MaterialIcons-Regular.ttf"),
 );
-const MATERIAL_ICONS_URLS = localFontUrls('MaterialIcons-Regular.ttf');
-const INTER_URLS = localFontUrls('Inter-Variable.ttf');
-const MONOSPACE_URLS = localFontUrls('NotoSansMono-Variable.ttf');
+const MATERIAL_ICONS_URLS = localFontUrls("MaterialIcons-Regular.ttf");
+const INTER_URLS = localFontUrls("Inter-Variable.ttf");
+const MONOSPACE_URLS = localFontUrls("NotoSansMono-Variable.ttf");
 
 const FONT_URL_MAP: Record<string, string[]> = {
-  default: mergeUniqueUrls(
-    localFontUrls('NotoSansCJKsc-Regular.otf'),
-    localFontUrls('NotoSans-Variable.ttf'),
-  ),
-  'space grotesk': localFontUrls('SpaceGrotesk-Variable.ttf'),
+  default: mergeUniqueUrls(localFontUrls("NotoSansCJKsc-Regular.otf"), localFontUrls("NotoSans-Variable.ttf")),
+  "space grotesk": localFontUrls("SpaceGrotesk-Variable.ttf"),
   inter: INTER_URLS,
-  'font-display': INTER_URLS,
-  'ui-monospace': MONOSPACE_URLS,
-  'sfmono-regular': MONOSPACE_URLS,
+  "font-display": INTER_URLS,
+  "ui-monospace": MONOSPACE_URLS,
+  "sfmono-regular": MONOSPACE_URLS,
   menlo: MONOSPACE_URLS,
   monaco: MONOSPACE_URLS,
   consolas: MONOSPACE_URLS,
-  'liberation mono': MONOSPACE_URLS,
-  'courier new': MONOSPACE_URLS,
+  "liberation mono": MONOSPACE_URLS,
+  "courier new": MONOSPACE_URLS,
   monospace: MONOSPACE_URLS,
-  'material symbols outlined': MATERIAL_SYMBOLS_OUTLINED_URLS,
-  'material-symbols-outlined': MATERIAL_SYMBOLS_OUTLINED_URLS,
-  'material symbols rounded': MATERIAL_SYMBOLS_ROUNDED_URLS,
-  'material-symbols-rounded': MATERIAL_SYMBOLS_ROUNDED_URLS,
-  'material symbols sharp': MATERIAL_SYMBOLS_SHARP_URLS,
-  'material-symbols-sharp': MATERIAL_SYMBOLS_SHARP_URLS,
-  'material icons': MATERIAL_ICONS_URLS,
-  'material-icons': MATERIAL_ICONS_URLS,
+  "material symbols outlined": MATERIAL_SYMBOLS_OUTLINED_URLS,
+  "material-symbols-outlined": MATERIAL_SYMBOLS_OUTLINED_URLS,
+  "material symbols rounded": MATERIAL_SYMBOLS_ROUNDED_URLS,
+  "material-symbols-rounded": MATERIAL_SYMBOLS_ROUNDED_URLS,
+  "material symbols sharp": MATERIAL_SYMBOLS_SHARP_URLS,
+  "material-symbols-sharp": MATERIAL_SYMBOLS_SHARP_URLS,
+  "material icons": MATERIAL_ICONS_URLS,
+  "material-icons": MATERIAL_ICONS_URLS,
 };
 
-const DEFAULT_FONT_FAMILIES = new Set(['default', 'defaultfont', 'sans-serif', 'sans']);
+const DEFAULT_FONT_FAMILIES = new Set(["default", "defaultfont", "sans-serif", "sans"]);
 
 function normalizeFontFamilyName(value: string): string {
-  return value.trim().toLowerCase().replace(/['"]/g, '');
+  return value.trim().toLowerCase().replace(/['"]/g, "");
 }
 
 function splitFontFamilies(fontFamily: string): string[] {
   return fontFamily
-    .split(',')
+    .split(",")
     .map((family) => normalizeFontFamilyName(family))
     .filter((family) => family.length > 0);
 }
@@ -371,7 +357,7 @@ export class FontManager {
       try {
         listener(event);
       } catch (error) {
-        console.warn('[FontManager] 字体就绪监听器执行失败', error);
+        console.warn("[FontManager] 字体就绪监听器执行失败", error);
       }
     }
   }
@@ -381,7 +367,7 @@ export class FontManager {
       try {
         listener(event);
       } catch (error) {
-        console.warn('[FontManager] 字体诊断监听器执行失败', error);
+        console.warn("[FontManager] 字体诊断监听器执行失败", error);
       }
     }
   }
@@ -392,19 +378,15 @@ export class FontManager {
   async init(canvasKit: CanvasKit, options: FontManagerOptions = {}): Promise<void> {
     // React StrictMode 下组件可能触发二次初始化，直接复用已就绪的字体提供器，
     // 避免重复创建 provider 但未重建注册映射而导致文本缺字。
-    if (
-      this.canvasKit === canvasKit &&
-      this.globalFontProvider &&
-      this.defaultFontData
-    ) {
-      rendererDebugLog('init reuse existing provider', {
+    if (this.canvasKit === canvasKit && this.globalFontProvider && this.defaultFontData) {
+      rendererDebugLog("init reuse existing provider", {
         registeredFamilyCount: this.registeredProviderFamilies.size,
       });
       return;
     }
 
     this.canvasKit = canvasKit;
-    rendererDebugLog('init start', {
+    rendererDebugLog("init start", {
       hasDefaultFontUrl: !!options.defaultFontUrl,
       localFontCandidates: getLocalFontBaseCandidates(),
     });
@@ -421,13 +403,13 @@ export class FontManager {
 
     // 先重建已缓存字体在 provider 内的注册状态
     if (this.defaultFontData) {
-      this.registerFontData(this.defaultFontData, ['DefaultFont', 'defaultfont', 'default', 'sans-serif', 'sans']);
+      this.registerFontData(this.defaultFontData, ["DefaultFont", "defaultfont", "default", "sans-serif", "sans"]);
     }
     for (const [family, fontData] of this.fontDataCache.entries()) {
       if (!fontData) {
         continue;
       }
-      if (family === 'default' || family === 'defaultfont' || family === 'sans-serif' || family === 'sans') {
+      if (family === "default" || family === "defaultfont" || family === "sans-serif" || family === "sans") {
         continue;
       }
       this.registerFontData(fontData, [family]);
@@ -436,37 +418,35 @@ export class FontManager {
     // 加载默认字体（支持中文）
     let defaultFontData = this.defaultFontData;
     if (!defaultFontData) {
-      const defaultUrls = options.defaultFontUrl
-        ? [options.defaultFontUrl]
-        : (FONT_URL_MAP['default'] || []);
-      defaultFontData = await this.loadFontData(defaultUrls, 'default');
+      const defaultUrls = options.defaultFontUrl ? [options.defaultFontUrl] : FONT_URL_MAP["default"] || [];
+      defaultFontData = await this.loadFontData(defaultUrls, "default");
     }
 
     if (defaultFontData) {
       this.defaultFontData = defaultFontData;
-      this.registerFontData(defaultFontData, ['DefaultFont', 'defaultfont', 'default', 'sans-serif', 'sans']);
+      this.registerFontData(defaultFontData, ["DefaultFont", "defaultfont", "default", "sans-serif", "sans"]);
 
       // 也创建 Typeface 用于其他用途
       if (!this.defaultTypeface) {
         this.defaultTypeface = canvasKit.Typeface.MakeFreeTypeFaceFromData(defaultFontData);
       }
-      this.typefaceCache.set('default', this.defaultTypeface);
-      rendererDebugLog('default font loaded', {
-        cacheKey: 'default',
+      this.typefaceCache.set("default", this.defaultTypeface);
+      rendererDebugLog("default font loaded", {
+        cacheKey: "default",
         bytes: defaultFontData.byteLength,
       });
     } else {
-      rendererDebugLog('default font load failed');
+      rendererDebugLog("default font load failed");
       this.emitDiagnostic({
-        name: 'font-default-load-failed',
-        level: 'error',
+        name: "font-default-load-failed",
+        level: "error",
         payload: {
-          cacheKey: 'default',
-          sources: FONT_URL_MAP['default'] || [],
+          cacheKey: "default",
+          sources: FONT_URL_MAP["default"] || [],
         },
       });
     }
-    rendererDebugLog('init done', {
+    rendererDebugLog("init done", {
       hasProvider: !!this.globalFontProvider,
       hasDefaultTypeface: !!this.defaultTypeface,
     });
@@ -493,7 +473,7 @@ export class FontManager {
   private async loadFontData(urls: string[], cacheKey: string): Promise<ArrayBuffer | null> {
     try {
       let fontData: ArrayBuffer | null = null;
-      rendererDebugLog('loadFontData start', {
+      rendererDebugLog("loadFontData start", {
         cacheKey,
         sourceCount: urls.length,
       });
@@ -503,22 +483,22 @@ export class FontManager {
         try {
           fontData = await this.fontCache.get(url);
           if (fontData) {
-            rendererDebugLog('font cache hit', {
+            rendererDebugLog("font cache hit", {
               cacheKey,
               url,
               bytes: fontData.byteLength,
             });
             break;
           }
-          rendererDebugLog('font cache miss', { cacheKey, url });
+          rendererDebugLog("font cache miss", { cacheKey, url });
         } catch (error) {
-          console.warn('[FontManager] IndexedDB 读取失败，将从网络加载:', error);
+          console.warn("[FontManager] IndexedDB 读取失败，将从网络加载:", error);
         }
 
         // 2. 如果缓存未命中，从网络下载
         try {
           fontData = await this.fetchFontDataByUrl(url);
-          rendererDebugLog('font download success', {
+          rendererDebugLog("font download success", {
             cacheKey,
             url,
             bytes: fontData.byteLength,
@@ -526,14 +506,14 @@ export class FontManager {
           try {
             await this.fontCache.set(url, fontData);
           } catch (cacheError) {
-            console.warn('[FontManager] 写入 IndexedDB 缓存失败，将继续使用内存字体:', cacheError);
+            console.warn("[FontManager] 写入 IndexedDB 缓存失败，将继续使用内存字体:", cacheError);
           }
           break;
         } catch (error) {
           console.warn(`[FontManager] 字体下载失败，将尝试下一个源: ${url}`, error);
           this.emitDiagnostic({
-            name: 'font-source-failed',
-            level: 'warn',
+            name: "font-source-failed",
+            level: "warn",
             payload: {
               cacheKey,
               url,
@@ -544,12 +524,12 @@ export class FontManager {
       }
 
       if (!fontData) {
-        throw new Error('No available font source');
+        throw new Error("No available font source");
       }
 
       // 4. 保存到内存缓存
       this.fontDataCache.set(normalizeFontFamilyName(cacheKey), fontData);
-      rendererDebugLog('loadFontData done', {
+      rendererDebugLog("loadFontData done", {
         cacheKey,
         bytes: fontData.byteLength,
       });
@@ -558,8 +538,8 @@ export class FontManager {
     } catch (error) {
       console.error(`❌ 字体加载失败: ${cacheKey}`, error);
       this.emitDiagnostic({
-        name: cacheKey === 'default' ? 'font-default-load-failed' : 'font-load-failed',
-        level: 'error',
+        name: cacheKey === "default" ? "font-default-load-failed" : "font-load-failed",
+        level: "error",
         payload: {
           cacheKey,
           message: error instanceof Error ? error.message : String(error),
@@ -583,7 +563,7 @@ export class FontManager {
       try {
         this.globalFontProvider.registerFont(fontData, normalizedAlias);
         this.registeredProviderFamilies.add(normalizedAlias);
-        rendererDebugLog('font registered', { alias: normalizedAlias });
+        rendererDebugLog("font registered", { alias: normalizedAlias });
       } catch (error) {
         console.warn(`[FontManager] 字体注册失败: ${normalizedAlias}`, error);
       }
@@ -604,7 +584,7 @@ export class FontManager {
     // 尝试每个字体
     for (const family of families) {
       if (DEFAULT_FONT_FAMILIES.has(family)) {
-        rendererDebugLog('getTypeface uses default family', { fontFamily, family });
+        rendererDebugLog("getTypeface uses default family", { fontFamily, family });
         return this.defaultTypeface;
       }
 
@@ -625,10 +605,10 @@ export class FontManager {
         }
 
         if (!this.loadingPromises.has(family)) {
-          rendererDebugLog('getTypeface schedule background load', { fontFamily, family });
+          rendererDebugLog("getTypeface schedule background load", { fontFamily, family });
           void this.loadFont(fontUrls, family)
             .then((typeface) => {
-              rendererDebugLog('getTypeface background load finished', {
+              rendererDebugLog("getTypeface background load finished", {
                 fontFamily,
                 family,
                 loaded: !!typeface,
@@ -642,13 +622,13 @@ export class FontManager {
     }
 
     // 浏览器端优先返回默认字体，避免阻塞首帧；真实字体会在后台加载并写入缓存。
-    rendererDebugLog('getTypeface fallback to default', { fontFamily });
+    rendererDebugLog("getTypeface fallback to default", { fontFamily });
     this.emitDiagnostic({
-      name: 'font-fallback',
-      level: this.defaultTypeface ? 'warn' : 'error',
+      name: "font-fallback",
+      level: this.defaultTypeface ? "warn" : "error",
       payload: {
         requestedFontFamily: fontFamily,
-        resolvedFamily: this.defaultTypeface ? 'default' : null,
+        resolvedFamily: this.defaultTypeface ? "default" : null,
         hasDefaultTypeface: !!this.defaultTypeface,
       },
     });
@@ -708,11 +688,7 @@ export class FontManager {
   /**
    * 内部加载逻辑
    */
-  private async loadFontInternal(
-    urls: string[],
-    cacheKey: string,
-    generation: number
-  ): Promise<Typeface | null> {
+  private async loadFontInternal(urls: string[], cacheKey: string, generation: number): Promise<Typeface | null> {
     const canvasKit = this.canvasKit;
     if (!canvasKit) {
       return null;
@@ -721,11 +697,11 @@ export class FontManager {
     try {
       const fontData = await this.loadFontData(urls, cacheKey);
       if (!fontData) {
-        throw new Error('Failed to load font data');
+        throw new Error("Failed to load font data");
       }
 
       if (generation !== this.runtimeGeneration || this.canvasKit !== canvasKit) {
-        rendererDebugLog('drop stale font load result', { cacheKey, generation });
+        rendererDebugLog("drop stale font load result", { cacheKey, generation });
         return null;
       }
 
@@ -738,14 +714,14 @@ export class FontManager {
       const typeface = canvasKit.Typeface.MakeFreeTypeFaceFromData(fontData);
 
       if (!typeface) {
-        throw new Error('Failed to create typeface from font data');
+        throw new Error("Failed to create typeface from font data");
       }
 
       if (!isNodeRuntime()) {
         this.emitFontReady({ family: normalizedCacheKey });
         this.emitDiagnostic({
-          name: 'font-ready',
-          level: 'info',
+          name: "font-ready",
+          level: "info",
           payload: {
             family: normalizedCacheKey,
             bytes: fontData.byteLength,
@@ -757,8 +733,8 @@ export class FontManager {
     } catch (error) {
       console.error(`❌ 字体加载失败: ${cacheKey}`, error);
       this.emitDiagnostic({
-        name: cacheKey === 'default' ? 'font-default-load-failed' : 'font-load-failed',
-        level: 'error',
+        name: cacheKey === "default" ? "font-default-load-failed" : "font-load-failed",
+        level: "error",
         payload: {
           cacheKey,
           message: error instanceof Error ? error.message : String(error),
@@ -799,12 +775,12 @@ export class FontManager {
       throw new Error(`Remote font URL is not allowed in local-only FontManager: ${url}`);
     }
 
-    if (!/^https?:\/\//i.test(url) && !url.startsWith('//')) {
+    if (!/^https?:\/\//i.test(url) && !url.startsWith("//")) {
       const nodeFs = getNodeFs();
       if (!nodeFs) {
-        throw new Error('Local font loading is only available in Node.js runtime');
+        throw new Error("Local font loading is only available in Node.js runtime");
       }
-      const resolvedPath = url.startsWith('file://') ? new URL(url) : url;
+      const resolvedPath = url.startsWith("file://") ? new URL(url) : url;
       const fileBuffer = nodeFs.readFileSync(resolvedPath);
       return fileBuffer.buffer.slice(fileBuffer.byteOffset, fileBuffer.byteOffset + fileBuffer.byteLength);
     }

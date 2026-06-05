@@ -1,9 +1,6 @@
-import type { DesignPointer } from './product.js';
+import type { DesignPointer } from "./product.js";
 
-export type GetRequirementPageIds = (
-  productId: string,
-  requirementId: string,
-) => Promise<readonly string[]>;
+export type GetRequirementPageIds = (productId: string, requirementId: string) => Promise<readonly string[]>;
 
 export interface RequirementDesignPointerFilterDeps {
   listDesignPointers: (productId: string) => Promise<DesignPointer[]>;
@@ -16,9 +13,7 @@ export async function listCurrentRequirementDesignPointers(
   requirementId: string,
 ): Promise<DesignPointer[]> {
   const allPointers = await deps.listDesignPointers(productId);
-  const activePointers = allPointers.filter(
-    (p) => p.requirementId === requirementId && p.designStatus === 'active',
-  );
+  const activePointers = allPointers.filter((p) => p.requirementId === requirementId && p.designStatus === "active");
 
   if (!deps.getRequirementPageIds) {
     return activePointers;

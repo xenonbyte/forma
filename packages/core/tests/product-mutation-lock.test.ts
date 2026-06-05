@@ -8,7 +8,7 @@ import {
   productMutationLockPath,
   PRODUCT_MUTATION_LOCK_HEARTBEAT_MS,
   PRODUCT_MUTATION_LOCK_TTL_MS,
-  runProductMutationWithWarnings
+  runProductMutationWithWarnings,
 } from "../src/index.js";
 
 const tempRoots: string[] = [];
@@ -36,15 +36,21 @@ async function expectNoLockSidecars(lockDir: string): Promise<void> {
   expect(files.filter((file) => file.endsWith(".mutate") || file.endsWith(".claim"))).toEqual([]);
 }
 
-async function writeMutationSidecar(lockFile: string, input: { lock_id: string; owner_pid: number; expires_at: string }): Promise<void> {
-  await writeFile(`${lockFile}.mutate`, JSON.stringify({
-    lock_id: input.lock_id,
-    owner_pid: input.owner_pid,
-    owner_process_start_time: "2026-05-21T00:00:00.000Z",
-    hostname: "host",
-    acquired_at: "2026-05-21T00:00:00.000Z",
-    expires_at: input.expires_at
-  }));
+async function writeMutationSidecar(
+  lockFile: string,
+  input: { lock_id: string; owner_pid: number; expires_at: string },
+): Promise<void> {
+  await writeFile(
+    `${lockFile}.mutate`,
+    JSON.stringify({
+      lock_id: input.lock_id,
+      owner_pid: input.owner_pid,
+      owner_process_start_time: "2026-05-21T00:00:00.000Z",
+      hostname: "host",
+      acquired_at: "2026-05-21T00:00:00.000Z",
+      expires_at: input.expires_at,
+    }),
+  );
 }
 
 afterEach(async () => {
@@ -59,9 +65,12 @@ describe("v6 transaction locks", () => {
     const home = await createHome();
     let lock: Record<string, unknown> = {};
 
-    await getProductMutationLock(home).run({ operation: "begin_requirement_design_session", product_id: "P-123abc", session_id: "S-1234567890abcdef" }, async () => {
-      lock = JSON.parse(await readFile(productMutationLockPath(home, "P-123abc"), "utf8"));
-    });
+    await getProductMutationLock(home).run(
+      { operation: "begin_requirement_design_session", product_id: "P-123abc", session_id: "S-1234567890abcdef" },
+      async () => {
+        lock = JSON.parse(await readFile(productMutationLockPath(home, "P-123abc"), "utf8"));
+      },
+    );
 
     expect(lock).toMatchObject({
       owner_pid: process.pid,
@@ -71,7 +80,7 @@ describe("v6 transaction locks", () => {
       session_id: "S-1234567890abcdef",
       acquired_at: "2026-05-21T00:00:00.000Z",
       heartbeat_at: "2026-05-21T00:00:00.000Z",
-      expires_at: "2026-05-21T00:02:00.000Z"
+      expires_at: "2026-05-21T00:02:00.000Z",
     });
     expect(typeof lock.lock_id).toBe("string");
     expect(typeof lock.owner_process_start_time).toBe("string");
@@ -85,8 +94,10 @@ describe("v6 transaction locks", () => {
     await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
     await writeFile(lockFile, "{not-json", "utf8");
 
-    await expect(getProductMutationLock(home).run({ operation: "begin", product_id: "P-123abc" }, async () => "ok")).rejects.toMatchObject({
-      code: "LOCK_CORRUPT"
+    await expect(
+      getProductMutationLock(home).run({ operation: "begin", product_id: "P-123abc" }, async () => "ok"),
+    ).rejects.toMatchObject({
+      code: "LOCK_CORRUPT",
     });
     await expect(readFile(lockFile, "utf8")).resolves.toBe("{not-json");
   });
@@ -96,18 +107,21 @@ describe("v6 transaction locks", () => {
     const home = await createHome();
     const lockFile = productMutationLockPath(home, "P-123abc");
     await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
-    await writeFile(lockFile, JSON.stringify({
-      lock_id: "L-stale",
-      owner_pid: 999999,
-      owner_process_start_time: "2026-05-20T00:00:00.000Z",
-      hostname: "host",
-      command: "old",
-      scope: "old",
-      product_id: "P-123abc",
-      acquired_at: "2026-05-20T00:00:00.000Z",
-      expires_at: "2026-05-20T00:02:00.000Z",
-      heartbeat_at: "2026-05-20T00:00:00.000Z"
-    }));
+    await writeFile(
+      lockFile,
+      JSON.stringify({
+        lock_id: "L-stale",
+        owner_pid: 999999,
+        owner_process_start_time: "2026-05-20T00:00:00.000Z",
+        hostname: "host",
+        command: "old",
+        scope: "old",
+        product_id: "P-123abc",
+        acquired_at: "2026-05-20T00:00:00.000Z",
+        expires_at: "2026-05-20T00:02:00.000Z",
+        heartbeat_at: "2026-05-20T00:00:00.000Z",
+      }),
+    );
 
     await getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
       expect(PRODUCT_MUTATION_LOCK_HEARTBEAT_MS).toBe(15_000);
@@ -124,20 +138,23 @@ describe("v6 transaction locks", () => {
       getProductMutationLock(home),
       { operation: "replace", product_id: "P-123abc" },
       async () => {
-        await writeFile(productMutationLockPath(home, "P-123abc"), JSON.stringify({
-          lock_id: "L-replacement",
-          owner_pid: process.pid,
-          owner_process_start_time: "2026-05-21T00:00:00.000Z",
-          hostname: "host",
-          command: "replacement",
-          scope: "replacement",
-          product_id: "P-123abc",
-          acquired_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-          heartbeat_at: new Date().toISOString()
-        }));
+        await writeFile(
+          productMutationLockPath(home, "P-123abc"),
+          JSON.stringify({
+            lock_id: "L-replacement",
+            owner_pid: process.pid,
+            owner_process_start_time: "2026-05-21T00:00:00.000Z",
+            hostname: "host",
+            command: "replacement",
+            scope: "replacement",
+            product_id: "P-123abc",
+            acquired_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+            heartbeat_at: new Date().toISOString(),
+          }),
+        );
       },
-      (warning) => warnings.push(warning)
+      (warning) => warnings.push(warning),
     );
 
     expect(warnings.some((warning) => warning.includes("LOCK_RELEASE_MISMATCH"))).toBe(true);
@@ -148,9 +165,11 @@ describe("v6 transaction locks", () => {
     const home = await createHome();
     const productDir = join(home, "data", "P-123abc");
 
-    await expect(getProductMutationLock(home).run({ operation: "delete-product", product_id: "P-123abc" }, async () => {
-      await rm(productDir, { recursive: true, force: true });
-    })).resolves.toBeUndefined();
+    await expect(
+      getProductMutationLock(home).run({ operation: "delete-product", product_id: "P-123abc" }, async () => {
+        await rm(productDir, { recursive: true, force: true });
+      }),
+    ).resolves.toBeUndefined();
 
     await expect(access(productDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -165,30 +184,41 @@ describe("v6 transaction locks", () => {
       const actual = await importOriginal<typeof import("node:fs/promises")>();
       return {
         ...actual,
-        copyFile: vi.fn(async (src: Parameters<typeof actual.copyFile>[0], dest: Parameters<typeof actual.copyFile>[1], mode?: Parameters<typeof actual.copyFile>[2]) => {
-          if (String(dest).endsWith("/data/P-123abc/locks/product-mutation.lock")) {
-            heartbeatStarted.resolve();
-            await allowHeartbeatWrite.promise;
-          }
-          return actual.copyFile(src, dest, mode);
-        })
+        copyFile: vi.fn(
+          async (
+            src: Parameters<typeof actual.copyFile>[0],
+            dest: Parameters<typeof actual.copyFile>[1],
+            mode?: Parameters<typeof actual.copyFile>[2],
+          ) => {
+            if (String(dest).endsWith("/data/P-123abc/locks/product-mutation.lock")) {
+              heartbeatStarted.resolve();
+              await allowHeartbeatWrite.promise;
+            }
+            return actual.copyFile(src, dest, mode);
+          },
+        ),
       };
     });
     const lockModule = await import("../src/product-mutation-lock.js");
 
     let completed = false;
-    const running = lockModule.getProductMutationLock(home).run({ operation: "heartbeat", product_id: "P-123abc" }, async () => {
-      await vi.advanceTimersByTimeAsync(lockModule.PRODUCT_MUTATION_LOCK_HEARTBEAT_MS);
-      await heartbeatStarted.promise;
-    }).then(() => {
-      completed = true;
-    });
+    const running = lockModule
+      .getProductMutationLock(home)
+      .run({ operation: "heartbeat", product_id: "P-123abc" }, async () => {
+        await vi.advanceTimersByTimeAsync(lockModule.PRODUCT_MUTATION_LOCK_HEARTBEAT_MS);
+        await heartbeatStarted.promise;
+      })
+      .then(() => {
+        completed = true;
+      });
     await nextTick();
     expect(completed).toBe(false);
 
     allowHeartbeatWrite.resolve();
     await running;
-    await expect(readFile(lockModule.productMutationLockPath(home, "P-123abc"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(lockModule.productMutationLockPath(home, "P-123abc"), "utf8")).rejects.toMatchObject({
+      code: "ENOENT",
+    });
     vi.doUnmock("node:fs/promises");
     vi.resetModules();
   });
@@ -204,28 +234,33 @@ describe("v6 transaction locks", () => {
       const target = join(home, "data", "P-123abc", "locks", "product-mutation.lock");
       return {
         ...actual,
-        readFile: vi.fn(async (file: Parameters<typeof actual.readFile>[0], options?: Parameters<typeof actual.readFile>[1]) => {
-          if (!injected && claimRead && String(file) === target) {
-            injected = true;
-            await actual.writeFile(target, JSON.stringify({
-              lock_id: "L-release-replacement",
-              owner_pid: process.pid,
-              owner_process_start_time: "2026-05-21T00:00:00.000Z",
-              hostname: "host",
-              command: "replacement",
-              scope: "replacement",
-              product_id: "P-123abc",
-              acquired_at: new Date().toISOString(),
-              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-              heartbeat_at: new Date().toISOString()
-            }));
-          }
-          const result = await actual.readFile(file, options);
-          if (String(file).includes(".claim") && !String(file).includes(".mutate.")) {
-            claimRead = true;
-          }
-          return result;
-        })
+        readFile: vi.fn(
+          async (file: Parameters<typeof actual.readFile>[0], options?: Parameters<typeof actual.readFile>[1]) => {
+            if (!injected && claimRead && String(file) === target) {
+              injected = true;
+              await actual.writeFile(
+                target,
+                JSON.stringify({
+                  lock_id: "L-release-replacement",
+                  owner_pid: process.pid,
+                  owner_process_start_time: "2026-05-21T00:00:00.000Z",
+                  hostname: "host",
+                  command: "replacement",
+                  scope: "replacement",
+                  product_id: "P-123abc",
+                  acquired_at: new Date().toISOString(),
+                  expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+                  heartbeat_at: new Date().toISOString(),
+                }),
+              );
+            }
+            const result = await actual.readFile(file, options);
+            if (String(file).includes(".claim") && !String(file).includes(".mutate.")) {
+              claimRead = true;
+            }
+            return result;
+          },
+        ),
       };
     });
     const lockModule = await import("../src/product-mutation-lock.js");
@@ -234,11 +269,13 @@ describe("v6 transaction locks", () => {
       lockModule.getProductMutationLock(home),
       { operation: "release-race", product_id: "P-123abc" },
       async () => undefined,
-      (warning) => warnings.push(warning)
+      (warning) => warnings.push(warning),
     );
 
     expect(warnings.some((warning) => warning.includes("LOCK_RELEASE_MISMATCH"))).toBe(true);
-    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).resolves.toContain("L-release-replacement");
+    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).resolves.toContain(
+      "L-release-replacement",
+    );
     await expectNoLockSidecars(join(home, "data", "P-123abc", "locks"));
     vi.doUnmock("node:fs/promises");
     vi.resetModules();
@@ -255,24 +292,33 @@ describe("v6 transaction locks", () => {
       const target = join(home, "data", "P-123abc", "locks", "product-mutation.lock");
       return {
         ...actual,
-        copyFile: vi.fn(async (src: Parameters<typeof actual.copyFile>[0], dest: Parameters<typeof actual.copyFile>[1], mode?: Parameters<typeof actual.copyFile>[2]) => {
-          if (!injected && String(dest) === target) {
-            injected = true;
-            await actual.writeFile(target, JSON.stringify({
-              lock_id: "L-heartbeat-replacement",
-              owner_pid: process.pid,
-              owner_process_start_time: "2026-05-21T00:00:00.000Z",
-              hostname: "host",
-              command: "replacement",
-              scope: "replacement",
-              product_id: "P-123abc",
-              acquired_at: new Date().toISOString(),
-              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-              heartbeat_at: new Date().toISOString()
-            }));
-          }
-          return actual.copyFile(src, dest, mode);
-        })
+        copyFile: vi.fn(
+          async (
+            src: Parameters<typeof actual.copyFile>[0],
+            dest: Parameters<typeof actual.copyFile>[1],
+            mode?: Parameters<typeof actual.copyFile>[2],
+          ) => {
+            if (!injected && String(dest) === target) {
+              injected = true;
+              await actual.writeFile(
+                target,
+                JSON.stringify({
+                  lock_id: "L-heartbeat-replacement",
+                  owner_pid: process.pid,
+                  owner_process_start_time: "2026-05-21T00:00:00.000Z",
+                  hostname: "host",
+                  command: "replacement",
+                  scope: "replacement",
+                  product_id: "P-123abc",
+                  acquired_at: new Date().toISOString(),
+                  expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+                  heartbeat_at: new Date().toISOString(),
+                }),
+              );
+            }
+            return actual.copyFile(src, dest, mode);
+          },
+        ),
       };
     });
     const lockModule = await import("../src/product-mutation-lock.js");
@@ -283,11 +329,13 @@ describe("v6 transaction locks", () => {
       async () => {
         await vi.advanceTimersByTimeAsync(lockModule.PRODUCT_MUTATION_LOCK_HEARTBEAT_MS);
       },
-      (warning) => warnings.push(warning)
+      (warning) => warnings.push(warning),
     );
 
     expect(warnings.some((warning) => warning.includes("LOCK_RELEASE_MISMATCH"))).toBe(true);
-    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).resolves.toContain("L-heartbeat-replacement");
+    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).resolves.toContain(
+      "L-heartbeat-replacement",
+    );
     await expectNoLockSidecars(join(home, "data", "P-123abc", "locks"));
     vi.doUnmock("node:fs/promises");
     vi.resetModules();
@@ -301,13 +349,13 @@ describe("v6 transaction locks", () => {
     await writeMutationSidecar(lockFile, {
       lock_id: "M-stale-dead",
       owner_pid: 999999,
-      expires_at: "2026-05-20T00:00:00.000Z"
+      expires_at: "2026-05-20T00:00:00.000Z",
     });
 
     let entered = false;
     await getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
       entered = true;
-      await expect(readFile(lockFile, "utf8")).resolves.toContain("\"lock_id\": \"L-");
+      await expect(readFile(lockFile, "utf8")).resolves.toContain('"lock_id": "L-');
     });
 
     expect(entered).toBe(true);
@@ -322,13 +370,15 @@ describe("v6 transaction locks", () => {
     await writeMutationSidecar(lockFile, {
       lock_id: "M-live",
       owner_pid: process.pid,
-      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString()
+      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
     });
 
     let entered = false;
-    await expect(getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
-      entered = true;
-    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+    await expect(
+      getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+        entered = true;
+      }),
+    ).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
 
     expect(entered).toBe(false);
     await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
@@ -340,29 +390,34 @@ describe("v6 transaction locks", () => {
     const lockFile = productMutationLockPath(home, "P-123abc");
     const claimFile = `${lockFile}.in-flight.claim`;
     await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
-    await writeFile(lockFile, JSON.stringify({
-      lock_id: "L-original",
-      owner_pid: process.pid,
-      owner_process_start_time: "2026-05-21T00:00:00.000Z",
-      hostname: "host",
-      command: "original",
-      scope: "original",
-      product_id: "P-123abc",
-      acquired_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-      heartbeat_at: new Date().toISOString()
-    }));
+    await writeFile(
+      lockFile,
+      JSON.stringify({
+        lock_id: "L-original",
+        owner_pid: process.pid,
+        owner_process_start_time: "2026-05-21T00:00:00.000Z",
+        hostname: "host",
+        command: "original",
+        scope: "original",
+        product_id: "P-123abc",
+        acquired_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+        heartbeat_at: new Date().toISOString(),
+      }),
+    );
     await writeMutationSidecar(lockFile, {
       lock_id: "M-stale-in-flight",
       owner_pid: 999999,
-      expires_at: "2026-05-20T00:00:00.000Z"
+      expires_at: "2026-05-20T00:00:00.000Z",
     });
     await rename(lockFile, claimFile);
 
     let entered = false;
-    await expect(getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
-      entered = true;
-    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+    await expect(
+      getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+        entered = true;
+      }),
+    ).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
 
     expect(entered).toBe(false);
     await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
@@ -379,32 +434,43 @@ describe("v6 transaction locks", () => {
       const actual = await importOriginal<typeof import("node:fs/promises")>();
       return {
         ...actual,
-        copyFile: vi.fn(async (src: Parameters<typeof actual.copyFile>[0], dest: Parameters<typeof actual.copyFile>[1], mode?: Parameters<typeof actual.copyFile>[2]) => {
-          if (String(dest) === lockFile && String(src).endsWith(".claim")) {
-            const error = new Error("restore failed") as Error & { code: string };
-            error.code = "EIO";
-            throw error;
-          }
-          return actual.copyFile(src, dest, mode);
-        })
+        copyFile: vi.fn(
+          async (
+            src: Parameters<typeof actual.copyFile>[0],
+            dest: Parameters<typeof actual.copyFile>[1],
+            mode?: Parameters<typeof actual.copyFile>[2],
+          ) => {
+            if (String(dest) === lockFile && String(src).endsWith(".claim")) {
+              const error = new Error("restore failed") as Error & { code: string };
+              error.code = "EIO";
+              throw error;
+            }
+            return actual.copyFile(src, dest, mode);
+          },
+        ),
       };
     });
     const lockModule = await import("../src/product-mutation-lock.js");
 
-    await expect(lockModule.getProductMutationLock(home).run({ operation: "restore-fails", product_id: "P-123abc" }, async () => {
-      await writeFile(lockFile, JSON.stringify({
-        lock_id: "L-replacement-before-restore",
-        owner_pid: process.pid,
-        owner_process_start_time: "2026-05-21T00:00:00.000Z",
-        hostname: "host",
-        command: "replacement",
-        scope: "replacement",
-        product_id: "P-123abc",
-        acquired_at: new Date().toISOString(),
-        expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-        heartbeat_at: new Date().toISOString()
-      }));
-    })).rejects.toMatchObject({ code: "EIO" });
+    await expect(
+      lockModule.getProductMutationLock(home).run({ operation: "restore-fails", product_id: "P-123abc" }, async () => {
+        await writeFile(
+          lockFile,
+          JSON.stringify({
+            lock_id: "L-replacement-before-restore",
+            owner_pid: process.pid,
+            owner_process_start_time: "2026-05-21T00:00:00.000Z",
+            hostname: "host",
+            command: "replacement",
+            scope: "replacement",
+            product_id: "P-123abc",
+            acquired_at: new Date().toISOString(),
+            expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+            heartbeat_at: new Date().toISOString(),
+          }),
+        );
+      }),
+    ).rejects.toMatchObject({ code: "EIO" });
 
     const claimFiles = (await readdir(lockDir)).filter((file) => file.endsWith(".claim"));
     expect(claimFiles).toHaveLength(1);
@@ -412,9 +478,11 @@ describe("v6 transaction locks", () => {
     await expect(readFile(join(lockDir, claimFiles[0]!), "utf8")).resolves.toContain("L-replacement-before-restore");
 
     let entered = false;
-    await expect(lockModule.getProductMutationLock(home).run({ operation: "next", product_id: "P-123abc" }, async () => {
-      entered = true;
-    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+    await expect(
+      lockModule.getProductMutationLock(home).run({ operation: "next", product_id: "P-123abc" }, async () => {
+        entered = true;
+      }),
+    ).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
     expect(entered).toBe(false);
     await expect(readFile(lockFile, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
     vi.doUnmock("node:fs/promises");
@@ -476,41 +544,49 @@ describe("v6 transaction locks", () => {
   it("reports live product files when a global mutation starts cross-process", async () => {
     const home = await createHome();
     await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
-    await writeFile(productMutationLockPath(home, "P-123abc"), JSON.stringify({
-      lock_id: "L-product",
-      owner_pid: process.pid,
-      owner_process_start_time: "2026-05-21T00:00:00.000Z",
-      hostname: "host",
-      command: "product",
-      scope: "product",
-      product_id: "P-123abc",
-      acquired_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-      heartbeat_at: new Date().toISOString()
-    }));
+    await writeFile(
+      productMutationLockPath(home, "P-123abc"),
+      JSON.stringify({
+        lock_id: "L-product",
+        owner_pid: process.pid,
+        owner_process_start_time: "2026-05-21T00:00:00.000Z",
+        hostname: "host",
+        command: "product",
+        scope: "product",
+        product_id: "P-123abc",
+        acquired_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+        heartbeat_at: new Date().toISOString(),
+      }),
+    );
 
     await expect(getProductMutationLock(home).run({ operation: "global" }, async () => "ok")).rejects.toMatchObject({
-      code: "PRODUCT_MUTATION_LOCKED"
+      code: "PRODUCT_MUTATION_LOCKED",
     });
   });
 
   it("reports live global files when a product mutation starts cross-process", async () => {
     const home = await createHome();
     await mkdir(join(home, "locks"), { recursive: true });
-    await writeFile(productMutationLockPath(home), JSON.stringify({
-      lock_id: "L-global",
-      owner_pid: process.pid,
-      owner_process_start_time: "2026-05-21T00:00:00.000Z",
-      hostname: "host",
-      command: "global",
-      scope: "global",
-      acquired_at: new Date().toISOString(),
-      expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-      heartbeat_at: new Date().toISOString()
-    }));
+    await writeFile(
+      productMutationLockPath(home),
+      JSON.stringify({
+        lock_id: "L-global",
+        owner_pid: process.pid,
+        owner_process_start_time: "2026-05-21T00:00:00.000Z",
+        hostname: "host",
+        command: "global",
+        scope: "global",
+        acquired_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+        heartbeat_at: new Date().toISOString(),
+      }),
+    );
 
-    await expect(getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => "ok")).rejects.toMatchObject({
-      code: "PRODUCT_MUTATION_LOCKED"
+    await expect(
+      getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => "ok"),
+    ).rejects.toMatchObject({
+      code: "PRODUCT_MUTATION_LOCKED",
     });
   });
 
@@ -521,34 +597,47 @@ describe("v6 transaction locks", () => {
       const actual = await importOriginal<typeof import("node:fs/promises")>();
       return {
         ...actual,
-        writeFile: vi.fn(async (file: Parameters<typeof actual.writeFile>[0], data: Parameters<typeof actual.writeFile>[1], options?: Parameters<typeof actual.writeFile>[2]) => {
-          await actual.writeFile(file, data, options);
-          if (String(file).endsWith("/data/P-123abc/locks/product-mutation.lock")) {
-            await actual.mkdir(join(home, "locks"), { recursive: true });
-            await actual.writeFile(join(home, "locks", "product-mutation.lock"), JSON.stringify({
-              lock_id: "L-global-race",
-              owner_pid: process.pid,
-              owner_process_start_time: "2026-05-21T00:00:00.000Z",
-              hostname: "host",
-              command: "global",
-              scope: "global",
-              acquired_at: new Date().toISOString(),
-              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-              heartbeat_at: new Date().toISOString()
-            }));
-          }
-        })
+        writeFile: vi.fn(
+          async (
+            file: Parameters<typeof actual.writeFile>[0],
+            data: Parameters<typeof actual.writeFile>[1],
+            options?: Parameters<typeof actual.writeFile>[2],
+          ) => {
+            await actual.writeFile(file, data, options);
+            if (String(file).endsWith("/data/P-123abc/locks/product-mutation.lock")) {
+              await actual.mkdir(join(home, "locks"), { recursive: true });
+              await actual.writeFile(
+                join(home, "locks", "product-mutation.lock"),
+                JSON.stringify({
+                  lock_id: "L-global-race",
+                  owner_pid: process.pid,
+                  owner_process_start_time: "2026-05-21T00:00:00.000Z",
+                  hostname: "host",
+                  command: "global",
+                  scope: "global",
+                  acquired_at: new Date().toISOString(),
+                  expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+                  heartbeat_at: new Date().toISOString(),
+                }),
+              );
+            }
+          },
+        ),
       };
     });
     const lockModule = await import("../src/product-mutation-lock.js");
 
     let entered = false;
-    await expect(lockModule.getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => {
-      entered = true;
-    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+    await expect(
+      lockModule.getProductMutationLock(home).run({ operation: "product", product_id: "P-123abc" }, async () => {
+        entered = true;
+      }),
+    ).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
 
     expect(entered).toBe(false);
-    await expect(readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(
+      readFile(join(home, "data", "P-123abc", "locks", "product-mutation.lock"), "utf8"),
+    ).rejects.toMatchObject({ code: "ENOENT" });
     await expect(readFile(join(home, "locks", "product-mutation.lock"), "utf8")).resolves.toContain("L-global-race");
     vi.doUnmock("node:fs/promises");
     vi.resetModules();
@@ -559,48 +648,62 @@ describe("v6 transaction locks", () => {
     const home = await createHome();
     const lockFile = productMutationLockPath(home, "P-123abc");
     await mkdir(join(home, "data", "P-123abc", "locks"), { recursive: true });
-    await writeFile(lockFile, JSON.stringify({
-      lock_id: "L-stale",
-      owner_pid: 999999,
-      owner_process_start_time: "2026-05-20T00:00:00.000Z",
-      hostname: "host",
-      command: "old",
-      scope: "old",
-      product_id: "P-123abc",
-      acquired_at: "2026-05-20T00:00:00.000Z",
-      expires_at: "2026-05-20T00:02:00.000Z",
-      heartbeat_at: "2026-05-20T00:00:00.000Z"
-    }));
+    await writeFile(
+      lockFile,
+      JSON.stringify({
+        lock_id: "L-stale",
+        owner_pid: 999999,
+        owner_process_start_time: "2026-05-20T00:00:00.000Z",
+        hostname: "host",
+        command: "old",
+        scope: "old",
+        product_id: "P-123abc",
+        acquired_at: "2026-05-20T00:00:00.000Z",
+        expires_at: "2026-05-20T00:02:00.000Z",
+        heartbeat_at: "2026-05-20T00:00:00.000Z",
+      }),
+    );
     vi.resetModules();
     vi.doMock("node:fs/promises", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs/promises")>();
       return {
         ...actual,
-        writeFile: vi.fn(async (file: Parameters<typeof actual.writeFile>[0], data: Parameters<typeof actual.writeFile>[1], options?: Parameters<typeof actual.writeFile>[2]) => {
-          await actual.writeFile(file, data, options);
-          if (String(file).endsWith("/product-mutation.lock.mutate")) {
-            await actual.writeFile(lockFile, JSON.stringify({
-              lock_id: "L-fresh",
-              owner_pid: process.pid,
-              owner_process_start_time: "2026-05-21T00:00:00.000Z",
-              hostname: "host",
-              command: "fresh",
-              scope: "fresh",
-              product_id: "P-123abc",
-              acquired_at: new Date().toISOString(),
-              expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-              heartbeat_at: new Date().toISOString()
-            }));
-          }
-        })
+        writeFile: vi.fn(
+          async (
+            file: Parameters<typeof actual.writeFile>[0],
+            data: Parameters<typeof actual.writeFile>[1],
+            options?: Parameters<typeof actual.writeFile>[2],
+          ) => {
+            await actual.writeFile(file, data, options);
+            if (String(file).endsWith("/product-mutation.lock.mutate")) {
+              await actual.writeFile(
+                lockFile,
+                JSON.stringify({
+                  lock_id: "L-fresh",
+                  owner_pid: process.pid,
+                  owner_process_start_time: "2026-05-21T00:00:00.000Z",
+                  hostname: "host",
+                  command: "fresh",
+                  scope: "fresh",
+                  product_id: "P-123abc",
+                  acquired_at: new Date().toISOString(),
+                  expires_at: new Date(Date.now() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
+                  heartbeat_at: new Date().toISOString(),
+                }),
+              );
+            }
+          },
+        ),
       };
     });
     const lockModule = await import("../src/product-mutation-lock.js");
 
     let entered = false;
-    await expect(lockModule.getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
-      entered = true;
-    })).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
+    await expect(
+      lockModule.getProductMutationLock(home).run({ operation: "new", product_id: "P-123abc" }, async () => {
+        entered = true;
+      }),
+    ).rejects.toMatchObject({ code: "PRODUCT_MUTATION_LOCKED" });
 
     expect(entered).toBe(false);
     await expect(readFile(lockFile, "utf8")).resolves.toContain("L-fresh");
@@ -611,13 +714,21 @@ describe("v6 transaction locks", () => {
   it("rejects malformed product ids before constructing lock paths", async () => {
     const home = await createHome();
 
-    expect(() => productMutationLockPath(home, "../../outside")).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
-    expect(() => productMutationLockPath(home, "not-a-product")).toThrow(expect.objectContaining({ code: "INVALID_INPUT" }));
-    await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "../../outside" }, async () => "ok")).rejects.toMatchObject({
-      code: "INVALID_INPUT"
+    expect(() => productMutationLockPath(home, "../../outside")).toThrow(
+      expect.objectContaining({ code: "INVALID_INPUT" }),
+    );
+    expect(() => productMutationLockPath(home, "not-a-product")).toThrow(
+      expect.objectContaining({ code: "INVALID_INPUT" }),
+    );
+    await expect(
+      getProductMutationLock(home).run({ operation: "bad", product_id: "../../outside" }, async () => "ok"),
+    ).rejects.toMatchObject({
+      code: "INVALID_INPUT",
     });
-    await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "not-a-product" }, async () => "ok")).rejects.toMatchObject({
-      code: "INVALID_INPUT"
+    await expect(
+      getProductMutationLock(home).run({ operation: "bad", product_id: "not-a-product" }, async () => "ok"),
+    ).rejects.toMatchObject({
+      code: "INVALID_INPUT",
     });
     await expect(access(join(home, "..", "..", "outside"))).rejects.toMatchObject({ code: "ENOENT" });
   });
@@ -625,8 +736,13 @@ describe("v6 transaction locks", () => {
   it("rejects malformed session ids before writing lock content", async () => {
     const home = await createHome();
 
-    await expect(getProductMutationLock(home).run({ operation: "bad", product_id: "P-123abc", session_id: "S-1" }, async () => "ok")).rejects.toMatchObject({
-      code: "INVALID_INPUT"
+    await expect(
+      getProductMutationLock(home).run(
+        { operation: "bad", product_id: "P-123abc", session_id: "S-1" },
+        async () => "ok",
+      ),
+    ).rejects.toMatchObject({
+      code: "INVALID_INPUT",
     });
   });
 

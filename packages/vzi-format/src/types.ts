@@ -4,7 +4,7 @@
  * 任务 3.3-3.4: 定义 VZI 2.0 文件格式和核心类型
  */
 
-import type { IRStyles, IRElement, IRBounds } from '@vzi-core/types';
+import type { IRStyles, IRElement, IRBounds } from "@vzi-core/types";
 
 // ============================================
 // VZI 2.0 文件头（未加密，256 bytes）
@@ -58,12 +58,12 @@ export interface VZIHeader {
  * 块类型
  */
 export type BlockType =
-  | 'metadata'    // 元数据块
-  | 'elements'    // 元素块
-  | 'styles'      // 样式块
-  | 'resources'   // 资源块
-  | 'annotations' // 标注块
-  | 'spatial';    // 空间索引块
+  | "metadata" // 元数据块
+  | "elements" // 元素块
+  | "styles" // 样式块
+  | "resources" // 资源块
+  | "annotations" // 标注块
+  | "spatial"; // 空间索引块
 
 /**
  * 块索引项
@@ -180,13 +180,13 @@ export interface QuadTreeIndex {
  * 颜色类别
  */
 export type ColorCategory =
-  | 'primary'    // 主色
-  | 'secondary'  // 辅色
-  | 'accent'     // 强调色
-  | 'background' // 背景色
-  | 'text'       // 文本色
-  | 'border'     // 边框色
-  | 'other';     // 其他
+  | "primary" // 主色
+  | "secondary" // 辅色
+  | "accent" // 强调色
+  | "background" // 背景色
+  | "text" // 文本色
+  | "border" // 边框色
+  | "other"; // 其他
 
 /**
  * 颜色令牌
@@ -238,11 +238,11 @@ export interface FontToken {
  * 标注类型
  */
 export type AnnotationType =
-  | 'spacing'    // 间距标注
-  | 'alignment'  // 对齐标注
-  | 'dimension'  // 尺寸标注
-  | 'grid'       // 网格标注
-  | 'distance';  // 距离标注
+  | "spacing" // 间距标注
+  | "alignment" // 对齐标注
+  | "dimension" // 尺寸标注
+  | "grid" // 网格标注
+  | "distance"; // 距离标注
 
 /**
  * 基础标注
@@ -264,9 +264,9 @@ export interface BaseAnnotation {
  * 间距标注
  */
 export interface SpacingAnnotation extends BaseAnnotation {
-  type: 'spacing';
+  type: "spacing";
   /** 间距类型 */
-  spacingType: 'margin' | 'padding' | 'gap';
+  spacingType: "margin" | "padding" | "gap";
   /** 间距值（上右下左） */
   values: [number, number, number, number];
 }
@@ -275,16 +275,16 @@ export interface SpacingAnnotation extends BaseAnnotation {
  * 对齐标注
  */
 export interface AlignmentAnnotation extends BaseAnnotation {
-  type: 'alignment';
+  type: "alignment";
   /** 对齐方式 */
-  alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
+  alignment: "left" | "center" | "right" | "top" | "middle" | "bottom";
 }
 
 /**
  * 尺寸标注
  */
 export interface DimensionAnnotation extends BaseAnnotation {
-  type: 'dimension';
+  type: "dimension";
   /** 宽度 */
   width: number;
   /** 高度 */
@@ -295,7 +295,7 @@ export interface DimensionAnnotation extends BaseAnnotation {
  * 网格标注
  */
 export interface GridAnnotation extends BaseAnnotation {
-  type: 'grid';
+  type: "grid";
   /** 列数 */
   columns: number;
   /** 行数 */
@@ -312,7 +312,7 @@ export interface GridAnnotation extends BaseAnnotation {
  * 距离标注
  */
 export interface DistanceAnnotation extends BaseAnnotation {
-  type: 'distance';
+  type: "distance";
   /** 起始元素 */
   fromElementId: string;
   /** 目标元素 */
@@ -320,7 +320,7 @@ export interface DistanceAnnotation extends BaseAnnotation {
   /** 距离值 */
   distance: number;
   /** 方向 */
-  direction: 'horizontal' | 'vertical';
+  direction: "horizontal" | "vertical";
 }
 
 /**
@@ -341,9 +341,9 @@ export type Annotation =
  * 图片存储类型
  */
 export type ImageStorageType =
-  | 'embedded'   // 内嵌
-  | 'external'   // 外部 URL
-  | 'reference'; // 引用（共享）
+  | "embedded" // 内嵌
+  | "external" // 外部 URL
+  | "reference"; // 引用（共享）
 
 /**
  * 图片资源
@@ -381,22 +381,22 @@ export interface ImageAsset {
  * 混合模式
  */
 export type BlendMode =
-  | 'normal'
-  | 'multiply'
-  | 'screen'
-  | 'overlay'
-  | 'darken'
-  | 'lighten'
-  | 'color-dodge'
-  | 'color-burn'
-  | 'hard-light'
-  | 'soft-light'
-  | 'difference'
-  | 'exclusion'
-  | 'hue'
-  | 'saturation'
-  | 'color'
-  | 'luminosity';
+  | "normal"
+  | "multiply"
+  | "screen"
+  | "overlay"
+  | "darken"
+  | "lighten"
+  | "color-dodge"
+  | "color-burn"
+  | "hard-light"
+  | "soft-light"
+  | "difference"
+  | "exclusion"
+  | "hue"
+  | "saturation"
+  | "color"
+  | "luminosity";
 
 /**
  * 图层
@@ -464,11 +464,11 @@ export interface VZIFeature {
  * 块错误类型
  */
 export type BlockErrorType =
-  | 'checksum_mismatch'   // 校验和不匹配
-  | 'decryption_failed'   // 解密失败
-  | 'decompression_failed' // 解压失败
-  | 'decode_failed'       // 解码失败
-  | 'corrupted_data';     // 数据损坏
+  | "checksum_mismatch" // 校验和不匹配
+  | "decryption_failed" // 解密失败
+  | "decompression_failed" // 解压失败
+  | "decode_failed" // 解码失败
+  | "corrupted_data"; // 数据损坏
 
 /**
  * 块错误信息

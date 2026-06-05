@@ -7,26 +7,30 @@ import { FormaError } from "./errors.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 export const styleDesignPathSchema = z.string().min(1).refine(isSafeStyleDesignPath, {
-  message: "design_md_path must be a relative path under styles/"
+  message: "design_md_path must be a relative path under styles/",
 });
 
-export const styleMetadataSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  category: z.string().optional(),
-  upstream: z.string().optional(),
-  design_md_path: styleDesignPathSchema,
-  tokens_css_path: z.string().min(1),
-  components_html_path: z.string().min(1),
-}).strict();
+export const styleMetadataSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    category: z.string().optional(),
+    upstream: z.string().optional(),
+    design_md_path: styleDesignPathSchema,
+    tokens_css_path: z.string().min(1),
+    components_html_path: z.string().min(1),
+  })
+  .strict();
 
-export const systemStyleSchema = z.object({
-  name: z.string().min(1),
-  description: z.string().min(1),
-  mode: z.literal('design-system'),
-  category: z.string().optional(),
-  upstream: z.string().optional(),
-}).strict();
+export const systemStyleSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1),
+    mode: z.literal("design-system"),
+    category: z.string().optional(),
+    upstream: z.string().optional(),
+  })
+  .strict();
 
 export const stylesIndexSchema = z.object({
   last_synced: z.string().optional(),
@@ -41,7 +45,7 @@ export type StyleMetadata = z.infer<typeof styleMetadataSchema>;
 export type SystemStyleMetadata = z.infer<typeof systemStyleSchema>;
 
 export interface BrandStyleContent {
-  kind: 'brand';
+  kind: "brand";
   metadata: StyleMetadata;
   designMd: string;
   tokensCss: string;
@@ -54,7 +58,10 @@ export interface StyleServiceOptions {
   bundledCraftDir?: string;
 }
 
-export interface CraftDoc { slug: string; content: string; }
+export interface CraftDoc {
+  slug: string;
+  content: string;
+}
 
 export class StyleService {
   private readonly home: string;
@@ -101,20 +108,21 @@ export class StyleService {
 
   async getStyle(name: string): Promise<BrandStyleContent> {
     const metadata = (await this.listStyles()).find((s) => s.name === name);
-    if (!metadata) throw new FormaError('INVALID_INPUT', 'Style not found', { style: name });
+    if (!metadata) throw new FormaError("INVALID_INPUT", "Style not found", { style: name });
     const [designMd, tokensCss, componentsHtml] = await Promise.all([
-      readFile(this.safeHomeStylePath(metadata.design_md_path), 'utf8'),
-      readFile(this.safeHomeStylePath(metadata.tokens_css_path), 'utf8'),
-      readFile(this.safeHomeStylePath(metadata.components_html_path), 'utf8'),
+      readFile(this.safeHomeStylePath(metadata.design_md_path), "utf8"),
+      readFile(this.safeHomeStylePath(metadata.tokens_css_path), "utf8"),
+      readFile(this.safeHomeStylePath(metadata.components_html_path), "utf8"),
     ]);
-    return { kind: 'brand', metadata, designMd, tokensCss, componentsHtml };
+    return { kind: "brand", metadata, designMd, tokensCss, componentsHtml };
   }
 
   async listSystemStyles(): Promise<SystemStyleMetadata[]> {
-    const file = join(this.stylesDir, '_system', 'system-styles.yaml');
+    const file = join(this.stylesDir, "_system", "system-styles.yaml");
     if (!(await fileExists(file))) {
       // 首装/未拷贝时从 bundled 读取
-      return (await readYamlAs(join(this.bundledStylesDir, '_system', 'system-styles.yaml'), systemStylesIndexSchema)).systems;
+      return (await readYamlAs(join(this.bundledStylesDir, "_system", "system-styles.yaml"), systemStylesIndexSchema))
+        .systems;
     }
     return (await readYamlAs(file, systemStylesIndexSchema)).systems;
   }
@@ -125,7 +133,7 @@ export class StyleService {
     const file = resolve(this.home, safeRelativePath);
     if (file !== stylesRoot && !file.startsWith(`${stylesRoot}${sep}`)) {
       throw new FormaError("INVALID_INPUT", "Style path is outside styles directory", {
-        design_md_path: relativePath
+        design_md_path: relativePath,
       });
     }
 
@@ -133,23 +141,23 @@ export class StyleService {
   }
 
   async listCraftDocs(): Promise<CraftDoc[]> {
-    const { readdir } = await import('node:fs/promises');
+    const { readdir } = await import("node:fs/promises");
     const entries = await readdir(this.bundledCraftDir);
     const slugs = entries
-      .filter((f) => f.endsWith('.md') && f !== 'README.md' && f !== 'ATTRIBUTION.md')
-      .map((f) => f.replace(/\.md$/, ''));
+      .filter((f) => f.endsWith(".md") && f !== "README.md" && f !== "ATTRIBUTION.md")
+      .map((f) => f.replace(/\.md$/, ""));
     return Promise.all(slugs.map((slug) => this.readCraftDoc(slug)));
   }
 
   async readCraftDoc(slug: string): Promise<CraftDoc> {
     if (!/^[a-z0-9-]+$/.test(slug)) {
-      throw new FormaError('INVALID_INPUT', 'Invalid craft slug', { slug });
+      throw new FormaError("INVALID_INPUT", "Invalid craft slug", { slug });
     }
     const file = join(this.bundledCraftDir, `${slug}.md`);
     try {
-      return { slug, content: await readFile(file, 'utf8') };
+      return { slug, content: await readFile(file, "utf8") };
     } catch {
-      throw new FormaError('INVALID_INPUT', 'Craft doc not found', { slug });
+      throw new FormaError("INVALID_INPUT", "Craft doc not found", { slug });
     }
   }
 }

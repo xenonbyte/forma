@@ -7,18 +7,18 @@
  * - 检测元素是否为响应式组件
  */
 
-import type { IRStyles, IRResponsive } from '@vzi-core/types';
+import type { IRStyles, IRResponsive } from "@vzi-core/types";
 
 /**
  * 标准断点定义（px）
  * 常见的响应式设计断点
  */
 export const STANDARD_BREAKPOINTS = {
-  xs: 320,   // 小型手机
-  sm: 576,   // 大型手机
-  md: 768,   // 平板
-  lg: 992,   // 小型桌面
-  xl: 1200,  // 桌面
+  xs: 320, // 小型手机
+  sm: 576, // 大型手机
+  md: 768, // 平板
+  lg: 992, // 小型桌面
+  xl: 1200, // 桌面
   xxl: 1400, // 大型桌面
 } as const;
 
@@ -30,7 +30,7 @@ export type BreakpointName = keyof typeof STANDARD_BREAKPOINTS;
 /**
  * 媒体类型
  */
-export type MediaType = 'all' | 'screen' | 'print' | 'speech';
+export type MediaType = "all" | "screen" | "print" | "speech";
 
 /**
  * 媒体查询解析结果
@@ -51,11 +51,19 @@ export interface ParsedMediaQuery {
  */
 export interface MediaQueryCondition {
   /** 类型：min-width, max-width, min-height, max-height 等 */
-  type: 'min-width' | 'max-width' | 'min-height' | 'max-height' | 'orientation' | 'resolution' | 'prefers-color-scheme' | 'other';
+  type:
+    | "min-width"
+    | "max-width"
+    | "min-height"
+    | "max-height"
+    | "orientation"
+    | "resolution"
+    | "prefers-color-scheme"
+    | "other";
   /** 值 */
   value?: number | string;
   /** 单位 */
-  unit?: 'px' | 'em' | 'rem' | 'dpi' | 'dppx';
+  unit?: "px" | "em" | "rem" | "dpi" | "dppx";
 }
 
 /**
@@ -122,20 +130,20 @@ export class ResponsiveDetector {
     let dimensionMatch;
 
     while ((dimensionMatch = dimensionRegex.exec(queryText)) !== null) {
-      const type = `${dimensionMatch[1]}-${dimensionMatch[2]}` as MediaQueryCondition['type'];
+      const type = `${dimensionMatch[1]}-${dimensionMatch[2]}` as MediaQueryCondition["type"];
       const value = parseFloat(dimensionMatch[3]);
-      const unit = dimensionMatch[4] as 'px' | 'em' | 'rem' | undefined;
+      const unit = dimensionMatch[4] as "px" | "em" | "rem" | undefined;
 
       conditions.push({ type, value, unit });
 
       // 转换为像素值
       let pixelValue = value;
-      if (unit === 'em' || unit === 'rem') {
+      if (unit === "em" || unit === "rem") {
         // 假设基准字体大小为 16px
         pixelValue = value * 16;
       }
 
-      if (type === 'min-width' || type === 'max-width') {
+      if (type === "min-width" || type === "max-width") {
         breakpointWidths.push(Math.round(pixelValue));
       }
     }
@@ -144,7 +152,7 @@ export class ResponsiveDetector {
     const orientationMatch = queryText.match(/orientation\s*:\s*(portrait|landscape)/i);
     if (orientationMatch) {
       conditions.push({
-        type: 'orientation',
+        type: "orientation",
         value: orientationMatch[1].toLowerCase(),
       });
     }
@@ -153,7 +161,7 @@ export class ResponsiveDetector {
     const colorSchemeMatch = queryText.match(/prefers-color-scheme\s*:\s*(light|dark)/i);
     if (colorSchemeMatch) {
       conditions.push({
-        type: 'prefers-color-scheme',
+        type: "prefers-color-scheme",
         value: colorSchemeMatch[1].toLowerCase(),
       });
     }
@@ -162,9 +170,9 @@ export class ResponsiveDetector {
     const resolutionMatch = queryText.match(/resolution\s*:\s*(\d+(?:\.\d+)?)(dpi|dppx)/i);
     if (resolutionMatch) {
       conditions.push({
-        type: 'resolution',
+        type: "resolution",
         value: parseFloat(resolutionMatch[1]),
-        unit: resolutionMatch[2] as 'dpi' | 'dppx',
+        unit: resolutionMatch[2] as "dpi" | "dppx",
       });
     }
 
@@ -180,9 +188,7 @@ export class ResponsiveDetector {
    * 检测元素的响应式属性
    * @param elementStyles 元素在不同断点下的样式
    */
-  detectResponsiveProperties(
-    elementStyles: Map<number, IRStyles>
-  ): IRResponsive | undefined {
+  detectResponsiveProperties(elementStyles: Map<number, IRStyles>): IRResponsive | undefined {
     const breakpoints = Array.from(elementStyles.keys()).sort((a, b) => a - b);
 
     if (breakpoints.length <= 1) {
@@ -203,7 +209,7 @@ export class ResponsiveDetector {
    */
   compareStyles(baseStyles: IRStyles, breakpointStyles: IRStyles): ResponsiveStyleChange | null {
     const changedProperties: string[] = [];
-    const changes: ResponsiveStyleChange['changes'] = {};
+    const changes: ResponsiveStyleChange["changes"] = {};
 
     for (const [key, value] of Object.entries(breakpointStyles)) {
       const baseValue = baseStyles[key];
@@ -268,7 +274,7 @@ export class ResponsiveDetector {
     }
 
     // 通过样式判断
-    if (styles.width === '100%' || styles.maxWidth === '100%') {
+    if (styles.width === "100%" || styles.maxWidth === "100%") {
       return true;
     }
 

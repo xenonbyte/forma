@@ -7,30 +7,38 @@ import {
   getProductMutationLock,
   runProductMutationWithWarnings,
   type ProductMutationContext,
-  type ProductMutationLock
+  type ProductMutationLock,
 } from "./product-mutation-lock.js";
 import { requirementIdSchema } from "./requirement.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
-export const copyItemSchema = z.object({
-  context: z.string().min(1),
-  text: z.string().min(1)
-}).strict();
+export const copyItemSchema = z
+  .object({
+    context: z.string().min(1),
+    text: z.string().min(1),
+  })
+  .strict();
 
-export const translationEntrySchema = z.object({
-  context: z.string().min(1),
-  texts: z.record(z.string(), z.string()),
-  outdated: z.boolean().optional()
-}).strict();
+export const translationEntrySchema = z
+  .object({
+    context: z.string().min(1),
+    texts: z.record(z.string(), z.string()),
+    outdated: z.boolean().optional(),
+  })
+  .strict();
 
-export const pageTranslationSchema = z.object({
-  page_id: z.string().min(1),
-  entries: z.array(translationEntrySchema)
-}).strict();
+export const pageTranslationSchema = z
+  .object({
+    page_id: z.string().min(1),
+    entries: z.array(translationEntrySchema),
+  })
+  .strict();
 
-const translationsDocumentSchema = z.object({
-  translations: z.array(pageTranslationSchema)
-}).strict();
+const translationsDocumentSchema = z
+  .object({
+    translations: z.array(pageTranslationSchema),
+  })
+  .strict();
 
 export type CopyItem = z.infer<typeof copyItemSchema>;
 export type TranslationEntry = z.infer<typeof translationEntrySchema>;
@@ -66,11 +74,15 @@ export class CopyService {
 
   async saveTranslations(productId: string, requirementId: string, translations: PageTranslation[]): Promise<void> {
     return this.runProductMutation({ operation: "save_translations", product_id: productId }, async () =>
-      this.saveTranslationsLocked(productId, requirementId, translations)
+      this.saveTranslationsLocked(productId, requirementId, translations),
     );
   }
 
-  async saveTranslationsLocked(productId: string, requirementId: string, translations: PageTranslation[]): Promise<void> {
+  async saveTranslationsLocked(
+    productId: string,
+    requirementId: string,
+    translations: PageTranslation[],
+  ): Promise<void> {
     const file = this.translationsFile(productId, requirementId);
     const parsed = normalizeTranslations(translations);
     if (parsed.length === 0) {
@@ -85,10 +97,10 @@ export class CopyService {
     productId: string,
     requirementId: string,
     pageId: string,
-    translations: TranslationEntry[]
+    translations: TranslationEntry[],
   ): Promise<void> {
     return this.runProductMutation({ operation: "update_page_translations", product_id: productId }, async () =>
-      this.updatePageTranslationsLocked(productId, requirementId, pageId, translations)
+      this.updatePageTranslationsLocked(productId, requirementId, pageId, translations),
     );
   }
 
@@ -96,7 +108,7 @@ export class CopyService {
     productId: string,
     requirementId: string,
     pageId: string,
-    translations: TranslationEntry[]
+    translations: TranslationEntry[],
   ): Promise<void> {
     const current = await this.getTranslations(productId, requirementId);
     const pagesById = new Map(current.map((page) => [page.page_id, page]));
@@ -105,15 +117,18 @@ export class CopyService {
 
     for (const entry of translations) {
       const existing = entriesByContext.get(entry.context);
-      entriesByContext.set(entry.context, clearOutdated({
-        ...entry,
-        texts: { ...(existing?.texts ?? {}), ...entry.texts }
-      }));
+      entriesByContext.set(
+        entry.context,
+        clearOutdated({
+          ...entry,
+          texts: { ...(existing?.texts ?? {}), ...entry.texts },
+        }),
+      );
     }
 
     pagesById.set(pageId, {
       page_id: pageId,
-      entries: [...entriesByContext.values()]
+      entries: [...entriesByContext.values()],
     });
 
     const next = normalizeTranslations([...pagesById.values()]);
@@ -125,10 +140,10 @@ export class CopyService {
     requirementId: string,
     oldCopy: CopyByPage,
     newCopy: CopyByPage,
-    newTranslations: PageTranslation[]
+    newTranslations: PageTranslation[],
   ): Promise<PageTranslation[]> {
     return this.runProductMutation({ operation: "merge_translations", product_id: productId }, async () =>
-      this.mergeTranslationsLocked(productId, requirementId, oldCopy, newCopy, newTranslations)
+      this.mergeTranslationsLocked(productId, requirementId, oldCopy, newCopy, newTranslations),
     );
   }
 
@@ -137,10 +152,12 @@ export class CopyService {
     requirementId: string,
     oldCopy: CopyByPage,
     newCopy: CopyByPage,
-    newTranslations: PageTranslation[]
+    newTranslations: PageTranslation[],
   ): Promise<PageTranslation[]> {
     const freshKeys = new Set<string>();
-    const pagesById = new Map((await this.getTranslations(productId, requirementId)).map((page) => [page.page_id, page]));
+    const pagesById = new Map(
+      (await this.getTranslations(productId, requirementId)).map((page) => [page.page_id, page]),
+    );
 
     for (const page of newTranslations) {
       const current = pagesById.get(page.page_id);
@@ -177,7 +194,7 @@ export class CopyService {
           }
 
           return entry;
-        })
+        }),
       });
     }
 
@@ -185,28 +202,30 @@ export class CopyService {
   }
 
   private translationsFile(productId: string, requirementId: string): string {
-    return join(this.dataDir, productIdSchema.parse(productId), requirementIdSchema.parse(requirementId), "copy-translations.yaml");
+    return join(
+      this.dataDir,
+      productIdSchema.parse(productId),
+      requirementIdSchema.parse(requirementId),
+      "copy-translations.yaml",
+    );
   }
 
   private async runProductMutation<T>(
     input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T> {
-    return runProductMutationWithWarnings(
-      this.productMutationLock,
-      input,
-      fn,
-      this.onProductMutationWarning
-    );
+    return runProductMutationWithWarnings(this.productMutationLock, input, fn, this.onProductMutationWarning);
   }
 }
 
 function normalizeTranslations(translations: PageTranslation[]): PageTranslation[] {
   return translations
-    .map((page) => pageTranslationSchema.parse({
-      page_id: page.page_id,
-      entries: page.entries.map((entry) => translationEntrySchema.parse(entry)).sort(compareContext)
-    }))
+    .map((page) =>
+      pageTranslationSchema.parse({
+        page_id: page.page_id,
+        entries: page.entries.map((entry) => translationEntrySchema.parse(entry)).sort(compareContext),
+      }),
+    )
     .filter((page) => page.entries.length > 0)
     .sort(comparePageId);
 }
@@ -218,10 +237,12 @@ function clearOutdated(entry: TranslationEntry): TranslationEntry {
 }
 
 function copyTextByContext(items: CopyItem[]): Map<string, string> {
-  return new Map(items.map((item) => {
-    const parsed = copyItemSchema.parse(item);
-    return [parsed.context, parsed.text];
-  }));
+  return new Map(
+    items.map((item) => {
+      const parsed = copyItemSchema.parse(item);
+      return [parsed.context, parsed.text];
+    }),
+  );
 }
 
 function translationKey(pageId: string, context: string): string {

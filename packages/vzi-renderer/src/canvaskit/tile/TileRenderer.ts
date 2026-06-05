@@ -4,8 +4,8 @@
  * 将大型设计稿分割为多个瓦片进行渲染，提高性能
  */
 
-import type { CanvasKit, Surface } from 'canvaskit-wasm';
-import type { IRElement } from '../renderers/types';
+import type { CanvasKit, Surface } from "canvaskit-wasm";
+import type { IRElement } from "../renderers/types";
 
 /**
  * 瓦片配置
@@ -98,10 +98,7 @@ export class TileRenderer {
     }
 
     // 创建新瓦片 Surface
-    const surface = this.canvasKit.MakeSurface(
-      this.config.tileSize,
-      this.config.tileSize
-    );
+    const surface = this.canvasKit.MakeSurface(this.config.tileSize, this.config.tileSize);
 
     if (!surface) {
       return null;
@@ -123,12 +120,7 @@ export class TileRenderer {
   /**
    * 渲染瓦片
    */
-  renderTile(
-    tileX: number,
-    tileY: number,
-    elements: IRElement[],
-    _bounds: { width: number; height: number }
-  ): void {
+  renderTile(tileX: number, tileY: number, elements: IRElement[], _bounds: { width: number; height: number }): void {
     const tile = this.getTile(tileX, tileY) || this.createTile(tileX, tileY);
 
     if (!tile) {
@@ -169,7 +161,7 @@ export class TileRenderer {
     element: IRElement,
     tileX: number,
     tileY: number,
-    _bounds: { width: number; height: number }
+    _bounds: { width: number; height: number },
   ): boolean {
     const tileLeft = tileX * this.config.tileSize;
     const tileTop = tileY * this.config.tileSize;

@@ -2,7 +2,7 @@
  * CanvasKit 渲染器类型定义
  */
 
-import type { CanvasKit, Canvas } from 'canvaskit-wasm';
+import type { CanvasKit, Canvas } from "canvaskit-wasm";
 
 /**
  * IR 元素边界

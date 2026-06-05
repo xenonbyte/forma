@@ -44,7 +44,7 @@ interface FormaStyleMetadata {
 }
 
 interface FormaBrandStyleContent {
-  kind: 'brand';
+  kind: "brand";
   metadata: FormaStyleMetadata;
   designMd: string;
   tokensCss: string;
@@ -57,7 +57,7 @@ interface FormaDesktopAPI {
   listArtifacts(productId: string): Promise<{ artifacts: FormaArtifact[] }>;
   getArtifact(
     productId: string,
-    artifactId: string
+    artifactId: string,
   ): Promise<{ manifest: { id: string; kind: string; title: string }; preview_url?: string }>;
   listRequirements(productId: string): Promise<{ requirements: FormaRequirement[] }>;
   getRequirement(productId: string, requirementId: string): Promise<FormaRequirement>;

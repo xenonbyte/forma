@@ -22,7 +22,7 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
     const store = await createTestStore();
     const product = await store.products.createProduct({
       name: "Checkout App",
-      description: "Mobile checkout workbench"
+      description: "Mobile checkout workbench",
     });
 
     await store.products.initProductConfig(product.id, {
@@ -30,13 +30,11 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
       brand_style: "ant",
       system_style: "shadcn-ui",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
 
     // Read the raw product.yaml from disk to confirm all fields are persisted.
-    const productYaml = await readYaml(
-      join(store.home, "data", product.id, "product.yaml")
-    );
+    const productYaml = await readYaml(join(store.home, "data", product.id, "product.yaml"));
 
     expect(productYaml).toMatchObject({
       id: product.id,
@@ -46,7 +44,7 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
       brand_style: "ant",
       system_style: "shadcn-ui",
       languages: ["en", "zh-CN"],
-      default_language: "en"
+      default_language: "en",
     });
   });
 
@@ -54,23 +52,21 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
     const store = await createTestStore();
     const product = await store.products.createProduct({
       name: "Shop App",
-      description: "Retail shop"
+      description: "Retail shop",
     });
 
     await store.products.initProductConfig(product.id, {
       platform: "mobile",
       brand_style: "linear",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
 
-    const productYaml = await readYaml(
-      join(store.home, "data", product.id, "product.yaml")
-    );
+    const productYaml = await readYaml(join(store.home, "data", product.id, "product.yaml"));
 
     expect(productYaml).toMatchObject({
       platform: "mobile",
-      brand_style: "linear"
+      brand_style: "linear",
     });
     expect((productYaml as Record<string, unknown>).system_style).toBeUndefined();
   });
@@ -79,7 +75,7 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
     const store = await createTestStore();
     const product = await store.products.createProduct({
       name: "Shop App",
-      description: "Retail shop"
+      description: "Retail shop",
     });
 
     // First config call
@@ -87,7 +83,7 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
       platform: "mobile",
       brand_style: "linear",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
 
     // Second config call — new platform and language set
@@ -95,17 +91,15 @@ describe("D1-04 ProductNew config wiring — product.yaml disk verification", ()
       platform: "desktop",
       brand_style: "linear",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
 
-    const productYaml = await readYaml(
-      join(store.home, "data", product.id, "product.yaml")
-    );
+    const productYaml = await readYaml(join(store.home, "data", product.id, "product.yaml"));
 
     expect(productYaml).toMatchObject({
       platform: "desktop",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
   });
 });

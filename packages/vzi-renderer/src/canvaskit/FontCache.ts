@@ -4,9 +4,9 @@
  * 使用 IndexedDB 缓存字体数据，避免重复下载
  */
 
-const DB_NAME = 'VZI_FontCache';
+const DB_NAME = "VZI_FontCache";
 const DB_VERSION = 1;
-const STORE_NAME = 'fonts';
+const STORE_NAME = "fonts";
 
 export interface CachedFont {
   url: string;
@@ -21,8 +21,7 @@ export interface CachedFont {
 export class FontCache {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<void> | null = null;
-  private readonly cacheAvailable =
-    typeof indexedDB !== 'undefined' && indexedDB !== null;
+  private readonly cacheAvailable = typeof indexedDB !== "undefined" && indexedDB !== null;
   private unavailableWarned = false;
 
   private warnUnavailable(): void {
@@ -30,7 +29,7 @@ export class FontCache {
       return;
     }
     this.unavailableWarned = true;
-    console.warn('[FontCache] IndexedDB 不可用，字体缓存降级为仅内存模式');
+    console.warn("[FontCache] IndexedDB 不可用，字体缓存降级为仅内存模式");
   }
 
   /**
@@ -50,7 +49,7 @@ export class FontCache {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onerror = () => {
-        console.error('[FontCache] 初始化失败:', request.error);
+        console.error("[FontCache] 初始化失败:", request.error);
         reject(request.error);
       };
 
@@ -62,8 +61,8 @@ export class FontCache {
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
         if (!db.objectStoreNames.contains(STORE_NAME)) {
-          const store = db.createObjectStore(STORE_NAME, { keyPath: 'url' });
-          store.createIndex('timestamp', 'timestamp', { unique: false });
+          const store = db.createObjectStore(STORE_NAME, { keyPath: "url" });
+          store.createIndex("timestamp", "timestamp", { unique: false });
         }
       };
     });
@@ -82,7 +81,7 @@ export class FontCache {
     if (!this.db) return null;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], 'readonly');
+      const transaction = this.db!.transaction([STORE_NAME], "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.get(url);
 
@@ -96,7 +95,7 @@ export class FontCache {
       };
 
       request.onerror = () => {
-        console.error('[FontCache] 读取失败:', request.error);
+        console.error("[FontCache] 读取失败:", request.error);
         reject(request.error);
       };
     });
@@ -120,7 +119,7 @@ export class FontCache {
     };
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.put(cached);
 
@@ -129,7 +128,7 @@ export class FontCache {
       };
 
       request.onerror = () => {
-        console.error('[FontCache] 缓存失败:', request.error);
+        console.error("[FontCache] 缓存失败:", request.error);
         reject(request.error);
       };
     });
@@ -146,7 +145,7 @@ export class FontCache {
     if (!this.db) return;
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], 'readwrite');
+      const transaction = this.db!.transaction([STORE_NAME], "readwrite");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.clear();
 
@@ -155,7 +154,7 @@ export class FontCache {
       };
 
       request.onerror = () => {
-        console.error('[FontCache] 清除失败:', request.error);
+        console.error("[FontCache] 清除失败:", request.error);
         reject(request.error);
       };
     });
@@ -172,7 +171,7 @@ export class FontCache {
     if (!this.db) return { count: 0, totalSize: 0 };
 
     return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction([STORE_NAME], 'readonly');
+      const transaction = this.db!.transaction([STORE_NAME], "readonly");
       const store = transaction.objectStore(STORE_NAME);
       const request = store.getAll();
 
@@ -186,7 +185,7 @@ export class FontCache {
       };
 
       request.onerror = () => {
-        console.error('[FontCache] 获取统计失败:', request.error);
+        console.error("[FontCache] 获取统计失败:", request.error);
         reject(request.error);
       };
     });

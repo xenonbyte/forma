@@ -1,5 +1,5 @@
-import { readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { readdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 // Called at createFormaStore startup to remove stale .tmp-* artifact dirs
 // (left from interrupted writes). Errors are non-fatal — logged as warnings.
@@ -28,7 +28,7 @@ function listArtifactTmpDirs(productsRoot: string): string[] {
 
   const tmpDirs: string[] = [];
   for (const productId of productIds) {
-    const artifactsDir = join(productsRoot, productId, 'od-project', 'artifacts');
+    const artifactsDir = join(productsRoot, productId, "od-project", "artifacts");
     let entries: string[];
     try {
       entries = readdirSync(artifactsDir);
@@ -37,7 +37,7 @@ function listArtifactTmpDirs(productsRoot: string): string[] {
     }
 
     for (const entry of entries) {
-      if (!entry.startsWith('.tmp-')) continue;
+      if (!entry.startsWith(".tmp-")) continue;
       tmpDirs.push(join(artifactsDir, entry));
     }
   }

@@ -26,8 +26,28 @@ afterEach(() => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const artifacts: NormalizeArtifactInput[] = [
-  { artifactId: "a", kind: "design-page", pageId: "login", pageName: "登录页", variant: "default", title: "登录页", version: 1, width: 600, height: 400 },
-  { artifactId: "b", kind: "design-page", pageId: "home", pageName: "首页", variant: "default", title: "首页", version: 1, width: 600, height: 400 }
+  {
+    artifactId: "a",
+    kind: "design-page",
+    pageId: "login",
+    pageName: "登录页",
+    variant: "default",
+    title: "登录页",
+    version: 1,
+    width: 600,
+    height: 400,
+  },
+  {
+    artifactId: "b",
+    kind: "design-page",
+    pageId: "home",
+    pageName: "首页",
+    variant: "default",
+    title: "首页",
+    version: 1,
+    width: 600,
+    height: 400,
+  },
 ];
 const resolver: ResourceResolver = { resolve: (ref) => `https://example.test/${ref.artifactId}/${ref.kind}` };
 
@@ -35,7 +55,9 @@ describe("Canvas", () => {
   it("renders a React Flow canvas with one node per tile in design mode", async () => {
     const model = buildViewerModel({ entry: "requirement", artifacts });
     const container = render(<Canvas model={model} mode="design" resolver={resolver} />);
-    await act(async () => { await sleep(50); });
+    await act(async () => {
+      await sleep(50);
+    });
     // React Flow 给每个 node 渲染一个带 data-id 的 .react-flow__node 元素
     const nodes = container.querySelectorAll(".react-flow__node");
     expect(nodes.length).toBeGreaterThanOrEqual(1);
@@ -46,7 +68,9 @@ describe("Canvas", () => {
   it("renders PNG tiles in annotation mode", async () => {
     const model = buildViewerModel({ entry: "requirement", artifacts });
     const container = render(<Canvas model={model} mode="annotation" resolver={resolver} />);
-    await act(async () => { await sleep(50); });
+    await act(async () => {
+      await sleep(50);
+    });
     expect(container.querySelector("img")).not.toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
   });

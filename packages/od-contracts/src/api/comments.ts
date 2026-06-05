@@ -1,12 +1,6 @@
-import type { OkResponse } from '../common.js';
+import type { OkResponse } from "../common.js";
 
-export type PreviewCommentStatus =
-  | 'open'
-  | 'attached'
-  | 'applying'
-  | 'needs_review'
-  | 'resolved'
-  | 'failed';
+export type PreviewCommentStatus = "open" | "attached" | "applying" | "needs_review" | "resolved" | "failed";
 
 export interface PreviewCommentPosition {
   x: number;
@@ -15,8 +9,8 @@ export interface PreviewCommentPosition {
   height: number;
 }
 
-export type PreviewCommentSelectionKind = 'element' | 'pod';
-export type PreviewVisualMarkKind = 'click' | 'stroke' | 'click+stroke';
+export type PreviewCommentSelectionKind = "element" | "pod";
+export type PreviewVisualMarkKind = "click" | "stroke" | "click+stroke";
 
 export interface PreviewCommentMember {
   elementId: string;

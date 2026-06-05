@@ -66,14 +66,18 @@ describe("open-design host contract", () => {
   it("rejects legacy or incomplete bridge shapes", () => {
     expect(isOpenDesignHostBridge({ version: OPEN_DESIGN_HOST_VERSION })).toBe(false);
     expect(isOpenDesignHostBridge({ ...createMockOpenDesignHost(), version: 2 })).toBe(false);
-    expect(isOpenDesignHostBridge({
-      ...createMockOpenDesignHost(),
-      shell: { openExternal: async () => ({ ok: true }) },
-    })).toBe(false);
-    expect(isOpenDesignHostBridge({
-      ...createMockOpenDesignHost(),
-      updater: { status: async () => createMockOpenDesignHost().updater.status() },
-    })).toBe(false);
+    expect(
+      isOpenDesignHostBridge({
+        ...createMockOpenDesignHost(),
+        shell: { openExternal: async () => ({ ok: true }) },
+      }),
+    ).toBe(false);
+    expect(
+      isOpenDesignHostBridge({
+        ...createMockOpenDesignHost(),
+        updater: { status: async () => createMockOpenDesignHost().updater.status() },
+      }),
+    ).toBe(false);
   });
 
   it("reads the bridge through the package-owned global accessor", () => {
@@ -134,11 +138,13 @@ describe("open-design host contract", () => {
       canceled: true,
       ok: false,
     });
-    expect(normalizeOpenDesignHostProjectImportResult({
-      ok: false,
-      reason: "daemon returned HTTP 500",
-      details: { code: "boom" },
-    })).toEqual({
+    expect(
+      normalizeOpenDesignHostProjectImportResult({
+        ok: false,
+        reason: "daemon returned HTTP 500",
+        details: { code: "boom" },
+      }),
+    ).toEqual({
       ok: false,
       reason: "daemon returned HTTP 500",
       details: { code: "boom" },
@@ -146,13 +152,15 @@ describe("open-design host contract", () => {
   });
 
   it("rejects malformed successful project-import results before they reach web callers", () => {
-    expect(normalizeOpenDesignHostProjectImportResult({
-      ok: true,
-      response: {
-        project: { id: "project-1" },
-        conversationId: "conversation-1",
-      },
-    })).toEqual({
+    expect(
+      normalizeOpenDesignHostProjectImportResult({
+        ok: true,
+        response: {
+          project: { id: "project-1" },
+          conversationId: "conversation-1",
+        },
+      }),
+    ).toEqual({
       ok: false,
       reason: "daemon import response did not include host project identifiers",
       details: {

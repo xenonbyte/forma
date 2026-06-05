@@ -28,7 +28,7 @@ afterEach(() => {
 const testNavItems = [
   { href: "/products", label: "Products", meta: "Sessions and requirements" },
   { href: "/styles", label: "Styles", meta: "Design libraries" },
-  { href: "/settings", label: "Settings", meta: "Preferences" }
+  { href: "/settings", label: "Settings", meta: "Preferences" },
 ];
 
 describe("Layout shell", () => {
@@ -42,7 +42,7 @@ describe("Layout shell", () => {
             breadcrumbs={[
               { href: "/products", label: "Product list" },
               { href: "/products/P-123abc", label: "Checkout App" },
-              { label: "Baseline" }
+              { label: "Baseline" },
             ]}
             currentPathname="/products/P-123abc/baseline"
             navItems={testNavItems}
@@ -51,7 +51,7 @@ describe("Layout shell", () => {
           >
             <p>Loaded</p>
           </Layout>
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });
@@ -59,10 +59,20 @@ describe("Layout shell", () => {
     const breadcrumb = required(container.querySelector<HTMLElement>('nav[aria-label="Breadcrumb"]'), "breadcrumb nav");
     expect(breadcrumb.textContent).toContain("Product list");
     expect(breadcrumb.textContent).toContain("Checkout App");
-    expect(required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products"]'), "products breadcrumb").textContent).toBe("Product list");
-    expect(required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products"]'), "products breadcrumb").className).toContain("text-amber-600");
-    expect(required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products/P-123abc"]'), "product breadcrumb").textContent).toBe("Checkout App");
-    expect(required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products/P-123abc"]'), "product breadcrumb").className).toContain("text-amber-600");
+    expect(
+      required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products"]'), "products breadcrumb").textContent,
+    ).toBe("Product list");
+    expect(
+      required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products"]'), "products breadcrumb").className,
+    ).toContain("text-amber-600");
+    expect(
+      required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products/P-123abc"]'), "product breadcrumb")
+        .textContent,
+    ).toBe("Checkout App");
+    expect(
+      required(breadcrumb.querySelector<HTMLAnchorElement>('a[href="/products/P-123abc"]'), "product breadcrumb")
+        .className,
+    ).toContain("text-amber-600");
     expect(required(breadcrumb.querySelector("h1"), "current breadcrumb").textContent).toBe("Baseline");
   });
 
@@ -82,12 +92,15 @@ describe("Layout shell", () => {
           >
             <p>Loaded</p>
           </Layout>
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });
 
-    const settingsLink = required(container.querySelector<HTMLAnchorElement>('nav a[href="/settings"]'), "settings nav link");
+    const settingsLink = required(
+      container.querySelector<HTMLAnchorElement>('nav a[href="/settings"]'),
+      "settings nav link",
+    );
 
     expect(settingsLink.getAttribute("aria-current")).toBe("page");
     expect(settingsLink.getAttribute("aria-label")).toBe("设置");
@@ -104,22 +117,23 @@ describe("Layout shell", () => {
     await act(async () => {
       root.render(
         <LocaleProvider>
-          <Layout
-            currentPathname="/products/P-123abc"
-            navItems={testNavItems}
-            routeContext="Products"
-            title="Products"
-          >
+          <Layout currentPathname="/products/P-123abc" navItems={testNavItems} routeContext="Products" title="Products">
             <p>Loaded</p>
           </Layout>
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });
 
-    const productsLink = required(container.querySelector<HTMLAnchorElement>('nav a[href="/products"]'), "products nav link");
+    const productsLink = required(
+      container.querySelector<HTMLAnchorElement>('nav a[href="/products"]'),
+      "products nav link",
+    );
     const stylesLink = required(container.querySelector<HTMLAnchorElement>('nav a[href="/styles"]'), "styles nav link");
-    const settingsLink = required(container.querySelector<HTMLAnchorElement>('nav a[href="/settings"]'), "settings nav link");
+    const settingsLink = required(
+      container.querySelector<HTMLAnchorElement>('nav a[href="/settings"]'),
+      "settings nav link",
+    );
 
     expect(productsLink.getAttribute("aria-current")).toBe("page");
     expect(productsLink.querySelector('[data-nav-active-accent="true"]')).not.toBeNull();
@@ -137,8 +151,12 @@ describe("Layout shell", () => {
     expect(settingsLink.getAttribute("aria-label")).toBe("Settings");
     expect(settingsLink.textContent).toContain("Settings");
     expect(required(container.querySelector("aside"), "sidebar").className).toContain("md:w-56");
-    expect(required(container.querySelector<HTMLAnchorElement>('a[href="/products"]'), "brand link").className).toContain("text-[21px]");
-    expect(required(container.querySelector<HTMLAnchorElement>('a[href="/products"]'), "brand link").className).toContain("font-bold");
+    expect(
+      required(container.querySelector<HTMLAnchorElement>('a[href="/products"]'), "brand link").className,
+    ).toContain("text-[21px]");
+    expect(
+      required(container.querySelector<HTMLAnchorElement>('a[href="/products"]'), "brand link").className,
+    ).toContain("font-bold");
     expect(container.textContent).not.toContain("Admin workbench");
     expect(container.textContent).not.toContain("Client shell");
     expect(container.textContent).not.toContain("Idle");
@@ -154,22 +172,20 @@ describe("Layout shell", () => {
     await act(async () => {
       root.render(
         <LocaleProvider>
-          <Layout
-            currentPathname="/styles"
-            navItems={testNavItems}
-            routeContext="Styles"
-            title="Styles"
-          >
+          <Layout currentPathname="/styles" navItems={testNavItems} routeContext="Styles" title="Styles">
             <p>Loaded</p>
           </Layout>
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });
 
     const aside = required(container.querySelector("aside"), "sidebar");
     const nav = required(container.querySelector("nav"), "primary nav");
-    const toggle = required(container.querySelector<HTMLButtonElement>('[data-sidebar-toggle="true"]'), "sidebar toggle");
+    const toggle = required(
+      container.querySelector<HTMLButtonElement>('[data-sidebar-toggle="true"]'),
+      "sidebar toggle",
+    );
     const stylesLink = required(container.querySelector<HTMLAnchorElement>('nav a[href="/styles"]'), "styles nav link");
 
     expect(aside.getAttribute("data-sidebar-collapsed")).toBe("false");

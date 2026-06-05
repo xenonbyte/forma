@@ -1,21 +1,21 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 // ContextItem union — typed chips that hydrate the ContextChipStrip above
 // the brief input. Pure shape, no runtime deps. See docs/plugins-spec.md §5.2.
-export const ContextItemSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('skill'),         id: z.string(), label: z.string() }),
-  z.object({ kind: z.literal('design-system'), id: z.string(), label: z.string(), primary: z.boolean().optional() }),
-  z.object({ kind: z.literal('craft'),         id: z.string(), label: z.string() }),
-  z.object({ kind: z.literal('asset'),         path: z.string(), label: z.string(), mime: z.string().optional() }),
-  z.object({ kind: z.literal('mcp'),           name: z.string(), label: z.string(), command: z.string().optional() }),
-  z.object({ kind: z.literal('claude-plugin'), id: z.string(), label: z.string() }),
-  z.object({ kind: z.literal('atom'),          id: z.string(), label: z.string() }),
-  z.object({ kind: z.literal('plugin'),        id: z.string(), label: z.string() }),
+export const ContextItemSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("skill"), id: z.string(), label: z.string() }),
+  z.object({ kind: z.literal("design-system"), id: z.string(), label: z.string(), primary: z.boolean().optional() }),
+  z.object({ kind: z.literal("craft"), id: z.string(), label: z.string() }),
+  z.object({ kind: z.literal("asset"), path: z.string(), label: z.string(), mime: z.string().optional() }),
+  z.object({ kind: z.literal("mcp"), name: z.string(), label: z.string(), command: z.string().optional() }),
+  z.object({ kind: z.literal("claude-plugin"), id: z.string(), label: z.string() }),
+  z.object({ kind: z.literal("atom"), id: z.string(), label: z.string() }),
+  z.object({ kind: z.literal("plugin"), id: z.string(), label: z.string() }),
 ]);
 
 export type ContextItem = z.infer<typeof ContextItemSchema>;
 
-export type ContextItemKind = ContextItem['kind'];
+export type ContextItemKind = ContextItem["kind"];
 
 // Resolved context — the apply-time materialization of od.context.* refs.
 // Lives on the AppliedPluginSnapshot so prompt reconstruction is not coupled

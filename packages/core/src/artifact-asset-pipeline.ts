@@ -11,11 +11,11 @@
  *   poster attr, inline <style> blocks, style="..." attrs, css url(data:) / @import url(data:)
  */
 
-import { createHash } from 'node:crypto';
-import { parse } from 'node-html-parser';
-import sharp from 'sharp';
-import type { ArtifactAssetEntry } from './artifact-manifest.js';
-import { FormaError } from './errors.js';
+import { createHash } from "node:crypto";
+import { parse } from "node-html-parser";
+import sharp from "sharp";
+import type { ArtifactAssetEntry } from "./artifact-manifest.js";
+import { FormaError } from "./errors.js";
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -44,32 +44,32 @@ interface Context {
 // ─── MIME → extension table ───────────────────────────────────────────────────
 
 const MIME_TO_EXT: Record<string, string> = {
-  'image/png': 'png',
-  'image/jpeg': 'jpg',
-  'image/jpg': 'jpg',
-  'image/webp': 'webp',
-  'image/gif': 'gif',
-  'image/svg+xml': 'svg',
-  'image/avif': 'avif',
-  'text/css': 'css',
-  'application/font-woff': 'woff',
-  'application/font-woff2': 'woff2',
-  'font/woff': 'woff',
-  'font/woff2': 'woff2',
-  'font/ttf': 'ttf',
-  'font/otf': 'otf',
-  'application/font-ttf': 'ttf',
-  'application/font-otf': 'otf',
-  'application/octet-stream': 'bin',
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/jpg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+  "image/svg+xml": "svg",
+  "image/avif": "avif",
+  "text/css": "css",
+  "application/font-woff": "woff",
+  "application/font-woff2": "woff2",
+  "font/woff": "woff",
+  "font/woff2": "woff2",
+  "font/ttf": "ttf",
+  "font/otf": "otf",
+  "application/font-ttf": "ttf",
+  "application/font-otf": "otf",
+  "application/octet-stream": "bin",
 };
 
-const RASTER_MIMES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/gif']);
+const RASTER_MIMES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** sha256(payload).slice(0,16) hex */
 function contentHash(payload: Buffer): string {
-  return createHash('sha256').update(payload).digest('hex').slice(0, 16);
+  return createHash("sha256").update(payload).digest("hex").slice(0, 16);
 }
 
 /** Parsed data: URL */
@@ -86,26 +86,26 @@ interface ParsedDataUrl {
  * Supports base64 and url-encoded payloads.
  */
 function parseDataUrl(url: string): ParsedDataUrl | null {
-  if (!url.startsWith('data:')) return null;
+  if (!url.startsWith("data:")) return null;
   const rest = url.slice(5);
-  const commaIdx = rest.indexOf(',');
+  const commaIdx = rest.indexOf(",");
   if (commaIdx === -1) return null;
 
   const header = rest.slice(0, commaIdx);
   const body = rest.slice(commaIdx + 1);
 
-  const parts = header.split(';');
-  const mime = (parts[0] || 'text/plain').toLowerCase().trim();
-  const isBase64 = parts.some((p) => p.trim() === 'base64');
-  const charsetPart = parts.find((p) => p.trim().startsWith('charset='));
-  const charset = charsetPart?.split('=')[1]?.trim();
+  const parts = header.split(";");
+  const mime = (parts[0] || "text/plain").toLowerCase().trim();
+  const isBase64 = parts.some((p) => p.trim() === "base64");
+  const charsetPart = parts.find((p) => p.trim().startsWith("charset="));
+  const charset = charsetPart?.split("=")[1]?.trim();
 
   let payload: Buffer;
   if (isBase64) {
-    payload = Buffer.from(body, 'base64');
+    payload = Buffer.from(body, "base64");
   } else {
     // url-encoded
-    payload = Buffer.from(decodeURIComponent(body), 'utf8');
+    payload = Buffer.from(decodeURIComponent(body), "utf8");
   }
 
   return { mime, charset, isBase64, payload };
@@ -113,22 +113,16 @@ function parseDataUrl(url: string): ParsedDataUrl | null {
 
 /** Returns ext from mime; fallback to 'bin' */
 function mimeToExt(mime: string): string {
-  return MIME_TO_EXT[mime] ?? mime.split('/')[1]?.replace(/[^a-z0-9]/g, '') ?? 'bin';
+  return MIME_TO_EXT[mime] ?? mime.split("/")[1]?.replace(/[^a-z0-9]/g, "") ?? "bin";
 }
 
 /** Throw ARTIFACT_REMOTE_RESOURCE for http(s): and protocol-relative (//...) URLs */
 function rejectRemote(url: string): void {
   const trimmed = url.trim();
-  if (
-    trimmed.startsWith('http://') ||
-    trimmed.startsWith('https://') ||
-    trimmed.startsWith('//')
-  ) {
-    throw new FormaError(
-      'ARTIFACT_REMOTE_RESOURCE',
-      `Remote resource references are not allowed: ${trimmed}`,
-      { url: trimmed },
-    );
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://") || trimmed.startsWith("//")) {
+    throw new FormaError("ARTIFACT_REMOTE_RESOURCE", `Remote resource references are not allowed: ${trimmed}`, {
+      url: trimmed,
+    });
   }
 }
 
@@ -160,15 +154,15 @@ async function downsampleRaster(
   let degraded = false;
 
   // @3x = master as-is
-  tiers.push({ label: '3x', density: 3, buffer: master });
+  tiers.push({ label: "3x", density: 3, buffer: master });
 
   // @2x: genuine downsample only when strictly smaller than master; otherwise the
   // width collapsed (tiny master) — reuse master bytes and mark degraded.
   if (w2x > 0 && w2x < masterWidth) {
     const buf = await sharp(master).resize({ width: w2x }).toBuffer();
-    tiers.push({ label: '2x', density: 2, buffer: buf });
+    tiers.push({ label: "2x", density: 2, buffer: buf });
   } else {
-    tiers.push({ label: '2x', density: 2, buffer: master });
+    tiers.push({ label: "2x", density: 2, buffer: master });
     degraded = true;
   }
 
@@ -176,9 +170,9 @@ async function downsampleRaster(
   // otherwise reuse master bytes (never upscale) and mark degraded.
   if (w1x > 0 && w1x < masterWidth) {
     const buf = await sharp(master).resize({ width: w1x }).toBuffer();
-    tiers.push({ label: '1x', density: 1, buffer: buf });
+    tiers.push({ label: "1x", density: 1, buffer: buf });
   } else {
-    tiers.push({ label: '1x', density: 1, buffer: master });
+    tiers.push({ label: "1x", density: 1, buffer: master });
     degraded = true;
   }
 
@@ -270,9 +264,7 @@ async function localizeDataUrl(parsed: ParsedDataUrl, ctx: Context): Promise<str
 
     // Find @1x tier for the canonical path
     const tier1x = tiers.find((t) => t.density === 1);
-    const path1x = tier1x
-      ? `${ctx.assetDir}/${hash}@1x.${ext}`
-      : `${ctx.assetDir}/${hash}@${tiers[0].label}.${ext}`;
+    const path1x = tier1x ? `${ctx.assetDir}/${hash}@1x.${ext}` : `${ctx.assetDir}/${hash}@${tiers[0].label}.${ext}`;
 
     const densities = tiers.map((t) => t.density).sort((a, b) => a - b);
 
@@ -280,7 +272,7 @@ async function localizeDataUrl(parsed: ParsedDataUrl, ctx: Context): Promise<str
       ctx.assets.set(path1x, {
         path: path1x,
         density: densities,
-        role: 'image',
+        role: "image",
         ...(degraded ? { degraded: true } : {}),
       });
     }
@@ -288,38 +280,34 @@ async function localizeDataUrl(parsed: ParsedDataUrl, ctx: Context): Promise<str
     return path1x;
   }
 
-  if (mime === 'image/svg+xml') {
+  if (mime === "image/svg+xml") {
     const path = `${ctx.assetDir}/${hash}.svg`;
     if (!ctx.files.has(path)) {
       ctx.files.set(path, payload);
-      ctx.assets.set(path, { path, density: [1], role: 'image' });
+      ctx.assets.set(path, { path, density: [1], role: "image" });
     }
     return path;
   }
 
-  if (mime === 'text/css') {
+  if (mime === "text/css") {
     const path = `${ctx.assetDir}/${hash}.css`;
     if (!ctx.files.has(path)) {
       // Recursively localize inner CSS references
-      const cssText = payload.toString('utf8');
+      const cssText = payload.toString("utf8");
       const localizedCss = await localizeCssText(cssText, ctx);
-      const finalBuf = Buffer.from(localizedCss, 'utf8');
+      const finalBuf = Buffer.from(localizedCss, "utf8");
       ctx.files.set(path, finalBuf);
-      ctx.assets.set(path, { path, density: [1], role: 'stylesheet' });
+      ctx.assets.set(path, { path, density: [1], role: "stylesheet" });
     }
     return path;
   }
 
   // Font or other binary
-  if (
-    mime.startsWith('font/') ||
-    mime.startsWith('application/font') ||
-    mime === 'application/octet-stream'
-  ) {
+  if (mime.startsWith("font/") || mime.startsWith("application/font") || mime === "application/octet-stream") {
     const path = `${ctx.assetDir}/${hash}.${ext}`;
     if (!ctx.files.has(path)) {
       ctx.files.set(path, payload);
-      ctx.assets.set(path, { path, density: [1], role: 'font' });
+      ctx.assets.set(path, { path, density: [1], role: "font" });
     }
     return path;
   }
@@ -328,7 +316,7 @@ async function localizeDataUrl(parsed: ParsedDataUrl, ctx: Context): Promise<str
   const path = `${ctx.assetDir}/${hash}.${ext}`;
   if (!ctx.files.has(path)) {
     ctx.files.set(path, payload);
-    ctx.assets.set(path, { path, density: [1], role: 'resource' });
+    ctx.assets.set(path, { path, density: [1], role: "resource" });
   }
   return path;
 }
@@ -339,10 +327,7 @@ async function localizeDataUrl(parsed: ParsedDataUrl, ctx: Context): Promise<str
  * For raster data: images, rewrites to srcset with all density tiers.
  * Returns { src, srcset } strings.
  */
-async function buildSrcset(
-  parsed: ParsedDataUrl,
-  ctx: Context,
-): Promise<{ src: string; srcset: string }> {
+async function buildSrcset(parsed: ParsedDataUrl, ctx: Context): Promise<{ src: string; srcset: string }> {
   const { mime, payload } = parsed;
   const ext = mimeToExt(mime);
   const hash = contentHash(payload);
@@ -350,7 +335,7 @@ async function buildSrcset(
   if (!RASTER_MIMES.has(mime)) {
     // Non-raster: simple path
     const path = await localizeDataUrl(parsed, ctx);
-    return { src: path, srcset: '' };
+    return { src: path, srcset: "" };
   }
 
   // Ensure localized (may have been deduped already)
@@ -360,12 +345,12 @@ async function buildSrcset(
   const assetEntry = ctx.assets.get(canonical1x);
   if (!assetEntry) {
     const path = canonical1x;
-    return { src: path, srcset: '' };
+    return { src: path, srcset: "" };
   }
 
   const densities = assetEntry.density;
   const srcsetParts = densities.map((d) => `${ctx.assetDir}/${hash}@${d}x.${ext} ${d}x`);
-  return { src: canonical1x, srcset: srcsetParts.join(', ') };
+  return { src: canonical1x, srcset: srcsetParts.join(", ") };
 }
 
 // ─── Srcset attribute parsing ─────────────────────────────────────────────────
@@ -382,25 +367,25 @@ function parseSrcsetCandidates(srcset: string): Array<{ url: string; descriptor:
   let i = 0;
   while (i < n) {
     // Skip leading whitespace and stray commas between candidates
-    while (i < n && (/\s/.test(srcset[i]) || srcset[i] === ',')) i++;
+    while (i < n && (/\s/.test(srcset[i]) || srcset[i] === ",")) i++;
     if (i >= n) break;
 
     // URL = run of non-whitespace characters
     const urlStart = i;
     while (i < n && !/\s/.test(srcset[i])) i++;
     let url = srcset.slice(urlStart, i);
-    let descriptor = '';
+    let descriptor = "";
 
-    if (url.endsWith(',')) {
+    if (url.endsWith(",")) {
       // Trailing comma(s) terminate the candidate with no descriptor
-      url = url.replace(/,+$/, '');
+      url = url.replace(/,+$/, "");
     } else {
       // Skip whitespace, then collect the descriptor up to the next comma
       while (i < n && /\s/.test(srcset[i])) i++;
       const descStart = i;
-      while (i < n && srcset[i] !== ',') i++;
+      while (i < n && srcset[i] !== ",") i++;
       descriptor = srcset.slice(descStart, i).trim();
-      if (i < n && srcset[i] === ',') i++; // consume the separator
+      if (i < n && srcset[i] === ",") i++; // consume the separator
     }
 
     if (url.length > 0) {
@@ -438,7 +423,7 @@ function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density: numb
       existing.density = [...existing.density, density].sort((a, b) => a - b);
     }
   } else {
-    ctx.assets.set(path, { path, density: [density], role: 'image' });
+    ctx.assets.set(path, { path, density: [density], role: "image" });
   }
   return path;
 }
@@ -446,7 +431,7 @@ function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density: numb
 // ─── Main localization walk ───────────────────────────────────────────────────
 
 export async function localizeArtifactAssets(input: LocalizeInput): Promise<LocalizeResult> {
-  const { html, assetDirName = 'assets' } = input;
+  const { html, assetDirName = "assets" } = input;
 
   const ctx: Context = {
     assetDir: assetDirName,
@@ -458,27 +443,27 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
 
   // ── 1. Walk <img>, <source>, <image> for src / srcset / href / xlink:href ──
 
-  const mediaTags = root.querySelectorAll('img, source, image');
+  const mediaTags = root.querySelectorAll("img, source, image");
   for (const el of mediaTags) {
     // src attribute
-    const src = el.getAttribute('src');
+    const src = el.getAttribute("src");
     if (src) {
       rejectRemote(src);
       const parsed = parseDataUrl(src);
       if (parsed) {
         if (RASTER_MIMES.has(parsed.mime)) {
           const { src: newSrc, srcset } = await buildSrcset(parsed, ctx);
-          el.setAttribute('src', newSrc);
-          el.setAttribute('srcset', srcset);
+          el.setAttribute("src", newSrc);
+          el.setAttribute("srcset", srcset);
         } else {
           const path = await localizeDataUrl(parsed, ctx);
-          el.setAttribute('src', path);
+          el.setAttribute("src", path);
         }
       }
     }
 
     // srcset attribute
-    const srcset = el.getAttribute('srcset');
+    const srcset = el.getAttribute("srcset");
     if (srcset) {
       const candidates = parseSrcsetCandidates(srcset);
       const newParts: string[] = [];
@@ -499,23 +484,23 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
         }
       }
       if (changed) {
-        el.setAttribute('srcset', newParts.join(', '));
+        el.setAttribute("srcset", newParts.join(", "));
       }
     }
 
     // poster attribute
-    const poster = el.getAttribute('poster');
+    const poster = el.getAttribute("poster");
     if (poster) {
       rejectRemote(poster);
       const parsed = parseDataUrl(poster);
       if (parsed) {
         const path = await localizeDataUrl(parsed, ctx);
-        el.setAttribute('poster', path);
+        el.setAttribute("poster", path);
       }
     }
 
     // href / xlink:href (for <image> SVG elements)
-    for (const hrefAttr of ['href', 'xlink:href']) {
+    for (const hrefAttr of ["href", "xlink:href"]) {
       const href = el.getAttribute(hrefAttr);
       if (href) {
         rejectRemote(href);
@@ -524,7 +509,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
           if (RASTER_MIMES.has(parsed.mime)) {
             const { src: newSrc, srcset } = await buildSrcset(parsed, ctx);
             el.setAttribute(hrefAttr, newSrc);
-            el.setAttribute('srcset', srcset);
+            el.setAttribute("srcset", srcset);
           } else {
             const path = await localizeDataUrl(parsed, ctx);
             el.setAttribute(hrefAttr, path);
@@ -536,37 +521,37 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
 
   // ── 2. Walk <link href> ────────────────────────────────────────────────────
 
-  const links = root.querySelectorAll('link');
+  const links = root.querySelectorAll("link");
   for (const el of links) {
-    const href = el.getAttribute('href');
+    const href = el.getAttribute("href");
     if (href) {
       rejectRemote(href);
       const parsed = parseDataUrl(href);
       if (parsed) {
         const path = await localizeDataUrl(parsed, ctx);
-        el.setAttribute('href', path);
+        el.setAttribute("href", path);
       }
     }
   }
 
   // ── 3. Walk <video poster> ─────────────────────────────────────────────────
 
-  const videos = root.querySelectorAll('video');
+  const videos = root.querySelectorAll("video");
   for (const el of videos) {
-    const poster = el.getAttribute('poster');
+    const poster = el.getAttribute("poster");
     if (poster) {
       rejectRemote(poster);
       const parsed = parseDataUrl(poster);
       if (parsed) {
         const path = await localizeDataUrl(parsed, ctx);
-        el.setAttribute('poster', path);
+        el.setAttribute("poster", path);
       }
     }
   }
 
   // ── 4. Walk inline <style> blocks ─────────────────────────────────────────
 
-  const styles = root.querySelectorAll('style');
+  const styles = root.querySelectorAll("style");
   for (const el of styles) {
     const cssText = el.text;
     if (cssText) {
@@ -579,13 +564,13 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
 
   // ── 5. Walk style="..." attributes on all elements ────────────────────────
 
-  const allElements = root.querySelectorAll('*');
+  const allElements = root.querySelectorAll("*");
   for (const el of allElements) {
-    const style = el.getAttribute('style');
-    if (style && (style.includes('url(') || style.includes('data:'))) {
+    const style = el.getAttribute("style");
+    if (style && (style.includes("url(") || style.includes("data:"))) {
       const localized = await localizeCssText(style, ctx);
       if (localized !== style) {
-        el.setAttribute('style', localized);
+        el.setAttribute("style", localized);
       }
     }
   }

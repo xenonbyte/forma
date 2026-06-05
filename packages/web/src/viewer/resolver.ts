@@ -18,6 +18,6 @@ export function createWebResourceResolver(productId: string): ResourceResolver {
         return `${base}/bundle/${ref.path ?? ""}`;
       }
       return `${base}/bundle/index.html`;
-    }
+    },
   };
 }

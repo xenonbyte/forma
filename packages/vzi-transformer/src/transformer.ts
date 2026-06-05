@@ -11,7 +11,7 @@ import type {
   IRElement,
   IRStyles,
   IRBounds,
-} from '@vzi-core/types';
+} from "@vzi-core/types";
 import type {
   VZIMetadata,
   Annotation,
@@ -20,9 +20,9 @@ import type {
   SpacingAnnotation,
   AlignmentAnnotation,
   DimensionAnnotation,
-} from '@vzi-core/format';
-import RBush from 'rbush';
-import type { BBox } from 'rbush';
+} from "@vzi-core/format";
+import RBush from "rbush";
+import type { BBox } from "rbush";
 
 // ============================================
 // 类型定义
@@ -33,7 +33,7 @@ import type { BBox } from 'rbush';
  */
 export interface SpacingToken {
   value: number;
-  type: 'padding' | 'margin' | 'gap';
+  type: "padding" | "margin" | "gap";
   frequency: number;
 }
 
@@ -41,7 +41,7 @@ export interface SpacingToken {
  * 来源信息
  */
 export interface VZISource {
-  type: 'file' | 'url' | 'figma';
+  type: "file" | "url" | "figma";
   identifier: string;
   capturedAt: number;
 }
@@ -65,7 +65,7 @@ export interface TransformOptions {
   /** 创建者标识 */
   createdBy: string;
   /** 来源类型 */
-  sourceType: 'file' | 'url' | 'figma';
+  sourceType: "file" | "url" | "figma";
   /** 来源标识 */
   sourceIdentifier: string;
   /** 转换器版本 */
@@ -104,7 +104,7 @@ export class VZITransformer {
     this.options = {
       enableAnnotations: true,
       enableTokenExtraction: true,
-      converterVersion: '2.0.0',
+      converterVersion: "2.0.0",
       ...options,
     };
   }
@@ -120,12 +120,12 @@ export class VZITransformer {
     const canvasSize = this.inferCanvasSize(normalized);
 
     const metadata: VZIMetadata = {
-      name: this.options.title ?? String(normalized.metadata?.title || 'Untitled Design'),
+      name: this.options.title ?? String(normalized.metadata?.title || "Untitled Design"),
       createdAt: new Date().toISOString(),
       modifiedAt: new Date().toISOString(),
       viewportWidth: canvasSize.width,
       viewportHeight: canvasSize.height,
-      minReaderVersion: '2.0.0',
+      minReaderVersion: "2.0.0",
       features: [],
       source: {
         url: this.options.originalUrl ?? undefined,
@@ -137,9 +137,7 @@ export class VZITransformer {
       ? this.extractTokens(normalized)
       : this.extractBasicTokens(normalized);
 
-    const annotations = this.options.enableAnnotations
-      ? this.extractAnnotations(normalized)
-      : [];
+    const annotations = this.options.enableAnnotations ? this.extractAnnotations(normalized) : [];
 
     return {
       metadata,
@@ -199,7 +197,7 @@ export class VZITransformer {
 
     return {
       ...ir,
-      version: ir.version || '1.0.0',
+      version: ir.version || "1.0.0",
       elements,
       metadata: this.normalizeDocumentMetadata(ir.metadata),
     };
@@ -209,11 +207,11 @@ export class VZITransformer {
    * 映射元素类型
    */
   private mapElementType(type: IRElementType): IRElementType {
-    const validTypes = ['container', 'text', 'image', 'button', 'input', 'link'];
+    const validTypes = ["container", "text", "image", "button", "input", "link"];
     if (validTypes.includes(type)) {
       return type;
     }
-    return 'container' as IRElementType;
+    return "container" as IRElementType;
   }
 
   /**
@@ -298,23 +296,19 @@ export class VZITransformer {
 
     Object.values(ir.elements).forEach((element) => {
       Object.entries(element.styles || {}).forEach(([key, value]) => {
-        if (typeof value === 'string') {
-          if (key.toLowerCase().includes('color')) {
+        if (typeof value === "string") {
+          if (key.toLowerCase().includes("color")) {
             colorSet.add(value);
           }
         }
-        if (key === 'fontSize') {
-          const parsedSize = typeof value === 'number'
-            ? value
-            : typeof value === 'string'
-              ? Number.parseFloat(value)
-              : Number.NaN;
+        if (key === "fontSize") {
+          const parsedSize =
+            typeof value === "number" ? value : typeof value === "string" ? Number.parseFloat(value) : Number.NaN;
 
           if (Number.isFinite(parsedSize) && parsedSize > 0) {
             const rawFamily = element.styles?.fontFamily;
-            const fontFamily = typeof rawFamily === 'string' && rawFamily.trim().length > 0
-              ? rawFamily.trim()
-              : 'unknown';
+            const fontFamily =
+              typeof rawFamily === "string" && rawFamily.trim().length > 0 ? rawFamily.trim() : "unknown";
             const normalizedSize = Math.round(parsedSize * 1000) / 1000;
             const tokenKey = `${fontFamily}:${normalizedSize}`;
             const existing = fontTokenMap.get(tokenKey);
@@ -329,7 +323,7 @@ export class VZITransformer {
             }
           }
         }
-        if (typeof value === 'number' && (key.includes('padding') || key.includes('margin') || key === 'gap')) {
+        if (typeof value === "number" && (key.includes("padding") || key.includes("margin") || key === "gap")) {
           spacingSet.add(value);
         }
       });
@@ -357,13 +351,15 @@ export class VZITransformer {
       .forEach((token) => fontSizes.push(token));
 
     // 转换为 SpacingToken
-    Array.from(spacingSet).sort((a, b) => a - b).forEach((value) => {
-      spacing.push({
-        value,
-        type: 'padding',
-        frequency: 1,
+    Array.from(spacingSet)
+      .sort((a, b) => a - b)
+      .forEach((value) => {
+        spacing.push({
+          value,
+          type: "padding",
+          frequency: 1,
+        });
       });
-    });
 
     return { colors, fontSizes, spacing };
   }
@@ -392,7 +388,7 @@ export class VZITransformer {
   /**
    * 分类颜色
    */
-  private categorizeColor(color: string): ColorToken['category'] {
+  private categorizeColor(color: string): ColorToken["category"] {
     return categorizeColorFromUsage(color, []);
   }
 
@@ -439,9 +435,8 @@ export class VZITransformer {
         nearbyCandidates = this.findNearbyElements(source.bounds, MAX_GAP * 2);
       }
       // 截断候选元素数量，防止密集布局下超线性开销
-      const candidatePool = nearbyCandidates.length > MAX_CANDIDATES
-        ? nearbyCandidates.slice(0, MAX_CANDIDATES)
-        : nearbyCandidates;
+      const candidatePool =
+        nearbyCandidates.length > MAX_CANDIDATES ? nearbyCandidates.slice(0, MAX_CANDIDATES) : nearbyCandidates;
 
       for (const candidate of candidatePool) {
         if (source.id === candidate.id) {
@@ -476,8 +471,8 @@ export class VZITransformer {
         const roundedGap = Math.round(nearestHorizontal.gap);
         annotations.push({
           id: `spacing-h-${pair[0]}-${pair[1]}`,
-          type: 'spacing',
-          spacingType: 'gap',
+          type: "spacing",
+          spacingType: "gap",
           values: [0, roundedGap, 0, roundedGap],
           elementIds: pair,
           position: nearestHorizontal.position,
@@ -490,8 +485,8 @@ export class VZITransformer {
         const roundedGap = Math.round(nearestVertical.gap);
         annotations.push({
           id: `spacing-v-${pair[0]}-${pair[1]}`,
-          type: 'spacing',
-          spacingType: 'gap',
+          type: "spacing",
+          spacingType: "gap",
           values: [roundedGap, 0, roundedGap, 0],
           elementIds: pair,
           position: nearestVertical.position,
@@ -545,12 +540,12 @@ export class VZITransformer {
     const bottomGroups = this.groupByUnionFind(bottomItems, tolerance);
 
     // 生成对齐标注
-    annotations.push(...this.createAlignmentAnnotations(leftGroups, 'left'));
-    annotations.push(...this.createAlignmentAnnotations(centerXGroups, 'center'));
-    annotations.push(...this.createAlignmentAnnotations(rightGroups, 'right'));
-    annotations.push(...this.createAlignmentAnnotations(topGroups, 'top'));
-    annotations.push(...this.createAlignmentAnnotations(middleGroups, 'middle'));
-    annotations.push(...this.createAlignmentAnnotations(bottomGroups, 'bottom'));
+    annotations.push(...this.createAlignmentAnnotations(leftGroups, "left"));
+    annotations.push(...this.createAlignmentAnnotations(centerXGroups, "center"));
+    annotations.push(...this.createAlignmentAnnotations(rightGroups, "right"));
+    annotations.push(...this.createAlignmentAnnotations(topGroups, "top"));
+    annotations.push(...this.createAlignmentAnnotations(middleGroups, "middle"));
+    annotations.push(...this.createAlignmentAnnotations(bottomGroups, "bottom"));
 
     return annotations;
   }
@@ -579,7 +574,7 @@ export class VZITransformer {
         const position = this.computeUnionBounds(groupElements.map((element) => element.bounds));
         annotations.push({
           id: `dimension-w-${size}`,
-          type: 'dimension',
+          type: "dimension",
           width: size,
           height: 0,
           elementIds: groupElements.map((el) => el.id),
@@ -594,7 +589,7 @@ export class VZITransformer {
         const position = this.computeUnionBounds(groupElements.map((element) => element.bounds));
         annotations.push({
           id: `dimension-h-${size}`,
-          type: 'dimension',
+          type: "dimension",
           width: 0,
           height: size,
           elementIds: groupElements.map((el) => el.id),
@@ -619,15 +614,15 @@ export class VZITransformer {
 
       const sortedIds = [...ann.elementIds].sort();
       const annotationSpecific =
-        ann.type === 'spacing'
+        ann.type === "spacing"
           ? `${ann.spacingType}:${ann.value}`
-          : ann.type === 'alignment'
+          : ann.type === "alignment"
             ? `${ann.alignment}:${ann.value}`
-            : ann.type === 'dimension'
+            : ann.type === "dimension"
               ? `${ann.width}x${ann.height}:${ann.value}`
               : ann.value;
 
-      const key = `${ann.type}:${sortedIds.join(',')}:${annotationSpecific}`;
+      const key = `${ann.type}:${sortedIds.join(",")}:${annotationSpecific}`;
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
@@ -638,10 +633,7 @@ export class VZITransformer {
   // 辅助方法
   // ============================================
 
-  private getHorizontalGapInfo(
-    a: IRBounds,
-    b: IRBounds
-  ): { gap: number; position: IRBounds } | null {
+  private getHorizontalGapInfo(a: IRBounds, b: IRBounds): { gap: number; position: IRBounds } | null {
     const overlapTop = Math.max(a.y, b.y);
     const overlapBottom = Math.min(a.y + a.height, b.y + b.height);
     const overlapHeight = overlapBottom - overlapTop;
@@ -689,10 +681,7 @@ export class VZITransformer {
     return null;
   }
 
-  private getVerticalGapInfo(
-    a: IRBounds,
-    b: IRBounds
-  ): { gap: number; position: IRBounds } | null {
+  private getVerticalGapInfo(a: IRBounds, b: IRBounds): { gap: number; position: IRBounds } | null {
     const overlapLeft = Math.max(a.x, b.x);
     const overlapRight = Math.min(a.x + a.width, b.x + b.width);
     const overlapWidth = overlapRight - overlapLeft;
@@ -740,12 +729,7 @@ export class VZITransformer {
     return null;
   }
 
-  private addToGroup(
-    groups: Map<number, IRElement[]>,
-    value: number,
-    element: IRElement,
-    tolerance: number
-  ): void {
+  private addToGroup(groups: Map<number, IRElement[]>, value: number, element: IRElement, tolerance: number): void {
     // best-match: 选距离最近的组键，避免 first-match 导致的不确定性
     let bestKey: number | null = null;
     let bestDist = Infinity;
@@ -814,7 +798,7 @@ export class VZITransformer {
    */
   private groupByUnionFind(
     items: Array<{ value: number; element: IRElement }>,
-    tolerance: number
+    tolerance: number,
   ): Map<number, IRElement[]> {
     if (items.length === 0) {
       return new Map();
@@ -859,14 +843,14 @@ export class VZITransformer {
 
   private createAlignmentAnnotations(
     groups: Map<number, IRElement[]>,
-    alignment: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'
+    alignment: "left" | "center" | "right" | "top" | "middle" | "bottom",
   ): AlignmentAnnotation[] {
     const annotations: AlignmentAnnotation[] = [];
 
     groups.forEach((elements, lineValue) => {
       if (elements.length >= 2) {
         const union = this.computeUnionBounds(elements.map((element) => element.bounds));
-        const isVerticalLine = alignment === 'left' || alignment === 'center' || alignment === 'right';
+        const isVerticalLine = alignment === "left" || alignment === "center" || alignment === "right";
         const position: IRBounds = isVerticalLine
           ? {
               x: lineValue,
@@ -883,7 +867,7 @@ export class VZITransformer {
 
         annotations.push({
           id: `alignment-${alignment}-${lineValue}`,
-          type: 'alignment',
+          type: "alignment",
           alignment,
           elementIds: elements.map((el) => el.id),
           position,
@@ -938,13 +922,13 @@ export class VZITransformer {
 function parseRgbChannels(color: string): [number, number, number] | null {
   const normalized = color.trim().toLowerCase();
 
-  if (normalized.startsWith('#')) {
+  if (normalized.startsWith("#")) {
     let hex = normalized.slice(1);
     if (hex.length === 3) {
       hex = hex
-        .split('')
+        .split("")
         .map((char) => `${char}${char}`)
-        .join('');
+        .join("");
     }
     if (hex.length !== 6 || !/^[0-9a-f]{6}$/i.test(hex)) {
       return null;
@@ -962,7 +946,7 @@ function parseRgbChannels(color: string): [number, number, number] | null {
   }
 
   const channels = rgbMatch[1]
-    .split(',')
+    .split(",")
     .slice(0, 3)
     .map((part) => Number.parseFloat(part.trim()))
     .filter((value) => Number.isFinite(value));
@@ -974,47 +958,44 @@ function parseRgbChannels(color: string): [number, number, number] | null {
   return [channels[0], channels[1], channels[2]];
 }
 
-function categorizeColorFromUsage(
-  color: string,
-  usages: Iterable<string>
-): ColorToken['category'] {
+function categorizeColorFromUsage(color: string, usages: Iterable<string>): ColorToken["category"] {
   const usageList = Array.from(usages).map((usage) => usage.toLowerCase());
-  if (usageList.some((usage) => usage.includes('background'))) return 'background';
-  if (usageList.some((usage) => usage.includes('border') || usage.includes('outline'))) return 'border';
-  if (usageList.some((usage) => usage === 'color' || usage.includes('text') || usage.includes('font'))) return 'text';
+  if (usageList.some((usage) => usage.includes("background"))) return "background";
+  if (usageList.some((usage) => usage.includes("border") || usage.includes("outline"))) return "border";
+  if (usageList.some((usage) => usage === "color" || usage.includes("text") || usage.includes("font"))) return "text";
 
   const rgb = parseRgbChannels(color);
   if (!rgb) {
-    return 'accent';
+    return "accent";
   }
 
   const [r, g, b] = rgb;
   const brightness = (r * 299 + g * 587 + b * 114) / 1000;
   if (brightness >= 245) {
-    return 'background';
+    return "background";
   }
   if (brightness <= 48) {
-    return 'text';
+    return "text";
   }
 
   const isMonochrome = Math.abs(r - g) <= 12 && Math.abs(g - b) <= 12;
   if (isMonochrome) {
-    return 'secondary';
+    return "secondary";
   }
 
   if (b > r && b > g) {
-    return 'primary';
+    return "primary";
   }
 
-  return 'accent';
+  return "accent";
 }
 
 function extractSpacingNumbers(value: unknown): number[] {
-  if (typeof value === 'number') {
+  if (typeof value === "number") {
     return Number.isFinite(value) && value > 0 ? [value] : [];
   }
 
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return [];
   }
 
@@ -1023,9 +1004,7 @@ function extractSpacingNumbers(value: unknown): number[] {
     return [];
   }
 
-  return matches
-    .map((token) => Number.parseFloat(token))
-    .filter((numeric) => Number.isFinite(numeric) && numeric > 0);
+  return matches.map((token) => Number.parseFloat(token)).filter((numeric) => Number.isFinite(numeric) && numeric > 0);
 }
 
 class ColorTokenExtractor {
@@ -1035,17 +1014,17 @@ class ColorTokenExtractor {
     const styles = element.styles || {};
 
     [
-      'color',
-      'backgroundColor',
-      'borderColor',
-      'borderTopColor',
-      'borderRightColor',
-      'borderBottomColor',
-      'borderLeftColor',
-      'textDecorationColor',
+      "color",
+      "backgroundColor",
+      "borderColor",
+      "borderTopColor",
+      "borderRightColor",
+      "borderBottomColor",
+      "borderLeftColor",
+      "textDecorationColor",
     ].forEach((prop) => {
       const value = styles[prop];
-      if (typeof value === 'string' && value !== 'transparent' && value !== 'none') {
+      if (typeof value === "string" && value !== "transparent" && value !== "none") {
         this.addColor(value, prop);
       }
     });
@@ -1071,13 +1050,13 @@ class ColorTokenExtractor {
       .map(([value, data]) => ({
         value,
         category: this.categorizeColor(value, data.usages),
-        usage: Array.from(data.usages).join(', '),
+        usage: Array.from(data.usages).join(", "),
         frequency: data.count,
       }))
       .sort((a, b) => b.frequency - a.frequency);
   }
 
-  private categorizeColor(color: string, usages: Set<string>): ColorToken['category'] {
+  private categorizeColor(color: string, usages: Set<string>): ColorToken["category"] {
     return categorizeColorFromUsage(color, usages);
   }
 }
@@ -1092,17 +1071,17 @@ class FontTokenExtractor {
     const fontWeight = styles.fontWeight;
 
     if (fontFamily || fontSize || fontWeight) {
-      const key = [fontFamily || 'inherit', String(fontWeight || '400'), String(fontSize || '16px')].join('|');
+      const key = [fontFamily || "inherit", String(fontWeight || "400"), String(fontSize || "16px")].join("|");
       const existing = this.fonts.get(key);
       if (existing) {
         existing.count++;
         if (element.textContent) {
-          existing.usages.add('text');
+          existing.usages.add("text");
         }
       } else {
         this.fonts.set(key, {
           count: 1,
-          usages: new Set([element.textContent ? 'text' : 'display']),
+          usages: new Set([element.textContent ? "text" : "display"]),
         });
       }
     }
@@ -1111,12 +1090,12 @@ class FontTokenExtractor {
   getTokens(): FontToken[] {
     return Array.from(this.fonts.entries())
       .map(([key, data]) => {
-        const [fontFamily, fontWeight, fontSize] = key.split('|');
+        const [fontFamily, fontWeight, fontSize] = key.split("|");
         return {
           fontFamily,
-          fontWeight: fontWeight !== '400' ? parseInt(fontWeight) : undefined,
-          fontSize: fontSize !== '16px' ? parseFloat(fontSize) : undefined,
-          usage: Array.from(data.usages).join(', '),
+          fontWeight: fontWeight !== "400" ? parseInt(fontWeight) : undefined,
+          fontSize: fontSize !== "16px" ? parseFloat(fontSize) : undefined,
+          usage: Array.from(data.usages).join(", "),
           frequency: data.count,
         };
       })
@@ -1125,24 +1104,24 @@ class FontTokenExtractor {
 }
 
 class SpacingTokenExtractor {
-  private spacing = new Map<number, { count: number; types: Set<'padding' | 'margin' | 'gap'> }>();
+  private spacing = new Map<number, { count: number; types: Set<"padding" | "margin" | "gap"> }>();
 
   processElement(element: IRElement): void {
     const styles = element.styles || {};
     const spacingProperties = [
-      'margin',
-      'marginTop',
-      'marginRight',
-      'marginBottom',
-      'marginLeft',
-      'padding',
-      'paddingTop',
-      'paddingRight',
-      'paddingBottom',
-      'paddingLeft',
-      'gap',
-      'rowGap',
-      'columnGap',
+      "margin",
+      "marginTop",
+      "marginRight",
+      "marginBottom",
+      "marginLeft",
+      "padding",
+      "paddingTop",
+      "paddingRight",
+      "paddingBottom",
+      "paddingLeft",
+      "gap",
+      "rowGap",
+      "columnGap",
     ];
 
     spacingProperties.forEach((prop) => {
@@ -1151,11 +1130,11 @@ class SpacingTokenExtractor {
         return;
       }
 
-      const type: 'padding' | 'margin' | 'gap' = prop.includes('padding')
-        ? 'padding'
-        : prop.includes('margin')
-          ? 'margin'
-          : 'gap';
+      const type: "padding" | "margin" | "gap" = prop.includes("padding")
+        ? "padding"
+        : prop.includes("margin")
+          ? "margin"
+          : "gap";
 
       values.forEach((value) => {
         this.addSpacing(value, type);
@@ -1163,7 +1142,7 @@ class SpacingTokenExtractor {
     });
   }
 
-  private addSpacing(value: number, type: 'padding' | 'margin' | 'gap'): void {
+  private addSpacing(value: number, type: "padding" | "margin" | "gap"): void {
     const normalizedValue = Math.round(value * 100) / 100;
     const existing = this.spacing.get(normalizedValue);
     if (existing) {
@@ -1184,12 +1163,10 @@ class SpacingTokenExtractor {
       .sort((a, b) => b.frequency - a.frequency);
   }
 
-  private inferPrimaryType(
-    types: Set<'padding' | 'margin' | 'gap'>
-  ): 'padding' | 'margin' | 'gap' {
-    if (types.has('gap')) return 'gap';
-    if (types.has('padding')) return 'padding';
-    return 'margin';
+  private inferPrimaryType(types: Set<"padding" | "margin" | "gap">): "padding" | "margin" | "gap" {
+    if (types.has("gap")) return "gap";
+    if (types.has("padding")) return "padding";
+    return "margin";
   }
 }
 

@@ -9,7 +9,7 @@ const metadata: StyleMetadata = {
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
   tokens_css_path: "styles/linear/tokens.css",
-  components_html_path: "styles/linear/components.html"
+  components_html_path: "styles/linear/components.html",
 };
 
 describe("StylePreviewPanel", () => {
@@ -57,7 +57,7 @@ components:
 `}
         metadata={metadata}
         previewType="web"
-      />
+      />,
     );
 
     expect(html).toContain('data-background="#fff7ed"');
@@ -96,7 +96,7 @@ colors:
 `}
         metadata={metadata}
         previewType="mobile"
-      />
+      />,
     );
 
     expect(html).toContain('data-style-preview-panel="true"');
@@ -127,7 +127,7 @@ rounded:
 `}
         metadata={metadata}
         previewType="tablet"
-      />
+      />,
     );
 
     expect(html).toContain('data-button-source="button-primary-large"');

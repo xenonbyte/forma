@@ -59,14 +59,14 @@ describe("BaselineContent", () => {
               copy: [],
               fields: "",
               interactions: "",
-              source_requirements: ["R-12345678"]
-            }
+              source_requirements: ["R-12345678"],
+            },
           ],
-          navigation: []
+          navigation: [],
         }}
         client={createClient({ baseline: emptyBaseline })}
         productId="P-123abc"
-      />
+      />,
     );
 
     expect(html).toContain("Preview");
@@ -81,7 +81,13 @@ describe("BaselineContent", () => {
       return;
     }
 
-    const html = renderToStaticMarkup(<BaselineContent baseline={baselineFixture} client={createClient({ baseline: baselineFixture })} productId="P-123abc" />);
+    const html = renderToStaticMarkup(
+      <BaselineContent
+        baseline={baselineFixture}
+        client={createClient({ baseline: baselineFixture })}
+        productId="P-123abc"
+      />,
+    );
 
     expect(html).toContain('data-page-content="checkout"');
     expect(html).toContain('data-page-rail="checkout"');
@@ -96,7 +102,13 @@ describe("BaselineContent", () => {
       return;
     }
 
-    const html = renderToStaticMarkup(<BaselineContent baseline={baselineFixture} client={createClient({ baseline: baselineFixture })} productId="P-123abc" />);
+    const html = renderToStaticMarkup(
+      <BaselineContent
+        baseline={baselineFixture}
+        client={createClient({ baseline: baselineFixture })}
+        productId="P-123abc"
+      />,
+    );
 
     expect(html).toContain("Functional pages");
     expect(html).toContain("Checkout flow");
@@ -115,7 +127,13 @@ describe("BaselineContent", () => {
     const { container, root } = createTestRoot();
 
     await act(async () => {
-      root.render(<BaselineContent baseline={baselineFixture} client={createClient({ baseline: baselineFixture })} productId="P-123abc" />);
+      root.render(
+        <BaselineContent
+          baseline={baselineFixture}
+          client={createClient({ baseline: baselineFixture })}
+          productId="P-123abc"
+        />,
+      );
       await flushPromises();
     });
 
@@ -143,8 +161,12 @@ describe("BaselineContent", () => {
       root.render(
         <LocaleProvider>
           <LocaleSwitch />
-          <BaselineContent baseline={baselineFixture} client={createClient({ baseline: baselineFixture })} productId="P-123abc" />
-        </LocaleProvider>
+          <BaselineContent
+            baseline={baselineFixture}
+            client={createClient({ baseline: baselineFixture })}
+            productId="P-123abc"
+          />
+        </LocaleProvider>,
       );
       await flushPromises();
     });
@@ -168,11 +190,8 @@ describe("BaselineView multilingual copy", () => {
   it("fetches baseline and page copy for each rendered baseline page", async () => {
     const baseline: ProductBaseline = {
       product_id: "P-123abc",
-      pages: [
-        pageFixture({ id: "checkout", name: "Checkout" }),
-        pageFixture({ id: "home", name: "Home" })
-      ],
-      navigation: []
+      pages: [pageFixture({ id: "checkout", name: "Checkout" }), pageFixture({ id: "home", name: "Home" })],
+      navigation: [],
     };
     const client = createClient({ baseline });
     const { root } = createTestRoot();
@@ -192,7 +211,7 @@ describe("BaselineView multilingual copy", () => {
     const baseline: ProductBaseline = {
       product_id: "P-123abc",
       pages: [pageFixture({ id: "checkout", name: "Checkout" })],
-      navigation: []
+      navigation: [],
     };
     const client = createClient({
       baseline,
@@ -201,14 +220,14 @@ describe("BaselineView multilingual copy", () => {
           page_id: "checkout",
           default_language_copy: [
             { context: "title", text: "Checkout" },
-            { context: "cta", text: "Pay now" }
+            { context: "cta", text: "Pay now" },
           ],
           translations: [
             { context: "title", texts: { en: "Checkout", "zh-CN": "结账" } },
-            { context: "cta", texts: { en: "Pay now", "zh-CN": "立即支付" } }
-          ]
-        }
-      }
+            { context: "cta", texts: { en: "Pay now", "zh-CN": "立即支付" } },
+          ],
+        },
+      },
     });
     const { container, root } = createTestRoot();
 
@@ -217,7 +236,10 @@ describe("BaselineView multilingual copy", () => {
       await flushPromises();
     });
 
-    const copyTable = required(container.querySelector<HTMLTableElement>('table[data-copy-table="checkout"]'), "copy table");
+    const copyTable = required(
+      container.querySelector<HTMLTableElement>('table[data-copy-table="checkout"]'),
+      "copy table",
+    );
     expect(copyTable.textContent).toContain("Context");
     expect(copyTable.textContent).toContain("Default copy");
     expect(copyTable.textContent).toContain("zh-CN");
@@ -232,7 +254,7 @@ describe("BaselineView multilingual copy", () => {
     const baseline: ProductBaseline = {
       product_id: "P-123abc",
       pages: [pageFixture({ id: "checkout", name: "Checkout" })],
-      navigation: []
+      navigation: [],
     };
     const client = createClient({
       baseline,
@@ -240,9 +262,9 @@ describe("BaselineView multilingual copy", () => {
         checkout: {
           page_id: "checkout",
           default_language_copy: [{ context: "cta", text: "Pay now" }],
-          translations: [{ context: "cta", outdated: true, texts: { en: "Pay now", "zh-CN": "立即支付" } }]
-        }
-      }
+          translations: [{ context: "cta", outdated: true, texts: { en: "Pay now", "zh-CN": "立即支付" } }],
+        },
+      },
     });
     const { container, root } = createTestRoot();
 
@@ -251,7 +273,10 @@ describe("BaselineView multilingual copy", () => {
       await flushPromises();
     });
 
-    const outdatedRow = required(container.querySelector<HTMLElement>('[data-outdated-copy="true"]'), "outdated copy row");
+    const outdatedRow = required(
+      container.querySelector<HTMLElement>('[data-outdated-copy="true"]'),
+      "outdated copy row",
+    );
     expect(outdatedRow.textContent).toContain("cta");
     expect(outdatedRow.textContent).toContain("Outdated");
     expect(outdatedRow.textContent).toContain("立即支付");
@@ -264,10 +289,10 @@ describe("BaselineView multilingual copy", () => {
         pageFixture({
           id: "checkout",
           name: "Checkout",
-          copy: [{ context: "title", text: "结账" }]
-        })
+          copy: [{ context: "title", text: "结账" }],
+        }),
       ],
-      navigation: []
+      navigation: [],
     };
     const client = createClient({
       baseline,
@@ -275,9 +300,9 @@ describe("BaselineView multilingual copy", () => {
         checkout: {
           page_id: "checkout",
           default_language_copy: [],
-          translations: []
-        }
-      }
+          translations: [],
+        },
+      },
     });
     const { container, root } = createTestRoot();
 
@@ -297,16 +322,16 @@ describe("BaselineView multilingual copy", () => {
         pageFixture({
           id: "checkout",
           name: "Checkout",
-          copy: [{ context: "title", text: "结账" }]
-        })
+          copy: [{ context: "title", text: "结账" }],
+        }),
       ],
-      navigation: []
+      navigation: [],
     };
     const client = createClient({
       baseline,
       pageCopyErrors: {
-        checkout: new Error("copy route unavailable")
-      }
+        checkout: new Error("copy route unavailable"),
+      },
     });
     const { container, root } = createTestRoot();
 
@@ -324,7 +349,7 @@ describe("BaselineView multilingual copy", () => {
 const emptyBaseline: ProductBaseline = {
   product_id: "P-empty",
   pages: [],
-  navigation: []
+  navigation: [],
 };
 
 const baselineFixture: ProductBaseline = {
@@ -337,13 +362,15 @@ const baselineFixture: ProductBaseline = {
       copy: [{ context: "payment_terms", text: "Payment terms" }],
       fields: "card number",
       interactions: "submit payment",
-      source_requirements: ["R-12345678"]
-    }
+      source_requirements: ["R-12345678"],
+    },
   ],
   navigation: [
-    { from: "checkout", to: "checkout", trigger: "Continue" } as ProductBaseline["navigation"][number] & { trigger: string },
-    { from: "checkout", to: "checkout", label: "Legacy return" }
-  ]
+    { from: "checkout", to: "checkout", trigger: "Continue" } as ProductBaseline["navigation"][number] & {
+      trigger: string;
+    },
+    { from: "checkout", to: "checkout", label: "Legacy return" },
+  ],
 };
 
 function pageFixture(input: Partial<ProductBaseline["pages"][number]> = {}): ProductBaseline["pages"][number] {
@@ -355,14 +382,14 @@ function pageFixture(input: Partial<ProductBaseline["pages"][number]> = {}): Pro
     fields: "card number",
     interactions: "submit payment",
     source_requirements: ["R-12345678"],
-    ...input
+    ...input,
   };
 }
 
 function createClient({
   baseline,
   pageCopyErrors = {},
-  pageCopies = {}
+  pageCopies = {},
 }: {
   baseline: ProductBaseline;
   pageCopyErrors?: Record<string, Error>;
@@ -376,7 +403,7 @@ function createClient({
         throw error;
       }
       return pageCopies[pageId] ?? { page_id: pageId, default_language_copy: [], translations: [] };
-    })
+    }),
   } satisfies Pick<FormaApiClient, "getBaseline" | "getPageCopy">;
 }
 

@@ -7,7 +7,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
 import { ProductNew } from "./ProductNew.js";
 import * as productNew from "./ProductNew.js";
-import { ApiError, type BrandStyleContent, type FormaApiClient, type Language, type Product, type StyleMetadata, type SystemStyleMetadata } from "../api.js";
+import {
+  ApiError,
+  type BrandStyleContent,
+  type FormaApiClient,
+  type Language,
+  type Product,
+  type StyleMetadata,
+  type SystemStyleMetadata,
+} from "../api.js";
 import { localeStorageKey, setLocale } from "../i18n.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -18,15 +26,15 @@ const styles: StyleMetadata[] = [
     description: "Focused tool UI",
     design_md_path: "styles/linear/DESIGN.md",
     tokens_css_path: "styles/linear/tokens.css",
-    components_html_path: "styles/linear/components.html"
+    components_html_path: "styles/linear/components.html",
   },
   {
     name: "retail",
     description: "Retail checkout UI",
     design_md_path: "styles/retail/DESIGN.md",
     tokens_css_path: "styles/retail/tokens.css",
-    components_html_path: "styles/retail/components.html"
-  }
+    components_html_path: "styles/retail/components.html",
+  },
 ];
 
 const detailByName: Record<string, BrandStyleContent> = {
@@ -39,7 +47,7 @@ colors:
 ---
 `,
     tokensCss: ":root { --primary: #5E6AD2; }",
-    componentsHtml: "<div>linear</div>"
+    componentsHtml: "<div>linear</div>",
   },
   retail: {
     kind: "brand",
@@ -50,8 +58,8 @@ colors:
 ---
 `,
     tokensCss: ":root { --primary: #14b8a6; }",
-    componentsHtml: "<div>retail</div>"
-  }
+    componentsHtml: "<div>retail</div>",
+  },
 };
 
 const systemStyles: SystemStyleMetadata[] = [
@@ -59,20 +67,20 @@ const systemStyles: SystemStyleMetadata[] = [
     name: "platform-design",
     description: "Cross-platform design rules for Web, Mobile, Tablet, and Desktop.",
     mode: "design-system",
-    category: "design-systems"
+    category: "design-systems",
   },
   {
     name: "mobile-first",
     description: "Lightweight rules for mobile-led product flows.",
     mode: "design-system",
-    category: "design-systems"
-  }
+    category: "design-systems",
+  },
 ];
 
 const createdProduct: Product = {
   id: "P-123abc",
   name: "Checkout App",
-  description: "Mobile checkout workbench"
+  description: "Mobile checkout workbench",
 };
 
 const roots: Root[] = [];
@@ -119,14 +127,20 @@ describe("ProductNew", () => {
     });
 
     expect(container.querySelector('select[name="style"]')).toBeNull();
-    const trigger = required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger");
+    const trigger = required(
+      container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"),
+      "style picker trigger",
+    );
     expect(trigger.disabled).toBe(false);
     expect(trigger.textContent).toContain("Select style");
 
     await chooseStyle(container, "linear");
 
     expect(trigger.textContent).toContain("Selected style: linear");
-    expect(required(container.querySelector<HTMLInputElement>('input[name="brand_style"]'), "brand_style hidden input").value).toBe("linear");
+    expect(
+      required(container.querySelector<HTMLInputElement>('input[name="brand_style"]'), "brand_style hidden input")
+        .value,
+    ).toBe("linear");
   });
 
   it("renders the style dialog as a body-level modal with all platform previews", async () => {
@@ -140,14 +154,16 @@ describe("ProductNew", () => {
 
     await openStylePicker(container);
 
-    const dialog = required(document.body.querySelector<HTMLElement>('[data-style-picker-dialog="true"]'), "style picker dialog");
+    const dialog = required(
+      document.body.querySelector<HTMLElement>('[data-style-picker-dialog="true"]'),
+      "style picker dialog",
+    );
     expect(container.contains(dialog)).toBe(false);
-    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]")).map((mock) => mock.dataset.previewMock).sort()).toEqual([
-      "desktop",
-      "mobile",
-      "tablet",
-      "web"
-    ]);
+    expect(
+      Array.from(document.body.querySelectorAll<HTMLElement>("[data-preview-mock]"))
+        .map((mock) => mock.dataset.previewMock)
+        .sort(),
+    ).toEqual(["desktop", "mobile", "tablet", "web"]);
   });
 
   it("requests style detail and updates the preview from the selected style template", async () => {
@@ -160,23 +176,35 @@ describe("ProductNew", () => {
     });
 
     await act(async () => {
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      setSelectValue(
+        required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"),
+        "web",
+      );
       await flushPromises();
     });
     await openStylePicker(container);
 
-    const previewBefore = required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "style preview grid");
+    const previewBefore = required(
+      document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'),
+      "style preview grid",
+    );
     expect(client.getStyle).toHaveBeenCalledTimes(1);
     expect(client.getStyle).toHaveBeenCalledWith("linear");
     expect(previewBefore.dataset.previewTemplateName).toBe("linear");
     expect(previewBefore.dataset.primary).toBe("#5E6AD2");
 
     await act(async () => {
-      required(document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="retail"]'), "retail option").click();
+      required(
+        document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="retail"]'),
+        "retail option",
+      ).click();
       await flushPromises();
     });
     await act(async () => {
-      required(document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'), "linear option").click();
+      required(
+        document.body.querySelector<HTMLButtonElement>('[data-style-picker-option="linear"]'),
+        "linear option",
+      ).click();
       await flushPromises();
     });
     await act(async () => {
@@ -187,7 +215,10 @@ describe("ProductNew", () => {
 
     expect(client.getStyle).toHaveBeenCalledTimes(2);
     expect(client.getStyle).toHaveBeenNthCalledWith(2, "retail");
-    expect(required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "style preview grid").dataset.previewTemplateName).toBe("linear");
+    expect(
+      required(document.body.querySelector<HTMLElement>('[data-style-preview-grid="true"]'), "style preview grid")
+        .dataset.previewTemplateName,
+    ).toBe("linear");
   });
 
   it("updates static form text when the persisted locale changes", async () => {
@@ -199,7 +230,7 @@ describe("ProductNew", () => {
         <LocaleProvider>
           <LocaleSwitch />
           <ProductNew client={client} navigate={vi.fn()} />
-        </LocaleProvider>
+        </LocaleProvider>,
       );
       await flushPromises();
     });
@@ -231,12 +262,18 @@ describe("ProductNew", () => {
     expect(submit.disabled).toBe(true);
 
     await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>('input[name="name"]'), "name input"), "Checkout App");
+      setInputValue(
+        required(container.querySelector<HTMLInputElement>('input[name="name"]'), "name input"),
+        "Checkout App",
+      );
       setInputValue(
         required(container.querySelector<HTMLTextAreaElement>('textarea[name="description"]'), "description textarea"),
-        "Mobile checkout workbench"
+        "Mobile checkout workbench",
       );
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      setSelectValue(
+        required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"),
+        "web",
+      );
       await flushPromises();
     });
 
@@ -247,7 +284,10 @@ describe("ProductNew", () => {
     expect(submit.disabled).toBe(true);
 
     await act(async () => {
-      required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
+      required(
+        container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+        "English language input",
+      ).click();
       await flushPromises();
     });
 
@@ -268,39 +308,59 @@ describe("ProductNew", () => {
     });
 
     expect(container.querySelector('select[name="system_style"]')).toBeNull();
-    const trigger = required(container.querySelector<HTMLButtonElement>("[data-system-style-picker-trigger]"), "system style picker trigger");
+    const trigger = required(
+      container.querySelector<HTMLButtonElement>("[data-system-style-picker-trigger]"),
+      "system style picker trigger",
+    );
     expect(trigger.disabled).toBe(false);
     expect(trigger.textContent).toContain("Select design spec");
 
     await openSystemStylePicker(container);
 
-    const dialog = required(document.body.querySelector<HTMLElement>('[data-system-style-picker-dialog="true"]'), "system style picker dialog");
+    const dialog = required(
+      document.body.querySelector<HTMLElement>('[data-system-style-picker-dialog="true"]'),
+      "system style picker dialog",
+    );
     expect(container.contains(dialog)).toBe(false);
     expect(dialog.textContent).toContain("Platform Design");
-    expect(Array.from(document.body.querySelectorAll<HTMLElement>("[data-spec-preview-mock]")).map((mock) => mock.dataset.specPreviewMock).sort()).toEqual([
-      "desktop",
-      "mobile",
-      "tablet",
-      "web"
-    ]);
+    expect(
+      Array.from(document.body.querySelectorAll<HTMLElement>("[data-spec-preview-mock]"))
+        .map((mock) => mock.dataset.specPreviewMock)
+        .sort(),
+    ).toEqual(["desktop", "mobile", "tablet", "web"]);
 
-    const previewBefore = required(document.body.querySelector<HTMLElement>('[data-system-preview-grid="true"]'), "system style preview grid");
+    const previewBefore = required(
+      document.body.querySelector<HTMLElement>('[data-system-preview-grid="true"]'),
+      "system style preview grid",
+    );
     const previewBeforeHtml = previewBefore.outerHTML;
     expect(previewBefore.dataset.previewTemplateName).toBe("platform-design");
     await act(async () => {
-      required(document.body.querySelector<HTMLButtonElement>('[data-system-style-picker-option="mobile-first"]'), "mobile-first option").click();
+      required(
+        document.body.querySelector<HTMLButtonElement>('[data-system-style-picker-option="mobile-first"]'),
+        "mobile-first option",
+      ).click();
       await flushPromises();
     });
-    const previewAfter = required(document.body.querySelector<HTMLElement>('[data-system-preview-grid="true"]'), "system style preview grid");
+    const previewAfter = required(
+      document.body.querySelector<HTMLElement>('[data-system-preview-grid="true"]'),
+      "system style preview grid",
+    );
     expect(previewAfter.dataset.previewTemplateName).toBe("mobile-first");
     expect(previewAfter.outerHTML).not.toBe(previewBeforeHtml);
     await act(async () => {
-      required(document.body.querySelector<HTMLButtonElement>("[data-system-style-picker-confirm]"), "system style confirm button").click();
+      required(
+        document.body.querySelector<HTMLButtonElement>("[data-system-style-picker-confirm]"),
+        "system style confirm button",
+      ).click();
       await flushPromises();
     });
 
     expect(trigger.textContent).toContain("Selected spec: mobile-first");
-    expect(required(container.querySelector<HTMLInputElement>('input[name="system_style"]'), "system_style hidden input").value).toBe("mobile-first");
+    expect(
+      required(container.querySelector<HTMLInputElement>('input[name="system_style"]'), "system_style hidden input")
+        .value,
+    ).toBe("mobile-first");
   });
 
   it("creates then configures the product with brand_style before navigating", async () => {
@@ -314,12 +374,18 @@ describe("ProductNew", () => {
     });
 
     await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>('input[name="name"]'), "name input"), " Checkout App ");
+      setInputValue(
+        required(container.querySelector<HTMLInputElement>('input[name="name"]'), "name input"),
+        " Checkout App ",
+      );
       setInputValue(
         required(container.querySelector<HTMLTextAreaElement>('textarea[name="description"]'), "description textarea"),
-        " Mobile checkout workbench "
+        " Mobile checkout workbench ",
       );
-      setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+      setSelectValue(
+        required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"),
+        "web",
+      );
       await flushPromises();
     });
 
@@ -327,32 +393,40 @@ describe("ProductNew", () => {
     await chooseSystemStyle(container, "platform-design");
 
     await act(async () => {
-      required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
-      required(container.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
+      required(
+        container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+        "English language input",
+      ).click();
+      required(
+        container.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'),
+        "Simplified Chinese language input",
+      ).click();
       await flushPromises();
     });
 
     const defaultLanguage = required(
       container.querySelector<HTMLSelectElement>('select[name="default_language"]'),
-      "default language select"
+      "default language select",
     );
 
     await act(async () => {
       setSelectValue(defaultLanguage, "zh-CN");
-      container.querySelector<HTMLFormElement>("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      container
+        .querySelector<HTMLFormElement>("form")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await flushPromises();
     });
 
     expect(client.createProduct).toHaveBeenCalledWith({
       name: "Checkout App",
-      description: "Mobile checkout workbench"
+      description: "Mobile checkout workbench",
     });
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
       platform: "web",
       brand_style: "linear",
       system_style: "platform-design",
       languages: ["en", "zh-CN"],
-      default_language: "zh-CN"
+      default_language: "zh-CN",
     });
     expect(navigate).toHaveBeenCalledWith("/products/P-123abc");
   });
@@ -364,7 +438,7 @@ describe("ProductNew", () => {
       configureProduct: vi.fn(async () => {
         throw new ApiError("CONFIG_FAILED", "Style configuration failed", {}, 400);
       }),
-      deleteProduct: vi.fn()
+      deleteProduct: vi.fn(),
     };
     const { container, root } = createTestRoot();
 
@@ -376,14 +450,16 @@ describe("ProductNew", () => {
     await fillValidProductForm(container);
 
     await act(async () => {
-      container.querySelector<HTMLFormElement>("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      container
+        .querySelector<HTMLFormElement>("form")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await flushPromises();
     });
 
     expect(client.createProduct).toHaveBeenCalledTimes(1);
     expect(client.createProduct).toHaveBeenCalledWith({
       name: "Checkout App",
-      description: "Mobile checkout workbench"
+      description: "Mobile checkout workbench",
     });
     expect(client.configureProduct).toHaveBeenCalledTimes(1);
     expect(client.configureProduct).toHaveBeenCalledWith("P-123abc", {
@@ -391,7 +467,7 @@ describe("ProductNew", () => {
       brand_style: "linear",
       system_style: "platform-design",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
     expect(client.deleteProduct).not.toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
@@ -412,7 +488,9 @@ describe("ProductNew", () => {
     await fillValidProductForm(container);
 
     await act(async () => {
-      container.querySelector<HTMLFormElement>("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      container
+        .querySelector<HTMLFormElement>("form")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await flushPromises();
     });
 
@@ -420,7 +498,9 @@ describe("ProductNew", () => {
     expect(navigate).not.toHaveBeenCalled();
 
     await act(async () => {
-      container.querySelector<HTMLFormElement>("form")?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      container
+        .querySelector<HTMLFormElement>("form")
+        ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
       await flushPromises();
     });
 
@@ -431,14 +511,14 @@ describe("ProductNew", () => {
       brand_style: "linear",
       system_style: "platform-design",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
     expect(client.configureProduct).toHaveBeenNthCalledWith(2, "P-123abc", {
       platform: "web",
       brand_style: "linear",
       system_style: "platform-design",
       languages: ["en"],
-      default_language: "en"
+      default_language: "en",
     });
     expect(navigate).toHaveBeenCalledTimes(1);
     expect(navigate).toHaveBeenCalledWith("/products/P-123abc");
@@ -455,8 +535,13 @@ describe("ProductNew", () => {
     });
 
     expect(container.querySelector('select[name="style"]')).toBeNull();
-    expect(required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger").disabled).toBe(true);
-    expect(required(container.querySelector<HTMLButtonElement>('button[type="submit"]'), "submit button").disabled).toBe(true);
+    expect(
+      required(container.querySelector<HTMLButtonElement>("[data-style-picker-trigger]"), "style picker trigger")
+        .disabled,
+    ).toBe(true);
+    expect(
+      required(container.querySelector<HTMLButtonElement>('button[type="submit"]'), "submit button").disabled,
+    ).toBe(true);
     expect(container.textContent).toContain("style catalog unavailable");
   });
 
@@ -470,7 +555,10 @@ describe("ProductNew", () => {
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
+      required(
+        container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+        "English language input",
+      ).click();
       await flushPromises();
     });
 
@@ -487,14 +575,20 @@ describe("ProductNew", () => {
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
-      required(container.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'), "Simplified Chinese language input").click();
+      required(
+        container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+        "English language input",
+      ).click();
+      required(
+        container.querySelector<HTMLInputElement>('input[name="languages"][value="zh-CN"]'),
+        "Simplified Chinese language input",
+      ).click();
       await flushPromises();
     });
 
     const defaultLanguage = required(
       container.querySelector<HTMLSelectElement>('select[name="default_language"]'),
-      "default language select"
+      "default language select",
     );
     expect(defaultLanguage.value).toBe("en");
 
@@ -525,12 +619,15 @@ function createClient() {
       brand_style: input.brand_style,
       system_style: input.system_style,
       languages: input.languages,
-      default_language: input.default_language
+      default_language: input.default_language,
     })),
     getStyle: vi.fn(async (name: string) => detailByName[name] ?? detailByName.linear),
     listStyles: vi.fn(async () => styles),
-    listSystemStyles: vi.fn(async () => systemStyles)
-  } satisfies Pick<FormaApiClient, "configureProduct" | "createProduct" | "getStyle" | "listStyles" | "listSystemStyles">;
+    listSystemStyles: vi.fn(async () => systemStyles),
+  } satisfies Pick<
+    FormaApiClient,
+    "configureProduct" | "createProduct" | "getStyle" | "listStyles" | "listSystemStyles"
+  >;
 }
 
 function createTestRoot() {
@@ -544,12 +641,18 @@ function createTestRoot() {
 
 async function fillValidProductForm(container: HTMLElement) {
   await act(async () => {
-    setInputValue(required(container.querySelector<HTMLInputElement>('input[name="name"]'), "name input"), " Checkout App ");
+    setInputValue(
+      required(container.querySelector<HTMLInputElement>('input[name="name"]'), "name input"),
+      " Checkout App ",
+    );
     setInputValue(
       required(container.querySelector<HTMLTextAreaElement>('textarea[name="description"]'), "description textarea"),
-      " Mobile checkout workbench "
+      " Mobile checkout workbench ",
     );
-    setSelectValue(required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"), "web");
+    setSelectValue(
+      required(container.querySelector<HTMLSelectElement>('select[name="platform"]'), "platform select"),
+      "web",
+    );
     await flushPromises();
   });
 
@@ -557,7 +660,10 @@ async function fillValidProductForm(container: HTMLElement) {
   await chooseSystemStyle(container, "platform-design");
 
   await act(async () => {
-    required(container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'), "English language input").click();
+    required(
+      container.querySelector<HTMLInputElement>('input[name="languages"][value="en"]'),
+      "English language input",
+    ).click();
     await flushPromises();
   });
 }
@@ -565,11 +671,17 @@ async function fillValidProductForm(container: HTMLElement) {
 async function chooseStyle(container: HTMLElement, name: string) {
   await openStylePicker(container);
   await act(async () => {
-    required(document.body.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`), `${name} style option`).click();
+    required(
+      document.body.querySelector<HTMLButtonElement>(`[data-style-picker-option="${name}"]`),
+      `${name} style option`,
+    ).click();
     await flushPromises();
   });
   await act(async () => {
-    required(document.body.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"), "style confirm button").click();
+    required(
+      document.body.querySelector<HTMLButtonElement>("[data-style-picker-confirm]"),
+      "style confirm button",
+    ).click();
     await flushPromises();
   });
 }
@@ -584,18 +696,27 @@ async function openStylePicker(container: HTMLElement) {
 async function chooseSystemStyle(container: HTMLElement, name: string) {
   await openSystemStylePicker(container);
   await act(async () => {
-    required(document.body.querySelector<HTMLButtonElement>(`[data-system-style-picker-option="${name}"]`), `${name} system style option`).click();
+    required(
+      document.body.querySelector<HTMLButtonElement>(`[data-system-style-picker-option="${name}"]`),
+      `${name} system style option`,
+    ).click();
     await flushPromises();
   });
   await act(async () => {
-    required(document.body.querySelector<HTMLButtonElement>("[data-system-style-picker-confirm]"), "system style confirm button").click();
+    required(
+      document.body.querySelector<HTMLButtonElement>("[data-system-style-picker-confirm]"),
+      "system style confirm button",
+    ).click();
     await flushPromises();
   });
 }
 
 async function openSystemStylePicker(container: HTMLElement) {
   await act(async () => {
-    required(container.querySelector<HTMLButtonElement>("[data-system-style-picker-trigger]"), "system style picker trigger").click();
+    required(
+      container.querySelector<HTMLButtonElement>("[data-system-style-picker-trigger]"),
+      "system style picker trigger",
+    ).click();
     await flushPromises();
   });
 }

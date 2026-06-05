@@ -28,7 +28,7 @@ afterEach(() => {
 describe("DesignView", () => {
   it("shows empty state when no artifacts returned", async () => {
     const client: DesignViewClientDep = {
-      listProductArtifacts: vi.fn(async () => ({ artifacts: [] }))
+      listProductArtifacts: vi.fn(async () => ({ artifacts: [] })),
     };
     const { container, root } = createTestRoot();
 
@@ -43,14 +43,44 @@ describe("DesignView", () => {
 
   it("renders PNG grid when artifacts are available", async () => {
     const artifacts: ArtifactSummary[] = [
-      { id: "A-111", kind: "html", requirement_id: "R-12345678", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" },
-      { id: "A-222", kind: "html", requirement_id: "R-12345678", title: "Checkout Page", updated_at: "2026-05-28T00:00:00Z" },
-      { id: "A-333", kind: "html", requirement_id: "R-87654321", title: "Profile Page", updated_at: "2026-05-28T00:00:00Z" },
-      { id: "A-444", kind: "design-system", requirement_id: "R-12345678", title: "Design System", updated_at: "2026-05-28T00:00:00Z" },
-      { id: "A-555", kind: "component-library", requirement_id: "R-12345678", title: "Component Library", updated_at: "2026-05-28T00:00:00Z" }
+      {
+        id: "A-111",
+        kind: "html",
+        requirement_id: "R-12345678",
+        title: "Home Page",
+        updated_at: "2026-05-28T00:00:00Z",
+      },
+      {
+        id: "A-222",
+        kind: "html",
+        requirement_id: "R-12345678",
+        title: "Checkout Page",
+        updated_at: "2026-05-28T00:00:00Z",
+      },
+      {
+        id: "A-333",
+        kind: "html",
+        requirement_id: "R-87654321",
+        title: "Profile Page",
+        updated_at: "2026-05-28T00:00:00Z",
+      },
+      {
+        id: "A-444",
+        kind: "design-system",
+        requirement_id: "R-12345678",
+        title: "Design System",
+        updated_at: "2026-05-28T00:00:00Z",
+      },
+      {
+        id: "A-555",
+        kind: "component-library",
+        requirement_id: "R-12345678",
+        title: "Component Library",
+        updated_at: "2026-05-28T00:00:00Z",
+      },
     ];
     const client: DesignViewClientDep = {
-      listProductArtifacts: vi.fn(async () => ({ artifacts }))
+      listProductArtifacts: vi.fn(async () => ({ artifacts })),
     };
     const { container, root } = createTestRoot();
 
@@ -65,16 +95,22 @@ describe("DesignView", () => {
     const srcs = Array.from(images).map((img) => img.getAttribute("src") ?? "");
     expect(srcs).toEqual([
       "/api/products/P-123abc/artifacts/A-111/preview/1x",
-      "/api/products/P-123abc/artifacts/A-222/preview/1x"
+      "/api/products/P-123abc/artifacts/A-222/preview/1x",
     ]);
   });
 
   it("opens lightbox on artifact click", async () => {
     const artifacts: ArtifactSummary[] = [
-      { id: "A-111", kind: "html", requirement_id: "R-12345678", title: "Home Page", updated_at: "2026-05-28T00:00:00Z" }
+      {
+        id: "A-111",
+        kind: "html",
+        requirement_id: "R-12345678",
+        title: "Home Page",
+        updated_at: "2026-05-28T00:00:00Z",
+      },
     ];
     const client: DesignViewClientDep = {
-      listProductArtifacts: vi.fn(async () => ({ artifacts }))
+      listProductArtifacts: vi.fn(async () => ({ artifacts })),
     };
     const { container, root } = createTestRoot();
 
@@ -91,9 +127,7 @@ describe("DesignView", () => {
 
     // A 2x preview image should now be visible in the lightbox
     const allImages = container.querySelectorAll("img");
-    const lightboxImg = Array.from(allImages).find((img) =>
-      (img.getAttribute("src") ?? "").includes("/preview/2x")
-    );
+    const lightboxImg = Array.from(allImages).find((img) => (img.getAttribute("src") ?? "").includes("/preview/2x"));
     expect(lightboxImg).not.toBeUndefined();
     expect(lightboxImg?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-111/preview/2x");
   });

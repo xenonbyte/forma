@@ -1,12 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from "vitest";
 
-import { extractComponentsManifest, summarizeComponentsManifestForPrompt } from '../src/design-systems/components-manifest.js';
+import {
+  extractComponentsManifest,
+  summarizeComponentsManifestForPrompt,
+} from "../src/design-systems/components-manifest.js";
 
-describe('components manifest extraction', () => {
-  it('summarizes tokens, selectors, html classes, and component groups deterministically', () => {
+describe("components manifest extraction", () => {
+  it("summarizes tokens, selectors, html classes, and component groups deterministically", () => {
     const manifest = extractComponentsManifest({
-      brandId: 'sample',
-      tokensCss: ':root { --bg: #fff; --accent: #05f; --radius-md: 12px; }',
+      brandId: "sample",
+      tokensCss: ":root { --bg: #fff; --accent: #05f; --radius-md: 12px; }",
       fixtureHtml: `
         <!doctype html>
         <html>
@@ -36,38 +39,38 @@ describe('components manifest extraction', () => {
 
     expect(manifest.schemaVersion).toBe(1);
     expect(manifest.fixture).toMatchObject({
-      title: 'Sample fixture',
-      description: 'A compact fixture.',
+      title: "Sample fixture",
+      description: "A compact fixture.",
       styleBlockCount: 1,
       selectorCount: 4,
       classCount: 3,
     });
-    expect(manifest.tokens.declared).toEqual(['--accent', '--bg', '--radius-md']);
-    expect(manifest.tokens.referenced).toEqual(['--accent', '--bg', '--radius-md']);
-    expect(manifest.selectors).toEqual(['.btn', '.card', '.stack-4', 'button']);
-    expect(manifest.classes).toEqual(['btn', 'card', 'stack-4']);
-    expect(manifest.groups.find((group) => group.id === 'buttons')).toMatchObject({
+    expect(manifest.tokens.declared).toEqual(["--accent", "--bg", "--radius-md"]);
+    expect(manifest.tokens.referenced).toEqual(["--accent", "--bg", "--radius-md"]);
+    expect(manifest.selectors).toEqual([".btn", ".card", ".stack-4", "button"]);
+    expect(manifest.classes).toEqual(["btn", "card", "stack-4"]);
+    expect(manifest.groups.find((group) => group.id === "buttons")).toMatchObject({
       present: true,
-      selectors: ['.btn', 'button'],
-      classes: ['btn'],
-      elements: ['button'],
+      selectors: [".btn", "button"],
+      classes: ["btn"],
+      elements: ["button"],
     });
-    expect(manifest.groups.find((group) => group.id === 'layout')).toMatchObject({
+    expect(manifest.groups.find((group) => group.id === "layout")).toMatchObject({
       present: true,
-      selectors: ['.stack-4'],
-      classes: ['stack-4'],
-      elements: ['main'],
+      selectors: [".stack-4"],
+      classes: ["stack-4"],
+      elements: ["main"],
     });
     expect(manifest.literals.pixelValues).toBe(1);
   });
 
-  it('can render a concise prompt summary from a manifest', () => {
+  it("can render a concise prompt summary from a manifest", () => {
     const manifest = extractComponentsManifest({
-      brandId: 'sample',
+      brandId: "sample",
       fixtureHtml: '<style>.btn { color: var(--accent); }</style><button class="btn">Ship</button>',
     });
 
-    expect(summarizeComponentsManifestForPrompt(manifest)).toContain('components.manifest schema v1 for sample');
-    expect(summarizeComponentsManifestForPrompt(manifest)).toContain('Buttons and calls to action');
+    expect(summarizeComponentsManifestForPrompt(manifest)).toContain("components.manifest schema v1 for sample");
+    expect(summarizeComponentsManifestForPrompt(manifest)).toContain("Buttons and calls to action");
   });
 });

@@ -13,23 +13,20 @@
  *   6.  No active pointers → both phases return empty arrays.
  */
 
-import { describe, expect, it } from 'vitest';
-import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import {
-  exportArchiveAssets,
-  type ExportArchiveAssetsDeps,
-} from '../src/archive-asset-export.js';
-import { getArtifactVersionDir, getArtifactVziPath } from '../src/artifact-paths.js';
-import type { DesignPointer } from '../src/product.js';
+import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { exportArchiveAssets, type ExportArchiveAssetsDeps } from "../src/archive-asset-export.js";
+import { getArtifactVersionDir, getArtifactVziPath } from "../src/artifact-paths.js";
+import type { DesignPointer } from "../src/product.js";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
-const PRODUCT_ID = 'P-aabbcc';
-const REQ_ID = 'req-001';
-const ARTIFACT_ID = 'ArtAAAAAAAAAAAAA';
-const PAGE_ID = 'page-home';
+const PRODUCT_ID = "P-aabbcc";
+const REQ_ID = "req-001";
+const ARTIFACT_ID = "ArtAAAAAAAAAAAAA";
+const PAGE_ID = "page-home";
 
 /** Minimal design HTML with one inline SVG (for the icon-extractor). */
 const DESIGN_HTML_WITH_SVG = `<!DOCTYPE html>
@@ -52,26 +49,19 @@ const DESIGN_HTML_WITH_SVG = `<!DOCTYPE html>
 </body>
 </html>`;
 
-function makePointer(
-  requirementId: string,
-  pageId: string,
-  artifactId: string,
-  version = 1,
-): DesignPointer {
+function makePointer(requirementId: string, pageId: string, artifactId: string, version = 1): DesignPointer {
   return {
     requirementId,
     pageId,
-    variant: 'default',
+    variant: "default",
     artifactId,
     version,
-    designStatus: 'active',
+    designStatus: "active",
   };
 }
 
-async function makeTestDeps(
-  formaHome: string,
-): Promise<ExportArchiveAssetsDeps> {
-  const productsRoot = join(formaHome, 'products');
+async function makeTestDeps(formaHome: string): Promise<ExportArchiveAssetsDeps> {
+  const productsRoot = join(formaHome, "products");
   await mkdir(productsRoot, { recursive: true });
 
   return {
@@ -80,12 +70,14 @@ async function makeTestDeps(
     listDesignPointers: async () => [],
     readFile: (path) => readFile(path),
     writeFile: async (path, data) => {
-      await mkdir(join(path, '..'), { recursive: true });
+      await mkdir(join(path, ".."), { recursive: true });
       await writeFile(path, data);
     },
     rmDir: (path) => rm(path, { recursive: true, force: true }),
     rename: (src, dest) => rename(src, dest),
-    mkdir: async (path) => { await mkdir(path, { recursive: true }); },
+    mkdir: async (path) => {
+      await mkdir(path, { recursive: true });
+    },
   };
 }
 
@@ -98,14 +90,14 @@ async function seedVersionHtml(
 ): Promise<void> {
   const versionDir = getArtifactVersionDir(productsRoot, productId, artifactId, version);
   await mkdir(versionDir, { recursive: true });
-  await writeFile(join(versionDir, 'index.html'), html, 'utf8');
+  await writeFile(join(versionDir, "index.html"), html, "utf8");
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('exportArchiveAssets', () => {
-  it('returns empty icons + vzi pages when no active pointers exist', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-noop-'));
+describe("exportArchiveAssets", () => {
+  it("returns empty icons + vzi pages when no active pointers exist", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-archive-noop-"));
     try {
       const deps = await makeTestDeps(formaHome);
       deps.listDesignPointers = async () => [];
@@ -113,7 +105,7 @@ describe('exportArchiveAssets', () => {
       const result = await exportArchiveAssets(deps, {
         productId: PRODUCT_ID,
         requirementId: REQ_ID,
-        generatedFrom: 'requirement-archive',
+        generatedFrom: "requirement-archive",
       });
 
       expect(result.icons.pages).toHaveLength(0);
@@ -125,88 +117,80 @@ describe('exportArchiveAssets', () => {
     }
   });
 
-  it(
-    'full integration: both phases succeed, result has icons + vzi with correct page counts',
-    async () => {
-      const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-full-'));
-      try {
-        const deps = await makeTestDeps(formaHome);
-        const productsRoot = join(formaHome, 'products');
+  it("full integration: both phases succeed, result has icons + vzi with correct page counts", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-archive-full-"));
+    try {
+      const deps = await makeTestDeps(formaHome);
+      const productsRoot = join(formaHome, "products");
 
-        await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_HTML_WITH_SVG);
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_HTML_WITH_SVG);
 
-        const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
-        deps.listDesignPointers = async () => [pointer];
+      const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
+      deps.listDesignPointers = async () => [pointer];
 
-        const result = await exportArchiveAssets(deps, {
-          productId: PRODUCT_ID,
-          requirementId: REQ_ID,
-          generatedFrom: 'requirement-archive',
-        });
+      const result = await exportArchiveAssets(deps, {
+        productId: PRODUCT_ID,
+        requirementId: REQ_ID,
+        generatedFrom: "requirement-archive",
+      });
 
-        // Icons phase
-        expect(result.icons.pages).toHaveLength(1);
-        expect(result.icons.pages[0].artifactId).toBe(ARTIFACT_ID);
+      // Icons phase
+      expect(result.icons.pages).toHaveLength(1);
+      expect(result.icons.pages[0].artifactId).toBe(ARTIFACT_ID);
 
-        // VZI phase
-        expect(result.vzi.pages).toHaveLength(1);
-        expect(result.vzi.pages[0].artifactId).toBe(ARTIFACT_ID);
-        expect(result.vzi.pages[0].elementCount).toBeGreaterThan(0);
-        expect(result.vzi.totalElements).toBe(result.vzi.pages[0].elementCount);
+      // VZI phase
+      expect(result.vzi.pages).toHaveLength(1);
+      expect(result.vzi.pages[0].artifactId).toBe(ARTIFACT_ID);
+      expect(result.vzi.pages[0].elementCount).toBeGreaterThan(0);
+      expect(result.vzi.totalElements).toBe(result.vzi.pages[0].elementCount);
 
-        // VZI file should exist on disk
-        const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
-        const vziBytes = await readFile(vziPath);
-        expect(vziBytes.length).toBeGreaterThan(0);
-      } finally {
-        await rm(formaHome, { recursive: true, force: true });
-      }
-    },
-    120_000,
-  );
+      // VZI file should exist on disk
+      const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
+      const vziBytes = await readFile(vziPath);
+      expect(vziBytes.length).toBeGreaterThan(0);
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 120_000);
 
-  it(
-    'filters both icons and VZI to current requirement pages',
-    async () => {
-      const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-current-pages-'));
-      const staleArtifactId = 'ArtCCCCCCCCCCCCC';
-      try {
-        const deps = await makeTestDeps(formaHome);
-        const productsRoot = join(formaHome, 'products');
+  it("filters both icons and VZI to current requirement pages", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-archive-current-pages-"));
+    const staleArtifactId = "ArtCCCCCCCCCCCCC";
+    try {
+      const deps = await makeTestDeps(formaHome);
+      const productsRoot = join(formaHome, "products");
 
-        await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_HTML_WITH_SVG);
-        await seedVersionHtml(productsRoot, PRODUCT_ID, staleArtifactId, 1, DESIGN_HTML_WITH_SVG);
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_HTML_WITH_SVG);
+      await seedVersionHtml(productsRoot, PRODUCT_ID, staleArtifactId, 1, DESIGN_HTML_WITH_SVG);
 
-        deps.listDesignPointers = async () => [
-          makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1),
-          makePointer(REQ_ID, 'page-removed', staleArtifactId, 1),
-        ];
-        deps.getRequirementPageIds = async () => [PAGE_ID];
+      deps.listDesignPointers = async () => [
+        makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1),
+        makePointer(REQ_ID, "page-removed", staleArtifactId, 1),
+      ];
+      deps.getRequirementPageIds = async () => [PAGE_ID];
 
-        const result = await exportArchiveAssets(deps, {
-          productId: PRODUCT_ID,
-          requirementId: REQ_ID,
-          generatedFrom: 'requirement-archive',
-        });
+      const result = await exportArchiveAssets(deps, {
+        productId: PRODUCT_ID,
+        requirementId: REQ_ID,
+        generatedFrom: "requirement-archive",
+      });
 
-        expect(result.icons.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
-        expect(result.vzi.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
-        await expect(readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, staleArtifactId))).rejects.toThrow();
-      } finally {
-        await rm(formaHome, { recursive: true, force: true });
-      }
-    },
-    120_000,
-  );
+      expect(result.icons.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
+      expect(result.vzi.pages.map((page) => page.artifactId)).toEqual([ARTIFACT_ID]);
+      await expect(readFile(getArtifactVziPath(productsRoot, PRODUCT_ID, staleArtifactId))).rejects.toThrow();
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 120_000);
 
-  it('propagates icon-phase failure without starting VZI phase', async () => {
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-icon-fail-'));
+  it("propagates icon-phase failure without starting VZI phase", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-archive-icon-fail-"));
     try {
       const deps = await makeTestDeps(formaHome);
 
       // Make readFile fail to simulate icon extractor failure
       deps.readFile = async () => {
-        throw new Error('disk read failed');
+        throw new Error("disk read failed");
       };
 
       const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
@@ -216,7 +200,7 @@ describe('exportArchiveAssets', () => {
         exportArchiveAssets(deps, {
           productId: PRODUCT_ID,
           requirementId: REQ_ID,
-          generatedFrom: 'requirement-archive',
+          generatedFrom: "requirement-archive",
         }),
       ).rejects.toThrow();
     } finally {
@@ -224,7 +208,7 @@ describe('exportArchiveAssets', () => {
     }
   });
 
-  it('result shape: result.icons.totalIcons matches the manifest icon count', async () => {
+  it("result shape: result.icons.totalIcons matches the manifest icon count", async () => {
     // HTML with no SVG icons → icons phase succeeds with 0 icons
     const htmlNoIcons = `<!DOCTYPE html><html><body>
       <div style="padding:40px;font-family:sans-serif;font-size:16px;color:#333">
@@ -233,10 +217,10 @@ describe('exportArchiveAssets', () => {
       </div>
     </body></html>`;
 
-    const formaHome = await mkdtemp(join(tmpdir(), 'forma-archive-shape-'));
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-archive-shape-"));
     try {
       const deps = await makeTestDeps(formaHome);
-      const productsRoot = join(formaHome, 'products');
+      const productsRoot = join(formaHome, "products");
 
       await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, htmlNoIcons);
 
@@ -246,7 +230,7 @@ describe('exportArchiveAssets', () => {
       const result = await exportArchiveAssets(deps, {
         productId: PRODUCT_ID,
         requirementId: REQ_ID,
-        generatedFrom: 'requirement-archive',
+        generatedFrom: "requirement-archive",
       });
 
       // totalIcons and page count

@@ -13,7 +13,7 @@ import {
   readYaml,
   readYamlAs,
   requirementStatuses,
-  writeYamlAtomic
+  writeYamlAtomic,
 } from "../src/index.js";
 
 describe("core foundation", () => {
@@ -65,7 +65,7 @@ describe("core foundation", () => {
     expect(err.toJSON()).toEqual({
       error_code: "PRODUCT_NOT_FOUND",
       message: "Product not found",
-      details: { product_id: "P-missing" }
+      details: { product_id: "P-missing" },
     });
   });
 });

@@ -4,8 +4,8 @@
  * 负责绘制辅助对齐的虚线标尺
  */
 
-import type { CanvasKit, Canvas, Paint } from 'canvaskit-wasm';
-import type { RulerData, RulerStyle, PageRect } from '../types';
+import type { CanvasKit, Canvas, Paint } from "canvaskit-wasm";
+import type { RulerData, RulerStyle, PageRect } from "../types";
 
 /**
  * 标尺线渲染器选项
@@ -56,10 +56,7 @@ export class RulerRenderer {
 
     // 设置虚线效果
     if (this.style.dashArray && this.style.dashArray.length >= 2) {
-      const dashArray = [
-        this.style.dashArray[0] / this.scale,
-        this.style.dashArray[1] / this.scale,
-      ];
+      const dashArray = [this.style.dashArray[0] / this.scale, this.style.dashArray[1] / this.scale];
       this.linePaint.setPathEffect(ck.PathEffect.MakeDash(dashArray, 0));
     }
 
@@ -113,24 +110,14 @@ export class RulerRenderer {
   /**
    * 渲染水平标尺线
    */
-  private renderHorizontalRuler(
-    canvas: Canvas,
-    x: number,
-    y: number,
-    width: number
-  ): void {
+  private renderHorizontalRuler(canvas: Canvas, x: number, y: number, width: number): void {
     canvas.drawLine(x, y, x + width, y, this.linePaint!);
   }
 
   /**
    * 渲染垂直标尺线
    */
-  private renderVerticalRuler(
-    canvas: Canvas,
-    x: number,
-    y: number,
-    height: number
-  ): void {
+  private renderVerticalRuler(canvas: Canvas, x: number, y: number, height: number): void {
     canvas.drawLine(x, y, x, y + height, this.linePaint!);
   }
 

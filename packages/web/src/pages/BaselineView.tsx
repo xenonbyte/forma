@@ -7,7 +7,7 @@ import {
   type CopyItem,
   type FormaApiClient,
   type PageCopyPayload,
-  type ProductBaseline
+  type ProductBaseline,
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
@@ -18,7 +18,10 @@ export interface BaselineViewProps {
   params: Record<string, string>;
 }
 
-type BaselineState = { status: "error"; error: ApiErrorInfo } | { status: "loading" } | { baseline: ProductBaseline; status: "ready" };
+type BaselineState =
+  | { status: "error"; error: ApiErrorInfo }
+  | { status: "loading" }
+  | { baseline: ProductBaseline; status: "ready" };
 type BaselineTab = "graph" | "list";
 type BaselineNavigationDisplayEdge = ProductBaseline["navigation"][number] & { trigger?: string };
 type BaselinePage = ProductBaseline["pages"][number];
@@ -84,7 +87,7 @@ export function BaselineView({ client = apiClient, params }: BaselineViewProps) 
 export function BaselineContent({
   baseline,
   client,
-  productId
+  productId,
 }: {
   baseline: ProductBaseline;
   client: Pick<FormaApiClient, "getPageCopy">;
@@ -100,7 +103,9 @@ export function BaselineContent({
     }
 
     let cancelled = false;
-    setPageCopyStates(Object.fromEntries(baseline.pages.map((page) => [page.id, { status: "loading" } satisfies PageCopyState])));
+    setPageCopyStates(
+      Object.fromEntries(baseline.pages.map((page) => [page.id, { status: "loading" } satisfies PageCopyState])),
+    );
 
     Promise.all(
       baseline.pages.map(async (page) => {
@@ -110,7 +115,7 @@ export function BaselineContent({
         } catch (error: unknown) {
           return [page.id, { error: formatApiError(error), status: "error" } satisfies PageCopyState] as const;
         }
-      })
+      }),
     ).then((entries) => {
       if (!cancelled) {
         setPageCopyStates(Object.fromEntries(entries));
@@ -124,7 +129,11 @@ export function BaselineContent({
 
   return (
     <div className="space-y-5">
-      <div className="inline-flex rounded-md border border-zinc-200 bg-white p-1 shadow-sm" role="tablist" aria-label={t("baseline.view")}>
+      <div
+        className="inline-flex rounded-md border border-zinc-200 bg-white p-1 shadow-sm"
+        role="tablist"
+        aria-label={t("baseline.view")}
+      >
         {(["list", "graph"] as BaselineTab[]).map((tab) => (
           <button
             aria-selected={activeTab === tab}
@@ -160,11 +169,17 @@ export function BaselineContent({
                     <PageCopyTable copyState={pageCopyStates[page.id]} page={page} />
                   </div>
                   <div data-page-rail={page.id}>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("baseline.sources")}</p>
+                    <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">
+                      {t("baseline.sources")}
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {page.source_requirements.length > 0 ? (
                         page.source_requirements.map((requirementId) => (
-                          <a className={pillLinkClasses} href={`/products/${productId}/requirements/${requirementId}`} key={requirementId}>
+                          <a
+                            className={pillLinkClasses}
+                            href={`/products/${productId}/requirements/${requirementId}`}
+                            key={requirementId}
+                          >
                             {requirementId}
                           </a>
                         ))
@@ -172,12 +187,20 @@ export function BaselineContent({
                         <span className="text-sm text-zinc-500">{t("baseline.none")}</span>
                       )}
                     </div>
-                    <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("baseline.actions")}</p>
+                    <p className="mt-4 text-xs font-semibold uppercase tracking-normal text-zinc-500">
+                      {t("baseline.actions")}
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/image`}>
+                      <a
+                        className={pageActionLinkClasses}
+                        href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/image`}
+                      >
                         {t("action.preview")}
                       </a>
-                      <a className={pageActionLinkClasses} href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/annotations`}>
+                      <a
+                        className={pageActionLinkClasses}
+                        href={`/api/products/${productId}/baseline/pages/${encodeURIComponent(page.id)}/annotations`}
+                      >
                         {t("action.annotations")}
                       </a>
                     </div>
@@ -193,7 +216,10 @@ export function BaselineContent({
             ) : (
               <div className="divide-y divide-zinc-200">
                 {baseline.navigation.map((edge, index) => (
-                  <div className="grid gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_12rem]" key={`${edge.from}-${edge.to}-${index}`}>
+                  <div
+                    className="grid gap-3 py-3 text-sm sm:grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)_12rem]"
+                    key={`${edge.from}-${edge.to}-${index}`}
+                  >
                     <span className="truncate font-mono text-zinc-700">{edge.from}</span>
                     <span className="text-zinc-400">{t("common.to")}</span>
                     <span className="truncate font-mono text-zinc-700">{edge.to}</span>
@@ -216,19 +242,27 @@ export function BaselineContent({
 function PageCopyTable({ copyState, page }: { copyState: PageCopyState | undefined; page: BaselinePage }) {
   const t = useT();
   const routeCopy = copyState?.status === "ready" ? copyState.copy : undefined;
-  const defaultCopy = routeCopy && routeCopy.default_language_copy.length > 0 ? routeCopy.default_language_copy : page.copy;
+  const defaultCopy =
+    routeCopy && routeCopy.default_language_copy.length > 0 ? routeCopy.default_language_copy : page.copy;
   const translations = routeCopy?.translations ?? [];
-  const contexts = uniqueValues([...defaultCopy.map((item) => item.context), ...translations.map((entry) => entry.context)]);
+  const contexts = uniqueValues([
+    ...defaultCopy.map((item) => item.context),
+    ...translations.map((entry) => entry.context),
+  ]);
   const languages = uniqueValues(translations.flatMap((entry) => Object.keys(entry.texts)));
 
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("baseline.copy")}</p>
-        {copyState?.status === "loading" ? <span className="text-xs text-zinc-500">{t("baseline.loadingCopy")}</span> : null}
+        {copyState?.status === "loading" ? (
+          <span className="text-xs text-zinc-500">{t("baseline.loadingCopy")}</span>
+        ) : null}
       </div>
       {copyState?.status === "error" ? (
-        <p className="mt-2 text-sm text-red-700">{copyState.error.error_code} - {t("baseline.copyUnavailable")}</p>
+        <p className="mt-2 text-sm text-red-700">
+          {copyState.error.error_code} - {t("baseline.copyUnavailable")}
+        </p>
       ) : null}
 
       {contexts.length === 0 ? (
@@ -238,14 +272,20 @@ function PageCopyTable({ copyState, page }: { copyState: PageCopyState | undefin
           <table className="min-w-full divide-y divide-zinc-200 text-left text-sm" data-copy-table={page.id}>
             <thead className="bg-zinc-50 text-xs font-semibold uppercase tracking-normal text-zinc-500">
               <tr>
-                <th className={tableHeaderClasses} scope="col">{t("baseline.tableContext")}</th>
-                <th className={tableHeaderClasses} scope="col">{t("baseline.defaultCopy")}</th>
+                <th className={tableHeaderClasses} scope="col">
+                  {t("baseline.tableContext")}
+                </th>
+                <th className={tableHeaderClasses} scope="col">
+                  {t("baseline.defaultCopy")}
+                </th>
                 {languages.map((language) => (
                   <th className={tableHeaderClasses} key={language} scope="col">
                     {language}
                   </th>
                 ))}
-                <th className={tableHeaderClasses} scope="col">{t("baseline.status")}</th>
+                <th className={tableHeaderClasses} scope="col">
+                  {t("baseline.status")}
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-200 bg-white">
@@ -253,7 +293,11 @@ function PageCopyTable({ copyState, page }: { copyState: PageCopyState | undefin
                 const translation = translations.find((entry) => entry.context === context);
                 const outdated = translation?.outdated === true;
                 return (
-                  <tr className={outdated ? "bg-amber-50" : undefined} data-outdated-copy={outdated ? "true" : undefined} key={context}>
+                  <tr
+                    className={outdated ? "bg-amber-50" : undefined}
+                    data-outdated-copy={outdated ? "true" : undefined}
+                    key={context}
+                  >
                     <td className={`${tableCellClasses} font-mono text-xs text-zinc-700`}>{context}</td>
                     <td className={tableCellClasses}>{copyTextForContext(defaultCopy, context)}</td>
                     {languages.map((language) => (

@@ -4,7 +4,9 @@ import { FormaError } from "./errors.js";
 
 export function isSameOrChildPath(parent: string, child: string): boolean {
   const relativePath = relative(parent, child);
-  return relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
+  return (
+    relativePath === "" || (relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath))
+  );
 }
 
 export async function realpathInsideDirectory(input: {
@@ -14,13 +16,21 @@ export async function realpathInsideDirectory(input: {
   requireFile?: boolean;
   requirePen?: boolean;
 }): Promise<{ path: string; expectedDirectory: string }> {
-  const expectedDirectory = await readRealpath(input.expectedDirectory, input.field, "Expected session directory is invalid", {
-    expected_session_dir: input.expectedDirectory
-  });
+  const expectedDirectory = await readRealpath(
+    input.expectedDirectory,
+    input.field,
+    "Expected session directory is invalid",
+    {
+      expected_session_dir: input.expectedDirectory,
+    },
+  );
   if (input.requireFile) {
     const stat = await readLstat(input.path, input.field, "Session path must be a regular file", { path: input.path });
     if (!stat.isFile() || stat.isSymbolicLink()) {
-      throw new FormaError("INVALID_INPUT", "Session path must be a regular file", { field: input.field, path: input.path });
+      throw new FormaError("INVALID_INPUT", "Session path must be a regular file", {
+        field: input.field,
+        path: input.path,
+      });
     }
   }
   const path = await readRealpath(input.path, input.field, "Session path is invalid", { path: input.path });
@@ -28,7 +38,7 @@ export async function realpathInsideDirectory(input: {
     throw new FormaError("INVALID_INPUT", "Path must stay inside the expected session directory", {
       field: input.field,
       expected_session_dir: expectedDirectory,
-      path
+      path,
     });
   }
   if (input.requirePen && extname(path) !== ".pen") {
@@ -37,17 +47,23 @@ export async function realpathInsideDirectory(input: {
   return { path, expectedDirectory };
 }
 
-export async function ensureParentInsideDirectory(file: string, expectedDirectory: string, field: string): Promise<void> {
+export async function ensureParentInsideDirectory(
+  file: string,
+  expectedDirectory: string,
+  field: string,
+): Promise<void> {
   const expectedReal = await readRealpath(expectedDirectory, field, "Expected session directory is invalid", {
-    expected_session_dir: expectedDirectory
+    expected_session_dir: expectedDirectory,
   });
   const parentResolved = resolve(dirname(file));
-  const parentCanonical = await readRealpathWithMissingTail(parentResolved, field, "Output parent path is invalid", { path: file });
+  const parentCanonical = await readRealpathWithMissingTail(parentResolved, field, "Output parent path is invalid", {
+    path: file,
+  });
   if (!isSameOrChildPath(expectedReal, parentCanonical)) {
     throw new FormaError("INVALID_INPUT", "Output parent must stay inside the expected session directory", {
       field,
       expected_session_dir: expectedReal,
-      path: file
+      path: file,
     });
   }
   try {
@@ -60,12 +76,17 @@ export async function ensureParentInsideDirectory(file: string, expectedDirector
     throw new FormaError("INVALID_INPUT", "Output parent must stay inside the expected session directory", {
       field,
       expected_session_dir: expectedReal,
-      path: file
+      path: file,
     });
   }
 }
 
-async function readRealpath(path: string, field: string, message: string, details: Record<string, unknown>): Promise<string> {
+async function readRealpath(
+  path: string,
+  field: string,
+  message: string,
+  details: Record<string, unknown>,
+): Promise<string> {
   try {
     return await realpath(path);
   } catch (error) {
@@ -73,7 +94,12 @@ async function readRealpath(path: string, field: string, message: string, detail
   }
 }
 
-async function readLstat(path: string, field: string, message: string, details: Record<string, unknown>): Promise<Awaited<ReturnType<typeof lstat>>> {
+async function readLstat(
+  path: string,
+  field: string,
+  message: string,
+  details: Record<string, unknown>,
+): Promise<Awaited<ReturnType<typeof lstat>>> {
   try {
     return await lstat(path);
   } catch (error) {
@@ -81,7 +107,12 @@ async function readLstat(path: string, field: string, message: string, details: 
   }
 }
 
-async function readRealpathWithMissingTail(path: string, field: string, message: string, details: Record<string, unknown>): Promise<string> {
+async function readRealpathWithMissingTail(
+  path: string,
+  field: string,
+  message: string,
+  details: Record<string, unknown>,
+): Promise<string> {
   try {
     return await realpathWithMissingTail(path);
   } catch (error) {
@@ -123,17 +154,14 @@ function throwInvalidPathError(error: unknown, message: string, details: Record<
     throw new FormaError("INVALID_INPUT", message, {
       ...details,
       fs_error_code: code,
-      cause: error instanceof Error ? error.message : String(error)
+      cause: error instanceof Error ? error.message : String(error),
     });
   }
   throw error;
 }
 
 function fsErrorCode(error: unknown): string | undefined {
-  return typeof error === "object"
-    && error !== null
-    && "code" in error
-    && typeof error.code === "string"
+  return typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
     ? error.code
     : undefined;
 }

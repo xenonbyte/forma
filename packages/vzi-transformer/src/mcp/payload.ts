@@ -1,24 +1,19 @@
-import type { Annotation, VZIContent, VersionCompatibility } from '@vzi-core/format';
-import type { IRElement, IntermediateRepresentation } from '@vzi-core/types';
-import type { TransformResult } from '../transformer';
-import { createMcpQuery } from './query';
-import type {
-  McpExtractPayload,
-  McpQualityMetrics,
-  McpQueryOptions,
-  McpResponsiveSnapshot,
-} from './types';
+import type { Annotation, VZIContent, VersionCompatibility } from "@vzi-core/format";
+import type { IRElement, IntermediateRepresentation } from "@vzi-core/types";
+import type { TransformResult } from "../transformer";
+import { createMcpQuery } from "./query";
+import type { McpExtractPayload, McpQualityMetrics, McpQueryOptions, McpResponsiveSnapshot } from "./types";
 
 const DEFAULT_VERSION_COMPATIBILITY: VersionCompatibility = {
-  minReaderVersion: '2.0.0',
-  formatVersion: '2.0.0',
+  minReaderVersion: "2.0.0",
+  formatVersion: "2.0.0",
   features: [],
 };
 
 export interface BuildMcpExtractPayloadOptions {
   version?: string;
-  type?: McpExtractPayload['type'];
-  sourceType?: McpExtractPayload['metadata']['sourceType'];
+  type?: McpExtractPayload["type"];
+  sourceType?: McpExtractPayload["metadata"]["sourceType"];
   sourceIdentifier?: string;
   sourceUrl?: string;
   sourceTitle?: string;
@@ -33,13 +28,13 @@ function isTransformResult(input: TransformResult | VZIContent): input is Transf
 function inferRootElementId(elements: Record<string, IRElement>): string {
   const entries = Object.entries(elements);
   const root = entries.find(([, element]) => element.parentId == null);
-  return root?.[0] ?? entries[0]?.[0] ?? 'root';
+  return root?.[0] ?? entries[0]?.[0] ?? "root";
 }
 
 function buildIrFromVziContent(content: VZIContent): IntermediateRepresentation {
   const elements = Object.fromEntries(content.elements.entries()) as Record<string, IRElement>;
   return {
-    version: '1.0.0',
+    version: "1.0.0",
     rootElementId: inferRootElementId(elements),
     elements,
     metadata: {
@@ -57,24 +52,19 @@ function buildIrFromVziContent(content: VZIContent): IntermediateRepresentation 
 function countZeroPosition(annotations: Annotation[]): number {
   return annotations.filter((annotation) => {
     const position = annotation.position;
-    return (
-      position.x === 0 &&
-      position.y === 0 &&
-      position.width === 0 &&
-      position.height === 0
-    );
+    return position.x === 0 && position.y === 0 && position.width === 0 && position.height === 0;
   }).length;
 }
 
 function buildQualityMetrics(
   ir: IntermediateRepresentation,
   annotations: Annotation[],
-  tokens: ReturnType<ReturnType<typeof createMcpQuery>['getTokens']>
+  tokens: ReturnType<ReturnType<typeof createMcpQuery>["getTokens"]>,
 ): McpQualityMetrics {
   const zeroPositionCount = countZeroPosition(annotations);
   const annotationTotal = annotations.length;
   const textElements = Object.values(ir.elements).filter((element) => {
-    return typeof element.textContent === 'string' && element.textContent.trim().length > 0;
+    return typeof element.textContent === "string" && element.textContent.trim().length > 0;
   });
 
   const sourceCount = textElements.length;
@@ -104,7 +94,7 @@ function buildQualityMetrics(
 }
 
 function normalizeString(value: string | undefined | null): string | undefined {
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return undefined;
   }
   const normalized = value.trim();
@@ -127,9 +117,9 @@ function hashStable(input: string): string {
 function sanitizeIdentifier(value: string): string {
   return value
     .trim()
-    .replace(/[^a-zA-Z0-9._:-]+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
+    .replace(/[^a-zA-Z0-9._:-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
     .toLowerCase();
 }
 
@@ -138,33 +128,33 @@ function isGenericIdentifier(value: string | undefined): boolean {
   const normalized = value.trim().toLowerCase();
   return (
     normalized.length === 0 ||
-    normalized === 'playground-html' ||
-    normalized === 'unknown-source' ||
-    normalized === 'source' ||
-    normalized === 'document'
+    normalized === "playground-html" ||
+    normalized === "unknown-source" ||
+    normalized === "source" ||
+    normalized === "document"
   );
 }
 
 function buildDerivedIdentifier(
-  metadata: VZIContent['metadata'],
-  metadataSource: VZIContent['metadata']['source'] | undefined
+  metadata: VZIContent["metadata"],
+  metadataSource: VZIContent["metadata"]["source"] | undefined,
 ): string {
   const preferred = normalizeString(metadataSource?.url) ?? normalizeString(metadataSource?.title);
   if (preferred && !isGenericIdentifier(preferred)) {
     return preferred;
   }
 
-  const title = sanitizeIdentifier(metadata.name || 'document');
+  const title = sanitizeIdentifier(metadata.name || "document");
   const viewport = `${metadata.viewportWidth}x${metadata.viewportHeight}`;
   const fingerprint = hashStable(
-    `${metadata.name}|${metadata.createdAt}|${metadata.modifiedAt}|${metadata.viewportWidth}x${metadata.viewportHeight}`
+    `${metadata.name}|${metadata.createdAt}|${metadata.modifiedAt}|${metadata.viewportWidth}x${metadata.viewportHeight}`,
   ).slice(0, 8);
-  return `${title || 'document'}-${viewport}-${fingerprint}`;
+  return `${title || "document"}-${viewport}-${fingerprint}`;
 }
 
 function normalizeIrForMcp(
   ir: IntermediateRepresentation,
-  query: ReturnType<typeof createMcpQuery>
+  query: ReturnType<typeof createMcpQuery>,
 ): IntermediateRepresentation {
   const elements: Record<string, IRElement> = {};
   for (const [id, element] of Object.entries(ir.elements)) {
@@ -172,9 +162,9 @@ function normalizeIrForMcp(
     const normalizedStyles = detail?.styles || element.styles;
     const normalizedSource = detail?.source
       ? ({
-        ...(element.source || {}),
-        ...detail.source,
-      } as IRElement['source'])
+          ...(element.source || {}),
+          ...detail.source,
+        } as IRElement["source"])
       : element.source;
 
     elements[id] = {
@@ -192,30 +182,31 @@ function normalizeIrForMcp(
 }
 
 function normalizeExtractSource(
-  source: TransformResult['source'] | undefined,
+  source: TransformResult["source"] | undefined,
   options: BuildMcpExtractPayloadOptions,
-  metadataSource: VZIContent['metadata']['source'] | undefined,
-  metadata: VZIContent['metadata']
+  metadataSource: VZIContent["metadata"]["source"] | undefined,
+  metadata: VZIContent["metadata"],
 ) {
-  const fallbackIdentifier = normalizeString(source?.identifier)
-    ?? normalizeString(options.sourceIdentifier)
-    ?? normalizeString(metadataSource?.url)
-    ?? normalizeString(metadataSource?.title)
-    ?? 'unknown-source';
+  const fallbackIdentifier =
+    normalizeString(source?.identifier) ??
+    normalizeString(options.sourceIdentifier) ??
+    normalizeString(metadataSource?.url) ??
+    normalizeString(metadataSource?.title) ??
+    "unknown-source";
   const rawIdentifier = isGenericIdentifier(fallbackIdentifier)
     ? buildDerivedIdentifier(metadata, metadataSource)
     : fallbackIdentifier;
-  const sourceTypeHint = options.sourceType || 'html';
-  let type: 'file' | 'url' | 'figma' = source?.type || (sourceTypeHint === 'figma' ? 'figma' : 'file');
+  const sourceTypeHint = options.sourceType || "html";
+  let type: "file" | "url" | "figma" = source?.type || (sourceTypeHint === "figma" ? "figma" : "file");
 
-  if (type === 'url' && !isHttpUrl(rawIdentifier)) {
-    type = sourceTypeHint === 'figma' ? 'figma' : 'file';
+  if (type === "url" && !isHttpUrl(rawIdentifier)) {
+    type = sourceTypeHint === "figma" ? "figma" : "file";
   }
-  if (type === 'file' && isHttpUrl(rawIdentifier)) {
-    type = 'url';
+  if (type === "file" && isHttpUrl(rawIdentifier)) {
+    type = "url";
   }
-  if (sourceTypeHint === 'figma') {
-    type = 'figma';
+  if (sourceTypeHint === "figma") {
+    type = "figma";
   }
 
   return {
@@ -226,16 +217,16 @@ function normalizeExtractSource(
 }
 
 function buildMetadataSource(
-  metadataSource: VZIContent['metadata']['source'] | undefined,
-  runtimeSource: TransformResult['source'] | undefined,
-  options: BuildMcpExtractPayloadOptions
-): VZIContent['metadata']['source'] | undefined {
+  metadataSource: VZIContent["metadata"]["source"] | undefined,
+  runtimeSource: TransformResult["source"] | undefined,
+  options: BuildMcpExtractPayloadOptions,
+): VZIContent["metadata"]["source"] | undefined {
   let url = normalizeString(metadataSource?.url) ?? normalizeString(options.sourceUrl);
   let title = normalizeString(metadataSource?.title) ?? normalizeString(options.sourceTitle);
   const sourceIdentifier = normalizeString(runtimeSource?.identifier) ?? normalizeString(options.sourceIdentifier);
 
   if (!url && !title && sourceIdentifier) {
-    if (runtimeSource?.type === 'url' && isHttpUrl(sourceIdentifier)) {
+    if (runtimeSource?.type === "url" && isHttpUrl(sourceIdentifier)) {
       url = sourceIdentifier;
     } else {
       title = sourceIdentifier;
@@ -254,40 +245,40 @@ function buildMetadataSource(
 
 function buildMetadataFeatures(
   existingFeatures: string[] | undefined,
-  tokens: ReturnType<ReturnType<typeof createMcpQuery>['getTokens']>,
-  annotations: ReturnType<ReturnType<typeof createMcpQuery>['getAnnotations']>,
-  uiHints: ReturnType<ReturnType<typeof createMcpQuery>['getUiHints']>,
-  assetsCount: number
+  tokens: ReturnType<ReturnType<typeof createMcpQuery>["getTokens"]>,
+  annotations: ReturnType<ReturnType<typeof createMcpQuery>["getAnnotations"]>,
+  uiHints: ReturnType<ReturnType<typeof createMcpQuery>["getUiHints"]>,
+  assetsCount: number,
 ): string[] {
   const features = new Set(
     (existingFeatures || [])
       .map((feature) => normalizeString(feature))
-      .filter((feature): feature is string => Boolean(feature))
+      .filter((feature): feature is string => Boolean(feature)),
   );
 
-  if ((tokens.colors || []).length > 0) features.add('mcp.tokens.colors');
-  if ((tokens.fonts || []).length > 0) features.add('mcp.tokens.fonts');
-  if ((tokens.spacing || []).length > 0) features.add('mcp.tokens.spacing');
-  if ((tokens.radii || []).length > 0) features.add('mcp.tokens.radii');
-  if ((tokens.shadows || []).length > 0) features.add('mcp.tokens.shadows');
-  if ((tokens.gradients || []).length > 0) features.add('mcp.tokens.gradients');
-  if (annotations.total > 0) features.add('mcp.annotations');
-  if (annotations.styleHints.length > 0) features.add('mcp.annotations.styleHints');
-  if (annotations.spacingSummary) features.add('mcp.annotations.spacingSummary');
-  if (uiHints.order.length > 0) features.add('mcp.uiHints');
-  if (uiHints.stableIdById && Object.keys(uiHints.stableIdById).length > 0) features.add('mcp.stableId');
-  if (assetsCount > 0) features.add('mcp.assets');
-  features.add('mcp.source.semantic');
-  features.add('mcp.responsive');
-  features.add('mcp.quality');
+  if ((tokens.colors || []).length > 0) features.add("mcp.tokens.colors");
+  if ((tokens.fonts || []).length > 0) features.add("mcp.tokens.fonts");
+  if ((tokens.spacing || []).length > 0) features.add("mcp.tokens.spacing");
+  if ((tokens.radii || []).length > 0) features.add("mcp.tokens.radii");
+  if ((tokens.shadows || []).length > 0) features.add("mcp.tokens.shadows");
+  if ((tokens.gradients || []).length > 0) features.add("mcp.tokens.gradients");
+  if (annotations.total > 0) features.add("mcp.annotations");
+  if (annotations.styleHints.length > 0) features.add("mcp.annotations.styleHints");
+  if (annotations.spacingSummary) features.add("mcp.annotations.spacingSummary");
+  if (uiHints.order.length > 0) features.add("mcp.uiHints");
+  if (uiHints.stableIdById && Object.keys(uiHints.stableIdById).length > 0) features.add("mcp.stableId");
+  if (assetsCount > 0) features.add("mcp.assets");
+  features.add("mcp.source.semantic");
+  features.add("mcp.responsive");
+  features.add("mcp.quality");
 
   return Array.from(features);
 }
 
-function inferResponsiveLabel(width: number): McpResponsiveSnapshot['label'] {
-  if (width < 768) return 'mobile';
-  if (width <= 1024) return 'tablet';
-  return 'desktop';
+function inferResponsiveLabel(width: number): McpResponsiveSnapshot["label"] {
+  if (width < 768) return "mobile";
+  if (width <= 1024) return "tablet";
+  return "desktop";
 }
 
 function dedupeResponsiveSnapshots(snapshots: McpResponsiveSnapshot[]): McpResponsiveSnapshot[] {
@@ -328,7 +319,7 @@ export function buildVziContentFromTransformResult(transformResult: TransformRes
     elements,
     sharedStyles: new Map(),
     spatialIndex: {
-      rootBlockId: 'root-block',
+      rootBlockId: "root-block",
       blocks: new Map(),
       maxDepth: 0,
     },
@@ -343,32 +334,28 @@ export function buildVziContentFromTransformResult(transformResult: TransformRes
 
 export function buildMcpExtractPayload(
   input: TransformResult | VZIContent,
-  options: BuildMcpExtractPayloadOptions = {}
+  options: BuildMcpExtractPayloadOptions = {},
 ): McpExtractPayload {
   const fromTransformResult = isTransformResult(input);
-  const content = fromTransformResult
-    ? buildVziContentFromTransformResult(input)
-    : input;
+  const content = fromTransformResult ? buildVziContentFromTransformResult(input) : input;
 
-  const rawIr = fromTransformResult
-    ? input.ir
-    : buildIrFromVziContent(content);
+  const rawIr = fromTransformResult ? input.ir : buildIrFromVziContent(content);
 
   const query = createMcpQuery(content, {
     includeCss: false,
-    format: 'json',
+    format: "json",
     ...options.query,
   });
   const ir = normalizeIrForMcp(rawIr, query);
 
-  const tokens = query.getTokens('all');
+  const tokens = query.getTokens("all");
   const annotations = query.getAnnotations();
   const uiHints = query.getUiHints();
   const assets = query.getAssets();
   const responsiveSnapshots = dedupeResponsiveSnapshots(
     options.responsiveSnapshots && options.responsiveSnapshots.length > 0
       ? options.responsiveSnapshots
-      : query.getResponsiveSnapshots()
+      : query.getResponsiveSnapshots(),
   );
   const quality = buildQualityMetrics(ir, annotations.annotations, tokens);
   const runtimeSource = fromTransformResult ? input.source : undefined;
@@ -383,8 +370,8 @@ export function buildMcpExtractPayload(
   };
 
   return {
-    version: options.version || '1.1.0',
-    type: options.type || 'html-extract',
+    version: options.version || "1.1.0",
+    type: options.type || "html-extract",
     data: {
       metadata,
       ir,
@@ -407,7 +394,7 @@ export function buildMcpExtractPayload(
     },
     metadata: {
       extractedAt: new Date().toISOString(),
-      sourceType: options.sourceType || 'html',
+      sourceType: options.sourceType || "html",
     },
   };
 }

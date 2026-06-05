@@ -15,7 +15,7 @@ const metadata: StyleMetadata = {
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
   tokens_css_path: "styles/linear/tokens.css",
-  components_html_path: "styles/linear/components.html"
+  components_html_path: "styles/linear/components.html",
 };
 
 const styleDetail: BrandStyleContent = {
@@ -31,7 +31,7 @@ components:
 # Linear
 `,
   tokensCss: ":root { --primary: #5E6AD2; }",
-  componentsHtml: "<div>components</div>"
+  componentsHtml: "<div>components</div>",
 };
 
 const roots: Root[] = [];
@@ -128,7 +128,7 @@ describe("StyleDetail", () => {
 
 function createClient() {
   return {
-    getStyle: vi.fn(async () => styleDetail)
+    getStyle: vi.fn(async () => styleDetail),
   } satisfies Pick<FormaApiClient, "getStyle">;
 }
 

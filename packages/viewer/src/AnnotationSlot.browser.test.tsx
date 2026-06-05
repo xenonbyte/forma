@@ -30,6 +30,6 @@ describe("AnnotationSlot", () => {
   it("is empty of annotation content this phase (placeholder only)", () => {
     const container = render(<AnnotationSlot />);
     const region = container.querySelector('[data-slot="annotation"]')!;
-    expect(region.querySelectorAll('[data-annotation-item]').length).toBe(0);
+    expect(region.querySelectorAll("[data-annotation-item]").length).toBe(0);
   });
 });

@@ -4,7 +4,7 @@ const mocks = vi.hoisted(() => ({
   createFormaStore: vi.fn(),
   readSchemaNormalizationRecoveryState: vi.fn(),
   serverInstances: [] as Array<{ registerTool: ReturnType<typeof vi.fn>; connect: ReturnType<typeof vi.fn> }>,
-  transportInstances: [] as object[]
+  transportInstances: [] as object[],
 }));
 
 vi.mock("@xenonbyte/forma-core", () => {
@@ -12,7 +12,7 @@ vi.mock("@xenonbyte/forma-core", () => {
     constructor(
       public readonly code: string,
       message: string,
-      public readonly details: Record<string, unknown> = {}
+      public readonly details: Record<string, unknown> = {},
     ) {
       super(message);
       this.name = "FormaError";
@@ -45,7 +45,7 @@ vi.mock("@xenonbyte/forma-core", () => {
     readSchemaNormalizationRecoveryState: mocks.readSchemaNormalizationRecoveryState,
     formaCoreVersion: "0.0.0-test",
     languages: ["en", "zh-CN"],
-    platforms: ["web", "mobile"]
+    platforms: ["web", "mobile"],
   };
 });
 
@@ -79,17 +79,17 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
     products: {
       getProduct: vi.fn(),
       initProductConfig: vi.fn(),
-      listProducts: vi.fn()
+      listProducts: vi.fn(),
     },
     requirements: {
       getProductRules: vi.fn(),
       getRequirement: vi.fn(),
       getRequirementHistory: vi.fn(),
-      saveRequirement: vi.fn()
+      saveRequirement: vi.fn(),
     },
     sessions: { getCurrentSession: vi.fn(), setCurrentProduct: vi.fn() },
     styles: { getStyle: vi.fn(), listStyles: vi.fn() },
-    ...overrides
+    ...overrides,
   };
 }
 
@@ -135,7 +135,7 @@ describe("MCP server startup", () => {
       home: "/tmp/forma",
       restore_status: "none",
       failed_files: [],
-      recovery_actions: []
+      recovery_actions: [],
     });
   });
 
@@ -146,7 +146,7 @@ describe("MCP server startup", () => {
   it("createFormaMcpServer is async and waits for delete recovery before registering tools", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
     const store = fakeStore({
-      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
+      recoverPendingProductDeletes: vi.fn(() => recovery.promise),
     });
     mocks.createFormaStore.mockReturnValue(store);
     const { createFormaMcpServer } = await importIndex();
@@ -172,13 +172,15 @@ describe("MCP server startup", () => {
 
   it("logs recovery warnings to an injected logger", async () => {
     const logger = { warn: vi.fn() };
-    mocks.createFormaStore.mockReturnValue(fakeStore({
-      recoverPendingProductDeletes: vi.fn(async () => ({
-        recovered: 1,
-        cleaned: 1,
-        warnings: ["rolled back deletion", "cleaned committed deletion"]
-      }))
-    }));
+    mocks.createFormaStore.mockReturnValue(
+      fakeStore({
+        recoverPendingProductDeletes: vi.fn(async () => ({
+          recovered: 1,
+          cleaned: 1,
+          warnings: ["rolled back deletion", "cleaned committed deletion"],
+        })),
+      }),
+    );
     const { createFormaMcpServer } = await importIndex();
 
     await createFormaMcpServer({ logger });
@@ -186,24 +188,26 @@ describe("MCP server startup", () => {
     expect(logger.warn).toHaveBeenNthCalledWith(
       1,
       { warning: "rolled back deletion" },
-      "Forma product deletion recovery warning"
+      "Forma product deletion recovery warning",
     );
     expect(logger.warn).toHaveBeenNthCalledWith(
       2,
       { warning: "cleaned committed deletion" },
-      "Forma product deletion recovery warning"
+      "Forma product deletion recovery warning",
     );
   });
 
   it("logs recovery warnings to stderr when no logger is provided", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    mocks.createFormaStore.mockReturnValue(fakeStore({
-      recoverPendingProductDeletes: vi.fn(async () => ({
-        recovered: 1,
-        cleaned: 0,
-        warnings: ["rollback warning"]
-      }))
-    }));
+    mocks.createFormaStore.mockReturnValue(
+      fakeStore({
+        recoverPendingProductDeletes: vi.fn(async () => ({
+          recovered: 1,
+          cleaned: 0,
+          warnings: ["rollback warning"],
+        })),
+      }),
+    );
     const { createFormaMcpServer } = await importIndex();
 
     await createFormaMcpServer();
@@ -213,11 +217,13 @@ describe("MCP server startup", () => {
 
   it("rejects the factory when delete recovery fails", async () => {
     const recoveryError = new Error("recovery failed");
-    mocks.createFormaStore.mockReturnValue(fakeStore({
-      recoverPendingProductDeletes: vi.fn(async () => {
-        throw recoveryError;
-      })
-    }));
+    mocks.createFormaStore.mockReturnValue(
+      fakeStore({
+        recoverPendingProductDeletes: vi.fn(async () => {
+          throw recoveryError;
+        }),
+      }),
+    );
     const { createFormaMcpServer } = await importIndex();
 
     await expect(createFormaMcpServer()).rejects.toThrow("recovery failed");
@@ -235,12 +241,12 @@ describe("MCP server startup", () => {
       preflight_reason: "report_missing",
       restore_status: "none",
       failed_files: [],
-      recovery_actions: ["run_schema_normalization_dry_run", "run_v6_schema_cutover"]
+      recovery_actions: ["run_schema_normalization_dry_run", "run_v6_schema_cutover"],
     };
     const rereadState = {
       ...state,
       preflight_status: "stale",
-      preflight_reason: "report_stale"
+      preflight_reason: "report_stale",
     };
     const { SchemaNormalizationStartupError } = await import("@xenonbyte/forma-core");
     mocks.createFormaStore.mockRejectedValue(new SchemaNormalizationStartupError(state));
@@ -263,7 +269,7 @@ describe("MCP server startup", () => {
     expect(JSON.parse(blockedResult.content[0]!.text)).toEqual({
       error_code: "SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED",
       message: "Schema normalization preflight required",
-      details: state
+      details: state,
     });
   });
 
@@ -277,9 +283,11 @@ describe("MCP server startup", () => {
 
   it("main connects stdio only after async factory recovery resolves", async () => {
     const recovery = deferred<{ recovered: number; cleaned: number; warnings: string[] }>();
-    mocks.createFormaStore.mockReturnValue(fakeStore({
-      recoverPendingProductDeletes: vi.fn(() => recovery.promise)
-    }));
+    mocks.createFormaStore.mockReturnValue(
+      fakeStore({
+        recoverPendingProductDeletes: vi.fn(() => recovery.promise),
+      }),
+    );
     const { main } = await importIndex();
 
     const mainPromise = main({ home: "/tmp/custom-home" });
@@ -305,11 +313,13 @@ describe("MCP server startup", () => {
   });
 
   it("main does not connect stdio when recovery rejects", async () => {
-    mocks.createFormaStore.mockReturnValue(fakeStore({
-      recoverPendingProductDeletes: vi.fn(async () => {
-        throw new Error("recovery failed");
-      })
-    }));
+    mocks.createFormaStore.mockReturnValue(
+      fakeStore({
+        recoverPendingProductDeletes: vi.fn(async () => {
+          throw new Error("recovery failed");
+        }),
+      }),
+    );
     const { main } = await importIndex();
 
     await expect(main({ home: "/tmp/custom-home" })).rejects.toThrow("recovery failed");

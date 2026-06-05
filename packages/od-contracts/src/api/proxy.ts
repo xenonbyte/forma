@@ -1,4 +1,4 @@
-export type ProxyMessageRole = 'system' | 'user' | 'assistant' | 'tool';
+export type ProxyMessageRole = "system" | "user" | "assistant" | "tool";
 
 export interface ProxyMessage {
   role: ProxyMessageRole;

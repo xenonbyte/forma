@@ -96,7 +96,9 @@ describe("generic sidecar path boundary", () => {
     };
 
     expect(resolveNamespace({ contract: fakeContract, env })).toBe("selected");
-    expect(resolveSidecarBase({ contract: fakeContract, env, projectRoot: "/repo/product", source: "tool" })).toBe(resolve("/runtime/base"));
+    expect(resolveSidecarBase({ contract: fakeContract, env, projectRoot: "/repo/product", source: "tool" })).toBe(
+      resolve("/runtime/base"),
+    );
   });
 });
 

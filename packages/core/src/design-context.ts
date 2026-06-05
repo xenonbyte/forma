@@ -1,6 +1,6 @@
-import type { CraftDoc, BrandStyleContent, SystemStyleMetadata, StyleService } from './styles.js';
-import type { RequirementPage, StoredRule, RequirementService } from './requirement.js';
-import type { ProductService } from './product.js';
+import type { CraftDoc, BrandStyleContent, SystemStyleMetadata, StyleService } from "./styles.js";
+import type { RequirementPage, StoredRule, RequirementService } from "./requirement.js";
+import type { ProductService } from "./product.js";
 
 export interface DesignContextDeps {
   styles: StyleService;
@@ -29,7 +29,7 @@ export interface DesignContextResult {
 
 export async function buildDesignContext(
   deps: DesignContextDeps,
-  input: DesignContextInput
+  input: DesignContextInput,
 ): Promise<DesignContextResult> {
   const { styles, requirements, products } = deps;
   const { productId, requirementId, pageId } = input;
@@ -60,9 +60,7 @@ export async function buildDesignContext(
   const page = pageId ? req.pages.find((p) => p.page_id === pageId) : undefined;
 
   // rules: page-scoped + global when pageId given; otherwise all
-  const rules = pageId
-    ? allRules.filter((r) => r.page_id === pageId || r.page_id === undefined)
-    : allRules;
+  const rules = pageId ? allRules.filter((r) => r.page_id === pageId || r.page_id === undefined) : allRules;
 
   // platform and default_language from product
   const platform = product.platform;

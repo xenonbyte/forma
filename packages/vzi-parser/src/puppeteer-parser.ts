@@ -4,7 +4,7 @@
  * 使用真实 Chrome 浏览器解析 HTML，获取准确布局和样式信息。
  */
 
-import puppeteer, { Browser, HTTPRequest, Page } from 'puppeteer';
+import puppeteer, { type Browser, type HTTPRequest, type Page } from "puppeteer";
 import type {
   ImageData,
   IntermediateRepresentation,
@@ -14,18 +14,18 @@ import type {
   SVGPath,
   SVGPolygon,
   SVGRect,
-} from '@vzi-core/types';
-import { isValidIR, getIRValidationErrors } from '@vzi-core/types';
-import * as cheerio from 'cheerio';
-import { extractElementType } from './style';
-import { preprocessTailwindCSS } from './tailwind-preprocessor';
+} from "@vzi-core/types";
+import { isValidIR, getIRValidationErrors } from "@vzi-core/types";
+import * as cheerio from "cheerio";
+import { extractElementType } from "./style";
+import { preprocessTailwindCSS } from "./tailwind-preprocessor";
 
 /**
  * 视口预设
  */
 export const VIEWPORT_PRESETS = {
-  mobile: { width: 390, height: 884 },    // iPhone 12/13/14 Pro
-  tablet: { width: 768, height: 1024 },   // iPad
+  mobile: { width: 390, height: 884 }, // iPhone 12/13/14 Pro
+  tablet: { width: 768, height: 1024 }, // iPad
   desktop: { width: 1024, height: 1280 }, // Desktop (13" MacBook)
 } as const;
 
@@ -131,44 +131,44 @@ export function withDocumentBaseUrl(html: string, baseUrl: string): string {
   const href = new URL(baseUrl.trim()).toString();
   const $ = cheerio.load(html);
 
-  if ($('base[href]').length > 0) {
+  if ($("base[href]").length > 0) {
     return $.html();
   }
 
-  let head = $('head').first();
+  let head = $("head").first();
   if (head.length === 0) {
-    const htmlElement = $('html').first();
+    const htmlElement = $("html").first();
     if (htmlElement.length > 0) {
-      htmlElement.prepend('<head></head>');
+      htmlElement.prepend("<head></head>");
     } else {
-      $.root().prepend('<head></head>');
+      $.root().prepend("<head></head>");
     }
-    head = $('head').first();
+    head = $("head").first();
   }
 
-  const base = $('<base>');
-  base.attr('href', href);
+  const base = $("<base>");
+  base.attr("href", href);
   head.prepend(base);
   return $.html();
 }
 
 function chromiumLaunchArgs(sandbox: boolean): string[] {
-  const args = ['--disable-dev-shm-usage'];
+  const args = ["--disable-dev-shm-usage"];
   if (!sandbox) {
-    args.push('--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security');
+    args.push("--no-sandbox", "--disable-setuid-sandbox", "--disable-web-security");
   }
   return args;
 }
 
 function allowNoSandboxFallback(): boolean {
-  if (typeof process === 'undefined' || !process?.env) {
+  if (typeof process === "undefined" || !process?.env) {
     return false;
   }
   return (
-    process.env.VZI_PARSER_ALLOW_NO_SANDBOX_FALLBACK === '1' ||
-    process.env.VITEST === 'true' ||
-    process.env.NODE_ENV === 'test' ||
-    process.env.CI === 'true'
+    process.env.VZI_PARSER_ALLOW_NO_SANDBOX_FALLBACK === "1" ||
+    process.env.VITEST === "true" ||
+    process.env.NODE_ENV === "test" ||
+    process.env.CI === "true"
   );
 }
 
@@ -205,9 +205,7 @@ export class PuppeteerParser {
   };
 
   constructor(options: PuppeteerParserOptions = {}) {
-    const preset = options.viewportPreset
-      ? VIEWPORT_PRESETS[options.viewportPreset]
-      : VIEWPORT_PRESETS.desktop;
+    const preset = options.viewportPreset ? VIEWPORT_PRESETS[options.viewportPreset] : VIEWPORT_PRESETS.desktop;
 
     this.options = {
       viewportWidth: options.viewportWidth ?? preset.width,
@@ -216,28 +214,27 @@ export class PuppeteerParser {
       waitTime: options.waitTime ?? 2000,
       waitForSelector: options.waitForSelector,
       waitForPageReadyMarker: options.waitForPageReadyMarker ?? true,
-      pageReadyMarkerSelector: options.pageReadyMarkerSelector ?? '[data-page-ready]',
+      pageReadyMarkerSelector: options.pageReadyMarkerSelector ?? "[data-page-ready]",
       pageReadyDoneSelector: options.pageReadyDoneSelector ?? '[data-page-ready="true"]',
       maxWaitTime: options.maxWaitTime ?? 30000,
       waitForFonts: options.waitForFonts ?? true,
       waitForIconFonts: options.waitForIconFonts ?? true,
-      iconFontSelector: options.iconFontSelector ?? '.material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .material-icons, [class*="material-symbols-"], [class*="material-icons"]',
+      iconFontSelector:
+        options.iconFontSelector ??
+        '.material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .material-icons, [class*="material-symbols-"], [class*="material-icons"]',
       waitForImages: options.waitForImages ?? true,
       waitForStyleSheets: options.waitForStyleSheets ?? true,
       stabilityTime: options.stabilityTime ?? 800,
       preprocessTailwind: options.preprocessTailwind ?? true,
       freezeAnimations: options.freezeAnimations ?? true,
-      baseUrl: options.baseUrl ?? 'http://localhost',
-      irVersion: options.irVersion ?? '1.0.0',
+      baseUrl: options.baseUrl ?? "http://localhost",
+      irVersion: options.irVersion ?? "1.0.0",
       maxDepth: options.maxDepth ?? 50,
       sandbox: options.sandbox ?? true,
     };
 
     this.debugEnabled =
-      options.debug ??
-      (typeof process !== 'undefined' &&
-      !!process?.env &&
-      process.env.VZI_PARSER_DEBUG === '1');
+      options.debug ?? (typeof process !== "undefined" && !!process?.env && process.env.VZI_PARSER_DEBUG === "1");
   }
 
   private debugLog(stage: string, message: string): void {
@@ -253,15 +250,16 @@ export class PuppeteerParser {
       return;
     }
 
-    await this.page.evaluate(() => {
-      const styleId = '__vzi_static_snapshot_style__';
-      if (document.getElementById(styleId)) {
-        return;
-      }
+    await this.page
+      .evaluate(() => {
+        const styleId = "__vzi_static_snapshot_style__";
+        if (document.getElementById(styleId)) {
+          return;
+        }
 
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.textContent = `
+        const style = document.createElement("style");
+        style.id = styleId;
+        style.textContent = `
         *, *::before, *::after {
           animation: none !important;
           transition-property: none !important;
@@ -270,9 +268,10 @@ export class PuppeteerParser {
           scroll-behavior: auto !important;
         }
       `;
-      (document.head || document.documentElement).appendChild(style);
-    }).catch(() => {});
-    this.debugLog('parse', 'static snapshot styles applied');
+        (document.head || document.documentElement).appendChild(style);
+      })
+      .catch(() => {});
+    this.debugLog("parse", "static snapshot styles applied");
   }
 
   /**
@@ -280,7 +279,7 @@ export class PuppeteerParser {
    */
   private async initBrowser(): Promise<void> {
     if (!this.browser) {
-      this.debugLog('initBrowser', 'launch start');
+      this.debugLog("initBrowser", "launch start");
       const args = chromiumLaunchArgs(this.options.sandbox);
       try {
         this.browser = await puppeteer.launch({
@@ -293,8 +292,8 @@ export class PuppeteerParser {
         }
 
         console.warn(
-          '[PuppeteerParser] Chromium sandbox launch failed; retrying with no-sandbox fallback in controlled test/CI mode:',
-          error instanceof Error ? error.message : String(error)
+          "[PuppeteerParser] Chromium sandbox launch failed; retrying with no-sandbox fallback in controlled test/CI mode:",
+          error instanceof Error ? error.message : String(error),
         );
         this.browser = await puppeteer.launch({
           headless: true,
@@ -302,14 +301,14 @@ export class PuppeteerParser {
         });
       }
       this.page = await this.browser.newPage();
-      this.debugLog('initBrowser', 'newPage created');
+      this.debugLog("initBrowser", "newPage created");
 
       await this.page.setViewport({
         width: this.options.viewportWidth,
         height: this.options.viewportHeight,
         deviceScaleFactor: 2,
       });
-      this.debugLog('initBrowser', `viewport set: ${this.options.viewportWidth}x${this.options.viewportHeight}`);
+      this.debugLog("initBrowser", `viewport set: ${this.options.viewportWidth}x${this.options.viewportHeight}`);
     }
   }
 
@@ -322,14 +321,14 @@ export class PuppeteerParser {
     const idleWindowMs = Math.max(0, this.options.stabilityTime);
     const startAt = Date.now();
     const deadline = startAt + timeoutMs;
-    this.debugLog('runtimeIdle', `start (minObservation=${minObservationMs}ms, maxWait=${timeoutMs}ms)`);
+    this.debugLog("runtimeIdle", `start (minObservation=${minObservationMs}ms, maxWait=${timeoutMs}ms)`);
 
     let lastNetworkActivity = Date.now();
     const inflightRequests = new Set<HTTPRequest>();
 
     const shouldTrackRequest = (request: HTTPRequest): boolean => {
       const url = request.url();
-      return !url.startsWith('data:') && !url.startsWith('about:');
+      return !url.startsWith("data:") && !url.startsWith("about:");
     };
 
     const onRequest = (request: HTTPRequest): void => {
@@ -346,78 +345,82 @@ export class PuppeteerParser {
       }
     };
 
-    await this.page.evaluate(() => {
-      const state = globalThis as typeof globalThis & {
-        __VZI_LAST_DOM_ACTIVITY__?: number;
-        __VZI_DOM_ACTIVITY_OBSERVER__?: MutationObserver;
-      };
+    await this.page
+      .evaluate(() => {
+        const state = globalThis as typeof globalThis & {
+          __VZI_LAST_DOM_ACTIVITY__?: number;
+          __VZI_DOM_ACTIVITY_OBSERVER__?: MutationObserver;
+        };
 
-      state.__VZI_LAST_DOM_ACTIVITY__ = Date.now();
-      state.__VZI_DOM_ACTIVITY_OBSERVER__?.disconnect();
-
-      const root = document.documentElement || document.body;
-      if (!root) {
-        state.__VZI_DOM_ACTIVITY_OBSERVER__ = undefined;
-        return;
-      }
-
-      const observer = new MutationObserver(() => {
         state.__VZI_LAST_DOM_ACTIVITY__ = Date.now();
-      });
+        state.__VZI_DOM_ACTIVITY_OBSERVER__?.disconnect();
 
-      observer.observe(root, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        characterData: true,
-      });
+        const root = document.documentElement || document.body;
+        if (!root) {
+          state.__VZI_DOM_ACTIVITY_OBSERVER__ = undefined;
+          return;
+        }
 
-      state.__VZI_DOM_ACTIVITY_OBSERVER__ = observer;
-    }).catch(() => {});
+        const observer = new MutationObserver(() => {
+          state.__VZI_LAST_DOM_ACTIVITY__ = Date.now();
+        });
 
-    this.page.on('request', onRequest);
-    this.page.on('requestfinished', onRequestSettled);
-    this.page.on('requestfailed', onRequestSettled);
+        observer.observe(root, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          characterData: true,
+        });
+
+        state.__VZI_DOM_ACTIVITY_OBSERVER__ = observer;
+      })
+      .catch(() => {});
+
+    this.page.on("request", onRequest);
+    this.page.on("requestfinished", onRequestSettled);
+    this.page.on("requestfailed", onRequestSettled);
 
     try {
       while (Date.now() < deadline) {
         const now = Date.now();
         const elapsedMs = now - startAt;
 
-        const lastDomActivity = await this.page.evaluate(() => {
-          const state = globalThis as typeof globalThis & {
-            __VZI_LAST_DOM_ACTIVITY__?: number;
-          };
-          return state.__VZI_LAST_DOM_ACTIVITY__ ?? Date.now();
-        }).catch(() => now);
+        const lastDomActivity = await this.page
+          .evaluate(() => {
+            const state = globalThis as typeof globalThis & {
+              __VZI_LAST_DOM_ACTIVITY__?: number;
+            };
+            return state.__VZI_LAST_DOM_ACTIVITY__ ?? Date.now();
+          })
+          .catch(() => now);
 
         const domIdleMs = now - lastDomActivity;
         const networkIdleMs = now - lastNetworkActivity;
 
         const domIdle = idleWindowMs <= 0 || domIdleMs >= idleWindowMs;
-        const networkIdle =
-          inflightRequests.size === 0 &&
-          (idleWindowMs <= 0 || networkIdleMs >= idleWindowMs);
+        const networkIdle = inflightRequests.size === 0 && (idleWindowMs <= 0 || networkIdleMs >= idleWindowMs);
 
         if (elapsedMs >= minObservationMs && domIdle && networkIdle) {
-          this.debugLog('runtimeIdle', `resolved (elapsed=${elapsedMs}ms)`);
+          this.debugLog("runtimeIdle", `resolved (elapsed=${elapsedMs}ms)`);
           return;
         }
 
         await new Promise<void>((resolve) => setTimeout(resolve, 100));
       }
     } finally {
-      this.page.off('request', onRequest);
-      this.page.off('requestfinished', onRequestSettled);
-      this.page.off('requestfailed', onRequestSettled);
-      await this.page.evaluate(() => {
-        const state = globalThis as typeof globalThis & {
-          __VZI_DOM_ACTIVITY_OBSERVER__?: MutationObserver;
-        };
-        state.__VZI_DOM_ACTIVITY_OBSERVER__?.disconnect();
-        state.__VZI_DOM_ACTIVITY_OBSERVER__ = undefined;
-      }).catch(() => {});
-      this.debugLog('runtimeIdle', 'cleanup done');
+      this.page.off("request", onRequest);
+      this.page.off("requestfinished", onRequestSettled);
+      this.page.off("requestfailed", onRequestSettled);
+      await this.page
+        .evaluate(() => {
+          const state = globalThis as typeof globalThis & {
+            __VZI_DOM_ACTIVITY_OBSERVER__?: MutationObserver;
+          };
+          state.__VZI_DOM_ACTIVITY_OBSERVER__?.disconnect();
+          state.__VZI_DOM_ACTIVITY_OBSERVER__ = undefined;
+        })
+        .catch(() => {});
+      this.debugLog("runtimeIdle", "cleanup done");
     }
   }
 
@@ -430,7 +433,7 @@ export class PuppeteerParser {
     }
 
     const timeoutMs = this.options.maxWaitTime;
-    this.debugLog('waitForPageReady', `start (minObservation=${minObservationMs}ms, maxWait=${timeoutMs}ms)`);
+    this.debugLog("waitForPageReady", `start (minObservation=${minObservationMs}ms, maxWait=${timeoutMs}ms)`);
     // 解析精准优先：各阶段预算默认与 maxWaitTime 对齐，避免过早结束等待
     const iconClassCheckTimeoutMs = timeoutMs;
     const styleSheetBudgetMs = timeoutMs;
@@ -438,16 +441,20 @@ export class PuppeteerParser {
     const iconFontBudgetMs = timeoutMs;
     const imageBudgetMs = timeoutMs;
 
-    await this.page.waitForFunction(() => document.readyState === 'complete', {
-      timeout: timeoutMs,
-    }).catch(() => {});
-    this.debugLog('waitForPageReady', 'document.readyState complete check done');
+    await this.page
+      .waitForFunction(() => document.readyState === "complete", {
+        timeout: timeoutMs,
+      })
+      .catch(() => {});
+    this.debugLog("waitForPageReady", "document.readyState complete check done");
 
     if (this.options.waitForSelector) {
-      await this.page.waitForSelector(this.options.waitForSelector, {
-        timeout: timeoutMs,
-      }).catch(() => {});
-      this.debugLog('waitForPageReady', `waitForSelector done: ${this.options.waitForSelector}`);
+      await this.page
+        .waitForSelector(this.options.waitForSelector, {
+          timeout: timeoutMs,
+        })
+        .catch(() => {});
+      this.debugLog("waitForPageReady", `waitForSelector done: ${this.options.waitForSelector}`);
     }
 
     if (this.options.waitForPageReadyMarker) {
@@ -456,62 +463,70 @@ export class PuppeteerParser {
       }, this.options.pageReadyMarkerSelector);
 
       if (hasReadyMarker) {
-        await this.page.waitForSelector(this.options.pageReadyDoneSelector, {
-          timeout: timeoutMs,
-        }).catch(() => {});
-        this.debugLog('waitForPageReady', `page-ready marker done: ${this.options.pageReadyDoneSelector}`);
+        await this.page
+          .waitForSelector(this.options.pageReadyDoneSelector, {
+            timeout: timeoutMs,
+          })
+          .catch(() => {});
+        this.debugLog("waitForPageReady", `page-ready marker done: ${this.options.pageReadyDoneSelector}`);
       }
     }
 
     if (this.options.waitForIconFonts && this.options.iconFontSelector) {
-      await this.page.waitForFunction((iconFontSelector) => {
-        const iconElements = Array.from(document.querySelectorAll(iconFontSelector))
-          .filter((node): node is HTMLElement => node instanceof HTMLElement);
+      await this.page
+        .waitForFunction(
+          (iconFontSelector) => {
+            const iconElements = Array.from(document.querySelectorAll(iconFontSelector)).filter(
+              (node): node is HTMLElement => node instanceof HTMLElement,
+            );
 
-        if (iconElements.length === 0) {
-          return true;
-        }
+            if (iconElements.length === 0) {
+              return true;
+            }
 
-        const normalizeFamily = (value: string): string =>
-          value.toLowerCase().replace(/['"]/g, '');
+            const normalizeFamily = (value: string): string => value.toLowerCase().replace(/['"]/g, "");
 
-        const inferExpectedFamilies = (element: HTMLElement): string[] => {
-          const className = `${element.className || ''}`.toLowerCase();
-          const expected: string[] = [];
+            const inferExpectedFamilies = (element: HTMLElement): string[] => {
+              const className = `${element.className || ""}`.toLowerCase();
+              const expected: string[] = [];
 
-          if (className.includes('material-symbols-outlined')) {
-            expected.push('material symbols outlined', 'material symbols');
-          } else if (className.includes('material-symbols-rounded')) {
-            expected.push('material symbols rounded', 'material symbols');
-          } else if (className.includes('material-symbols-sharp')) {
-            expected.push('material symbols sharp', 'material symbols');
-          } else if (className.includes('material-symbols')) {
-            expected.push('material symbols');
-          }
+              if (className.includes("material-symbols-outlined")) {
+                expected.push("material symbols outlined", "material symbols");
+              } else if (className.includes("material-symbols-rounded")) {
+                expected.push("material symbols rounded", "material symbols");
+              } else if (className.includes("material-symbols-sharp")) {
+                expected.push("material symbols sharp", "material symbols");
+              } else if (className.includes("material-symbols")) {
+                expected.push("material symbols");
+              }
 
-          if (className.includes('material-icons')) {
-            expected.push('material icons');
-          }
+              if (className.includes("material-icons")) {
+                expected.push("material icons");
+              }
 
-          return expected;
-        };
+              return expected;
+            };
 
-        return iconElements.every((iconElement) => {
-          const expectedFamilies = inferExpectedFamilies(iconElement);
-          if (expectedFamilies.length === 0) {
-            return true;
-          }
+            return iconElements.every((iconElement) => {
+              const expectedFamilies = inferExpectedFamilies(iconElement);
+              if (expectedFamilies.length === 0) {
+                return true;
+              }
 
-          const computedFamily = normalizeFamily(window.getComputedStyle(iconElement).fontFamily || '');
-          return expectedFamilies.some((expected) => computedFamily.includes(expected));
-        });
-      }, {
-        timeout: iconClassCheckTimeoutMs,
-      }, this.options.iconFontSelector).catch(() => {});
-      this.debugLog('waitForPageReady', 'icon class family check done');
+              const computedFamily = normalizeFamily(window.getComputedStyle(iconElement).fontFamily || "");
+              return expectedFamilies.some((expected) => computedFamily.includes(expected));
+            });
+          },
+          {
+            timeout: iconClassCheckTimeoutMs,
+          },
+          this.options.iconFontSelector,
+        )
+        .catch(() => {});
+      this.debugLog("waitForPageReady", "icon class family check done");
     }
 
-    this.debugLog('waitForPageReady', 'resource settling evaluate start');
+    this.debugLog("waitForPageReady", "resource settling evaluate start");
     await this.page.evaluate(
       async ({
         waitForFonts,
@@ -534,9 +549,7 @@ export class PuppeteerParser {
         };
 
         if (waitForStyleSheets) {
-          const links = Array.from(
-            document.querySelectorAll('link[rel="stylesheet"]')
-          ) as HTMLLinkElement[];
+          const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]')) as HTMLLinkElement[];
 
           await Promise.all(
             links.map((link) => {
@@ -550,11 +563,11 @@ export class PuppeteerParser {
                   settled = true;
                   resolve();
                 };
-                link.addEventListener('load', done, { once: true });
-                link.addEventListener('error', done, { once: true });
+                link.addEventListener("load", done, { once: true });
+                link.addEventListener("error", done, { once: true });
                 setTimeout(done, styleSheetBudgetMs);
               });
-            })
+            }),
           );
         }
 
@@ -565,29 +578,33 @@ export class PuppeteerParser {
           }
 
           if (waitForIconFonts && iconFontSelector && fonts?.load) {
-            const iconElements = Array.from(document.querySelectorAll(iconFontSelector))
-              .filter((node): node is HTMLElement => node instanceof HTMLElement);
+            const iconElements = Array.from(document.querySelectorAll(iconFontSelector)).filter(
+              (node): node is HTMLElement => node instanceof HTMLElement,
+            );
 
             if (iconElements.length > 0) {
               const normalizeFamilyName = (value: string): string =>
-                value.trim().replace(/^['"]|['"]$/g, '').toLowerCase();
+                value
+                  .trim()
+                  .replace(/^['"]|['"]$/g, "")
+                  .toLowerCase();
 
               const inferExpectedFamilies = (element: HTMLElement): string[] => {
-                const className = `${element.className || ''}`.toLowerCase();
+                const className = `${element.className || ""}`.toLowerCase();
                 const expected: string[] = [];
 
-                if (className.includes('material-symbols-outlined')) {
-                  expected.push('Material Symbols Outlined', 'Material Symbols');
-                } else if (className.includes('material-symbols-rounded')) {
-                  expected.push('Material Symbols Rounded', 'Material Symbols');
-                } else if (className.includes('material-symbols-sharp')) {
-                  expected.push('Material Symbols Sharp', 'Material Symbols');
-                } else if (className.includes('material-symbols')) {
-                  expected.push('Material Symbols');
+                if (className.includes("material-symbols-outlined")) {
+                  expected.push("Material Symbols Outlined", "Material Symbols");
+                } else if (className.includes("material-symbols-rounded")) {
+                  expected.push("Material Symbols Rounded", "Material Symbols");
+                } else if (className.includes("material-symbols-sharp")) {
+                  expected.push("Material Symbols Sharp", "Material Symbols");
+                } else if (className.includes("material-symbols")) {
+                  expected.push("Material Symbols");
                 }
 
-                if (className.includes('material-icons')) {
-                  expected.push('Material Icons');
+                if (className.includes("material-icons")) {
+                  expected.push("Material Icons");
                 }
 
                 return expected;
@@ -600,14 +617,17 @@ export class PuppeteerParser {
               for (const iconElement of iconElements) {
                 const computedStyle = window.getComputedStyle(iconElement);
                 const computedFamilies = computedStyle.fontFamily
-                  .split(',')
-                  .map((family) => family.trim().replace(/^['"]|['"]$/g, ''))
+                  .split(",")
+                  .map((family) => family.trim().replace(/^['"]|['"]$/g, ""))
                   .filter((family) => family.length > 0);
                 const expectedFamilies = inferExpectedFamilies(iconElement);
                 const candidateFamilies = [...computedFamilies];
                 for (const expectedFamily of expectedFamilies) {
-                  if (!candidateFamilies.some((candidate) =>
-                    normalizeFamilyName(candidate) === normalizeFamilyName(expectedFamily))) {
+                  if (
+                    !candidateFamilies.some(
+                      (candidate) => normalizeFamilyName(candidate) === normalizeFamilyName(expectedFamily),
+                    )
+                  ) {
                     candidateFamilies.push(expectedFamily);
                   }
                 }
@@ -616,8 +636,8 @@ export class PuppeteerParser {
                   continue;
                 }
 
-                const fontSize = computedStyle.fontSize || '24px';
-                const sampleText = (iconElement.textContent || '').trim() || 'icon';
+                const fontSize = computedStyle.fontSize || "24px";
+                const sampleText = (iconElement.textContent || "").trim() || "icon";
                 for (const family of candidateFamilies) {
                   const normalized = normalizeFamilyName(family);
                   const key = `${normalized}|${fontSize}|${sampleText}`;
@@ -638,7 +658,6 @@ export class PuppeteerParser {
                   }
                   await withTimeout(fonts.load(fontSpec, sampleText), perFontAttemptBudget);
                   if (fonts.check?.(fontSpec, sampleText)) {
-                    continue;
                   }
                 }
               }
@@ -646,20 +665,19 @@ export class PuppeteerParser {
                 await withTimeout(fonts.ready, Math.min(fontReadyBudgetMs, iconFontBudgetMs));
               }
 
-              const stableWindow = Math.max(
-                300,
-                Math.min(stabilityTime > 0 ? stabilityTime : 600, maxWait)
-              );
+              const stableWindow = Math.max(300, Math.min(stabilityTime > 0 ? stabilityTime : 600, maxWait));
 
               await new Promise<void>((resolve) => {
                 const snapshotMetrics = () => {
-                  return iconElements.map((iconElement) => {
-                    const rect = iconElement.getBoundingClientRect();
-                    const family = window.getComputedStyle(iconElement).fontFamily;
-                    const roundedWidth = Math.round(rect.width * 100);
-                    const roundedHeight = Math.round(rect.height * 100);
-                    return `${roundedWidth}:${roundedHeight}:${family}`;
-                  }).join('|');
+                  return iconElements
+                    .map((iconElement) => {
+                      const rect = iconElement.getBoundingClientRect();
+                      const family = window.getComputedStyle(iconElement).fontFamily;
+                      const roundedWidth = Math.round(rect.width * 100);
+                      const roundedHeight = Math.round(rect.height * 100);
+                      return `${roundedWidth}:${roundedHeight}:${family}`;
+                    })
+                    .join("|");
                 };
 
                 let lastSnapshot = snapshotMetrics();
@@ -697,19 +715,20 @@ export class PuppeteerParser {
         if (waitForImages) {
           const pendingImages = Array.from(document.images).filter((img) => !img.complete);
           await Promise.all(
-            pendingImages.map((img) =>
-              new Promise<void>((resolve) => {
-                let settled = false;
-                const done = () => {
-                  if (settled) return;
-                  settled = true;
-                  resolve();
-                };
-                img.addEventListener('load', done, { once: true });
-                img.addEventListener('error', done, { once: true });
-                setTimeout(done, imageBudgetMs);
-              })
-            )
+            pendingImages.map(
+              (img) =>
+                new Promise<void>((resolve) => {
+                  let settled = false;
+                  const done = () => {
+                    if (settled) return;
+                    settled = true;
+                    resolve();
+                  };
+                  img.addEventListener("load", done, { once: true });
+                  img.addEventListener("error", done, { once: true });
+                  setTimeout(done, imageBudgetMs);
+                }),
+            ),
           );
         }
 
@@ -772,7 +791,7 @@ export class PuppeteerParser {
 
           const timeoutId = setTimeout(done, 120);
           const raf =
-            typeof requestAnimationFrame === 'function'
+            typeof requestAnimationFrame === "function"
               ? requestAnimationFrame
               : (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 16);
 
@@ -796,12 +815,12 @@ export class PuppeteerParser {
         iconFontBudgetMs,
         imageBudgetMs,
         timeoutMs,
-      }
+      },
     );
-    this.debugLog('waitForPageReady', 'resource settling evaluate done');
+    this.debugLog("waitForPageReady", "resource settling evaluate done");
 
     await this.waitForRuntimeIdle(Math.max(0, minObservationMs));
-    this.debugLog('waitForPageReady', 'done');
+    this.debugLog("waitForPageReady", "done");
   }
 
   /**
@@ -809,23 +828,23 @@ export class PuppeteerParser {
    */
   async parse(html: string): Promise<IntermediateRepresentation> {
     return this.runExclusive(async () => {
-      this.debugLog('parse', 'start');
+      this.debugLog("parse", "start");
       await this.initBrowser();
 
       if (!this.page) {
-        throw new Error('Failed to initialize browser');
+        throw new Error("Failed to initialize browser");
       }
 
       let htmlForParse = html;
       if (this.options.preprocessTailwind) {
-        this.debugLog('parse', 'tailwind preprocess start');
+        this.debugLog("parse", "tailwind preprocess start");
         try {
           const preprocessResult = await preprocessTailwindCSS(html);
           htmlForParse = preprocessResult.html;
-          this.debugLog('parse', 'tailwind preprocess done');
+          this.debugLog("parse", "tailwind preprocess done");
         } catch (error) {
-          console.warn('[PuppeteerParser] Tailwind preprocess failed, fallback to raw HTML:', error);
-          this.debugLog('parse', 'tailwind preprocess failed, fallback raw html');
+          console.warn("[PuppeteerParser] Tailwind preprocess failed, fallback to raw HTML:", error);
+          this.debugLog("parse", "tailwind preprocess failed, fallback raw html");
         }
       }
 
@@ -838,19 +857,19 @@ export class PuppeteerParser {
       const htmlForContent = withDocumentBaseUrl(htmlForParse, this.options.baseUrl);
 
       await this.page.setContent(htmlForContent, {
-        waitUntil: 'load',
+        waitUntil: "load",
         timeout: this.options.maxWaitTime,
       });
-      this.debugLog('parse', 'setContent done');
+      this.debugLog("parse", "setContent done");
       await this.applyStaticSnapshotStyles();
 
       await this.waitForPageReady(this.options.waitTime);
-      this.debugLog('parse', 'waitForPageReady done');
+      this.debugLog("parse", "waitForPageReady done");
 
       const $ = cheerio.load(htmlForParse);
-      const title = $('title').first().text() || undefined;
+      const title = $("title").first().text() || undefined;
       const ir = await this.buildIrFromCurrentPage(title);
-      this.debugLog('parse', 'done');
+      this.debugLog("parse", "done");
 
       return ir;
     });
@@ -861,11 +880,11 @@ export class PuppeteerParser {
    */
   async parseUrl(url: string): Promise<IntermediateRepresentation> {
     return this.runExclusive(async () => {
-      this.debugLog('parseUrl', `start: ${url}`);
+      this.debugLog("parseUrl", `start: ${url}`);
       await this.initBrowser();
 
       if (!this.page) {
-        throw new Error('Failed to initialize browser');
+        throw new Error("Failed to initialize browser");
       }
 
       let normalizedUrl: string;
@@ -882,18 +901,18 @@ export class PuppeteerParser {
       });
 
       await this.page.goto(normalizedUrl, {
-        waitUntil: 'load',
+        waitUntil: "load",
         timeout: this.options.maxWaitTime,
       });
-      this.debugLog('parseUrl', 'goto done');
+      this.debugLog("parseUrl", "goto done");
       await this.applyStaticSnapshotStyles();
 
       await this.waitForPageReady(this.options.waitTime);
-      this.debugLog('parseUrl', 'waitForPageReady done');
+      this.debugLog("parseUrl", "waitForPageReady done");
 
       const title = await this.page.title().catch(() => undefined);
       const ir = await this.buildIrFromCurrentPage(title || undefined);
-      this.debugLog('parseUrl', 'done');
+      this.debugLog("parseUrl", "done");
 
       return ir;
     });
@@ -920,21 +939,21 @@ export class PuppeteerParser {
         document.body.offsetHeight,
         document.documentElement.clientHeight,
         document.documentElement.scrollHeight,
-        document.documentElement.offsetHeight
+        document.documentElement.offsetHeight,
       );
     });
-    this.debugLog('buildIrFromCurrentPage', `contentHeight measured: ${contentHeight}`);
+    this.debugLog("buildIrFromCurrentPage", `contentHeight measured: ${contentHeight}`);
 
-    this.debugLog('buildIrFromCurrentPage', 'extractElements start');
+    this.debugLog("buildIrFromCurrentPage", "extractElements start");
     const { elements, truncatedAtDepth } = await this.extractElements();
-    this.debugLog('buildIrFromCurrentPage', `extractElements done: ${elements.length}`);
+    this.debugLog("buildIrFromCurrentPage", `extractElements done: ${elements.length}`);
 
     const elementMap: Record<string, IRElement> = {};
     for (const element of elements) {
       elementMap[element.id] = element;
     }
 
-    const irMetadata: IntermediateRepresentation['metadata'] = {
+    const irMetadata: IntermediateRepresentation["metadata"] = {
       title,
       generatedAt: new Date().toISOString(),
       viewportWidth: this.options.viewportWidth,
@@ -949,13 +968,13 @@ export class PuppeteerParser {
 
     const ir: IntermediateRepresentation = {
       version: this.options.irVersion,
-      rootElementId: elements.length > 0 ? elements[0].id : 'root',
+      rootElementId: elements.length > 0 ? elements[0].id : "root",
       elements: elementMap,
       metadata: irMetadata,
     };
 
     if (!isValidIR(ir)) {
-      throw new Error(`Generated IR is invalid: ${getIRValidationErrors(ir).join('; ')}`);
+      throw new Error(`Generated IR is invalid: ${getIRValidationErrors(ir).join("; ")}`);
     }
 
     return ir;
@@ -966,7 +985,7 @@ export class PuppeteerParser {
    */
   async captureScreenshot(options: PuppeteerScreenshotOptions = {}): Promise<Uint8Array> {
     if (!this.page) {
-      throw new Error('Browser not initialized');
+      throw new Error("Browser not initialized");
     }
 
     const viewport = this.page.viewport();
@@ -986,7 +1005,7 @@ export class PuppeteerParser {
 
       const fullPage = options.fullPage ?? false;
       const result = await this.page.screenshot({
-        type: 'png',
+        type: "png",
         fullPage,
         captureBeyondViewport: fullPage,
       });
@@ -1008,7 +1027,7 @@ export class PuppeteerParser {
    */
   private async extractElements(): Promise<ExtractElementsResult> {
     if (!this.page) {
-      throw new Error('Browser not initialized');
+      throw new Error("Browser not initialized");
     }
 
     const rawResultUnknown: unknown = await this.page.evaluate((maxDepthLimit: number) => {
@@ -1044,25 +1063,57 @@ export class PuppeteerParser {
       function extractStyles(computedStyle: CSSStyleDeclaration): Record<string, string> {
         const styles: Record<string, string> = {};
         const styleProps = [
-          'display', 'position', 'top', 'right', 'bottom', 'left',
-          'width', 'height', 'margin', 'padding', 'border', 'borderWidth', 'borderStyle', 'borderColor',
-          'backgroundColor', 'color', 'fontSize', 'fontFamily', 'fontWeight',
-          'lineHeight', 'textAlign', 'textTransform', 'whiteSpace', 'opacity', 'zIndex', 'overflow',
-          'flexDirection', 'justifyContent', 'alignItems', 'gap',
-          'borderRadius', 'boxShadow', 'transform',
-          'filter', 'backdropFilter',
-          'backgroundImage', 'backgroundSize', 'backgroundPosition',
-          'backgroundRepeat', 'backgroundClip', 'backgroundOrigin',
+          "display",
+          "position",
+          "top",
+          "right",
+          "bottom",
+          "left",
+          "width",
+          "height",
+          "margin",
+          "padding",
+          "border",
+          "borderWidth",
+          "borderStyle",
+          "borderColor",
+          "backgroundColor",
+          "color",
+          "fontSize",
+          "fontFamily",
+          "fontWeight",
+          "lineHeight",
+          "textAlign",
+          "textTransform",
+          "whiteSpace",
+          "opacity",
+          "zIndex",
+          "overflow",
+          "flexDirection",
+          "justifyContent",
+          "alignItems",
+          "gap",
+          "borderRadius",
+          "boxShadow",
+          "transform",
+          "filter",
+          "backdropFilter",
+          "backgroundImage",
+          "backgroundSize",
+          "backgroundPosition",
+          "backgroundRepeat",
+          "backgroundClip",
+          "backgroundOrigin",
         ];
 
         for (const prop of styleProps) {
           const kebabProp = prop.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
           let value = computedStyle.getPropertyValue(kebabProp);
-          if (value && value !== 'initial' && value !== 'inherit') {
-            if (prop === 'boxShadow' && value !== 'none') {
+          if (value && value !== "initial" && value !== "inherit") {
+            if (prop === "boxShadow" && value !== "none") {
               const colorFirstMatch = value.match(/^(rgba?\([^)]+\)|hsla?\([^)]+\)|#[0-9a-fA-F]+)\s+(.+)$/);
               if (colorFirstMatch) {
-                const color = colorFirstMatch[1].replace(/\s+/g, '');
+                const color = colorFirstMatch[1].replace(/\s+/g, "");
                 value = `${colorFirstMatch[2]} ${color}`;
               }
             }
@@ -1075,40 +1126,40 @@ export class PuppeteerParser {
       function inferIconFontFamily(className: string): string | undefined {
         const normalized = className.toLowerCase();
 
-        if (normalized.includes('material-symbols-outlined')) {
-          return 'Material Symbols Outlined';
+        if (normalized.includes("material-symbols-outlined")) {
+          return "Material Symbols Outlined";
         }
-        if (normalized.includes('material-symbols-rounded')) {
-          return 'Material Symbols Rounded';
+        if (normalized.includes("material-symbols-rounded")) {
+          return "Material Symbols Rounded";
         }
-        if (normalized.includes('material-symbols-sharp')) {
-          return 'Material Symbols Sharp';
+        if (normalized.includes("material-symbols-sharp")) {
+          return "Material Symbols Sharp";
         }
-        if (normalized.includes('material-icons')) {
-          return 'Material Icons';
+        if (normalized.includes("material-icons")) {
+          return "Material Icons";
         }
 
         return undefined;
       }
 
-      function toFillRule(value: string): 'nonzero' | 'evenodd' {
-        return value === 'evenodd' ? 'evenodd' : 'nonzero';
+      function toFillRule(value: string): "nonzero" | "evenodd" {
+        return value === "evenodd" ? "evenodd" : "nonzero";
       }
 
       function extractSVGData(svgElement: SVGSVGElement): SVGData | undefined {
         const computedStyle = window.getComputedStyle(svgElement);
         const currentColor = computedStyle.color;
 
-        let viewBox = svgElement.getAttribute('viewBox') || undefined;
+        let viewBox = svgElement.getAttribute("viewBox") || undefined;
         if (!viewBox) {
-          const width = svgElement.width.baseVal.value || parseFloat(svgElement.getAttribute('width') || '0');
-          const height = svgElement.height.baseVal.value || parseFloat(svgElement.getAttribute('height') || '0');
+          const width = svgElement.width.baseVal.value || parseFloat(svgElement.getAttribute("width") || "0");
+          const height = svgElement.height.baseVal.value || parseFloat(svgElement.getAttribute("height") || "0");
           if (width > 0 && height > 0) {
             viewBox = `0 0 ${width} ${height}`;
           }
         }
 
-        const preserveAspectRatio = svgElement.getAttribute('preserveAspectRatio') || undefined;
+        const preserveAspectRatio = svgElement.getAttribute("preserveAspectRatio") || undefined;
         const paths: SVGPath[] = [];
         const circles: SVGCircle[] = [];
         const rects: SVGRect[] = [];
@@ -1120,7 +1171,7 @@ export class PuppeteerParser {
             return undefined;
           }
           const normalized = value.trim();
-          if (!normalized || normalized === 'none') {
+          if (!normalized || normalized === "none") {
             return undefined;
           }
           return normalized;
@@ -1134,7 +1185,7 @@ export class PuppeteerParser {
           if (!trimmed) {
             return 0;
           }
-          if (trimmed.endsWith('%')) {
+          if (trimmed.endsWith("%")) {
             const percent = parseFloat(trimmed.slice(0, -1));
             if (Number.isFinite(percent)) {
               return Math.max(0, Math.min(1, percent / 100));
@@ -1160,7 +1211,7 @@ export class PuppeteerParser {
             return color;
           }
           const channels = match[1]
-            .split(',')
+            .split(",")
             .map((part) => parseFloat(part.trim()))
             .filter((value) => Number.isFinite(value));
           if (channels.length < 3) {
@@ -1184,40 +1235,34 @@ export class PuppeteerParser {
             return paintServerColorCache.get(paintServerId);
           }
 
-          const paintServer =
-            svgElement.querySelector(`#${paintServerId}`) ||
-            document.getElementById(paintServerId);
+          const paintServer = svgElement.querySelector(`#${paintServerId}`) || document.getElementById(paintServerId);
           if (!paintServer) {
             paintServerColorCache.set(paintServerId, undefined);
             return undefined;
           }
 
-          const stopElements = Array.from(paintServer.querySelectorAll('stop'));
+          const stopElements = Array.from(paintServer.querySelectorAll("stop"));
           let bestScore = -1;
           let resolved: string | undefined;
           for (const stopElement of stopElements) {
             const stopComputedStyle = window.getComputedStyle(stopElement);
             const stopColor = normalizeSvgColor(
-              stopElement.getAttribute('stop-color') ||
-              stopComputedStyle.stopColor ||
-              stopComputedStyle.color ||
-              undefined
+              stopElement.getAttribute("stop-color") ||
+                stopComputedStyle.stopColor ||
+                stopComputedStyle.color ||
+                undefined,
             );
             if (!stopColor) {
               continue;
             }
             const stopOpacity = parseFloat(
-              stopElement.getAttribute('stop-opacity') ||
-              stopComputedStyle.stopOpacity ||
-              '1'
+              stopElement.getAttribute("stop-opacity") || stopComputedStyle.stopOpacity || "1",
             );
-            const clampedOpacity = Number.isFinite(stopOpacity)
-              ? Math.max(0, Math.min(1, stopOpacity))
-              : 1;
+            const clampedOpacity = Number.isFinite(stopOpacity) ? Math.max(0, Math.min(1, stopOpacity)) : 1;
             if (clampedOpacity <= 0.001) {
               continue;
             }
-            const offset = parseGradientOffset(stopElement.getAttribute('offset'));
+            const offset = parseGradientOffset(stopElement.getAttribute("offset"));
             const score = clampedOpacity * (1 - Math.abs(offset - 0.5));
             if (score > bestScore) {
               bestScore = score;
@@ -1234,29 +1279,29 @@ export class PuppeteerParser {
           const elementComputedStyle = window.getComputedStyle(element);
           const elementColor = elementComputedStyle.color || currentColor;
 
-          const attrFill = element.getAttribute('fill');
-          const attrStroke = element.getAttribute('stroke');
+          const attrFill = element.getAttribute("fill");
+          const attrStroke = element.getAttribute("stroke");
 
           let fill = normalizeSvgColor(attrFill || inheritedFill);
           let stroke = normalizeSvgColor(attrStroke || inheritedStroke);
 
-          if (fill === 'currentColor') {
+          if (fill === "currentColor") {
             fill = elementColor;
           }
-          if (stroke === 'currentColor') {
+          if (stroke === "currentColor") {
             stroke = elementColor;
           }
 
-          if (!fill && elementComputedStyle.fill && elementComputedStyle.fill !== 'none') {
+          if (!fill && elementComputedStyle.fill && elementComputedStyle.fill !== "none") {
             fill = elementComputedStyle.fill;
           }
-          if (!stroke && elementComputedStyle.stroke && elementComputedStyle.stroke !== 'none') {
+          if (!stroke && elementComputedStyle.stroke && elementComputedStyle.stroke !== "none") {
             stroke = elementComputedStyle.stroke;
           }
-          if ((attrFill === 'currentColor' || inheritedFill === 'currentColor') && elementColor) {
+          if ((attrFill === "currentColor" || inheritedFill === "currentColor") && elementColor) {
             fill = elementColor;
           }
-          if ((attrStroke === 'currentColor' || inheritedStroke === 'currentColor') && elementColor) {
+          if ((attrStroke === "currentColor" || inheritedStroke === "currentColor") && elementColor) {
             stroke = elementColor;
           }
 
@@ -1267,71 +1312,67 @@ export class PuppeteerParser {
             stroke = resolvePaintServerColor(stroke) || elementColor;
           }
 
-          const strokeWidth = parseFloat(element.getAttribute('stroke-width') || elementComputedStyle.strokeWidth || '0');
-          const computedDasharray = elementComputedStyle.strokeDasharray || '';
-          const attrDasharray = element.getAttribute('stroke-dasharray') || '';
-          const strokeDasharray =
-            computedDasharray && computedDasharray !== 'none'
-              ? computedDasharray
-              : attrDasharray;
-          const computedDashoffset = parseFloat(elementComputedStyle.strokeDashoffset || '0');
-          const attrDashoffset = parseFloat(element.getAttribute('stroke-dashoffset') || '0');
-          const strokeDashoffset = Number.isFinite(computedDashoffset)
-            ? computedDashoffset
-            : attrDashoffset;
-          const strokeLinecap = (elementComputedStyle.strokeLinecap || element.getAttribute('stroke-linecap') || '')
-            .toLowerCase();
-          const opacity = parseFloat(element.getAttribute('opacity') || elementComputedStyle.opacity || '1');
+          const strokeWidth = parseFloat(
+            element.getAttribute("stroke-width") || elementComputedStyle.strokeWidth || "0",
+          );
+          const computedDasharray = elementComputedStyle.strokeDasharray || "";
+          const attrDasharray = element.getAttribute("stroke-dasharray") || "";
+          const strokeDasharray = computedDasharray && computedDasharray !== "none" ? computedDasharray : attrDasharray;
+          const computedDashoffset = parseFloat(elementComputedStyle.strokeDashoffset || "0");
+          const attrDashoffset = parseFloat(element.getAttribute("stroke-dashoffset") || "0");
+          const strokeDashoffset = Number.isFinite(computedDashoffset) ? computedDashoffset : attrDashoffset;
+          const strokeLinecap = (
+            elementComputedStyle.strokeLinecap ||
+            element.getAttribute("stroke-linecap") ||
+            ""
+          ).toLowerCase();
+          const opacity = parseFloat(element.getAttribute("opacity") || elementComputedStyle.opacity || "1");
 
-          if (tagName === 'path') {
-            const d = element.getAttribute('d');
+          if (tagName === "path") {
+            const d = element.getAttribute("d");
             if (d) {
-              const fillRuleValue = element.getAttribute('fill-rule') || elementComputedStyle.fillRule || 'nonzero';
+              const fillRuleValue = element.getAttribute("fill-rule") || elementComputedStyle.fillRule || "nonzero";
               paths.push({
                 d,
-                fill: fill !== 'none' ? fill : undefined,
-                stroke: stroke !== 'none' ? stroke : undefined,
+                fill: fill !== "none" ? fill : undefined,
+                stroke: stroke !== "none" ? stroke : undefined,
                 strokeWidth: strokeWidth > 0 ? strokeWidth : undefined,
                 fillRule: toFillRule(fillRuleValue),
                 opacity: opacity < 1 ? opacity : undefined,
-                ...(strokeDasharray && strokeDasharray !== 'none'
-                  ? { strokeDasharray }
-                  : {}),
+                ...(strokeDasharray && strokeDasharray !== "none" ? { strokeDasharray } : {}),
                 ...(Number.isFinite(strokeDashoffset) && Math.abs(strokeDashoffset) > 0.001
                   ? { strokeDashoffset }
                   : {}),
                 ...(strokeLinecap ? { strokeLinecap } : {}),
               });
             }
-          } else if (tagName === 'circle') {
-            const cx = parseFloat(element.getAttribute('cx') || '0');
-            const cy = parseFloat(element.getAttribute('cy') || '0');
-            const r = parseFloat(element.getAttribute('r') || '0');
+          } else if (tagName === "circle") {
+            const cx = parseFloat(element.getAttribute("cx") || "0");
+            const cy = parseFloat(element.getAttribute("cy") || "0");
+            const r = parseFloat(element.getAttribute("r") || "0");
             if (r > 0) {
               circles.push({
                 cx,
                 cy,
                 r,
-                fill: fill !== 'none' ? fill : undefined,
-                stroke: stroke !== 'none' ? stroke : undefined,
+                fill: fill !== "none" ? fill : undefined,
+                stroke: stroke !== "none" ? stroke : undefined,
                 strokeWidth: strokeWidth > 0 ? strokeWidth : undefined,
                 opacity: opacity < 1 ? opacity : undefined,
-                ...(strokeDasharray && strokeDasharray !== 'none'
-                  ? { strokeDasharray }
-                  : {}),
+                ...(strokeDasharray && strokeDasharray !== "none" ? { strokeDasharray } : {}),
                 ...(Number.isFinite(strokeDashoffset) && Math.abs(strokeDashoffset) > 0.001
                   ? { strokeDashoffset }
                   : {}),
                 ...(strokeLinecap ? { strokeLinecap } : {}),
               } as SVGCircle);
             }
-          } else if (tagName === 'rect') {
-            const x = parseFloat(element.getAttribute('x') || '0');
-            const y = parseFloat(element.getAttribute('y') || '0');
-            const width = parseFloat(element.getAttribute('width') || '0');
-            const height = parseFloat(element.getAttribute('height') || '0');
-            const rx = parseFloat(element.getAttribute('rx') || '0');
-            const ry = parseFloat(element.getAttribute('ry') || '0');
+          } else if (tagName === "rect") {
+            const x = parseFloat(element.getAttribute("x") || "0");
+            const y = parseFloat(element.getAttribute("y") || "0");
+            const width = parseFloat(element.getAttribute("width") || "0");
+            const height = parseFloat(element.getAttribute("height") || "0");
+            const rx = parseFloat(element.getAttribute("rx") || "0");
+            const ry = parseFloat(element.getAttribute("ry") || "0");
             if (width > 0 && height > 0) {
               rects.push({
                 x,
@@ -1340,19 +1381,19 @@ export class PuppeteerParser {
                 height,
                 rx: rx > 0 ? rx : undefined,
                 ry: ry > 0 ? ry : undefined,
-                fill: fill !== 'none' ? fill : undefined,
-                stroke: stroke !== 'none' ? stroke : undefined,
+                fill: fill !== "none" ? fill : undefined,
+                stroke: stroke !== "none" ? stroke : undefined,
                 strokeWidth: strokeWidth > 0 ? strokeWidth : undefined,
                 opacity: opacity < 1 ? opacity : undefined,
               });
             }
-          } else if (tagName === 'polygon' || tagName === 'polyline') {
-            const points = element.getAttribute('points');
+          } else if (tagName === "polygon" || tagName === "polyline") {
+            const points = element.getAttribute("points");
             if (points) {
               polygons.push({
                 points,
-                fill: fill !== 'none' ? fill : undefined,
-                stroke: stroke !== 'none' ? stroke : undefined,
+                fill: fill !== "none" ? fill : undefined,
+                stroke: stroke !== "none" ? stroke : undefined,
                 strokeWidth: strokeWidth > 0 ? strokeWidth : undefined,
                 opacity: opacity < 1 ? opacity : undefined,
               });
@@ -1389,19 +1430,19 @@ export class PuppeteerParser {
           return undefined;
         }
 
-        const isBase64 = src.startsWith('data:');
-        let format: ImageData['format'];
+        const isBase64 = src.startsWith("data:");
+        let format: ImageData["format"];
 
         if (isBase64) {
           const match = src.match(/^data:image\/(png|jpg|jpeg|svg\+xml|webp|gif|bmp)/i);
           if (match) {
             const formatStr = match[1].toLowerCase();
-            format = formatStr === 'svg+xml' ? 'svg' : (formatStr as ImageData['format']);
+            format = formatStr === "svg+xml" ? "svg" : (formatStr as ImageData["format"]);
           }
         } else {
           const match = src.match(/\.(png|jpg|jpeg|svg|webp|gif|bmp)(\?|#|$)/i);
           if (match) {
-            format = match[1].toLowerCase() as ImageData['format'];
+            format = match[1].toLowerCase() as ImageData["format"];
           }
         }
 
@@ -1431,24 +1472,20 @@ export class PuppeteerParser {
         element: Element,
         className: string,
         styles: Record<string, string>,
-        parentComputedStyle: CSSStyleDeclaration
+        parentComputedStyle: CSSStyleDeclaration,
       ): boolean {
         const tagName = element.tagName.toLowerCase();
         const isTextLikeTag =
-          tagName === 'span' ||
-          tagName === 'p' ||
-          tagName === 'label' ||
-          tagName === 'a' ||
-          tagName === 'button';
+          tagName === "span" || tagName === "p" || tagName === "label" || tagName === "a" || tagName === "button";
         if (!isTextLikeTag) {
           return false;
         }
 
-        if (!parentComputedStyle.display.includes('flex')) {
+        if (!parentComputedStyle.display.includes("flex")) {
           return false;
         }
 
-        if (!parentComputedStyle.justifyContent.includes('space-between')) {
+        if (!parentComputedStyle.justifyContent.includes("space-between")) {
           return false;
         }
 
@@ -1465,51 +1502,47 @@ export class PuppeteerParser {
 
       function createTextNodeStyles(parentComputedStyle: CSSStyleDeclaration): Record<string, string> {
         const textStyles = extractStyles(parentComputedStyle);
-        textStyles.display = 'inline';
-        textStyles.margin = '0px';
-        textStyles.padding = '0px';
-        textStyles.border = '0px none rgba(0, 0, 0, 0)';
-        textStyles.backgroundColor = 'rgba(0, 0, 0, 0)';
-        textStyles.backgroundImage = 'none';
-        textStyles.boxShadow = 'none';
+        textStyles.display = "inline";
+        textStyles.margin = "0px";
+        textStyles.padding = "0px";
+        textStyles.border = "0px none rgba(0, 0, 0, 0)";
+        textStyles.backgroundColor = "rgba(0, 0, 0, 0)";
+        textStyles.backgroundImage = "none";
+        textStyles.boxShadow = "none";
         return textStyles;
       }
 
       function shouldPreserveWhitespace(computedStyle: CSSStyleDeclaration): boolean {
-        const whiteSpace = (computedStyle.whiteSpace || '').toLowerCase();
+        const whiteSpace = (computedStyle.whiteSpace || "").toLowerCase();
         return (
-          whiteSpace === 'pre' ||
-          whiteSpace === 'pre-wrap' ||
-          whiteSpace === 'pre-line' ||
-          whiteSpace === 'break-spaces'
+          whiteSpace === "pre" ||
+          whiteSpace === "pre-wrap" ||
+          whiteSpace === "pre-line" ||
+          whiteSpace === "break-spaces"
         );
       }
 
       // 用于记录深度截断信息的变量
       let truncatedAtDepth: number | undefined;
 
-      function extractElement(
-        element: Element,
-        parentId: string | null,
-        depth: number
-      ): string | null {
+      function extractElement(element: Element, parentId: string | null, depth: number): string | null {
         if (depth > maxDepthLimit) {
           // 深度超限，静默截断会丢失子树，用 console.warn 记录
           console.warn(
             `[vzi-parser] DOM depth limit (${maxDepthLimit}) reached at element <${element.tagName?.toLowerCase()}>. ` +
-            'Sub-tree truncated. Pass a higher depth limit via parser options if needed.'
+              "Sub-tree truncated. Pass a higher depth limit via parser options if needed.",
           );
           // 记录实际截断深度
           truncatedAtDepth = maxDepthLimit;
           return null;
         }
 
-        const elementId = createUniqueElementId(element.id || '');
+        const elementId = createUniqueElementId(element.id || "");
         const computedStyle = window.getComputedStyle(element);
         if (
-          computedStyle.display === 'none' ||
-          computedStyle.visibility === 'hidden' ||
-          computedStyle.visibility === 'collapse'
+          computedStyle.display === "none" ||
+          computedStyle.visibility === "hidden" ||
+          computedStyle.visibility === "collapse"
         ) {
           return null;
         }
@@ -1521,16 +1554,11 @@ export class PuppeteerParser {
         }
 
         const styles = extractStyles(computedStyle);
-        const className = element.getAttribute('class') || '';
+        const className = element.getAttribute("class") || "";
         const parentElement = element.parentElement;
-        const parentComputedStyle = parentElement
-          ? window.getComputedStyle(parentElement)
-          : null;
-        if (
-          parentComputedStyle &&
-          shouldNormalizeFlexChildTextAlign(element, className, styles, parentComputedStyle)
-        ) {
-          styles.textAlign = 'start';
+        const parentComputedStyle = parentElement ? window.getComputedStyle(parentElement) : null;
+        if (parentComputedStyle && shouldNormalizeFlexChildTextAlign(element, className, styles, parentComputedStyle)) {
+          styles.textAlign = "start";
         }
         const inferredIconFontFamily = inferIconFontFamily(className);
         if (inferredIconFontFamily) {
@@ -1538,13 +1566,13 @@ export class PuppeteerParser {
           // 否则下游渲染会把 ligature 当普通文本拆成竖排。
           styles.fontFamily = `"${inferredIconFontFamily}"`;
           if (!styles.fontWeight) {
-            styles.fontWeight = '400';
+            styles.fontWeight = "400";
           }
           if (!styles.textTransform) {
-            styles.textTransform = 'none';
+            styles.textTransform = "none";
           }
           if (!styles.whiteSpace) {
-            styles.whiteSpace = 'nowrap';
+            styles.whiteSpace = "nowrap";
           }
         }
 
@@ -1553,14 +1581,14 @@ export class PuppeteerParser {
           attributes[attr.name] = attr.value;
         }
 
-        const pseudoElements: RawElement['pseudoElements'] = {};
+        const pseudoElements: RawElement["pseudoElements"] = {};
 
         try {
-          const beforeStyle = window.getComputedStyle(element, '::before');
-          const beforeContent = beforeStyle.getPropertyValue('content');
-          if (beforeContent && beforeContent !== 'none' && beforeContent !== '""') {
+          const beforeStyle = window.getComputedStyle(element, "::before");
+          const beforeContent = beforeStyle.getPropertyValue("content");
+          if (beforeContent && beforeContent !== "none" && beforeContent !== '""') {
             pseudoElements.before = {
-              content: beforeContent.replace(/^["']|["']$/g, ''),
+              content: beforeContent.replace(/^["']|["']$/g, ""),
               styles: extractStyles(beforeStyle),
             };
           }
@@ -1569,11 +1597,11 @@ export class PuppeteerParser {
         }
 
         try {
-          const afterStyle = window.getComputedStyle(element, '::after');
-          const afterContent = afterStyle.getPropertyValue('content');
-          if (afterContent && afterContent !== 'none' && afterContent !== '""') {
+          const afterStyle = window.getComputedStyle(element, "::after");
+          const afterContent = afterStyle.getPropertyValue("content");
+          if (afterContent && afterContent !== "none" && afterContent !== '""') {
             pseudoElements.after = {
-              content: afterContent.replace(/^["']|["']$/g, ''),
+              content: afterContent.replace(/^["']|["']$/g, ""),
               styles: extractStyles(afterStyle),
             };
           }
@@ -1582,16 +1610,16 @@ export class PuppeteerParser {
         }
 
         const textContent =
-          element.children.length === 0 && element.tagName.toLowerCase() !== 'button'
-            ? (element.textContent || '').trim()
-            : '';
+          element.children.length === 0 && element.tagName.toLowerCase() !== "button"
+            ? (element.textContent || "").trim()
+            : "";
 
         const rawElement: RawElement = {
           id: elementId,
           parentId,
           tagName: element.tagName.toLowerCase(),
           className,
-          idAttr: element.id || '',
+          idAttr: element.id || "",
           textContent,
           boundingRect: {
             x: rect.x,
@@ -1623,14 +1651,13 @@ export class PuppeteerParser {
 
         elements.push(rawElement);
 
-        const shouldExtractTextNodes =
-          element.children.length > 0 || element.tagName.toLowerCase() === 'button';
+        const shouldExtractTextNodes = element.children.length > 0 || element.tagName.toLowerCase() === "button";
         if (shouldExtractTextNodes) {
           for (const childNode of Array.from(element.childNodes)) {
             if (childNode.nodeType === Node.TEXT_NODE) {
-              const rawText = childNode.textContent || '';
+              const rawText = childNode.textContent || "";
               const preserveWhitespace = shouldPreserveWhitespace(computedStyle);
-              const collapsedText = rawText.replace(/\s+/g, ' ').trim();
+              const collapsedText = rawText.replace(/\s+/g, " ").trim();
               if (!preserveWhitespace && !collapsedText) {
                 continue;
               }
@@ -1645,8 +1672,8 @@ export class PuppeteerParser {
                 continue;
               }
 
-              const rects = Array.from(range.getClientRects()).filter((candidateRect) =>
-                candidateRect.width > 0 && candidateRect.height > 0
+              const rects = Array.from(range.getClientRects()).filter(
+                (candidateRect) => candidateRect.width > 0 && candidateRect.height > 0,
               );
               if (rects.length === 0) {
                 continue;
@@ -1665,16 +1692,16 @@ export class PuppeteerParser {
               }
 
               const textStyles = createTextNodeStyles(computedStyle);
-              if (computedStyle.display.includes('flex') && computedStyle.justifyContent !== 'center') {
-                textStyles.textAlign = 'start';
+              if (computedStyle.display.includes("flex") && computedStyle.justifyContent !== "center") {
+                textStyles.textAlign = "start";
               } else if (!textStyles.textAlign) {
-                textStyles.textAlign = 'start';
+                textStyles.textAlign = "start";
               }
 
               if (preserveWhitespace && rects.length > 1) {
                 const lineTexts = rawText
                   .split(/\r?\n/)
-                  .map((line) => line.replace(/\r/g, ''))
+                  .map((line) => line.replace(/\r/g, ""))
                   .filter((line) => /[^\s]/.test(line));
                 if (lineTexts.length > 0) {
                   for (let index = 0; index < lineTexts.length; index++) {
@@ -1682,11 +1709,11 @@ export class PuppeteerParser {
                     const rectIndex = Math.min(index, rects.length - 1);
                     const lineRect = rects[rectIndex];
                     elements.push({
-                      id: createUniqueElementId(''),
+                      id: createUniqueElementId(""),
                       parentId: elementId,
-                      tagName: 'span',
-                      className: '',
-                      idAttr: '',
+                      tagName: "span",
+                      className: "",
+                      idAttr: "",
                       textContent: lineText,
                       boundingRect: {
                         x: lineRect.left,
@@ -1703,11 +1730,11 @@ export class PuppeteerParser {
               }
 
               elements.push({
-                id: createUniqueElementId(''),
+                id: createUniqueElementId(""),
                 parentId: elementId,
-                tagName: 'span',
-                className: '',
-                idAttr: '',
+                tagName: "span",
+                className: "",
+                idAttr: "",
                 textContent: preserveWhitespace ? rawText : collapsedText,
                 boundingRect: {
                   x: left,
@@ -1734,14 +1761,14 @@ export class PuppeteerParser {
         if (!value) {
           return true;
         }
-        const normalized = value.trim().toLowerCase().replace(/\s+/g, '');
+        const normalized = value.trim().toLowerCase().replace(/\s+/g, "");
         return (
-          normalized === 'transparent' ||
-          normalized === 'rgba(0,0,0,0)' ||
-          normalized === 'rgb(0,0,0,0)' ||
-          normalized === 'hsla(0,0%,0%,0)' ||
-          normalized === '#0000' ||
-          normalized === '#00000000'
+          normalized === "transparent" ||
+          normalized === "rgba(0,0,0,0)" ||
+          normalized === "rgb(0,0,0,0)" ||
+          normalized === "hsla(0,0%,0%,0)" ||
+          normalized === "#0000" ||
+          normalized === "#00000000"
         );
       }
 
@@ -1758,13 +1785,13 @@ export class PuppeteerParser {
         if (childCount !== 1) {
           return childCount > 1;
         }
-        const backgroundColor = bodyStyle.getPropertyValue('background-color');
-        const backgroundImage = bodyStyle.getPropertyValue('background-image');
-        const boxShadow = bodyStyle.getPropertyValue('box-shadow');
+        const backgroundColor = bodyStyle.getPropertyValue("background-color");
+        const backgroundImage = bodyStyle.getPropertyValue("background-image");
+        const boxShadow = bodyStyle.getPropertyValue("box-shadow");
         const hasVisualBackground =
           !isTransparentColor(backgroundColor) ||
-          (Boolean(backgroundImage) && backgroundImage !== 'none') ||
-          (Boolean(boxShadow) && boxShadow !== 'none');
+          (Boolean(backgroundImage) && backgroundImage !== "none") ||
+          (Boolean(boxShadow) && boxShadow !== "none");
         return hasVisualBackground;
       }
 
@@ -1774,15 +1801,15 @@ export class PuppeteerParser {
         const useBodyRoot = shouldWrapBodyAsRoot(bodyStyle, body.children.length);
 
         if (useBodyRoot) {
-          const rootId = createUniqueElementId('root');
+          const rootId = createUniqueElementId("root");
           const rootStyles = extractStyles(bodyStyle);
           elements.push({
             id: rootId,
             parentId: null,
-            tagName: 'root',
-            className: '',
-            idAttr: '',
-            textContent: '',
+            tagName: "root",
+            className: "",
+            idAttr: "",
+            textContent: "",
             boundingRect: getDocumentBounds(),
             computedStyle: rootStyles,
             attributes: {},
@@ -1796,22 +1823,23 @@ export class PuppeteerParser {
 
           if (elements.length > 0) {
             const rootElement = elements[0];
-            const rootBg = rootElement.computedStyle.backgroundColor || rootElement.computedStyle['background-color'];
+            const rootBg = rootElement.computedStyle.backgroundColor || rootElement.computedStyle["background-color"];
             if (!rootBg || isTransparentColor(rootBg)) {
-              const bodyBg = bodyStyle.getPropertyValue('background-color');
+              const bodyBg = bodyStyle.getPropertyValue("background-color");
               if (!isTransparentColor(bodyBg)) {
                 rootElement.computedStyle.backgroundColor = bodyBg;
               }
             }
-            const rootBgImage = rootElement.computedStyle.backgroundImage || rootElement.computedStyle['background-image'];
-            const bodyBgImage = bodyStyle.getPropertyValue('background-image');
-            if ((!rootBgImage || rootBgImage === 'none') && bodyBgImage && bodyBgImage !== 'none') {
+            const rootBgImage =
+              rootElement.computedStyle.backgroundImage || rootElement.computedStyle["background-image"];
+            const bodyBgImage = bodyStyle.getPropertyValue("background-image");
+            if ((!rootBgImage || rootBgImage === "none") && bodyBgImage && bodyBgImage !== "none") {
               rootElement.computedStyle.backgroundImage = bodyBgImage;
-              rootElement.computedStyle.backgroundSize = bodyStyle.getPropertyValue('background-size');
-              rootElement.computedStyle.backgroundPosition = bodyStyle.getPropertyValue('background-position');
-              rootElement.computedStyle.backgroundRepeat = bodyStyle.getPropertyValue('background-repeat');
-              rootElement.computedStyle.backgroundClip = bodyStyle.getPropertyValue('background-clip');
-              rootElement.computedStyle.backgroundOrigin = bodyStyle.getPropertyValue('background-origin');
+              rootElement.computedStyle.backgroundSize = bodyStyle.getPropertyValue("background-size");
+              rootElement.computedStyle.backgroundPosition = bodyStyle.getPropertyValue("background-position");
+              rootElement.computedStyle.backgroundRepeat = bodyStyle.getPropertyValue("background-repeat");
+              rootElement.computedStyle.backgroundClip = bodyStyle.getPropertyValue("background-clip");
+              rootElement.computedStyle.backgroundOrigin = bodyStyle.getPropertyValue("background-origin");
             }
           }
         }
@@ -1823,7 +1851,7 @@ export class PuppeteerParser {
       };
     }, this.options.maxDepth);
 
-    if (!rawResultUnknown || typeof rawResultUnknown !== 'object') {
+    if (!rawResultUnknown || typeof rawResultUnknown !== "object") {
       return { elements: [] };
     }
 
@@ -1832,9 +1860,7 @@ export class PuppeteerParser {
       truncatedAtDepth?: unknown;
     };
 
-    const truncatedAtDepth = typeof rawResult.truncatedAtDepth === 'number'
-      ? rawResult.truncatedAtDepth
-      : undefined;
+    const truncatedAtDepth = typeof rawResult.truncatedAtDepth === "number" ? rawResult.truncatedAtDepth : undefined;
 
     if (!Array.isArray(rawResult.elements)) {
       return { elements: [], truncatedAtDepth };
@@ -1845,7 +1871,7 @@ export class PuppeteerParser {
     const irElements: IRElement[] = rawElements.map((raw) => {
       const getAttr = (name: string): string | undefined => {
         const value = raw.attributes[name];
-        if (typeof value !== 'string') {
+        if (typeof value !== "string") {
           return undefined;
         }
         const trimmed = value.trim();
@@ -1857,28 +1883,34 @@ export class PuppeteerParser {
           if (!key.startsWith(prefix)) {
             continue;
           }
-          const normalized = typeof value === 'string' ? value.trim() : '';
+          const normalized = typeof value === "string" ? value.trim() : "";
           if (normalized.length > 0) {
             picked[key] = normalized;
           }
         }
         return Object.keys(picked).length > 0 ? picked : undefined;
       };
-      const inferredName = getAttr('name') || getAttr('aria-label') || getAttr('alt') || getAttr('placeholder') || (raw.textContent || undefined);
+      const inferredName =
+        getAttr("name") ||
+        getAttr("aria-label") ||
+        getAttr("alt") ||
+        getAttr("placeholder") ||
+        raw.textContent ||
+        undefined;
 
       const imageSource =
-        (typeof raw.imageData?.src === 'string' && raw.imageData.src.trim().length > 0)
+        typeof raw.imageData?.src === "string" && raw.imageData.src.trim().length > 0
           ? raw.imageData.src.trim()
-          : getAttr('src');
+          : getAttr("src");
 
       const fallbackImageData: ImageData | undefined =
-        !raw.imageData && raw.tagName === 'img' && imageSource
+        !raw.imageData && raw.tagName === "img" && imageSource
           ? {
               src: imageSource,
               naturalWidth: Math.max(1, Math.round(raw.boundingRect.width)),
               naturalHeight: Math.max(1, Math.round(raw.boundingRect.height)),
-              isBase64: imageSource.startsWith('data:'),
-              alt: getAttr('alt'),
+              isBase64: imageSource.startsWith("data:"),
+              alt: getAttr("alt"),
             }
           : undefined;
 
@@ -1898,18 +1930,18 @@ export class PuppeteerParser {
           tagName: raw.tagName,
           className: raw.className || undefined,
           id: raw.idAttr || undefined,
-          role: getAttr('role'),
+          role: getAttr("role"),
           name: inferredName,
-          dataAttributes: pickAttributePrefix('data-'),
-          ariaAttributes: pickAttributePrefix('aria-'),
+          dataAttributes: pickAttributePrefix("data-"),
+          ariaAttributes: pickAttributePrefix("aria-"),
           src: imageSource,
-          href: getAttr('href'),
-          alt: getAttr('alt'),
-          target: getAttr('target'),
-          rel: getAttr('rel'),
-          type: getAttr('type'),
-          placeholder: getAttr('placeholder'),
-          value: getAttr('value'),
+          href: getAttr("href"),
+          alt: getAttr("alt"),
+          target: getAttr("target"),
+          rel: getAttr("rel"),
+          type: getAttr("type"),
+          placeholder: getAttr("placeholder"),
+          value: getAttr("value"),
         },
       };
 
@@ -1924,7 +1956,7 @@ export class PuppeteerParser {
       }
 
       if (raw.pseudoElements) {
-        const pseudoElements: NonNullable<IRElement['pseudoElements']> = {};
+        const pseudoElements: NonNullable<IRElement["pseudoElements"]> = {};
         if (raw.pseudoElements.before) {
           pseudoElements.before = {
             content: raw.pseudoElements.before.content,

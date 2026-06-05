@@ -47,7 +47,7 @@ const fallbackTokens = {
   "font-heading": "Inter",
   "font-body": "Inter",
   "border-radius": "8px",
-  "spacing-unit": "8px"
+  "spacing-unit": "8px",
 };
 
 const previewTypes: StylePreviewType[] = ["web", "mobile", "tablet", "desktop"];
@@ -85,18 +85,25 @@ export function StylePreviewPanel({ designMd, metadata, previewType }: StylePrev
             <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{tx("style.preview.live")}</p>
             <h2 className="mt-1 truncate text-sm font-semibold tracking-normal text-zinc-950">{metadata.name}</h2>
           </div>
-          <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-600">{previewLabel}</span>
+          <span className="shrink-0 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-medium text-zinc-600">
+            {previewLabel}
+          </span>
         </div>
       </div>
 
       <div className="space-y-4 p-4">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{tx("style.preview.palette")}</p>
+            <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">
+              {tx("style.preview.palette")}
+            </p>
             <div className="mt-2 grid grid-cols-3 gap-2">
               {palette.map((item) => (
                 <div className="min-w-0" key={item.key}>
-                  <span className="block h-9 rounded-md border border-zinc-200 shadow-inner" style={{ backgroundColor: item.value }} />
+                  <span
+                    className="block h-9 rounded-md border border-zinc-200 shadow-inner"
+                    style={{ backgroundColor: item.value }}
+                  />
                   <span className="mt-1 block truncate font-mono text-[11px] leading-4 text-zinc-500">{item.key}</span>
                 </div>
               ))}
@@ -105,8 +112,13 @@ export function StylePreviewPanel({ designMd, metadata, previewType }: StylePrev
 
           <div className="grid gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{tx("style.preview.type")}</p>
-              <p className="mt-2 truncate text-base font-semibold text-zinc-950" style={{ fontFamily: tokens.headingFont }}>
+              <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">
+                {tx("style.preview.type")}
+              </p>
+              <p
+                className="mt-2 truncate text-base font-semibold text-zinc-950"
+                style={{ fontFamily: tokens.headingFont }}
+              >
                 {tx("style.preview.mockTitle")}
               </p>
               <p className="mt-1 truncate text-sm text-zinc-600" style={{ fontFamily: tokens.bodyFont }}>
@@ -181,7 +193,10 @@ export function MultiPlatformStylePreviewPanel({ designMd, metadata }: MultiPlat
         <div className="flex max-w-full flex-wrap items-center gap-3">
           {palette.map((item) => (
             <div className="grid justify-items-center gap-1" key={item.key}>
-              <span className="block h-4 w-4 rounded-[3px] border border-zinc-200 shadow-sm" style={{ backgroundColor: item.value }} />
+              <span
+                className="block h-4 w-4 rounded-[3px] border border-zinc-200 shadow-sm"
+                style={{ backgroundColor: item.value }}
+              />
               <span className="max-w-14 truncate font-mono text-[9px] leading-3 text-zinc-500">{item.value}</span>
             </div>
           ))}
@@ -190,8 +205,13 @@ export function MultiPlatformStylePreviewPanel({ designMd, metadata }: MultiPlat
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         {previewTypes.map((previewType) => (
-          <section className="min-w-0 rounded-lg border border-zinc-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(24,24,27,0.04)]" key={previewType}>
-            <h4 className="px-1 pb-2 text-sm font-semibold tracking-normal text-zinc-950">{platformPreviewLabel(previewType)}</h4>
+          <section
+            className="min-w-0 rounded-lg border border-zinc-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(24,24,27,0.04)]"
+            key={previewType}
+          >
+            <h4 className="px-1 pb-2 text-sm font-semibold tracking-normal text-zinc-950">
+              {platformPreviewLabel(previewType)}
+            </h4>
             <div
               className="h-32 overflow-hidden rounded-md border border-zinc-200 bg-zinc-50 p-2"
               data-preview-mock={previewType}
@@ -239,36 +259,37 @@ function resolvePreviewTokens(parsed: ParsedDesignMd): ResolvedPreviewTokens {
   const background = resolveWithFallback(
     pick(parsed.colors, ["background", "canvas", "surface"]),
     parsed,
-    fallbackTokens.background
+    fallbackTokens.background,
   );
   const textColor = resolveWithFallback(
     pick(parsed.colors, ["text-primary", "text", "foreground", "ink"]),
     parsed,
-    fallbackTokens["text-primary"]
+    fallbackTokens["text-primary"],
   );
   const headingFont = resolveWithFallback(
-    pick(parsed.typography, ["font-heading", "heading", "heading-lg", "display", "hero-display"]) ?? pickByName(parsed.typography, ["heading", "display"]),
+    pick(parsed.typography, ["font-heading", "heading", "heading-lg", "display", "hero-display"]) ??
+      pickByName(parsed.typography, ["heading", "display"]),
     parsed,
-    fallbackTokens["font-heading"]
+    fallbackTokens["font-heading"],
   );
   const bodyFont = resolveWithFallback(
     pick(parsed.typography, ["font-body", "body", "body-md", "body-lg"]) ?? pickByName(parsed.typography, ["body"]),
     parsed,
-    fallbackTokens["font-body"]
+    fallbackTokens["font-body"],
   );
   const radius = cssLength(
     resolveWithFallback(
       pick(parsed.rounded, ["border-radius", "radius", "lg", "md"]) ?? firstValue(parsed.rounded),
       parsed,
-      fallbackTokens["border-radius"]
-    )
+      fallbackTokens["border-radius"],
+    ),
   );
   const spacing = cssLength(
     resolveWithFallback(
       pick(parsed.spacing, ["spacing-unit", "unit", "md", "sm", "base"]) ?? firstValue(parsed.spacing),
       parsed,
-      fallbackTokens["spacing-unit"]
-    )
+      fallbackTokens["spacing-unit"],
+    ),
   );
 
   return { background, bodyFont, headingFont, primary, radius, spacing, textColor };
@@ -278,10 +299,20 @@ function resolveButtonTokens(parsed: ParsedDesignMd, tokens: ResolvedPreviewToke
   const key = componentKey(parsed.components, "button-primary") ?? componentKey(parsed.components, "button");
   const component = key ? parsed.components[key] : undefined;
   return {
-    background: resolveWithFallback(pick(component, ["backgroundColor", "background", "background-color", "bg"]), parsed, tokens.primary),
-    color: resolveWithFallback(pick(component, ["textColor", "color", "text", "text-color"]), parsed, tokens.background),
-    radius: cssLength(resolveWithFallback(pick(component, ["rounded", "border-radius", "radius"]), parsed, tokens.radius)),
-    source: key ?? "fallback"
+    background: resolveWithFallback(
+      pick(component, ["backgroundColor", "background", "background-color", "bg"]),
+      parsed,
+      tokens.primary,
+    ),
+    color: resolveWithFallback(
+      pick(component, ["textColor", "color", "text", "text-color"]),
+      parsed,
+      tokens.background,
+    ),
+    radius: cssLength(
+      resolveWithFallback(pick(component, ["rounded", "border-radius", "radius"]), parsed, tokens.radius),
+    ),
+    source: key ?? "fallback",
   };
 }
 
@@ -289,9 +320,13 @@ function resolveNavTokens(parsed: ParsedDesignMd, tokens: ResolvedPreviewTokens)
   const key = componentKey(parsed.components, "nav");
   const component = key ? parsed.components[key] : undefined;
   return {
-    background: resolveWithFallback(pick(component, ["backgroundColor", "background", "background-color", "bg"]), parsed, tokens.background),
+    background: resolveWithFallback(
+      pick(component, ["backgroundColor", "background", "background-color", "bg"]),
+      parsed,
+      tokens.background,
+    ),
     color: resolveWithFallback(pick(component, ["textColor", "color", "text", "text-color"]), parsed, tokens.textColor),
-    source: key ?? "fallback"
+    source: key ?? "fallback",
   };
 }
 
@@ -307,7 +342,7 @@ function paletteEntries(parsed: ParsedDesignMd, tokens: ResolvedPreviewTokens): 
   return [
     { key: "background", value: tokens.background },
     { key: "primary", value: tokens.primary },
-    { key: "text-primary", value: tokens.textColor }
+    { key: "text-primary", value: tokens.textColor },
   ];
 }
 
@@ -327,7 +362,9 @@ function pick(record: Record<string, string> | undefined, keys: string[]): strin
 }
 
 function pickByName(record: Record<string, string>, fragments: string[]): string | undefined {
-  const entry = Object.entries(record).find(([key, value]) => value.trim().length > 0 && fragments.some((fragment) => key.toLowerCase().includes(fragment)));
+  const entry = Object.entries(record).find(
+    ([key, value]) => value.trim().length > 0 && fragments.some((fragment) => key.toLowerCase().includes(fragment)),
+  );
   return entry?.[1];
 }
 
@@ -428,7 +465,7 @@ function previewMock(
     nav: NavPreviewTokens;
     tokens: ResolvedPreviewTokens;
     tx: (key: string) => string;
-  }
+  },
 ): ReactNode {
   if (previewType === "mobile") {
     return <MobileMock {...context} />;
@@ -446,7 +483,7 @@ function MobileMock({
   button,
   nav,
   tokens,
-  tx: _tx
+  tx: _tx,
 }: {
   button: ComponentPreviewTokens;
   nav: NavPreviewTokens;
@@ -454,9 +491,18 @@ function MobileMock({
   tx: (key: string) => string;
 }) {
   return (
-    <div className="mx-auto h-full w-24 rounded-[1.35rem] border border-zinc-300 bg-white p-1.5 shadow-sm" style={{ borderRadius: `calc(${tokens.radius} + 12px)` }}>
-      <div className="h-full overflow-hidden border border-zinc-200 bg-white text-[7px]" style={{ borderRadius: tokens.radius }}>
-        <div className="flex h-6 items-center justify-between px-2 font-semibold" style={{ backgroundColor: nav.background, color: nav.color }}>
+    <div
+      className="mx-auto h-full w-24 rounded-[1.35rem] border border-zinc-300 bg-white p-1.5 shadow-sm"
+      style={{ borderRadius: `calc(${tokens.radius} + 12px)` }}
+    >
+      <div
+        className="h-full overflow-hidden border border-zinc-200 bg-white text-[7px]"
+        style={{ borderRadius: tokens.radius }}
+      >
+        <div
+          className="flex h-6 items-center justify-between px-2 font-semibold"
+          style={{ backgroundColor: nav.background, color: nav.color }}
+        >
           <span>项目管理</span>
           <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: tokens.primary }} />
         </div>
@@ -476,7 +522,11 @@ function MobileMock({
               <span className="rounded bg-amber-50 px-1 text-amber-700">进行中</span>
             </div>
           ))}
-          <button className="mx-auto mt-1 flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold" style={buttonStyle(button)} type="button">
+          <button
+            className="mx-auto mt-1 flex h-5 w-5 items-center justify-center rounded-full text-xs font-semibold"
+            style={buttonStyle(button)}
+            type="button"
+          >
             +
           </button>
         </div>
@@ -489,7 +539,7 @@ function DesktopMock({
   button,
   nav,
   tokens,
-  tx: _tx
+  tx: _tx,
 }: {
   button: ComponentPreviewTokens;
   nav: NavPreviewTokens;
@@ -497,7 +547,10 @@ function DesktopMock({
   tx: (key: string) => string;
 }) {
   return (
-    <div className="grid h-full grid-cols-[4rem_minmax(0,1fr)] overflow-hidden rounded-md border border-zinc-200 bg-white text-[8px]" style={{ borderRadius: tokens.radius }}>
+    <div
+      className="grid h-full grid-cols-[4rem_minmax(0,1fr)] overflow-hidden rounded-md border border-zinc-200 bg-white text-[8px]"
+      style={{ borderRadius: tokens.radius }}
+    >
       <div className="space-y-1.5 p-2 font-medium" style={{ backgroundColor: nav.background, color: nav.color }}>
         <div className="font-semibold">数据中心</div>
         {["概览", "客户", "项目", "设置"].map((item, index) => (
@@ -525,7 +578,10 @@ function DesktopMock({
         </div>
         <div className="mt-2 rounded border border-zinc-200">
           {[0, 1, 2].map((row) => (
-            <div className="grid grid-cols-[1fr_2.5rem_2.5rem_3rem] gap-1 border-b border-zinc-100 px-1.5 py-1 last:border-b-0" key={row}>
+            <div
+              className="grid grid-cols-[1fr_2.5rem_2.5rem_3rem] gap-1 border-b border-zinc-100 px-1.5 py-1 last:border-b-0"
+              key={row}
+            >
               <span className="truncate">客户名称</span>
               <span>张三</span>
               <span>65%</span>
@@ -542,7 +598,7 @@ function TabletMock({
   button,
   nav,
   tokens,
-  tx: _tx
+  tx: _tx,
 }: {
   button: ComponentPreviewTokens;
   nav: NavPreviewTokens;
@@ -550,15 +606,24 @@ function TabletMock({
   tx: (key: string) => string;
 }) {
   return (
-    <div className="mx-auto h-full max-w-md overflow-hidden rounded-xl border border-zinc-200 bg-white text-[8px]" style={{ borderRadius: `calc(${tokens.radius} + 4px)` }}>
-      <div className="flex items-center justify-between px-3 py-2 font-semibold" style={{ backgroundColor: nav.background, color: nav.color }}>
+    <div
+      className="mx-auto h-full max-w-md overflow-hidden rounded-xl border border-zinc-200 bg-white text-[8px]"
+      style={{ borderRadius: `calc(${tokens.radius} + 4px)` }}
+    >
+      <div
+        className="flex items-center justify-between px-3 py-2 font-semibold"
+        style={{ backgroundColor: nav.background, color: nav.color }}
+      >
         <span>项目管理</span>
         <button className="rounded px-2 py-1 text-[8px] font-semibold" style={buttonStyle(button)} type="button">
           打开
         </button>
       </div>
       <div className="grid grid-cols-[6rem_minmax(0,1fr)] gap-2 p-2" style={{ gap: tokens.spacing }}>
-        <div className="space-y-1 rounded-md border border-zinc-200 bg-zinc-50 p-2" style={{ borderRadius: tokens.radius }}>
+        <div
+          className="space-y-1 rounded-md border border-zinc-200 bg-zinc-50 p-2"
+          style={{ borderRadius: tokens.radius }}
+        >
           {["官网改版", "移动端重构", "数据看板"].map((item, index) => (
             <div className={`rounded px-1.5 py-1 ${index === 0 ? "bg-amber-50 text-amber-700" : ""}`} key={item}>
               {item}
@@ -586,7 +651,7 @@ function WebMock({
   button,
   nav,
   tokens,
-  tx: _tx
+  tx: _tx,
 }: {
   button: ComponentPreviewTokens;
   nav: NavPreviewTokens;
@@ -594,8 +659,14 @@ function WebMock({
   tx: (key: string) => string;
 }) {
   return (
-    <div className="h-full overflow-hidden rounded-md border border-zinc-200 bg-white text-[8px]" style={{ borderRadius: tokens.radius }}>
-      <div className="flex h-7 items-center justify-between border-b border-zinc-200 px-2 font-semibold" style={{ backgroundColor: nav.background, color: nav.color }}>
+    <div
+      className="h-full overflow-hidden rounded-md border border-zinc-200 bg-white text-[8px]"
+      style={{ borderRadius: tokens.radius }}
+    >
+      <div
+        className="flex h-7 items-center justify-between border-b border-zinc-200 px-2 font-semibold"
+        style={{ backgroundColor: nav.background, color: nav.color }}
+      >
         <span>项目管理</span>
         <div className="flex gap-2">
           {["概览", "项目", "任务", "日志"].map((item, index) => (
@@ -622,7 +693,10 @@ function WebMock({
         </div>
         <div className="mt-2 rounded border border-zinc-200">
           {[0, 1, 2].map((row) => (
-            <div className="grid grid-cols-[1fr_2.5rem_2.5rem_3rem] gap-1 border-b border-zinc-100 px-1.5 py-1 last:border-b-0" key={row}>
+            <div
+              className="grid grid-cols-[1fr_2.5rem_2.5rem_3rem] gap-1 border-b border-zinc-100 px-1.5 py-1 last:border-b-0"
+              key={row}
+            >
               <span className="truncate">官网改版</span>
               <span>张三</span>
               <span>65%</span>
@@ -639,6 +713,6 @@ function buttonStyle(button: ComponentPreviewTokens): CSSProperties {
   return {
     backgroundColor: button.background,
     borderRadius: button.radius,
-    color: button.color
+    color: button.color,
   };
 }

@@ -1,9 +1,9 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
-import { launch, type Browser } from 'puppeteer';
-import { FormaError } from './errors.js';
-import { extractSnapshotInPage, type RenderedDomSnapshot } from './quality/rendered-dom.js';
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { launch, type Browser } from "puppeteer";
+import { FormaError } from "./errors.js";
+import { extractSnapshotInPage, type RenderedDomSnapshot } from "./quality/rendered-dom.js";
 
 export interface RenderPreviewInput {
   bundleDir: string;
@@ -15,13 +15,13 @@ export interface RenderPreviewInput {
 }
 
 export interface RenderPreviewResult {
-  files: { '1x': string; '2x': string };
+  files: { "1x": string; "2x": string };
   snapshot?: RenderedDomSnapshot;
   /** Non-blocking DOM extraction failure; preview files may still be ready. */
   snapshotError?: string;
 }
 
-const RELEVANT_RESOURCE_TYPES = new Set(['image', 'stylesheet', 'font', 'media']);
+const RELEVANT_RESOURCE_TYPES = new Set(["image", "stylesheet", "font", "media"]);
 
 /**
  * 从已落盘 bundle 经 file:// 渲染（相对 assets 自然解析，非裸 setContent）。
@@ -29,7 +29,7 @@ const RELEVANT_RESOURCE_TYPES = new Set(['image', 'stylesheet', 'font', 'media']
  * 不写 manifest preview 状态（由 P4 接 save 时记录）。
  */
 export async function renderArtifactPreview(input: RenderPreviewInput): Promise<RenderPreviewResult> {
-  const entry = input.entry ?? 'index.html';
+  const entry = input.entry ?? "index.html";
   const viewport = input.viewport ?? { width: 1280, height: 800 };
   const url = pathToFileURL(join(input.bundleDir, entry)).href;
 
@@ -37,33 +37,36 @@ export async function renderArtifactPreview(input: RenderPreviewInput): Promise<
   try {
     // Use 'shell' headless mode (chrome-headless-shell) which reliably supports
     // file:// URL navigation and screenshot in headless environments.
-    browser = await launch({ headless: 'shell', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    browser = await launch({ headless: "shell", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
     await mkdir(input.outDir, { recursive: true });
 
-    const files: Record<'1x' | '2x', string> = { '1x': '', '2x': '' };
+    const files: Record<"1x" | "2x", string> = { "1x": "", "2x": "" };
     let snapshot: RenderedDomSnapshot | undefined;
     let snapshotError: string | undefined;
-    for (const [label, deviceScaleFactor] of [['1x', 1], ['2x', 2]] as const) {
+    for (const [label, deviceScaleFactor] of [
+      ["1x", 1],
+      ["2x", 2],
+    ] as const) {
       const page = await browser.newPage();
       try {
         await page.setViewport({ width: viewport.width, height: viewport.height, deviceScaleFactor });
         const failed: string[] = [];
-        page.on('requestfailed', (req) => {
+        page.on("requestfailed", (req) => {
           if (RELEVANT_RESOURCE_TYPES.has(req.resourceType())) failed.push(req.url());
         });
-        await page.goto(url, { waitUntil: 'load', timeout: 30000 });
+        await page.goto(url, { waitUntil: "load", timeout: 30000 });
         if (failed.length > 0) {
           throw new FormaError(
-            'PREVIEW_RENDER_FAILED',
-            `Sub-resource(s) failed to load (relative assets must resolve from the bundle): ${failed.join(', ')}`,
+            "PREVIEW_RENDER_FAILED",
+            `Sub-resource(s) failed to load (relative assets must resolve from the bundle): ${failed.join(", ")}`,
             { bundleDir: input.bundleDir, failed },
           );
         }
-        const buf = await page.screenshot({ type: 'png' });
+        const buf = await page.screenshot({ type: "png" });
         const file = join(input.outDir, `${label}.png`);
         await writeFile(file, buf);
         files[label] = file;
-        if (label === '1x' && input.extractDom) {
+        if (label === "1x" && input.extractDom) {
           try {
             snapshot = await page.evaluate(extractSnapshotInPage);
           } catch (err) {
@@ -77,9 +80,13 @@ export async function renderArtifactPreview(input: RenderPreviewInput): Promise<
     return { files, ...(snapshot ? { snapshot } : {}), ...(snapshotError ? { snapshotError } : {}) };
   } catch (err) {
     if (err instanceof FormaError) throw err;
-    throw new FormaError('PREVIEW_RENDER_FAILED', `Preview render failed: ${err instanceof Error ? err.message : String(err)}`, {
-      bundleDir: input.bundleDir,
-    });
+    throw new FormaError(
+      "PREVIEW_RENDER_FAILED",
+      `Preview render failed: ${err instanceof Error ? err.message : String(err)}`,
+      {
+        bundleDir: input.bundleDir,
+      },
+    );
   } finally {
     await browser?.close().catch(() => undefined);
   }

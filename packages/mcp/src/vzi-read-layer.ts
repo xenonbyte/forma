@@ -14,10 +14,10 @@
  *   - VZI apps/mcp server shell (not imported here)
  */
 
-import { readFile } from 'node:fs/promises';
-import { VZIDecoder } from '@vzi-core/format';
-import { createMcpQuery } from '@vzi-core/transformer';
-import { FormaError } from '@xenonbyte/forma-core';
+import { readFile } from "node:fs/promises";
+import { VZIDecoder } from "@vzi-core/format";
+import { createMcpQuery } from "@vzi-core/transformer";
+import { FormaError } from "@xenonbyte/forma-core";
 import type {
   McpOverview,
   McpElementList,
@@ -25,12 +25,8 @@ import type {
   McpTokensOutput,
   McpAnnotationsOutput,
   McpQueryOptions,
-} from '@vzi-core/transformer';
-import type {
-  GetDesignHandoffInput,
-  GetPageUiInput,
-  GetUiNodeInput,
-} from './vzi-read-schemas.js';
+} from "@vzi-core/transformer";
+import type { GetDesignHandoffInput, GetPageUiInput, GetUiNodeInput } from "./vzi-read-schemas.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -46,36 +42,33 @@ async function loadVzi(vziPath: string) {
     buf = await readFile(vziPath);
   } catch (cause) {
     const err = cause as NodeJS.ErrnoException;
-    if (err.code === 'ENOENT') {
-      throw new FormaError('ARTIFACT_NOT_FOUND', `VZI file not found: ${vziPath}`, { vziPath });
+    if (err.code === "ENOENT") {
+      throw new FormaError("ARTIFACT_NOT_FOUND", `VZI file not found: ${vziPath}`, { vziPath });
     }
-    throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
-      `Failed to read VZI file: ${vziPath} — ${err.message}`,
-      { vziPath, cause: err.message }
-    );
+    throw new FormaError("ARTIFACT_WRITE_FAIL", `Failed to read VZI file: ${vziPath} — ${err.message}`, {
+      vziPath,
+      cause: err.message,
+    });
   }
 
   const decoder = new VZIDecoder({ enableErrorRecovery: true });
-  let result: ReturnType<VZIDecoder['decode']>;
+  let result: ReturnType<VZIDecoder["decode"]>;
   try {
     result = decoder.decode(new Uint8Array(buf));
   } catch (cause) {
-    throw new FormaError(
-      'ARTIFACT_UNSUPPORTED_FORMAT',
-      'VZI decode failed',
-      { vziPath, errors: [cause instanceof Error ? cause.message : String(cause)] }
-    );
+    throw new FormaError("ARTIFACT_UNSUPPORTED_FORMAT", "VZI decode failed", {
+      vziPath,
+      errors: [cause instanceof Error ? cause.message : String(cause)],
+    });
   }
 
   if (result.errors.length > 0) {
     const fatals = result.errors.filter((e) => e.fatal);
     if (fatals.length > 0) {
-      throw new FormaError(
-        'ARTIFACT_UNSUPPORTED_FORMAT',
-        'VZI decode failed',
-        { vziPath, errors: fatals.map((e) => e.message) }
-      );
+      throw new FormaError("ARTIFACT_UNSUPPORTED_FORMAT", "VZI decode failed", {
+        vziPath,
+        errors: fatals.map((e) => e.message),
+      });
     }
     // Non-fatal errors are tolerated (degraded mode); callers may inspect result.
   }
@@ -84,7 +77,7 @@ async function loadVzi(vziPath: string) {
 }
 
 function buildQueryOptions(format: string): Partial<McpQueryOptions> {
-  return { format: format as 'json' | 'markdown' };
+  return { format: format as "json" | "markdown" };
 }
 
 // ---------------------------------------------------------------------------
@@ -101,16 +94,14 @@ export interface DesignHandoffResult {
  * Returns page-level overview, design tokens, and annotations for a .vzi file.
  * Corresponds to the `get_design_handoff` MCP tool.
  */
-export async function getDesignHandoff(
-  input: GetDesignHandoffInput
-): Promise<DesignHandoffResult> {
+export async function getDesignHandoff(input: GetDesignHandoffInput): Promise<DesignHandoffResult> {
   const { vziPath, format, tokenType } = input;
   const content = await loadVzi(vziPath);
   const query = createMcpQuery(content, buildQueryOptions(format));
 
   return {
     overview: query.overview(),
-    tokens: query.getTokens(tokenType === 'all' ? undefined : tokenType),
+    tokens: query.getTokens(tokenType === "all" ? undefined : tokenType),
     annotations: query.getAnnotations(),
   };
 }

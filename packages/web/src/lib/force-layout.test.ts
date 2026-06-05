@@ -49,11 +49,7 @@ describe("layoutNavigationGraph", () => {
       ],
     };
 
-    expect(layoutNavigationGraph(input).nodes.map((node) => node.id)).toEqual([
-      "settings",
-      "home",
-      "billing",
-    ]);
+    expect(layoutNavigationGraph(input).nodes.map((node) => node.id)).toEqual(["settings", "home", "billing"]);
   });
 
   it("filters invalid edges while preserving valid edge order", () => {

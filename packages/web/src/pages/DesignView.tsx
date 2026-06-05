@@ -69,10 +69,7 @@ export function DesignView({ client, params }: DesignViewProps) {
 
   if (state.status === "error") {
     return (
-      <StatePanel
-        state="error"
-        title={t("design.canvasUnavailable")}
-      >
+      <StatePanel state="error" title={t("design.canvasUnavailable")}>
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
@@ -85,13 +82,9 @@ export function DesignView({ client, params }: DesignViewProps) {
       {/* Header row */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">
-            {t("design.view")}
-          </p>
+          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("design.view")}</p>
           {requirementId ? (
-            <h2 className="mt-1 text-lg font-semibold tracking-normal text-zinc-950">
-              {requirementId}
-            </h2>
+            <h2 className="mt-1 text-lg font-semibold tracking-normal text-zinc-950">{requirementId}</h2>
           ) : null}
         </div>
       </div>

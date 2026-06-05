@@ -4,9 +4,9 @@
  * 负责绘制两个元素之间的距离标注线（蓝色实线 + 标签）
  */
 
-import type { CanvasKit, Canvas, Paint } from 'canvaskit-wasm';
-import type { DistanceData, DistanceStyle, PageRect } from '../types';
-import { FontManager } from '../../FontManager';
+import type { CanvasKit, Canvas, Paint } from "canvaskit-wasm";
+import type { DistanceData, DistanceStyle, PageRect } from "../types";
+import { FontManager } from "../../FontManager";
 
 /**
  * 距离标注渲染器选项
@@ -115,69 +115,33 @@ export class DistanceRenderer {
   /**
    * 渲染水平距离标注
    */
-  private renderHorizontalDistance(
-    canvas: Canvas,
-    x: number,
-    y: number,
-    width: number,
-    distance: number
-  ): void {
+  private renderHorizontalDistance(canvas: Canvas, x: number, y: number, width: number, distance: number): void {
     // 绘制线条
     canvas.drawLine(x, y, x + width, y, this.linePaint!);
 
     // 绘制端点标记
     const endCapHeight = 6 / this.scale;
     canvas.drawLine(x, y - endCapHeight, x, y + endCapHeight, this.linePaint!);
-    canvas.drawLine(
-      x + width,
-      y - endCapHeight,
-      x + width,
-      y + endCapHeight,
-      this.linePaint!
-    );
+    canvas.drawLine(x + width, y - endCapHeight, x + width, y + endCapHeight, this.linePaint!);
 
     // 绘制标签
-    this.renderLabel(
-      canvas,
-      `${Math.round(distance)}px`,
-      x + width / 2,
-      y,
-      'horizontal'
-    );
+    this.renderLabel(canvas, `${Math.round(distance)}px`, x + width / 2, y, "horizontal");
   }
 
   /**
    * 渲染垂直距离标注
    */
-  private renderVerticalDistance(
-    canvas: Canvas,
-    x: number,
-    y: number,
-    height: number,
-    distance: number
-  ): void {
+  private renderVerticalDistance(canvas: Canvas, x: number, y: number, height: number, distance: number): void {
     // 绘制线条
     canvas.drawLine(x, y, x, y + height, this.linePaint!);
 
     // 绘制端点标记
     const endCapWidth = 6 / this.scale;
     canvas.drawLine(x - endCapWidth, y, x + endCapWidth, y, this.linePaint!);
-    canvas.drawLine(
-      x - endCapWidth,
-      y + height,
-      x + endCapWidth,
-      y + height,
-      this.linePaint!
-    );
+    canvas.drawLine(x - endCapWidth, y + height, x + endCapWidth, y + height, this.linePaint!);
 
     // 绘制标签
-    this.renderLabel(
-      canvas,
-      `${Math.round(distance)}px`,
-      x,
-      y + height / 2,
-      'vertical'
-    );
+    this.renderLabel(canvas, `${Math.round(distance)}px`, x, y + height / 2, "vertical");
   }
 
   /**
@@ -189,18 +153,9 @@ export class DistanceRenderer {
    *
    * @param x,y 锚点（世界坐标）：水平标注为线段中点、垂直标注为线段中点
    */
-  private renderLabel(
-    canvas: Canvas,
-    text: string,
-    x: number,
-    y: number,
-    direction: 'horizontal' | 'vertical'
-  ): void {
+  private renderLabel(canvas: Canvas, text: string, x: number, y: number, direction: "horizontal" | "vertical"): void {
     const ck = this.canvasKit;
-    const dpr =
-      typeof window !== 'undefined' && window.devicePixelRatio
-        ? window.devicePixelRatio
-        : 1;
+    const dpr = typeof window !== "undefined" && window.devicePixelRatio ? window.devicePixelRatio : 1;
 
     canvas.save();
     canvas.translate(x, y);
@@ -226,7 +181,7 @@ export class DistanceRenderer {
     // 锚点在原点(0,0)。水平：居中于上方；垂直：右侧、纵向居中。
     let labelLeft: number;
     let labelTop: number;
-    if (direction === 'horizontal') {
+    if (direction === "horizontal") {
       labelLeft = -labelWidth / 2;
       labelTop = -labelHeight / 2 - gap;
     } else {
@@ -242,13 +197,7 @@ export class DistanceRenderer {
     canvas.drawPath(bgPath, this.labelBackgroundPaint!);
     bgPath.delete();
 
-    canvas.drawText(
-      text,
-      labelLeft + padH,
-      labelTop + labelHeight - padV - 2 * dpr,
-      this.labelPaint!,
-      font
-    );
+    canvas.drawText(text, labelLeft + padH, labelTop + labelHeight - padV - 2 * dpr, this.labelPaint!, font);
 
     font.delete();
     canvas.restore();

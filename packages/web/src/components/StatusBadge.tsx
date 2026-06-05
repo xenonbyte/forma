@@ -1,7 +1,13 @@
 import type { DesignStatus, RequirementStatus } from "../api.js";
 import { useT } from "../LocaleContext.js";
 
-export type ConfigStatus = "configuration_incomplete" | "configured" | "initialized" | "not_initialized" | "not_loaded" | "unconfigured";
+export type ConfigStatus =
+  | "configuration_incomplete"
+  | "configured"
+  | "initialized"
+  | "not_initialized"
+  | "not_loaded"
+  | "unconfigured";
 export type StatusBadgeStatus = ConfigStatus | DesignStatus | RequirementStatus;
 
 export interface StatusBadgeProps {
@@ -22,14 +28,16 @@ const statusTone: Record<StatusBadgeStatus, string> = {
   not_loaded: "border-zinc-200 bg-zinc-100 text-zinc-600",
   pending: "border-amber-200 bg-amber-50 text-amber-700",
   submitted: "border-sky-200 bg-sky-50 text-sky-700",
-  unconfigured: "border-red-200 bg-red-50 text-red-700"
+  unconfigured: "border-red-200 bg-red-50 text-red-700",
 };
 
 export function StatusBadge({ label, status }: StatusBadgeProps) {
   const t = useT();
 
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold leading-none ${statusTone[status]}`}>
+    <span
+      className={`inline-flex items-center rounded-md border px-2 py-1 text-xs font-semibold leading-none ${statusTone[status]}`}
+    >
       {label ?? t(`status.${status}`)}
     </span>
   );

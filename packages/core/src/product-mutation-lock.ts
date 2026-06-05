@@ -20,7 +20,7 @@ export interface ProductMutationContext {
 export interface ProductMutationLock {
   run<T>(
     input: { operation: string; product_id?: string; session_id?: string; scope?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T>;
 }
 
@@ -49,7 +49,7 @@ const lockSchema = z.object({
   session_id: z.string().optional(),
   acquired_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
   expires_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
-  heartbeat_at: z.string().refine((value) => Number.isFinite(Date.parse(value)))
+  heartbeat_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
 });
 
 const sameProcessQueues = new Map<string, Promise<void>>();
@@ -90,7 +90,7 @@ const mutationSidecarSchema = z.object({
   owner_process_start_time: z.string().min(1),
   hostname: z.string().min(1),
   acquired_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
-  expires_at: z.string().refine((value) => Number.isFinite(Date.parse(value)))
+  expires_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
 });
 
 export function getProductMutationLock(home: string): ProductMutationLock {
@@ -113,7 +113,7 @@ export async function runProductMutationWithWarnings<T>(
   productMutationLock: ProductMutationLock,
   input: { operation: string; product_id?: string; session_id?: string; scope?: string },
   fn: (context: ProductMutationContext) => Promise<T>,
-  onProductMutationWarning: (warning: string) => void
+  onProductMutationWarning: (warning: string) => void,
 ): Promise<T> {
   let context: ProductMutationContext | undefined;
   let flushedWarnings = 0;
@@ -150,12 +150,12 @@ export async function runProductMutationWithWarnings<T>(
 class ProductMutationLockImpl implements ProductMutationLock {
   constructor(
     private readonly home: string,
-    private readonly kind: "product" = "product"
+    private readonly kind: "product" = "product",
   ) {}
 
   async run<T>(
     input: { operation: string; product_id?: string; session_id?: string; scope?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T> {
     const normalized = normalizeInput(input);
     const lockPath = productMutationLockPath(this.home, normalized.product_id);
@@ -168,11 +168,17 @@ class ProductMutationLockImpl implements ProductMutationLock {
     const hierarchyQueues = !normalized.product_id
       ? [...sameProcessProductQueueKeys].map((key) => sameProcessQueues.get(key) ?? Promise.resolve())
       : [];
-    const queueTail = normalized.product_id && globalQueueKey
-      ? Promise.all([sameProcessQueues.get(globalQueueKey) ?? Promise.resolve(), sameProcessQueues.get(queueKey) ?? Promise.resolve()]).then(() => undefined)
-      : !normalized.product_id
-        ? Promise.all([sameProcessQueues.get(queueKey) ?? Promise.resolve(), ...hierarchyQueues]).then(() => undefined)
-        : sameProcessQueues.get(queueKey) ?? Promise.resolve();
+    const queueTail =
+      normalized.product_id && globalQueueKey
+        ? Promise.all([
+            sameProcessQueues.get(globalQueueKey) ?? Promise.resolve(),
+            sameProcessQueues.get(queueKey) ?? Promise.resolve(),
+          ]).then(() => undefined)
+        : !normalized.product_id
+          ? Promise.all([sameProcessQueues.get(queueKey) ?? Promise.resolve(), ...hierarchyQueues]).then(
+              () => undefined,
+            )
+          : (sameProcessQueues.get(queueKey) ?? Promise.resolve());
     let releaseQueue!: () => void;
     const currentOperation = new Promise<void>((resolveCurrentOperation) => {
       releaseQueue = resolveCurrentOperation;
@@ -207,7 +213,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
   private async acquireLock(
     lockPath: string,
     input: { operation: string; product_id?: string; session_id?: string; scope?: string },
-    warnings: string[]
+    warnings: string[],
   ): Promise<V6LockContent> {
     await mkdir(dirname(lockPath), { recursive: true });
     return await this.withMutationSidecar(lockPath, async () => {
@@ -229,7 +235,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
             session_id: owner.session_id,
             acquired_at: owner.acquired_at,
             expires_at: owner.expires_at,
-            heartbeat_at: owner.heartbeat_at
+            heartbeat_at: owner.heartbeat_at,
           };
           emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
           throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock is held", details);
@@ -300,7 +306,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
           session_id: existing.lock.session_id,
           acquired_at: existing.lock.acquired_at,
           expires_at: existing.lock.expires_at,
-          heartbeat_at: existing.lock.heartbeat_at
+          heartbeat_at: existing.lock.heartbeat_at,
         };
         emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
         throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock is held", details);
@@ -309,7 +315,11 @@ class ProductMutationLockImpl implements ProductMutationLock {
     });
   }
 
-  private async removeStaleLockUnderMutation(lockPath: string, expected: V6LockContent, warnings: string[]): Promise<void> {
+  private async removeStaleLockUnderMutation(
+    lockPath: string,
+    expected: V6LockContent,
+    warnings: string[],
+  ): Promise<void> {
     await this.withClaimedLockUnderMutation(lockPath, warnings, async (latest, claim) => {
       if (!latest) return;
       if (latest.status === "corrupt") {
@@ -323,7 +333,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
           session_id: latest.lock.session_id,
           acquired_at: latest.lock.acquired_at,
           expires_at: latest.lock.expires_at,
-          heartbeat_at: latest.lock.heartbeat_at
+          heartbeat_at: latest.lock.heartbeat_at,
         };
         emittedFormaErrorDetailsWarningCounts.set(details, warnings.length);
         throw new FormaError("PRODUCT_MUTATION_LOCKED", "Mutation lock changed during stale reclaim", details);
@@ -364,11 +374,16 @@ class ProductMutationLockImpl implements ProductMutationLock {
         stopped = true;
         clearInterval(timer);
         await Promise.allSettled([...inFlight]);
-      }
+      },
     };
   }
 
-  private async heartbeat(lockPath: string, lock: V6LockContent, warnings: string[], isStopped: () => boolean): Promise<void> {
+  private async heartbeat(
+    lockPath: string,
+    lock: V6LockContent,
+    warnings: string[],
+    isStopped: () => boolean,
+  ): Promise<void> {
     if (isStopped()) return;
     await this.withClaimedLock(lockPath, warnings, async (existing, claim) => {
       if (isStopped()) {
@@ -384,7 +399,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
       const updated = {
         ...existing.lock,
         heartbeat_at: now.toISOString(),
-        expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString()
+        expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
       };
       if (isStopped()) {
         await claim.restore();
@@ -416,7 +431,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
   private async withClaimedLock<T>(
     lockPath: string,
     warnings: string[],
-    mutate: (existing: ClaimedLock | undefined, claim: ClaimedLockMutation) => Promise<T>
+    mutate: (existing: ClaimedLock | undefined, claim: ClaimedLockMutation) => Promise<T>,
   ): Promise<T> {
     const sidecar = await this.acquireMutationSidecar(lockPath);
     try {
@@ -440,9 +455,12 @@ class ProductMutationLockImpl implements ProductMutationLock {
     const mutationLock = createMutationSidecar();
     while (true) {
       try {
-        await writeFile(mutationLockPath, `${JSON.stringify(mutationLock, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+        await writeFile(mutationLockPath, `${JSON.stringify(mutationLock, null, 2)}\n`, {
+          encoding: "utf8",
+          flag: "wx",
+        });
         return {
-          release: () => this.releaseMutationSidecar(lockPath, mutationLock)
+          release: () => this.releaseMutationSidecar(lockPath, mutationLock),
         };
       } catch (error) {
         if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) {
@@ -452,11 +470,15 @@ class ProductMutationLockImpl implements ProductMutationLock {
 
       const existing = await this.readMutationSidecar(mutationLockPath);
       if (existing && !isMutationSidecarReclaimable(existing)) {
-        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", {
+          lock_path: lockPath,
+        });
       }
       const reclaimed = await this.reclaimMutationSidecar(lockPath, existing);
       if (!reclaimed) {
-        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", { lock_path: lockPath });
+        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation is already in progress", {
+          lock_path: lockPath,
+        });
       }
     }
   }
@@ -514,7 +536,11 @@ class ProductMutationLockImpl implements ProductMutationLock {
     await this.restoreClaimFile(claimPath, mutationLockPath, { removeOnExisting: false });
   }
 
-  private async restoreClaimFile(claimPath: string, targetPath: string, options?: { removeOnExisting?: boolean }): Promise<void> {
+  private async restoreClaimFile(
+    claimPath: string,
+    targetPath: string,
+    options?: { removeOnExisting?: boolean },
+  ): Promise<void> {
     try {
       await copyFile(claimPath, targetPath, constants.COPYFILE_EXCL);
     } catch (error) {
@@ -531,19 +557,20 @@ class ProductMutationLockImpl implements ProductMutationLock {
   private async assertNoClaimedLock(lockPath: string): Promise<void> {
     const lockDir = dirname(lockPath);
     const prefix = `${basename(lockPath)}.`;
-    const claims = (await readdir(lockDir).catch(() => []))
-      .filter((file) => file.startsWith(prefix) && file.endsWith(".claim"));
+    const claims = (await readdir(lockDir).catch(() => [])).filter(
+      (file) => file.startsWith(prefix) && file.endsWith(".claim"),
+    );
     if (claims.length === 0) return;
     throw new FormaError("PRODUCT_MUTATION_LOCKED", "Lock mutation claim is in progress", {
       lock_path: lockPath,
-      claim_path: join(lockDir, claims[0]!)
+      claim_path: join(lockDir, claims[0]!),
     });
   }
 
   private async withClaimedLockUnderMutation<T>(
     lockPath: string,
     warnings: string[],
-    mutate: (existing: ClaimedLock | undefined, claim: ClaimedLockMutation) => Promise<T>
+    mutate: (existing: ClaimedLock | undefined, claim: ClaimedLockMutation) => Promise<T>,
   ): Promise<T> {
     const claimPath = `${lockPath}.${randomBytes(8).toString("hex")}.claim`;
     let claimActive = false;
@@ -596,7 +623,7 @@ class ProductMutationLockImpl implements ProductMutationLock {
           throw error;
         }
       },
-      restore
+      restore,
     };
 
     try {
@@ -623,7 +650,9 @@ class ProductMutationLockImpl implements ProductMutationLock {
     }
   }
 
-  private async readExisting(lockPath: string): Promise<{ status: "valid"; lock: V6LockContent } | { status: "corrupt" } | undefined> {
+  private async readExisting(
+    lockPath: string,
+  ): Promise<{ status: "valid"; lock: V6LockContent } | { status: "corrupt" } | undefined> {
     let raw: string;
     try {
       raw = await readFile(lockPath, "utf8");
@@ -639,7 +668,12 @@ class ProductMutationLockImpl implements ProductMutationLock {
   }
 }
 
-function createLock(input: { operation: string; product_id?: string; session_id?: string; scope?: string }): V6LockContent {
+function createLock(input: {
+  operation: string;
+  product_id?: string;
+  session_id?: string;
+  scope?: string;
+}): V6LockContent {
   const now = new Date();
   return {
     lock_id: `L-${randomBytes(8).toString("hex")}`,
@@ -652,7 +686,7 @@ function createLock(input: { operation: string; product_id?: string; session_id?
     ...(input.session_id ? { session_id: input.session_id } : {}),
     acquired_at: now.toISOString(),
     expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
-    heartbeat_at: now.toISOString()
+    heartbeat_at: now.toISOString(),
   };
 }
 
@@ -664,7 +698,7 @@ function createMutationSidecar(): MutationSidecarContent {
     owner_process_start_time: processStartTime(),
     hostname: hostname(),
     acquired_at: now.toISOString(),
-    expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString()
+    expires_at: new Date(now.getTime() + PRODUCT_MUTATION_LOCK_TTL_MS).toISOString(),
   };
 }
 
@@ -673,7 +707,10 @@ function isMutationSidecarReclaimable(sidecar: MutationSidecarRead | undefined):
   return Date.parse(sidecar.lock.expires_at) <= Date.now() || !isPidAlive(sidecar.lock.owner_pid);
 }
 
-function sameMutationSidecar(expected: MutationSidecarRead | undefined, actual: MutationSidecarRead | undefined): boolean {
+function sameMutationSidecar(
+  expected: MutationSidecarRead | undefined,
+  actual: MutationSidecarRead | undefined,
+): boolean {
   if (!expected) return !actual;
   if (!actual) return false;
   if (expected.status === "corrupt" || actual.status === "corrupt") {
@@ -695,7 +732,7 @@ function normalizeInput(input: { operation: string; product_id?: string; session
     return {
       ...input,
       product_id: parseProductId(input.product_id),
-      ...(input.session_id !== undefined ? { session_id: parseSessionId(input.session_id) } : {})
+      ...(input.session_id !== undefined ? { session_id: parseSessionId(input.session_id) } : {}),
     };
   }
   if (input.session_id !== undefined) {
@@ -754,7 +791,9 @@ function recordWarning(warning: string, warnings: string[]): void {
 function flushErrorWarnings(error: unknown, onProductMutationWarning: (warning: string) => void): void {
   if (!(error instanceof FormaError)) return;
   const details = error.details;
-  const warnings = Array.isArray(details.warnings) ? details.warnings.filter((warning): warning is string => typeof warning === "string") : [];
+  const warnings = Array.isArray(details.warnings)
+    ? details.warnings.filter((warning): warning is string => typeof warning === "string")
+    : [];
   const alreadyEmitted = emittedFormaErrorDetailsWarningCounts.get(details) ?? 0;
   for (const warning of warnings.slice(alreadyEmitted)) {
     onProductMutationWarning(warning);

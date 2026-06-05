@@ -1,8 +1,8 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { access, mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
-import { validateAssetsAgainstSupportingFiles } from './artifact-assets.js';
-import { validateArtifactManifest, validateSupportingPath, type ArtifactManifest } from './artifact-manifest.js';
+import { createHash, randomBytes } from "node:crypto";
+import { access, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import { validateAssetsAgainstSupportingFiles } from "./artifact-assets.js";
+import { validateArtifactManifest, validateSupportingPath, type ArtifactManifest } from "./artifact-manifest.js";
 import {
   getArtifactDir,
   getArtifactManifestPath,
@@ -10,10 +10,10 @@ import {
   getArtifactsDir,
   getArtifactVersionDir,
   getArtifactVersionManifestPath,
-} from './artifact-paths.js';
-import { FormaError } from './errors.js';
-import { isSameOrChildPath } from './path-boundary.js';
-import type { ProductMutationLock } from './product-mutation-lock.js';
+} from "./artifact-paths.js";
+import { FormaError } from "./errors.js";
+import { isSameOrChildPath } from "./path-boundary.js";
+import type { ProductMutationLock } from "./product-mutation-lock.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,19 +47,23 @@ export interface ArtifactStore {
   listArtifacts(productId: string): Promise<Array<{ artifactId: string; etag: string }>>;
   deleteArtifact(productId: string, artifactId: string): Promise<void>;
   writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ version: number; etag: string }>;
-  readArtifactVersion(productId: string, artifactId: string, version: number): Promise<{ manifest: ArtifactManifest; etag: string }>;
+  readArtifactVersion(
+    productId: string,
+    artifactId: string,
+    version: number,
+  ): Promise<{ manifest: ArtifactManifest; etag: string }>;
   listArtifactVersions(productId: string, artifactId: string): Promise<number[]>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function generateArtifactId(): string {
-  const alphabet = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  return Array.from(randomBytes(16), (byte) => alphabet[byte % alphabet.length]).join('');
+  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  return Array.from(randomBytes(16), (byte) => alphabet[byte % alphabet.length]).join("");
 }
 
 function computeEtag(manifestJson: string): string {
-  return createHash('sha256').update(Buffer.from(manifestJson, 'utf8')).digest('hex');
+  return createHash("sha256").update(Buffer.from(manifestJson, "utf8")).digest("hex");
 }
 
 async function dirExists(path: string): Promise<boolean> {
@@ -75,8 +79,8 @@ function resolveArtifactTmpFilePath(tmpDir: string, relativePath: string): strin
   const safeRelativePath = validateSupportingPath(relativePath);
   if (safeRelativePath === null) {
     throw new FormaError(
-      'ARTIFACT_INVALID_INPUT',
-      'Artifact file path must be a relative path inside the artifact directory',
+      "ARTIFACT_INVALID_INPUT",
+      "Artifact file path must be a relative path inside the artifact directory",
       { path: relativePath },
     );
   }
@@ -84,11 +88,9 @@ function resolveArtifactTmpFilePath(tmpDir: string, relativePath: string): strin
   const tmpRoot = resolve(tmpDir);
   const destPath = resolve(tmpRoot, safeRelativePath);
   if (!isSameOrChildPath(tmpRoot, destPath)) {
-    throw new FormaError(
-      'ARTIFACT_INVALID_INPUT',
-      'Artifact file path must stay inside the artifact directory',
-      { path: relativePath },
-    );
+    throw new FormaError("ARTIFACT_INVALID_INPUT", "Artifact file path must stay inside the artifact directory", {
+      path: relativePath,
+    });
   }
 
   return destPath;
@@ -98,22 +100,16 @@ function normalizeAndValidateManifest(manifest: ArtifactManifest, artifactId: st
   const normalized = { ...manifest, id: artifactId };
   const validation = validateArtifactManifest(normalized);
   if (!validation.ok) {
-    throw new FormaError(
-      'ARTIFACT_INVALID_INPUT',
-      `Invalid artifact manifest: ${validation.error}`,
-      { artifactId },
-    );
+    throw new FormaError("ARTIFACT_INVALID_INPUT", `Invalid artifact manifest: ${validation.error}`, { artifactId });
   }
   const assetsValidation = validateAssetsAgainstSupportingFiles(
     validation.value.forma ?? {},
     validation.value.supportingFiles,
   );
   if (!assetsValidation.ok) {
-    throw new FormaError(
-      'ARTIFACT_INVALID_INPUT',
-      `Invalid artifact manifest: ${assetsValidation.error}`,
-      { artifactId },
-    );
+    throw new FormaError("ARTIFACT_INVALID_INPUT", `Invalid artifact manifest: ${assetsValidation.error}`, {
+      artifactId,
+    });
   }
   return validation.value;
 }
@@ -134,18 +130,17 @@ class ArtifactStoreImpl implements ArtifactStore {
   async writeArtifact(input: WriteArtifactInput): Promise<{ artifactId: string; etag: string }> {
     const { productId, manifest, files, retentionHook, __forceNanoid } = input;
 
-    return this.lock.run({ operation: 'write_artifact', product_id: productId }, async () => {
+    return this.lock.run({ operation: "write_artifact", product_id: productId }, async () => {
       const artifactId = __forceNanoid ?? generateArtifactId();
       const artifactDir = getArtifactDir(this.productsRoot, productId, artifactId);
       const normalizedManifest = normalizeAndValidateManifest(manifest, artifactId);
 
       // Check collision
       if (await dirExists(artifactDir)) {
-        throw new FormaError(
-          'ARTIFACT_ALREADY_EXISTS',
-          `Artifact already exists: ${artifactId}`,
-          { artifactId, productId },
-        );
+        throw new FormaError("ARTIFACT_ALREADY_EXISTS", `Artifact already exists: ${artifactId}`, {
+          artifactId,
+          productId,
+        });
       }
 
       // Ensure artifacts dir exists
@@ -166,8 +161,8 @@ class ArtifactStoreImpl implements ArtifactStore {
 
         // Write manifest.json into tmp dir
         const manifestJson = JSON.stringify(normalizedManifest, null, 2);
-        const manifestPath = join(tmpDir, 'manifest.json');
-        await writeFile(manifestPath, manifestJson, 'utf8');
+        const manifestPath = join(tmpDir, "manifest.json");
+        await writeFile(manifestPath, manifestJson, "utf8");
 
         // Compute ETag
         const etag = computeEtag(manifestJson);
@@ -178,7 +173,7 @@ class ArtifactStoreImpl implements ArtifactStore {
         } catch (err) {
           await rm(tmpDir, { recursive: true, force: true });
           throw new FormaError(
-            'ARTIFACT_WRITE_FAIL',
+            "ARTIFACT_WRITE_FAIL",
             `Failed to rename artifact tmp dir to final location: ${artifactId}`,
             { artifactId, productId, cause: String(err) },
           );
@@ -189,7 +184,7 @@ class ArtifactStoreImpl implements ArtifactStore {
           await retentionHook(artifactId, productId);
         }
 
-        console.log('[artifact-store] written:', artifactId);
+        console.log("[artifact-store] written:", artifactId);
         return { artifactId, etag };
       } catch (err) {
         // Clean up tmp dir if it still exists (e.g., error before rename attempt)
@@ -199,22 +194,15 @@ class ArtifactStoreImpl implements ArtifactStore {
     });
   }
 
-  async readArtifact(
-    productId: string,
-    artifactId: string,
-  ): Promise<{ manifest: ArtifactManifest; etag: string }> {
+  async readArtifact(productId: string, artifactId: string): Promise<{ manifest: ArtifactManifest; etag: string }> {
     const manifestPath = getArtifactManifestPath(this.productsRoot, productId, artifactId);
 
     let manifestJson: string;
     try {
-      manifestJson = await readFile(manifestPath, 'utf8');
+      manifestJson = await readFile(manifestPath, "utf8");
     } catch (err: unknown) {
-      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
-        throw new FormaError(
-          'ARTIFACT_NOT_FOUND',
-          `Artifact not found: ${artifactId}`,
-          { artifactId, productId },
-        );
+      if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+        throw new FormaError("ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactId}`, { artifactId, productId });
       }
       throw err;
     }
@@ -224,9 +212,7 @@ class ArtifactStoreImpl implements ArtifactStore {
     return { manifest, etag };
   }
 
-  async listArtifacts(
-    productId: string,
-  ): Promise<Array<{ artifactId: string; etag: string }>> {
+  async listArtifacts(productId: string): Promise<Array<{ artifactId: string; etag: string }>> {
     const artifactsDir = getArtifactsDir(this.productsRoot, productId);
 
     let entries: string[];
@@ -240,13 +226,13 @@ class ArtifactStoreImpl implements ArtifactStore {
 
     for (const entry of entries) {
       // Skip tmp dirs
-      if (entry.startsWith('.tmp-')) continue;
+      if (entry.startsWith(".tmp-")) continue;
 
       try {
         // (a) Try flat root manifest.json first (legacy path)
         const manifestPath = getArtifactManifestPath(this.productsRoot, productId, entry);
         try {
-          const manifestJson = await readFile(manifestPath, 'utf8');
+          const manifestJson = await readFile(manifestPath, "utf8");
           const etag = computeEtag(manifestJson);
           results.push({ artifactId: entry, etag });
           continue;
@@ -259,7 +245,7 @@ class ArtifactStoreImpl implements ArtifactStore {
         if (versions.length > 0) {
           const maxVersion = Math.max(...versions);
           const versionManifestPath = getArtifactVersionManifestPath(this.productsRoot, productId, entry, maxVersion);
-          const versionManifestJson = await readFile(versionManifestPath, 'utf8');
+          const versionManifestJson = await readFile(versionManifestPath, "utf8");
           const etag = computeEtag(versionManifestJson);
           results.push({ artifactId: entry, etag });
         }
@@ -276,11 +262,7 @@ class ArtifactStoreImpl implements ArtifactStore {
     const artifactDir = getArtifactDir(this.productsRoot, productId, artifactId);
 
     if (!(await dirExists(artifactDir))) {
-      throw new FormaError(
-        'ARTIFACT_NOT_FOUND',
-        `Artifact not found: ${artifactId}`,
-        { artifactId, productId },
-      );
+      throw new FormaError("ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactId}`, { artifactId, productId });
     }
 
     await rm(artifactDir, { recursive: true, force: true });
@@ -288,7 +270,7 @@ class ArtifactStoreImpl implements ArtifactStore {
 
   async writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ version: number; etag: string }> {
     const { productId, artifactId, manifest, files } = input;
-    return this.lock.run({ operation: 'write_artifact_version', product_id: productId }, async () => {
+    return this.lock.run({ operation: "write_artifact_version", product_id: productId }, async () => {
       // Allocate the version inside the lock so concurrent saves to the same
       // artifact cannot pick the same number (read-then-write race).
       const version = input.version ?? (await this.nextArtifactVersion(productId, artifactId));
@@ -296,7 +278,11 @@ class ArtifactStoreImpl implements ArtifactStore {
       const normalized = normalizeAndValidateManifest(manifest, artifactId);
 
       if (await dirExists(versionDir)) {
-        throw new FormaError('ARTIFACT_ALREADY_EXISTS', `Artifact version already exists: ${artifactId} v${version}`, { artifactId, productId, version });
+        throw new FormaError("ARTIFACT_ALREADY_EXISTS", `Artifact version already exists: ${artifactId} v${version}`, {
+          artifactId,
+          productId,
+          version,
+        });
       }
       await mkdir(getArtifactDir(this.productsRoot, productId, artifactId), { recursive: true });
 
@@ -309,13 +295,18 @@ class ArtifactStoreImpl implements ArtifactStore {
           await writeFile(destPath, content);
         }
         const manifestJson = JSON.stringify(normalized, null, 2);
-        await writeFile(join(tmpDir, 'manifest.json'), manifestJson, 'utf8');
+        await writeFile(join(tmpDir, "manifest.json"), manifestJson, "utf8");
         const etag = computeEtag(manifestJson);
         try {
           await this._rename(tmpDir, versionDir);
         } catch (err) {
           await rm(tmpDir, { recursive: true, force: true });
-          throw new FormaError('ARTIFACT_WRITE_FAIL', `Failed to write artifact version: ${artifactId} v${version}`, { artifactId, productId, version, cause: String(err) });
+          throw new FormaError("ARTIFACT_WRITE_FAIL", `Failed to write artifact version: ${artifactId} v${version}`, {
+            artifactId,
+            productId,
+            version,
+            cause: String(err),
+          });
         }
         return { version, etag };
       } catch (err) {
@@ -331,14 +322,22 @@ class ArtifactStoreImpl implements ArtifactStore {
     return versions.length > 0 ? Math.max(...versions) + 1 : 1;
   }
 
-  async readArtifactVersion(productId: string, artifactId: string, version: number): Promise<{ manifest: ArtifactManifest; etag: string }> {
+  async readArtifactVersion(
+    productId: string,
+    artifactId: string,
+    version: number,
+  ): Promise<{ manifest: ArtifactManifest; etag: string }> {
     const manifestPath = getArtifactVersionManifestPath(this.productsRoot, productId, artifactId, version);
     let manifestJson: string;
     try {
-      manifestJson = await readFile(manifestPath, 'utf8');
+      manifestJson = await readFile(manifestPath, "utf8");
     } catch (err: unknown) {
-      if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
-        throw new FormaError('ARTIFACT_NOT_FOUND', `Artifact version not found: ${artifactId} v${version}`, { artifactId, productId, version });
+      if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+        throw new FormaError("ARTIFACT_NOT_FOUND", `Artifact version not found: ${artifactId} v${version}`, {
+          artifactId,
+          productId,
+          version,
+        });
       }
       throw err;
     }

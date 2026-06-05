@@ -12,7 +12,7 @@ const commands = [
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff"
+  "fm-develop-design-handoff",
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
@@ -23,7 +23,7 @@ type Platform = "claude" | "codex" | "gemini";
 const fallbackMcpCommandRunner = {
   run: async () => {
     throw new Error("official MCP CLI unavailable in install tests");
-  }
+  },
 };
 
 interface InstallManifest {
@@ -51,7 +51,7 @@ async function createService(options: ConstructorParameters<typeof InstallServic
     userHome,
     templatesDir: resolve("packages/agent/templates"),
     mcpCommandRunner: fallbackMcpCommandRunner,
-    ...options
+    ...options,
   });
   return { formaHome, userHome, service };
 }
@@ -96,7 +96,7 @@ async function writeOldManifest(
   formaHome: string,
   platform: Platform,
   installedPaths: string[],
-  backups: Array<{ target: string; backup: string }>
+  backups: Array<{ target: string; backup: string }>,
 ): Promise<void> {
   await writeYamlAtomic(join(formaHome, "manifests", `${platform}.manifest`), {
     schema_version: 1,
@@ -104,7 +104,7 @@ async function writeOldManifest(
     installed_paths: installedPaths,
     backups,
     config_paths: [],
-    installed_at: "2026-01-01T00:00:00.000Z"
+    installed_at: "2026-01-01T00:00:00.000Z",
   });
 }
 
@@ -122,14 +122,14 @@ describe("InstallService", () => {
 
     for (const command of commands) {
       await expect(readFile(join(userHome, ".claude", "commands", `${command}.md`), "utf8")).resolves.toContain(
-        `# Forma route: ${command}`
+        `# Forma route: ${command}`,
       );
       await expect(readFile(join(userHome, ".gemini", "commands", `${command}.toml`), "utf8")).resolves.toContain(
-        `# Forma route: ${command}`
+        `# Forma route: ${command}`,
       );
-      await expect(
-        readFile(join(userHome, ".codex", "skills", command, "SKILL.md"), "utf8")
-      ).resolves.toContain(`# Forma route: ${command}`);
+      await expect(readFile(join(userHome, ".codex", "skills", command, "SKILL.md"), "utf8")).resolves.toContain(
+        `# Forma route: ${command}`,
+      );
     }
     for (const command of removedRequirementCommands) {
       await expect(exists(join(userHome, ".claude", "commands", `${command}.md`))).resolves.toBe(false);
@@ -142,7 +142,7 @@ describe("InstallService", () => {
       await expect(exists(join(userHome, ".codex", "skills", command, "SKILL.md"))).resolves.toBe(false);
     }
     await expect(readFile(join(formaHome, "skills", "forma", "SKILL.md"), "utf8")).resolves.toContain(
-      "Forma shared guidance"
+      "Forma shared guidance",
     );
   });
 
@@ -156,8 +156,8 @@ describe("InstallService", () => {
     expect(claude.installed_paths).toEqual(
       expect.arrayContaining([
         join(formaHome, "skills", "forma", "SKILL.md"),
-        ...commands.map((command) => join(userHome, ".claude", "commands", `${command}.md`))
-      ])
+        ...commands.map((command) => join(userHome, ".claude", "commands", `${command}.md`)),
+      ]),
     );
     for (const command of removedRequirementCommands) {
       expect(claude.installed_paths).not.toContain(join(userHome, ".claude", "commands", `${command}.md`));
@@ -172,8 +172,8 @@ describe("InstallService", () => {
     expect(gemini.installed_paths).toEqual(
       expect.arrayContaining([
         join(formaHome, "skills", "forma", "SKILL.md"),
-        ...commands.map((command) => join(userHome, ".gemini", "commands", `${command}.toml`))
-      ])
+        ...commands.map((command) => join(userHome, ".gemini", "commands", `${command}.toml`)),
+      ]),
     );
     for (const command of removedRequirementCommands) {
       expect(gemini.installed_paths).not.toContain(join(userHome, ".gemini", "commands", `${command}.toml`));
@@ -188,13 +188,11 @@ describe("InstallService", () => {
     expect(codex.installed_paths).toEqual(
       expect.arrayContaining([
         join(formaHome, "skills", "forma", "SKILL.md"),
-        ...commands.map((command) => join(userHome, ".codex", "skills", command, "SKILL.md"))
-      ])
+        ...commands.map((command) => join(userHome, ".codex", "skills", command, "SKILL.md")),
+      ]),
     );
     for (const command of removedRequirementCommands) {
-      expect(codex.installed_paths).not.toContain(
-        join(userHome, ".codex", "skills", command, "SKILL.md")
-      );
+      expect(codex.installed_paths).not.toContain(join(userHome, ".codex", "skills", command, "SKILL.md"));
     }
     for (const command of removedLegacyCommands) {
       expect(codex.installed_paths).not.toContain(join(userHome, ".codex", "skills", command, "SKILL.md"));
@@ -212,15 +210,17 @@ describe("InstallService", () => {
       mcpCommandRunner: {
         run: async (command, args, options) => {
           calls.push({ command, args, options });
-        }
-      }
+        },
+      },
     });
 
     await service.installPlatforms(["claude", "codex", "gemini"]);
 
     expect((await readManifest(formaHome, "claude")).config_paths).toEqual([join(userHome, ".claude.json")]);
     expect((await readManifest(formaHome, "codex")).config_paths).toEqual([join(userHome, ".codex", "config.toml")]);
-    expect((await readManifest(formaHome, "gemini")).config_paths).toEqual([join(userHome, ".gemini", "settings.json")]);
+    expect((await readManifest(formaHome, "gemini")).config_paths).toEqual([
+      join(userHome, ".gemini", "settings.json"),
+    ]);
 
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
@@ -228,33 +228,33 @@ describe("InstallService", () => {
       {
         command: "claude",
         args: ["mcp", "add-json", "--scope", "user", "forma", JSON.stringify(formaStdioMcpConfig())],
-        options: { env: userHomeEnv(userHome) }
+        options: { env: userHomeEnv(userHome) },
       },
       {
         command: "codex",
         args: ["mcp", "add", "forma", "--", "forma", "mcp"],
-        options: { env: userHomeEnv(userHome) }
+        options: { env: userHomeEnv(userHome) },
       },
       {
         command: "gemini",
         args: ["mcp", "add", "--scope", "user", "--transport", "stdio", "forma", "forma", "mcp"],
-        options: { env: userHomeEnv(userHome) }
+        options: { env: userHomeEnv(userHome) },
       },
       {
         command: "claude",
         args: ["mcp", "remove", "--scope", "user", "forma"],
-        options: { env: userHomeEnv(userHome) }
+        options: { env: userHomeEnv(userHome) },
       },
       {
         command: "codex",
         args: ["mcp", "remove", "forma"],
-        options: { env: userHomeEnv(userHome) }
+        options: { env: userHomeEnv(userHome) },
       },
       {
         command: "gemini",
         args: ["mcp", "remove", "--scope", "user", "forma"],
-        options: { env: userHomeEnv(userHome) }
-      }
+        options: { env: userHomeEnv(userHome) },
+      },
     ]);
     await expect(exists(join(userHome, ".claude.json"))).resolves.toBe(false);
     await expect(exists(join(userHome, ".codex", "config.toml"))).resolves.toBe(false);
@@ -287,8 +287,8 @@ describe("InstallService", () => {
           const configPath = join(userHome, ".codex", "config.toml");
           await mkdir(dirname(configPath), { recursive: true });
           await writeFile(configPath, "\n", "utf8");
-        }
-      }
+        },
+      },
     });
     userHome = createdUserHome;
 
@@ -317,7 +317,7 @@ describe("InstallService", () => {
         formaHome,
         platform,
         [join(formaHome, "skills", "forma", "SKILL.md"), ...oldCommandPaths],
-        []
+        [],
       );
 
       await service.installPlatforms([platform]);
@@ -326,7 +326,7 @@ describe("InstallService", () => {
         await expect(exists(oldPath)).resolves.toBe(false);
       }
       await expect(readFile(commandTarget(userHome, platform, "fm-requirement"), "utf8")).resolves.toContain(
-        "# Forma route: fm-requirement"
+        "# Forma route: fm-requirement",
       );
       await expect(readFile(unrelatedCommand, "utf8")).resolves.toBe("# Custom\n");
 
@@ -392,7 +392,7 @@ describe("InstallService", () => {
 
     await expect(exists(oldCommand)).resolves.toBe(false);
     await expect(readFile(commandTarget(userHome, "codex", "fm-requirement"), "utf8")).resolves.toContain(
-      "# Forma route: fm-requirement"
+      "# Forma route: fm-requirement",
     );
 
     const upgradedManifest = await readManifest(formaHome, "codex");
@@ -423,7 +423,7 @@ describe("InstallService", () => {
     await mkdir(join(userHome, ".gemini", "commands"), { recursive: true });
     await mkdir(join(userHome, ".codex", "skills", "custom"), { recursive: true });
     await writeFile(unrelatedClaudeCommand, "# Custom\n", "utf8");
-    await writeFile(unrelatedGeminiCommand, "description = \"Custom\"\n", "utf8");
+    await writeFile(unrelatedGeminiCommand, 'description = "Custom"\n', "utf8");
     await writeFile(unrelatedCodexSkill, "# Custom\n", "utf8");
     await mkdir(join(userHome, ".claude"), { recursive: true });
     await mkdir(join(userHome, ".gemini"), { recursive: true });
@@ -431,14 +431,14 @@ describe("InstallService", () => {
     await writeFile(
       join(userHome, ".claude.json"),
       JSON.stringify({ mcpServers: { existing: { command: "existing" } } }, null, 2),
-      "utf8"
+      "utf8",
     );
     await writeFile(
       join(userHome, ".gemini", "settings.json"),
       JSON.stringify({ mcpServers: { existing: { command: "existing" } } }, null, 2),
-      "utf8"
+      "utf8",
     );
-    await writeFile(join(userHome, ".codex", "config.toml"), "[mcp_servers.existing]\ncommand = \"existing\"\n", "utf8");
+    await writeFile(join(userHome, ".codex", "config.toml"), '[mcp_servers.existing]\ncommand = "existing"\n', "utf8");
 
     await service.installPlatforms(["claude", "codex", "gemini"]);
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
@@ -450,7 +450,7 @@ describe("InstallService", () => {
       await expect(exists(join(userHome, ".codex", "skills", command))).resolves.toBe(false);
     }
     await expect(readFile(unrelatedClaudeCommand, "utf8")).resolves.toBe("# Custom\n");
-    await expect(readFile(unrelatedGeminiCommand, "utf8")).resolves.toBe("description = \"Custom\"\n");
+    await expect(readFile(unrelatedGeminiCommand, "utf8")).resolves.toBe('description = "Custom"\n');
     await expect(readFile(unrelatedCodexSkill, "utf8")).resolves.toBe("# Custom\n");
     await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.toContain("existing");
     await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.not.toContain("forma");
@@ -469,14 +469,14 @@ describe("InstallService", () => {
     await mkdir(join(userHome, ".codex"), { recursive: true });
     await mkdir(join(formaHome, "skills", "forma"), { recursive: true });
     await writeFile(claudeCommand, "# Local Claude Command\n", "utf8");
-    await writeFile(codexConfig, "[mcp_servers.existing]\ncommand = \"existing\"\n", "utf8");
+    await writeFile(codexConfig, '[mcp_servers.existing]\ncommand = "existing"\n', "utf8");
     await writeFile(sharedSkill, "# Local Shared Skill\n", "utf8");
 
     await service.installPlatforms(["claude", "codex", "gemini"]);
 
     const claudeManifest = await readManifest(formaHome, "claude");
     expect(claudeManifest.backups).toEqual(
-      expect.arrayContaining([expect.objectContaining({ target: claudeCommand })])
+      expect.arrayContaining([expect.objectContaining({ target: claudeCommand })]),
     );
     expect(claudeManifest.backups).toEqual(expect.arrayContaining([expect.objectContaining({ target: sharedSkill })]));
     const codexManifest = await readManifest(formaHome, "codex");
@@ -486,7 +486,7 @@ describe("InstallService", () => {
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
     await expect(readFile(claudeCommand, "utf8")).resolves.toBe("# Local Claude Command\n");
-    await expect(readFile(codexConfig, "utf8")).resolves.toBe("[mcp_servers.existing]\ncommand = \"existing\"\n");
+    await expect(readFile(codexConfig, "utf8")).resolves.toBe('[mcp_servers.existing]\ncommand = "existing"\n');
     await expect(readFile(sharedSkill, "utf8")).resolves.toBe("# Local Shared Skill\n");
   });
 
@@ -527,8 +527,8 @@ describe("InstallService", () => {
       expect.arrayContaining([
         expect.objectContaining({ target: claudeCommand }),
         expect.objectContaining({ target: claudeConfig }),
-        expect.objectContaining({ target: sharedSkill })
-      ])
+        expect.objectContaining({ target: sharedSkill }),
+      ]),
     );
 
     await service.uninstallPlatforms(["claude"]);
@@ -611,23 +611,23 @@ describe("InstallService", () => {
     await mkdir(join(userHome, ".codex"), { recursive: true });
     await writeFile(join(userHome, ".claude.json"), JSON.stringify({ keep: true }, null, 2), "utf8");
     await writeFile(join(userHome, ".gemini", "settings.json"), JSON.stringify({ keep: true }, null, 2), "utf8");
-    await writeFile(join(userHome, ".codex", "config.toml"), "theme = \"dark\"\n", "utf8");
+    await writeFile(join(userHome, ".codex", "config.toml"), 'theme = "dark"\n', "utf8");
 
     await service.installPlatforms(["claude", "codex", "gemini"]);
 
-    await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.toContain("\"forma\"");
-    await expect(readFile(join(userHome, ".gemini", "settings.json"), "utf8")).resolves.toContain("\"forma\"");
+    await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.toContain('"forma"');
+    await expect(readFile(join(userHome, ".gemini", "settings.json"), "utf8")).resolves.toContain('"forma"');
     await expect(readFile(join(userHome, ".codex", "config.toml"), "utf8")).resolves.toContain(
-      "# BEGIN Forma managed mcp server"
+      "# BEGIN Forma managed mcp server",
     );
 
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
-    await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.toContain("\"keep\": true");
-    await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.not.toContain("\"forma\"");
-    await expect(readFile(join(userHome, ".gemini", "settings.json"), "utf8")).resolves.toContain("\"keep\": true");
-    await expect(readFile(join(userHome, ".gemini", "settings.json"), "utf8")).resolves.not.toContain("\"forma\"");
-    await expect(readFile(join(userHome, ".codex", "config.toml"), "utf8")).resolves.toBe("theme = \"dark\"\n");
+    await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.toContain('"keep": true');
+    await expect(readFile(join(userHome, ".claude.json"), "utf8")).resolves.not.toContain('"forma"');
+    await expect(readFile(join(userHome, ".gemini", "settings.json"), "utf8")).resolves.toContain('"keep": true');
+    await expect(readFile(join(userHome, ".gemini", "settings.json"), "utf8")).resolves.not.toContain('"forma"');
+    await expect(readFile(join(userHome, ".codex", "config.toml"), "utf8")).resolves.toBe('theme = "dark"\n');
   });
 
   it("writes Claude MCP config to the Claude Code user config", async () => {
@@ -641,8 +641,8 @@ describe("InstallService", () => {
     expect(JSON.parse(await readFile(claudeCodeConfig, "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: formaStdioMcpConfig()
-      }
+        forma: formaStdioMcpConfig(),
+      },
     });
     await expect(exists(join(userHome, ".claude", "mcp.json"))).resolves.toBe(false);
   });
@@ -655,7 +655,7 @@ describe("InstallService", () => {
     await writeFile(
       legacyConfig,
       `${JSON.stringify({ mcpServers: { forma: formaStdioMcpConfig() } }, null, 2)}\n`,
-      "utf8"
+      "utf8",
     );
     await writeYamlAtomic(join(formaHome, "manifests", "claude.manifest"), {
       schema_version: 1,
@@ -663,15 +663,15 @@ describe("InstallService", () => {
       installed_paths: [],
       backups: [],
       config_paths: [legacyConfig],
-      installed_at: "2026-01-01T00:00:00.000Z"
+      installed_at: "2026-01-01T00:00:00.000Z",
     });
 
     await service.installPlatforms(["claude"]);
 
     expect(JSON.parse(await readFile(claudeCodeConfig, "utf8"))).toEqual({
       mcpServers: {
-        forma: formaStdioMcpConfig()
-      }
+        forma: formaStdioMcpConfig(),
+      },
     });
     await expect(exists(legacyConfig)).resolves.toBe(false);
     expect((await readManifest(formaHome, "claude")).config_paths).toEqual([claudeCodeConfig]);
@@ -684,7 +684,7 @@ describe("InstallService", () => {
     await writeFile(
       join(userHome, ".claude.json"),
       JSON.stringify({ keep: true, forma: { command: "legacy-forma" } }, null, 2),
-      "utf8"
+      "utf8",
     );
     await writeFile(join(userHome, ".gemini", "settings.json"), JSON.stringify({ keep: true }, null, 2), "utf8");
 
@@ -693,14 +693,14 @@ describe("InstallService", () => {
     expect(JSON.parse(await readFile(join(userHome, ".claude.json"), "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: formaStdioMcpConfig()
-      }
+        forma: formaStdioMcpConfig(),
+      },
     });
     expect(JSON.parse(await readFile(join(userHome, ".gemini", "settings.json"), "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: formaStdioMcpConfig()
-      }
+        forma: formaStdioMcpConfig(),
+      },
     });
   });
 
@@ -716,20 +716,20 @@ describe("InstallService", () => {
       JSON.stringify(
         {
           ...(JSON.parse(await readFile(claudeConfig, "utf8")) as Record<string, unknown>),
-          forma: { command: "legacy-forma" }
+          forma: { command: "legacy-forma" },
         },
         null,
-        2
+        2,
       ),
-      "utf8"
+      "utf8",
     );
     await service.installPlatforms(["claude"]);
 
     expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
       keep: true,
       mcpServers: {
-        forma: formaStdioMcpConfig()
-      }
+        forma: formaStdioMcpConfig(),
+      },
     });
 
     await service.uninstallPlatforms(["claude"]);
@@ -744,10 +744,10 @@ describe("InstallService", () => {
       {
         keep: true,
         forma: { command: "legacy-forma" },
-        mcpServers: { forma: { command: "user-forma" } }
+        mcpServers: { forma: { command: "user-forma" } },
       },
       null,
-      2
+      2,
     )}\n`;
     await mkdir(join(userHome, ".claude"), { recursive: true });
     await writeFile(claudeConfig, originalClaudeConfig, "utf8");
@@ -759,12 +759,12 @@ describe("InstallService", () => {
         {
           ...(JSON.parse(await readFile(claudeConfig, "utf8")) as Record<string, unknown>),
           forma: { command: "legacy-forma" },
-          postInstall: true
+          postInstall: true,
         },
         null,
-        2
+        2,
       ),
-      "utf8"
+      "utf8",
     );
 
     await service.uninstallPlatforms(["claude"]);
@@ -772,7 +772,7 @@ describe("InstallService", () => {
     expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
       keep: true,
       mcpServers: { forma: { command: "user-forma" } },
-      postInstall: true
+      postInstall: true,
     });
   });
 
@@ -780,8 +780,8 @@ describe("InstallService", () => {
     const { userHome, service } = await createService({
       mcpCommand: {
         command: '/tmp/Forma "dev"/node',
-        args: ['/tmp/path with spaces/forma "cli".js', "mcp"]
-      }
+        args: ['/tmp/path with spaces/forma "cli".js', "mcp"],
+      },
     });
 
     await service.installPlatforms(["codex"]);
@@ -799,12 +799,12 @@ describe("InstallService", () => {
     const originalClaudeConfig = `${JSON.stringify(
       { mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
-      2
+      2,
     )}\n`;
     const originalGeminiConfig = `${JSON.stringify(
       { mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
-      2
+      2,
     )}\n`;
     const originalCodexConfig = `theme = "dark"
 
@@ -841,7 +841,7 @@ args = ["mcp"]
     await writeFile(
       claudeConfig,
       `${JSON.stringify({ mcpServers: { forma: { command: "user-forma" } }, keep: true }, null, 2)}\n`,
-      "utf8"
+      "utf8",
     );
     await writeFile(
       geminiConfig,
@@ -849,14 +849,14 @@ args = ["mcp"]
         {
           mcpServers: {
             forma: { command: "user-forma" },
-            existing: { command: "existing" }
+            existing: { command: "existing" },
           },
-          keep: true
+          keep: true,
         },
         null,
-        2
+        2,
       )}\n`,
-      "utf8"
+      "utf8",
     );
     await writeFile(
       codexConfig,
@@ -868,7 +868,7 @@ command = "user-forma"
 args = ["mcp"]
 # END Forma managed mcp server
 `,
-      "utf8"
+      "utf8",
     );
 
     await service.installPlatforms(["claude", "codex", "gemini"]);
@@ -879,12 +879,12 @@ args = ["mcp"]
       `${JSON.stringify(
         {
           ...(JSON.parse(await readFile(claudeConfig, "utf8")) as Record<string, unknown>),
-          postInstall: true
+          postInstall: true,
         },
         null,
-        2
+        2,
       )}\n`,
-      "utf8"
+      "utf8",
     );
     const geminiAfterInstall = JSON.parse(await readFile(geminiConfig, "utf8")) as {
       mcpServers: Record<string, unknown>;
@@ -897,40 +897,40 @@ args = ["mcp"]
           ...geminiAfterInstall,
           mcpServers: {
             ...geminiAfterInstall.mcpServers,
-            postInstallServer: { command: "post-install" }
+            postInstallServer: { command: "post-install" },
           },
-          postInstall: true
+          postInstall: true,
         },
         null,
-        2
+        2,
       )}\n`,
-      "utf8"
+      "utf8",
     );
     await writeFile(
       codexConfig,
       `${await readFile(codexConfig, "utf8")}
 post_install = true
 `,
-      "utf8"
+      "utf8",
     );
 
     await service.uninstallPlatforms(["claude", "codex", "gemini"]);
 
     expect(JSON.parse(await readFile(claudeConfig, "utf8"))).toEqual({
       mcpServers: {
-        forma: { command: "user-forma" }
+        forma: { command: "user-forma" },
       },
       keep: true,
-      postInstall: true
+      postInstall: true,
     });
     expect(JSON.parse(await readFile(geminiConfig, "utf8"))).toEqual({
       mcpServers: {
         forma: { command: "user-forma" },
         existing: { command: "existing" },
-        postInstallServer: { command: "post-install" }
+        postInstallServer: { command: "post-install" },
       },
       keep: true,
-      postInstall: true
+      postInstall: true,
     });
     const codex = await readFile(codexConfig, "utf8");
     expect(codex).toContain('theme = "dark"');
@@ -947,17 +947,17 @@ post_install = true
     const originalClaudeConfig = `${JSON.stringify(
       { forma: { command: "legacy-forma" }, mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
-      2
+      2,
     )}\n`;
     const sanitizedClaudeConfig = `${JSON.stringify(
       { mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
-      2
+      2,
     )}\n`;
     const originalGeminiConfig = `${JSON.stringify(
       { mcpServers: { forma: { command: "user-forma" } }, keep: true },
       null,
-      2
+      2,
     )}\n`;
     const originalCodexConfig = `theme = "dark"
 
@@ -999,7 +999,7 @@ args = ["mcp"]
 [mcp_servers.keep]
 command = "keep"
 `,
-      "utf8"
+      "utf8",
     );
 
     await service.installPlatforms(["codex"]);
@@ -1007,7 +1007,7 @@ command = "keep"
     const installed = await readFile(codexConfig, "utf8");
     expect(installed.match(/^\[mcp_servers\.forma\]$/gm)).toHaveLength(1);
     expect(installed).toContain('command = "forma"');
-    expect(installed).toContain('[mcp_servers.keep]');
+    expect(installed).toContain("[mcp_servers.keep]");
 
     await writeFile(codexConfig, `${installed}\npost_install = true\n`, "utf8");
     await service.uninstallPlatforms(["codex"]);
@@ -1015,7 +1015,7 @@ command = "keep"
     const uninstalled = await readFile(codexConfig, "utf8");
     expect(uninstalled.match(/^\[mcp_servers\.forma\]$/gm)).toHaveLength(1);
     expect(uninstalled).toContain('command = "user-forma"');
-    expect(uninstalled).toContain('[mcp_servers.keep]');
+    expect(uninstalled).toContain("[mcp_servers.keep]");
     expect(uninstalled).toContain("post_install = true");
     expect(uninstalled).not.toContain('command = "forma"');
   });
@@ -1035,9 +1035,9 @@ command = "keep"
         "",
         "[mcp_servers.keep]",
         'command = "keep"',
-        ""
+        "",
       ].join("\r\n"),
-      "utf8"
+      "utf8",
     );
 
     await service.installPlatforms(["codex"]);
@@ -1071,7 +1071,7 @@ command = "keep"
       "",
       "  [mcp_servers.keep]",
       'command = "keep"',
-      ""
+      "",
     ].join("\r\n");
     await mkdir(join(userHome, ".codex"), { recursive: true });
     await writeFile(codexConfig, originalConfig, "utf8");

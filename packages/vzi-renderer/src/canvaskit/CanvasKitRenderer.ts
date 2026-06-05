@@ -4,28 +4,26 @@
  * 核心渲染器，管理 Surface、渲染流程和元素树
  */
 
-import type { CanvasKit, Surface, Canvas } from 'canvaskit-wasm';
-import type { IRElement, Bounds } from './renderers/types';
-import { loadCanvasKit } from './CanvasKitLoader';
-import { getSurfaceManager } from './SurfaceManager';
-import { renderElement } from './renderers/RendererRegistry';
-import { createBorderPath, parseBorder } from './converters/BorderConverter';
-import { FontManager } from './FontManager';
-import { imageRenderer } from './renderers/ImageRenderer';
-import { sortCanvasKitTree } from './render-order';
-import type { CanvasAnnotationRenderer } from './annotations/AnnotationRenderer';
+import type { CanvasKit, Surface, Canvas } from "canvaskit-wasm";
+import type { IRElement, Bounds } from "./renderers/types";
+import { loadCanvasKit } from "./CanvasKitLoader";
+import { getSurfaceManager } from "./SurfaceManager";
+import { renderElement } from "./renderers/RendererRegistry";
+import { createBorderPath, parseBorder } from "./converters/BorderConverter";
+import { FontManager } from "./FontManager";
+import { imageRenderer } from "./renderers/ImageRenderer";
+import { sortCanvasKitTree } from "./render-order";
+import type { CanvasAnnotationRenderer } from "./annotations/AnnotationRenderer";
 
-const TEXT_TYPES = ['text', 'span', 'p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'label'];
-const ICON_FALLBACK_FAMILIES = [
-  'Material Icons',
-];
+const TEXT_TYPES = ["text", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "label"];
+const ICON_FALLBACK_FAMILIES = ["Material Icons"];
 
 function shouldClipOverflow(overflow: string | number | undefined): boolean {
-  if (typeof overflow !== 'string') {
+  if (typeof overflow !== "string") {
     return false;
   }
   const normalized = overflow.trim().toLowerCase();
-  return normalized === 'hidden' || normalized === 'clip';
+  return normalized === "hidden" || normalized === "clip";
 }
 
 function isRendererDebugEnabled(): boolean {
@@ -118,7 +116,7 @@ export class CanvasKitRenderer {
     const surfaceInfo = surfaceManager.createSurface(canvas, {
       width: canvas.clientWidth,
       height: canvas.clientHeight,
-      useWebGL: (options.useWebGL ?? true),
+      useWebGL: options.useWebGL ?? true,
       devicePixelRatio: (options.devicePixelRatio ?? window.devicePixelRatio) || 1,
     });
 
@@ -132,7 +130,7 @@ export class CanvasKitRenderer {
    */
   async render(elements: IRElement[], options: RenderOptions = {}): Promise<void> {
     if (!this.isInitialized || !this.canvas) {
-      console.warn('Renderer not initialized');
+      console.warn("Renderer not initialized");
       return;
     }
 
@@ -195,7 +193,7 @@ export class CanvasKitRenderer {
       return false;
     }
 
-    if (!/^[a-z0-9_]+$/.test(normalized) || !normalized.includes('_')) {
+    if (!/^[a-z0-9_]+$/.test(normalized) || !normalized.includes("_")) {
       return false;
     }
 
@@ -211,9 +209,7 @@ export class CanvasKitRenderer {
    */
   private async preloadFonts(fontFamilies: Set<string>): Promise<void> {
     const fontManager = FontManager.getInstance();
-    const promises = Array.from(fontFamilies).map(fontFamily =>
-      fontManager.getTypeface(fontFamily)
-    );
+    const promises = Array.from(fontFamilies).map((fontFamily) => fontManager.getTypeface(fontFamily));
     await Promise.all(promises);
   }
 
@@ -234,10 +230,10 @@ export class CanvasKitRenderer {
     };
 
     const traverse = (element: IRElement): void => {
-      if (typeof element.src === 'string' && element.src.trim().length > 0) {
+      if (typeof element.src === "string" && element.src.trim().length > 0) {
         imageSources.add(element.src.trim());
       }
-      if (typeof element.styles?.backgroundImage === 'string') {
+      if (typeof element.styles?.backgroundImage === "string") {
         for (const url of extractBackgroundImageUrls(element.styles.backgroundImage)) {
           imageSources.add(url);
         }
@@ -255,9 +251,7 @@ export class CanvasKitRenderer {
     if (!this.canvasKit || imageSources.size === 0) {
       return;
     }
-    const promises = Array.from(imageSources).map((src) =>
-      imageRenderer.loadImage(src, this.canvasKit!)
-    );
+    const promises = Array.from(imageSources).map((src) => imageRenderer.loadImage(src, this.canvasKit!));
     await Promise.allSettled(promises);
   }
 
@@ -312,18 +306,22 @@ export class CanvasKitRenderer {
 
     // 渲染元素
     try {
-      rendererDebugLog('render element', {
+      rendererDebugLog("render element", {
         id: element.id,
         type: element.type,
-        hasText: typeof element.textContent === 'string' && element.textContent.trim().length > 0,
+        hasText: typeof element.textContent === "string" && element.textContent.trim().length > 0,
       });
       renderElement(this.canvas, element, this.canvasKit);
     } catch (error) {
-      console.error('[VZI][CanvasKitRenderer] render element failed', {
-        id: element.id,
-        type: element.type,
-        text: element.textContent,
-      }, error);
+      console.error(
+        "[VZI][CanvasKitRenderer] render element failed",
+        {
+          id: element.id,
+          type: element.type,
+          text: element.textContent,
+        },
+        error,
+      );
       throw error;
     }
 
@@ -414,7 +412,7 @@ export class CanvasKitRenderer {
         this.surface.delete();
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.warn('[VZI][CanvasKitRenderer] surface already deleted, skip', error);
+        console.warn("[VZI][CanvasKitRenderer] surface already deleted, skip", error);
       }
     }
 
@@ -489,12 +487,9 @@ export class CanvasKitRenderer {
    * @param elements - 元素数组
    * @param options - 渲染选项
    */
-  async renderWithAnnotations(
-    elements: IRElement[],
-    options: RenderOptions = {}
-  ): Promise<void> {
+  async renderWithAnnotations(elements: IRElement[], options: RenderOptions = {}): Promise<void> {
     if (!this.isInitialized || !this.canvas) {
-      console.warn('Renderer not initialized');
+      console.warn("Renderer not initialized");
       return;
     }
 

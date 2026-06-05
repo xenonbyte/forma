@@ -4,8 +4,8 @@
  * 任务 3.19: 实现四叉树空间分块算法
  */
 
-import type { IRBounds, IRElement } from '@vzi-core/types';
-import type { SpatialBlock, QuadTreeIndex } from './types';
+import type { IRBounds, IRElement } from "@vzi-core/types";
+import type { SpatialBlock, QuadTreeIndex } from "./types";
 
 /**
  * 四叉树节点
@@ -122,11 +122,7 @@ export class SpatialIndexBuilder {
   /**
    * 插入元素到四叉树
    */
-  private insert(
-    node: QuadTreeNode,
-    elementId: string,
-    elementBounds: IRBounds
-  ): void {
+  private insert(node: QuadTreeNode, elementId: string, elementBounds: IRBounds): void {
     // 如果有子节点，尝试插入到子节点
     if (node.children) {
       for (const child of node.children) {
@@ -166,22 +162,14 @@ export class SpatialIndexBuilder {
    * 检查边界是否相交
    */
   intersects(a: IRBounds, b: IRBounds): boolean {
-    return (
-      a.x < b.x + b.width &&
-      a.x + a.width > b.x &&
-      a.y < b.y + b.height &&
-      a.y + a.height > b.y
-    );
+    return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
   }
 
   /**
    * 检查是否可以分裂
    */
   private canSplit(node: QuadTreeNode): boolean {
-    return (
-      node.bounds.width >= this.options.minNodeSize * 2 &&
-      node.bounds.height >= this.options.minNodeSize * 2
-    );
+    return node.bounds.width >= this.options.minNodeSize * 2 && node.bounds.height >= this.options.minNodeSize * 2;
   }
 
   /**
@@ -267,10 +255,7 @@ export class SpatialIndexBuilder {
   /**
    * 转换为块格式
    */
-  private convertToBlocks(
-    node: QuadTreeNode,
-    blocks: Map<string, SpatialBlock>
-  ): void {
+  private convertToBlocks(node: QuadTreeNode, blocks: Map<string, SpatialBlock>): void {
     const block: SpatialBlock = {
       id: node.id,
       bounds: node.bounds,
@@ -309,7 +294,7 @@ export class SpatialIndexBuilder {
     block: SpatialBlock,
     queryBounds: IRBounds,
     blocks: Map<string, SpatialBlock>,
-    results: string[]
+    results: string[],
   ): void {
     // 检查是否相交
     if (!this.intersects(block.bounds, queryBounds)) {

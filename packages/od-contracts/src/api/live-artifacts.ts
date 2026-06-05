@@ -1,33 +1,28 @@
-import type { JsonPrimitive } from '../common';
+import type { JsonPrimitive } from "../common";
 
-export type BoundedJsonValue =
-  | JsonPrimitive
-  | BoundedJsonValue[]
-  | { [key: string]: BoundedJsonValue };
+export type BoundedJsonValue = JsonPrimitive | BoundedJsonValue[] | { [key: string]: BoundedJsonValue };
 
 export interface BoundedJsonObject {
   [key: string]: BoundedJsonValue;
 }
 
-export type LiveArtifactStatus = 'active' | 'archived' | 'error';
+export type LiveArtifactStatus = "active" | "archived" | "error";
 
-export type LiveArtifactRefreshStatus = 'never' | 'idle' | 'running' | 'succeeded' | 'failed';
+export type LiveArtifactRefreshStatus = "never" | "idle" | "running" | "succeeded" | "failed";
 
-export type LiveArtifactPreviewType = 'html' | 'jsx' | 'markdown';
+export type LiveArtifactPreviewType = "html" | "jsx" | "markdown";
 
-export type LiveArtifactSourceType = 'local_file' | 'daemon_tool' | 'connector_tool';
+export type LiveArtifactSourceType = "local_file" | "daemon_tool" | "connector_tool";
 
-export type LiveArtifactConnectorApprovalPolicy =
-  | 'read_only_auto'
-  | 'manual_refresh_granted_for_read_only';
+export type LiveArtifactConnectorApprovalPolicy = "read_only_auto" | "manual_refresh_granted_for_read_only";
 
-export type LiveArtifactRefreshPermission = 'none' | 'manual_refresh_granted_for_read_only';
+export type LiveArtifactRefreshPermission = "none" | "manual_refresh_granted_for_read_only";
 
-export type LiveArtifactOutputTransform = 'identity' | 'compact_table' | 'metric_summary';
+export type LiveArtifactOutputTransform = "identity" | "compact_table" | "metric_summary";
 
-export type LiveArtifactProvenanceGenerator = 'agent' | 'refresh_runner';
+export type LiveArtifactProvenanceGenerator = "agent" | "refresh_runner";
 
-export type LiveArtifactProvenanceSourceType = 'connector' | 'local_file' | 'user_input' | 'derived';
+export type LiveArtifactProvenanceSourceType = "connector" | "local_file" | "user_input" | "derived";
 
 export interface LiveArtifactPreview {
   type: LiveArtifactPreviewType;
@@ -35,10 +30,10 @@ export interface LiveArtifactPreview {
 }
 
 export interface LiveArtifactDocument {
-  format: 'html_template_v1';
-  templatePath: 'template.html';
-  generatedPreviewPath: 'index.html';
-  dataPath: 'data.json';
+  format: "html_template_v1";
+  templatePath: "template.html";
+  generatedPreviewPath: "index.html";
+  dataPath: "data.json";
   /** Derived cache hydrated from dataPath in API responses; data.json is canonical. */
   dataJson: BoundedJsonObject;
   dataSchemaJson?: BoundedJsonObject;
@@ -94,14 +89,14 @@ export interface LiveArtifact {
 }
 
 export type LiveArtifactDaemonOwnedInputField =
-  | 'id'
-  | 'projectId'
-  | 'createdAt'
-  | 'updatedAt'
-  | 'createdByRunId'
-  | 'schemaVersion'
-  | 'refreshStatus'
-  | 'lastRefreshedAt';
+  | "id"
+  | "projectId"
+  | "createdAt"
+  | "updatedAt"
+  | "createdByRunId"
+  | "schemaVersion"
+  | "refreshStatus"
+  | "lastRefreshedAt";
 
 export type LiveArtifactRejectDaemonOwnedInputFields = {
   [Field in LiveArtifactDaemonOwnedInputField]?: never;
@@ -126,7 +121,7 @@ export type LiveArtifactUpdateInput = LiveArtifactRejectDaemonOwnedInputFields &
   document?: LiveArtifactDocument;
 };
 
-export type LiveArtifactSummary = Omit<LiveArtifact, 'document'> & {
+export type LiveArtifactSummary = Omit<LiveArtifact, "document"> & {
   hasDocument: boolean;
 };
 
@@ -142,12 +137,12 @@ export interface LiveArtifactRefreshResponse {
   artifact: LiveArtifact;
   refresh: {
     id: string;
-    status: 'succeeded';
+    status: "succeeded";
     refreshedSourceCount: number;
   };
 }
 
-export type LiveArtifactRefreshStepStatus = 'running' | 'succeeded' | 'failed' | 'cancelled' | 'skipped';
+export type LiveArtifactRefreshStepStatus = "running" | "succeeded" | "failed" | "cancelled" | "skipped";
 
 export interface LiveArtifactRefreshErrorRecord {
   code?: string;
@@ -156,7 +151,7 @@ export interface LiveArtifactRefreshErrorRecord {
 }
 
 export interface LiveArtifactRefreshSourceMetadata {
-  sourceType: 'document';
+  sourceType: "document";
   toolName?: string;
   connector?: {
     connectorId: string;

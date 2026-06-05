@@ -1,499 +1,496 @@
-import { IRElementType } from './types';
+import { IRElementType } from "./types";
 
 const styleValueSchema = {
-  anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }],
+  anyOf: [{ type: "string" }, { type: "number" }, { type: "null" }],
 };
 
 export const irElementSchema = {
-  type: 'object',
+  type: "object",
   properties: {
-    id: { type: 'string' },
-    parentId: { type: ['string', 'null'] },
-    type: { type: 'string', enum: Object.values(IRElementType) as IRElementType[] },
+    id: { type: "string" },
+    parentId: { type: ["string", "null"] },
+    type: { type: "string", enum: Object.values(IRElementType) as IRElementType[] },
     bounds: {
-      type: 'object',
+      type: "object",
       properties: {
-        x: { type: 'number' },
-        y: { type: 'number' },
-        width: { type: 'number' },
-        height: { type: 'number' },
+        x: { type: "number" },
+        y: { type: "number" },
+        width: { type: "number" },
+        height: { type: "number" },
       },
-      required: ['x', 'y', 'width', 'height'],
+      required: ["x", "y", "width", "height"],
       additionalProperties: false,
     },
     styles: {
-      type: 'object',
+      type: "object",
       required: [],
       additionalProperties: styleValueSchema,
     },
-    textContent: { type: ['string', 'null'] },
+    textContent: { type: ["string", "null"] },
     source: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
-            tagName: { type: ['string', 'null'] },
-            className: { type: ['string', 'null'] },
-            id: { type: ['string', 'null'] },
-            role: { type: ['string', 'null'] },
-            name: { type: ['string', 'null'] },
+            tagName: { type: ["string", "null"] },
+            className: { type: ["string", "null"] },
+            id: { type: ["string", "null"] },
+            role: { type: ["string", "null"] },
+            name: { type: ["string", "null"] },
             dataAttributes: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   required: [],
-                  additionalProperties: { type: 'string' },
+                  additionalProperties: { type: "string" },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             ariaAttributes: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   required: [],
-                  additionalProperties: { type: 'string' },
+                  additionalProperties: { type: "string" },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             // HTML元素核心属性
-            src: { type: ['string', 'null'] },
-            href: { type: ['string', 'null'] },
-            alt: { type: ['string', 'null'] },
-            target: { type: ['string', 'null'] },
-            rel: { type: ['string', 'null'] },
-            type: { type: ['string', 'null'] },
-            placeholder: { type: ['string', 'null'] },
-            value: { type: ['string', 'null'] },
+            src: { type: ["string", "null"] },
+            href: { type: ["string", "null"] },
+            alt: { type: ["string", "null"] },
+            target: { type: ["string", "null"] },
+            rel: { type: ["string", "null"] },
+            type: { type: ["string", "null"] },
+            placeholder: { type: ["string", "null"] },
+            value: { type: ["string", "null"] },
           },
           required: [],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     pseudoElements: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
             before: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   properties: {
-                    content: { type: ['string', 'null'] },
+                    content: { type: ["string", "null"] },
                     styles: {
                       anyOf: [
                         {
-                          type: 'object',
+                          type: "object",
                           required: [],
                           additionalProperties: styleValueSchema,
                         },
-                        { type: 'null' },
+                        { type: "null" },
                       ],
                     },
                   },
                   required: [],
                   additionalProperties: false,
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             after: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   properties: {
-                    content: { type: ['string', 'null'] },
+                    content: { type: ["string", "null"] },
                     styles: {
                       anyOf: [
                         {
-                          type: 'object',
+                          type: "object",
                           required: [],
                           additionalProperties: styleValueSchema,
                         },
-                        { type: 'null' },
+                        { type: "null" },
                       ],
                     },
                   },
                   required: [],
                   additionalProperties: false,
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
           },
           required: [],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     responsive: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
             breakpoints: {
               anyOf: [
                 {
-                  type: 'array',
-                  items: { type: 'number' },
+                  type: "array",
+                  items: { type: "number" },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             mediaQueries: {
               anyOf: [
                 {
-                  type: 'array',
-                  items: { type: 'string' },
+                  type: "array",
+                  items: { type: "string" },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
           },
           required: [],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     animations: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
             transitions: {
               anyOf: [
                 {
-                  type: 'array',
+                  type: "array",
                   items: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      property: { type: 'string' },
-                      duration: { type: 'string' },
-                      timingFunction: { type: ['string', 'null'] },
-                      delay: { type: ['string', 'null'] },
+                      property: { type: "string" },
+                      duration: { type: "string" },
+                      timingFunction: { type: ["string", "null"] },
+                      delay: { type: ["string", "null"] },
                     },
-                    required: ['property', 'duration'],
+                    required: ["property", "duration"],
                     additionalProperties: false,
                   },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             keyframes: {
               anyOf: [
                 {
-                  type: 'array',
+                  type: "array",
                   items: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      name: { type: 'string' },
+                      name: { type: "string" },
                       steps: {
-                        type: 'array',
+                        type: "array",
                         items: {
-                          type: 'object',
+                          type: "object",
                           properties: {
-                            offset: { type: 'string' },
+                            offset: { type: "string" },
                             styles: {
-                              type: 'object',
+                              type: "object",
                               required: [],
                               additionalProperties: styleValueSchema,
                             },
                           },
-                          required: ['offset', 'styles'],
+                          required: ["offset", "styles"],
                           additionalProperties: false,
                         },
                       },
                     },
-                    required: ['name', 'steps'],
+                    required: ["name", "steps"],
                     additionalProperties: false,
                   },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
           },
           required: [],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     transform: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
             matrix: {
               anyOf: [
                 {
-                  type: 'array',
-                  items: { type: 'number' },
+                  type: "array",
+                  items: { type: "number" },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             translate: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   properties: {
-                    x: { type: 'number' },
-                    y: { type: 'number' },
-                    z: { type: ['number', 'null'] },
+                    x: { type: "number" },
+                    y: { type: "number" },
+                    z: { type: ["number", "null"] },
                   },
-                  required: ['x', 'y'],
+                  required: ["x", "y"],
                   additionalProperties: false,
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             rotate: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   properties: {
-                    x: { type: ['number', 'null'] },
-                    y: { type: ['number', 'null'] },
-                    z: { type: ['number', 'null'] },
+                    x: { type: ["number", "null"] },
+                    y: { type: ["number", "null"] },
+                    z: { type: ["number", "null"] },
                   },
                   required: [],
                   additionalProperties: false,
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             scale: {
               anyOf: [
                 {
-                  type: 'object',
+                  type: "object",
                   properties: {
-                    x: { type: 'number' },
-                    y: { type: 'number' },
-                    z: { type: ['number', 'null'] },
+                    x: { type: "number" },
+                    y: { type: "number" },
+                    z: { type: ["number", "null"] },
                   },
-                  required: ['x', 'y'],
+                  required: ["x", "y"],
                   additionalProperties: false,
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
           },
           required: [],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     effects: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
             filters: {
               anyOf: [
                 {
-                  type: 'array',
-                  items: { type: 'string' },
+                  type: "array",
+                  items: { type: "string" },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             shadows: {
               anyOf: [
                 {
-                  type: 'array',
+                  type: "array",
                   items: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      x: { type: 'number' },
-                      y: { type: 'number' },
-                      blur: { type: 'number' },
-                      spread: { type: ['number', 'null'] },
-                      color: { type: 'string' },
-                      inset: { type: ['boolean', 'null'] },
+                      x: { type: "number" },
+                      y: { type: "number" },
+                      blur: { type: "number" },
+                      spread: { type: ["number", "null"] },
+                      color: { type: "string" },
+                      inset: { type: ["boolean", "null"] },
                     },
-                    required: ['x', 'y', 'blur', 'color'],
+                    required: ["x", "y", "blur", "color"],
                     additionalProperties: false,
                   },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
           },
           required: [],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     metadata: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           required: [],
           additionalProperties: true,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     svgData: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
-            viewBox: { type: ['string', 'null'] },
-            preserveAspectRatio: { type: ['string', 'null'] },
+            viewBox: { type: ["string", "null"] },
+            preserveAspectRatio: { type: ["string", "null"] },
             paths: {
-              type: 'array',
+              type: "array",
               items: {
-                type: 'object',
+                type: "object",
                 properties: {
-                  d: { type: 'string' },
-                  fill: { type: ['string', 'null'] },
-                  stroke: { type: ['string', 'null'] },
-                  strokeWidth: { type: ['number', 'null'] },
-                  strokeDasharray: { type: ['string', 'null'] },
-                  strokeDashoffset: { type: ['number', 'null'] },
-                  strokeLinecap: { type: ['string', 'null'] },
-                  fillRule: { type: 'string', enum: ['nonzero', 'evenodd'], nullable: false },
-                  opacity: { type: ['number', 'null'] },
+                  d: { type: "string" },
+                  fill: { type: ["string", "null"] },
+                  stroke: { type: ["string", "null"] },
+                  strokeWidth: { type: ["number", "null"] },
+                  strokeDasharray: { type: ["string", "null"] },
+                  strokeDashoffset: { type: ["number", "null"] },
+                  strokeLinecap: { type: ["string", "null"] },
+                  fillRule: { type: "string", enum: ["nonzero", "evenodd"], nullable: false },
+                  opacity: { type: ["number", "null"] },
                 },
-                required: ['d'],
+                required: ["d"],
                 additionalProperties: false,
               },
             },
             circles: {
               anyOf: [
                 {
-                  type: 'array',
+                  type: "array",
                   items: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      cx: { type: 'number' },
-                      cy: { type: 'number' },
-                      r: { type: 'number' },
-                      fill: { type: ['string', 'null'] },
-                      stroke: { type: ['string', 'null'] },
-                      strokeWidth: { type: ['number', 'null'] },
-                      strokeDasharray: { type: ['string', 'null'] },
-                      strokeDashoffset: { type: ['number', 'null'] },
-                      strokeLinecap: { type: ['string', 'null'] },
-                      opacity: { type: ['number', 'null'] },
+                      cx: { type: "number" },
+                      cy: { type: "number" },
+                      r: { type: "number" },
+                      fill: { type: ["string", "null"] },
+                      stroke: { type: ["string", "null"] },
+                      strokeWidth: { type: ["number", "null"] },
+                      strokeDasharray: { type: ["string", "null"] },
+                      strokeDashoffset: { type: ["number", "null"] },
+                      strokeLinecap: { type: ["string", "null"] },
+                      opacity: { type: ["number", "null"] },
                     },
-                    required: ['cx', 'cy', 'r'],
+                    required: ["cx", "cy", "r"],
                     additionalProperties: false,
                   },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             rects: {
               anyOf: [
                 {
-                  type: 'array',
+                  type: "array",
                   items: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      x: { type: 'number' },
-                      y: { type: 'number' },
-                      width: { type: 'number' },
-                      height: { type: 'number' },
-                      rx: { type: ['number', 'null'] },
-                      ry: { type: ['number', 'null'] },
-                      fill: { type: ['string', 'null'] },
-                      stroke: { type: ['string', 'null'] },
-                      strokeWidth: { type: ['number', 'null'] },
-                      opacity: { type: ['number', 'null'] },
+                      x: { type: "number" },
+                      y: { type: "number" },
+                      width: { type: "number" },
+                      height: { type: "number" },
+                      rx: { type: ["number", "null"] },
+                      ry: { type: ["number", "null"] },
+                      fill: { type: ["string", "null"] },
+                      stroke: { type: ["string", "null"] },
+                      strokeWidth: { type: ["number", "null"] },
+                      opacity: { type: ["number", "null"] },
                     },
-                    required: ['x', 'y', 'width', 'height'],
+                    required: ["x", "y", "width", "height"],
                     additionalProperties: false,
                   },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
             polygons: {
               anyOf: [
                 {
-                  type: 'array',
+                  type: "array",
                   items: {
-                    type: 'object',
+                    type: "object",
                     properties: {
-                      points: { type: 'string' },
-                      fill: { type: ['string', 'null'] },
-                      stroke: { type: ['string', 'null'] },
-                      strokeWidth: { type: ['number', 'null'] },
-                      opacity: { type: ['number', 'null'] },
+                      points: { type: "string" },
+                      fill: { type: ["string", "null"] },
+                      stroke: { type: ["string", "null"] },
+                      strokeWidth: { type: ["number", "null"] },
+                      opacity: { type: ["number", "null"] },
                     },
-                    required: ['points'],
+                    required: ["points"],
                     additionalProperties: false,
                   },
                 },
-                { type: 'null' },
+                { type: "null" },
               ],
             },
           },
-          required: ['paths'],
+          required: ["paths"],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
     imageData: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           properties: {
-            src: { type: 'string' },
-            naturalWidth: { type: 'number' },
-            naturalHeight: { type: 'number' },
+            src: { type: "string" },
+            naturalWidth: { type: "number" },
+            naturalHeight: { type: "number" },
             format: {
-              anyOf: [
-                { type: 'string', enum: ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif', 'bmp'] },
-                { type: 'null' },
-              ],
+              anyOf: [{ type: "string", enum: ["png", "jpg", "jpeg", "svg", "webp", "gif", "bmp"] }, { type: "null" }],
             },
-            isBase64: { type: ['boolean', 'null'] },
-            alt: { type: ['string', 'null'] },
+            isBase64: { type: ["boolean", "null"] },
+            alt: { type: ["string", "null"] },
           },
-          required: ['src', 'naturalWidth', 'naturalHeight'],
+          required: ["src", "naturalWidth", "naturalHeight"],
           additionalProperties: false,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
   },
-  required: ['id', 'parentId', 'type', 'bounds', 'styles'],
+  required: ["id", "parentId", "type", "bounds", "styles"],
   additionalProperties: false,
 };
 
 export const irSchema = {
-  type: 'object',
+  type: "object",
   properties: {
-    version: { type: 'string' },
-    rootElementId: { type: 'string' },
+    version: { type: "string" },
+    rootElementId: { type: "string" },
     elements: {
-      type: 'object',
+      type: "object",
       required: [],
       additionalProperties: irElementSchema,
     },
     metadata: {
       anyOf: [
         {
-          type: 'object',
+          type: "object",
           required: [],
           additionalProperties: true,
         },
-        { type: 'null' },
+        { type: "null" },
       ],
     },
   },
-  required: ['version', 'rootElementId', 'elements'],
+  required: ["version", "rootElementId", "elements"],
   additionalProperties: false,
 };

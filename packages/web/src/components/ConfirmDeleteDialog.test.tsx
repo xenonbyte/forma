@@ -31,7 +31,7 @@ describe("ConfirmDeleteDialog", () => {
         onConfirm={() => undefined}
         open={true}
         product={{ id: "P-123abc", name: "Checkout App" }}
-      />
+      />,
     );
 
     expect(html).toContain("Checkout App");
@@ -50,13 +50,19 @@ describe("ConfirmDeleteDialog", () => {
           onConfirm={onConfirm}
           open={true}
           product={{ id: "P-123abc", name: "Checkout App" }}
-        />
+        />,
       );
       await flushPromises();
     });
 
-    const input = required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input");
-    const button = required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button");
+    const input = required(
+      container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'),
+      "confirmation input",
+    );
+    const button = required(
+      container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'),
+      "final delete button",
+    );
 
     expect(button.disabled).toBe(true);
 
@@ -97,14 +103,20 @@ describe("ConfirmDeleteDialog", () => {
           onConfirm={onConfirm}
           open={true}
           product={{ id: "P-123abc", name: "Checkout App" }}
-        />
+        />,
       );
       await flushPromises();
     });
 
     await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"), "P-123abc");
-      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      setInputValue(
+        required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"),
+        "P-123abc",
+      );
+      required(
+        container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'),
+        "final delete button",
+      ).click();
       await flushPromises();
     });
 
@@ -122,7 +134,7 @@ describe("ConfirmDeleteDialog", () => {
           onConfirm={() => undefined}
           open={true}
           product={{ id: "P-123abc", name: "Checkout App" }}
-        />
+        />,
       );
       await flushPromises();
     });

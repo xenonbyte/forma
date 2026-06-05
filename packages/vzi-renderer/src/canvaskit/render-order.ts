@@ -1,11 +1,11 @@
-import type { IRElement } from './renderers/types';
+import type { IRElement } from "./renderers/types";
 
 function parseOrderNumber(value: string | number | undefined): number {
-  if (typeof value === 'number' && Number.isFinite(value)) {
+  if (typeof value === "number" && Number.isFinite(value)) {
     return value;
   }
 
-  if (typeof value === 'string') {
+  if (typeof value === "string") {
     const parsed = Number.parseFloat(value);
     if (Number.isFinite(parsed)) {
       return parsed;
@@ -36,8 +36,6 @@ export function sortCanvasKitTree(elements: IRElement[]): IRElement[] {
   const sorted = sortCanvasKitElements(elements);
   return sorted.map((element) => ({
     ...element,
-    ...(element.children && element.children.length > 0
-      ? { children: sortCanvasKitTree(element.children) }
-      : {}),
+    ...(element.children && element.children.length > 0 ? { children: sortCanvasKitTree(element.children) } : {}),
   }));
 }

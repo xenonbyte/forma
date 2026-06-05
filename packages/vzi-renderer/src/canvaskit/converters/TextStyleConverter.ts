@@ -4,17 +4,17 @@
  * 将 CSS 文本样式转换为 CanvasKit Font 和 Paint
  */
 
-import type { CanvasKit, Font, Paint, FontWeight } from 'canvaskit-wasm';
-import { toCanvasKitColor } from './ColorConverter';
-import { FontManager } from '../FontManager';
+import type { CanvasKit, Font, Paint, FontWeight } from "canvaskit-wasm";
+import { toCanvasKitColor } from "./ColorConverter";
+import { FontManager } from "../FontManager";
 
 export interface TextStyle {
   fontFamily: string;
   fontSize: number;
   fontWeight: number;
-  fontStyle: 'normal' | 'italic';
+  fontStyle: "normal" | "italic";
   color: string;
-  textAlign: 'left' | 'center' | 'right';
+  textAlign: "left" | "center" | "right";
   textDecoration: string[];
   lineHeight: number;
 }
@@ -23,20 +23,20 @@ export interface TextStyle {
  * 解析字体大小
  */
 export function parseFontSize(fontSize: string | number): number {
-  if (typeof fontSize === 'number') {
+  if (typeof fontSize === "number") {
     return fontSize;
   }
 
   const trimmed = fontSize.trim();
-  if (trimmed.endsWith('px')) {
+  if (trimmed.endsWith("px")) {
     return parseFloat(trimmed);
   }
 
-  if (trimmed.endsWith('pt')) {
+  if (trimmed.endsWith("pt")) {
     return parseFloat(trimmed) * 1.333; // pt to px
   }
 
-  if (trimmed.endsWith('em')) {
+  if (trimmed.endsWith("em")) {
     return parseFloat(trimmed) * 16; // 假设基础字体 16px
   }
 
@@ -47,7 +47,7 @@ export function parseFontSize(fontSize: string | number): number {
  * 解析字体粗细
  */
 export function parseFontWeight(fontWeight: string | number): number {
-  if (typeof fontWeight === 'number') {
+  if (typeof fontWeight === "number") {
     return fontWeight;
   }
 
@@ -71,42 +71,42 @@ export function parseFontWeight(fontWeight: string | number): number {
 /**
  * 解析字体样式
  */
-export function parseFontStyle(fontStyle: string): 'normal' | 'italic' {
+export function parseFontStyle(fontStyle: string): "normal" | "italic" {
   const style = fontStyle.trim().toLowerCase();
-  return style === 'italic' || style === 'oblique' ? 'italic' : 'normal';
+  return style === "italic" || style === "oblique" ? "italic" : "normal";
 }
 
 /**
  * 解析文本对齐
  */
-export function parseTextAlign(textAlign: string): 'left' | 'center' | 'right' {
+export function parseTextAlign(textAlign: string): "left" | "center" | "right" {
   const align = textAlign.trim().toLowerCase();
-  if (align === 'center') return 'center';
-  if (align === 'right') return 'right';
-  return 'left';
+  if (align === "center") return "center";
+  if (align === "right") return "right";
+  return "left";
 }
 
 /**
  * 解析文本装饰
  */
 export function parseTextDecoration(textDecoration: string): string[] {
-  if (!textDecoration || textDecoration === 'none') {
+  if (!textDecoration || textDecoration === "none") {
     return [];
   }
 
   const decorations: string[] = [];
   const trimmed = textDecoration.trim().toLowerCase();
 
-  if (trimmed.includes('underline')) {
-    decorations.push('underline');
+  if (trimmed.includes("underline")) {
+    decorations.push("underline");
   }
 
-  if (trimmed.includes('line-through')) {
-    decorations.push('line-through');
+  if (trimmed.includes("line-through")) {
+    decorations.push("line-through");
   }
 
-  if (trimmed.includes('overline')) {
-    decorations.push('overline');
+  if (trimmed.includes("overline")) {
+    decorations.push("overline");
   }
 
   return decorations;
@@ -116,21 +116,21 @@ export function parseTextDecoration(textDecoration: string): string[] {
  * 解析行高
  */
 export function parseLineHeight(lineHeight: string | number, fontSize: number): number {
-  if (typeof lineHeight === 'number') {
+  if (typeof lineHeight === "number") {
     return lineHeight;
   }
 
   const trimmed = lineHeight.trim();
 
-  if (trimmed === 'normal') {
+  if (trimmed === "normal") {
     return fontSize * 1.2;
   }
 
-  if (trimmed.endsWith('px')) {
+  if (trimmed.endsWith("px")) {
     return parseFloat(trimmed);
   }
 
-  if (trimmed.endsWith('%')) {
+  if (trimmed.endsWith("%")) {
     return (parseFloat(trimmed) / 100) * fontSize;
   }
 
@@ -150,8 +150,8 @@ export async function createFontAsync(
   fontFamily: string,
   fontSize: number,
   fontWeight: number,
-  fontStyle: 'normal' | 'italic',
-  CanvasKit: CanvasKit
+  fontStyle: "normal" | "italic",
+  CanvasKit: CanvasKit,
 ): Promise<Font | undefined> {
   try {
     // 使用 FontManager 根据 fontFamily 获取对应的字体
@@ -163,11 +163,11 @@ export async function createFontAsync(
     }
 
     // 最后的降级方案：使用 CanvasKit 默认 typeface
-    console.warn('[createFontAsync] 无可用字体，使用 CanvasKit 默认字体');
+    console.warn("[createFontAsync] 无可用字体，使用 CanvasKit 默认字体");
     const defaultTypeface = CanvasKit.Typeface.GetDefault();
     return new CanvasKit.Font(defaultTypeface, fontSize);
   } catch (error) {
-    console.error('[createFontAsync] ❌ 创建字体失败:', error);
+    console.error("[createFontAsync] ❌ 创建字体失败:", error);
     return undefined;
   }
 }
@@ -179,8 +179,8 @@ export function createFont(
   fontFamily: string,
   fontSize: number,
   fontWeight: number,
-  fontStyle: 'normal' | 'italic',
-  CanvasKit: CanvasKit
+  fontStyle: "normal" | "italic",
+  CanvasKit: CanvasKit,
 ): Font | undefined {
   try {
     // 使用 FontManager 获取预加载的字体（同步）
@@ -195,7 +195,7 @@ export function createFont(
 
     // 如果 FontManager 未加载，降级到 CanvasKit 默认字体
     if (!typeface) {
-      console.warn('[createFont] FontManager 未加载，使用 CanvasKit 默认字体');
+      console.warn("[createFont] FontManager 未加载，使用 CanvasKit 默认字体");
       typeface = CanvasKit.Typeface.GetDefault();
     }
 
@@ -204,11 +204,11 @@ export function createFont(
     }
 
     // 最后的降级方案：使用 CanvasKit 默认 typeface
-    console.warn('[createFont] 无可用字体，使用 CanvasKit 默认字体');
+    console.warn("[createFont] 无可用字体，使用 CanvasKit 默认字体");
     const defaultTypeface = CanvasKit.Typeface.GetDefault();
     return new CanvasKit.Font(defaultTypeface, fontSize);
   } catch (error) {
-    console.error('[createFont] ❌ 创建字体失败:', error);
+    console.error("[createFont] ❌ 创建字体失败:", error);
     return undefined;
   }
 }
@@ -237,11 +237,7 @@ export function mapFontWeight(weight: number, CanvasKit: CanvasKit): FontWeight 
 /**
  * 创建文本 Paint
  */
-export function createTextPaint(
-  color: string,
-  decorations: string[],
-  CanvasKit: CanvasKit
-): Paint {
+export function createTextPaint(color: string, decorations: string[], CanvasKit: CanvasKit): Paint {
   const paint = new CanvasKit.Paint();
   paint.setColor(toCanvasKitColor(color, CanvasKit));
   paint.setStyle(CanvasKit.PaintStyle.Fill);
@@ -257,14 +253,14 @@ export function createTextPaint(
  * 解析文本样式对象
  */
 export function parseTextStyle(styles: Record<string, string | number | undefined>): TextStyle {
-  const fontFamily = (styles.fontFamily || 'sans-serif') as string;
+  const fontFamily = (styles.fontFamily || "sans-serif") as string;
   const fontSize = parseFontSize(styles.fontSize || 16);
   const fontWeight = parseFontWeight(styles.fontWeight || 400);
-  const fontStyle = parseFontStyle((styles.fontStyle || 'normal') as string);
-  const color = (styles.color || '#000000') as string;
-  const textAlign = parseTextAlign((styles.textAlign || 'left') as string);
-  const textDecoration = parseTextDecoration((styles.textDecoration || 'none') as string);
-  const lineHeight = parseLineHeight(styles.lineHeight || 'normal', fontSize);
+  const fontStyle = parseFontStyle((styles.fontStyle || "normal") as string);
+  const color = (styles.color || "#000000") as string;
+  const textAlign = parseTextAlign((styles.textAlign || "left") as string);
+  const textDecoration = parseTextDecoration((styles.textDecoration || "none") as string);
+  const lineHeight = parseLineHeight(styles.lineHeight || "normal", fontSize);
 
   return {
     fontFamily,

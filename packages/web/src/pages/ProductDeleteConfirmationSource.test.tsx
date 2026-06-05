@@ -10,7 +10,7 @@ vi.mock("../components/ConfirmDeleteDialog.js", () => ({
   ConfirmDeleteDialog: ({
     onConfirm,
     open,
-    product
+    product,
   }: {
     onConfirm(confirmProductId: string): void;
     open: boolean;
@@ -20,7 +20,7 @@ vi.mock("../components/ConfirmDeleteDialog.js", () => ({
       <button data-mock-confirm-delete={product.id} onClick={() => onConfirm("typed-confirmation")} type="button">
         confirm typed ID
       </button>
-    ) : null
+    ) : null,
 }));
 
 import { ProductDetail } from "./ProductDetail.js";
@@ -33,7 +33,7 @@ const style: StyleMetadata = {
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
   tokens_css_path: "styles/linear/tokens.css",
-  components_html_path: "styles/linear/components.html"
+  components_html_path: "styles/linear/components.html",
 };
 
 const product: Product = {
@@ -49,7 +49,7 @@ const product: Product = {
 const baseline: ProductBaseline = {
   product_id: product.id,
   navigation: [],
-  pages: []
+  pages: [],
 };
 
 const roots: Root[] = [];
@@ -78,18 +78,24 @@ describe("product delete confirmation source", () => {
           client={client}
           products={[product]}
           requirementSummaries={{ [product.id]: { count: 0 } }}
-        />
+        />,
       );
       await flushPromises();
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>(`[data-product-delete="${product.id}"]`), "delete action").click();
+      required(
+        container.querySelector<HTMLButtonElement>(`[data-product-delete="${product.id}"]`),
+        "delete action",
+      ).click();
       await flushPromises();
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>(`[data-mock-confirm-delete="${product.id}"]`), "mock confirm").click();
+      required(
+        container.querySelector<HTMLButtonElement>(`[data-mock-confirm-delete="${product.id}"]`),
+        "mock confirm",
+      ).click();
       await flushPromises();
     });
 
@@ -106,12 +112,18 @@ describe("product delete confirmation source", () => {
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'), "detail delete action").click();
+      required(
+        container.querySelector<HTMLButtonElement>('[data-product-detail-delete="true"]'),
+        "detail delete action",
+      ).click();
       await flushPromises();
     });
 
     await act(async () => {
-      required(container.querySelector<HTMLButtonElement>(`[data-mock-confirm-delete="${product.id}"]`), "mock confirm").click();
+      required(
+        container.querySelector<HTMLButtonElement>(`[data-mock-confirm-delete="${product.id}"]`),
+        "mock confirm",
+      ).click();
       await flushPromises();
     });
 
@@ -126,8 +138,8 @@ function createDeleteClient() {
       deleted: true as const,
       session_cleared: false,
       cleanup_pending: false,
-      recovery_warnings: []
-    }))
+      recovery_warnings: [],
+    })),
   } satisfies Pick<FormaApiClient, "deleteProduct">;
 }
 
@@ -141,12 +153,12 @@ function createDetailClient() {
       deleted: true as const,
       session_cleared: false,
       cleanup_pending: false,
-      recovery_warnings: []
+      recovery_warnings: [],
     })),
     getBaseline: vi.fn(async () => baseline),
     getProduct: vi.fn(async () => product),
     listRequirements: vi.fn(async () => [] as RequirementWithDocument[]),
-    listStyles: vi.fn(async () => [style])
+    listStyles: vi.fn(async () => [style]),
   } satisfies Pick<
     FormaApiClient,
     | "archiveRequirement"

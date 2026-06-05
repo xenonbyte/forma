@@ -10,7 +10,7 @@ import {
   type DeleteProductInput,
   type DeleteProductResult,
   type ProductDeletionHooks,
-  type ProductDeletionRecoveryResult
+  type ProductDeletionRecoveryResult,
 } from "./product-deletion.js";
 import { ProductService } from "./product.js";
 import {
@@ -18,7 +18,7 @@ import {
   getProductMutationLock,
   runProductMutationWithWarnings,
   type ProductMutationContext,
-  type ProductMutationLock
+  type ProductMutationLock,
 } from "./product-mutation-lock.js";
 import { RequirementService } from "./requirement.js";
 import { SessionService } from "./session.js";
@@ -76,23 +76,23 @@ export interface FormaStore {
   generateRequirementDesign(
     productId: string,
     requirementId: string,
-    input: GenerateRequirementDesignInput
+    input: GenerateRequirementDesignInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   generateComponents(
     productId: string,
-    input: GenerateComponentsInput
+    input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   changeArtifactStyle(
     productId: string,
     artifactId: string,
-    input: ChangeArtifactStyleInput
+    input: ChangeArtifactStyleInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   products: ProductService;
   recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
   requirements: RequirementService;
   runProductMutation<T>(
     input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T>;
   sessions: SessionService;
   styles: StyleService;
@@ -122,24 +122,23 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   const onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
   const productMutationOptions = {
     productMutationLock,
-    onProductMutationWarning: options.onProductMutationWarning
+    onProductMutationWarning: options.onProductMutationWarning,
   };
-  const styles = new StyleService({ home: options.home, bundledStylesDir: options.bundledStylesDir, bundledCraftDir: options.bundledCraftDir });
+  const styles = new StyleService({
+    home: options.home,
+    bundledStylesDir: options.bundledStylesDir,
+    bundledCraftDir: options.bundledCraftDir,
+  });
   const products = new ProductService({ home: options.home, ...productMutationOptions });
   const sessions = new SessionService({ home: options.home, products, ...productMutationOptions });
   const copy = new CopyService({ home: options.home, ...productMutationOptions });
   const requirements = new RequirementService({ home: options.home, products, copy, ...productMutationOptions });
-  const artifacts = options.artifactStore ?? createArtifactStore(getFormaPaths(options.home).productsDir, productMutationLock);
+  const artifacts =
+    options.artifactStore ?? createArtifactStore(getFormaPaths(options.home).productsDir, productMutationLock);
   const runProductMutation = <T>(
     input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
-  ): Promise<T> =>
-    runProductMutationWithWarnings(
-      productMutationLock,
-      input,
-      fn,
-      onProductMutationWarning
-    );
+    fn: (context: ProductMutationContext) => Promise<T>,
+  ): Promise<T> => runProductMutationWithWarnings(productMutationLock, input, fn, onProductMutationWarning);
   const deletionRuntime = { home: options.home, products, hooks: options.productDeletionHooks };
   const deleteProduct = async (input: DeleteProductInput): Promise<DeleteProductResult> => {
     const productId = validateDeleteProductInput(input);
@@ -147,7 +146,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
       const result = await deleteProductLocked(deletionRuntime, input);
       return {
         ...result,
-        recovery_warnings: [...result.recovery_warnings, ...context.warnings]
+        recovery_warnings: [...result.recovery_warnings, ...context.warnings],
       };
     });
   };
@@ -156,7 +155,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
       const result = await recoverPendingProductDeletesLocked(deletionRuntime);
       return {
         ...result,
-        warnings: [...result.warnings, ...context.warnings]
+        warnings: [...result.warnings, ...context.warnings],
       };
     });
 
@@ -166,7 +165,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   async function generateRequirementDesign(
     productId: string,
     requirementId: string,
-    input: GenerateRequirementDesignInput
+    input: GenerateRequirementDesignInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
     // Validate the requirement belongs to this product and the page exists before
     // writing an artifact / design pointer — otherwise a typo page_id or a
@@ -176,14 +175,14 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
       throw new FormaError("REQUIREMENT_PRODUCT_MISMATCH", "Requirement does not belong to product", {
         product_id: productId,
         requirement_id: requirementId,
-        requirement_product_id: requirement.product_id
+        requirement_product_id: requirement.product_id,
       });
     }
     if (!requirement.pages.some((page) => page.page_id === input.pageId)) {
       throw new FormaError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
         product_id: productId,
         requirement_id: requirementId,
-        page_id: input.pageId
+        page_id: input.pageId,
       });
     }
 
@@ -191,7 +190,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     const existingPointer = await products.getDesignPointer(productId, requirementId, input.pageId, variant);
     const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
-      kind: 'design-page',
+      kind: "design-page",
       html: input.html,
       title: input.title,
       artifactId: existingPointer?.artifactId,
@@ -211,11 +210,11 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
 
   async function generateComponents(
     productId: string,
-    input: GenerateComponentsInput
+    input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
     const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
-      kind: 'component-library',
+      kind: "component-library",
       html: input.html,
       title: input.title,
       forma: {
@@ -232,7 +231,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   async function changeArtifactStyle(
     productId: string,
     artifactId: string,
-    input: ChangeArtifactStyleInput
+    input: ChangeArtifactStyleInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
     // Read source artifact's latest version manifest to recover kind/forma
     const versions = await artifacts.listArtifactVersions(productId, artifactId);
@@ -252,22 +251,20 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     input: ChangeArtifactStyleInput,
     sourceManifest: import("./artifact-manifest.js").ArtifactManifest,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
-
     // Determine kind: only design-page / component-library (and their legacy
     // aliases html / design-system) support style changes. Reject other kinds
     // (markdown-document, svg, image, preview-only) so unrelated artifact kinds
     // never get a component-library version mixed into their history.
-    let kind: 'design-page' | 'component-library';
-    if (sourceManifest.kind === 'design-page' || sourceManifest.kind === 'html') {
-      kind = 'design-page';
-    } else if (sourceManifest.kind === 'component-library' || sourceManifest.kind === 'design-system') {
-      kind = 'component-library';
+    let kind: "design-page" | "component-library";
+    if (sourceManifest.kind === "design-page" || sourceManifest.kind === "html") {
+      kind = "design-page";
+    } else if (sourceManifest.kind === "component-library" || sourceManifest.kind === "design-system") {
+      kind = "component-library";
     } else {
-      throw new FormaError(
-        'ARTIFACT_INVALID_INPUT',
-        `Cannot change style of a ${sourceManifest.kind} artifact`,
-        { artifactId, kind: sourceManifest.kind },
-      );
+      throw new FormaError("ARTIFACT_INVALID_INPUT", `Cannot change style of a ${sourceManifest.kind} artifact`, {
+        artifactId,
+        kind: sourceManifest.kind,
+      });
     }
 
     const sourceForma = sourceManifest.forma ?? {};
@@ -304,7 +301,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     requirements,
     runProductMutation,
     sessions,
-    styles
+    styles,
   };
 }
 
@@ -343,6 +340,6 @@ function attributeStartupValidationError(error: unknown, productId: string): For
   return new FormaError(
     "STRICT_SCHEMA_VALIDATION_FAILED",
     `Startup read-model validation failed for product ${productId}`,
-    { product_id: productId, cause: error instanceof Error ? error.message : String(error) }
+    { product_id: productId, cause: error instanceof Error ? error.message : String(error) },
   );
 }

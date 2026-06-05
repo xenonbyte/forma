@@ -149,7 +149,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "product.deleteSessionCleared": "Session was cleared.",
     "product.deleteSuccess": "Deleted product",
     "product.dangerZone": "Danger zone",
-    "product.dangerZoneHelp": "Delete this product only when its workspace, generated designs, and sessions are no longer needed.",
+    "product.dangerZoneHelp":
+      "Delete this product only when its workspace, generated designs, and sessions are no longer needed.",
     "product.emptyIllustration": "Product empty state",
     "product.id": "Product ID",
     "product.index": "Product index",
@@ -168,8 +169,10 @@ export const messages: Record<Locale, Record<string, string>> = {
     "product.readyToCreate": "Ready to create",
     "product.readyToCreateHelp": "Product details and configuration will be sent to the product API.",
     "product.requiredFields": "Required fields",
-    "product.requiredFieldsHelp": "Name, description, platform, product style, design spec, and language configuration are required before creation.",
-    "product.retryConfiguration": "Product {productId} was created. Retry will apply configuration to the existing product.",
+    "product.requiredFieldsHelp":
+      "Name, description, platform, product style, design spec, and language configuration are required before creation.",
+    "product.retryConfiguration":
+      "Product {productId} was created. Retry will apply configuration to the existing product.",
     "product.selectPlatform": "Select platform",
     "product.selectStyle": "Select product style",
     "product.style": "Product style",
@@ -284,7 +287,7 @@ export const messages: Record<Locale, Record<string, string>> = {
     "templatePreview.keyboardUnsupported": "Not keyboard accessible",
     "templatePreview.radius": "Corner radius",
     "templatePreview.spacing": "Spacing",
-    "templatePreview.structure": "Expected structure"
+    "templatePreview.structure": "Expected structure",
   },
   zh: {
     "action.annotate": "标注",
@@ -567,8 +570,8 @@ export const messages: Record<Locale, Record<string, string>> = {
     "templatePreview.keyboardUnsupported": "不支持键盘访问",
     "templatePreview.radius": "圆角",
     "templatePreview.spacing": "间距",
-    "templatePreview.structure": "结构预期"
-  }
+    "templatePreview.structure": "结构预期",
+  },
 };
 
 export interface LocalStorageLike {
@@ -595,7 +598,10 @@ export function getLocale(): Locale {
   return currentLocale;
 }
 
-export function setLocale(next: Locale, localStorageLike: LocalStorageLike | undefined = getDefaultLocalStorage()): void {
+export function setLocale(
+  next: Locale,
+  localStorageLike: LocalStorageLike | undefined = getDefaultLocalStorage(),
+): void {
   currentLocale = next;
   safeSetItem(localStorageLike, localeStorageKey, next);
 }

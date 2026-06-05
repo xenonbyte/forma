@@ -1,4 +1,4 @@
-import { MarketplaceManifestSchema, type MarketplaceManifest } from '@xenonbyte/od-contracts';
+import { MarketplaceManifestSchema, type MarketplaceManifest } from "@xenonbyte/od-contracts";
 
 export interface MarketplaceParseSuccess {
   ok: true;
@@ -23,7 +23,7 @@ export function parseMarketplace(raw: string): MarketplaceParseResult {
   if (!result.success) {
     return {
       ok: false,
-      errors: result.error.issues.map((issue) => `${issue.path.join('.') || '<root>'}: ${issue.message}`),
+      errors: result.error.issues.map((issue) => `${issue.path.join(".") || "<root>"}: ${issue.message}`),
     };
   }
   return { ok: true, manifest: result.data };

@@ -4,8 +4,8 @@
  * 将 CSS box-shadow 转换为 CanvasKit ImageFilter
  */
 
-import type { CanvasKit, ImageFilter } from 'canvaskit-wasm';
-import { toCanvasKitColor } from './ColorConverter';
+import type { CanvasKit, ImageFilter } from "canvaskit-wasm";
+import { toCanvasKitColor } from "./ColorConverter";
 
 export interface Shadow {
   offsetX: number;
@@ -20,7 +20,7 @@ export interface Shadow {
  * 解析 box-shadow
  */
 export function parseShadow(boxShadow: string): Shadow[] {
-  if (!boxShadow || boxShadow === 'none') {
+  if (!boxShadow || boxShadow === "none") {
     return [];
   }
 
@@ -44,19 +44,19 @@ export function parseShadow(boxShadow: string): Shadow[] {
  */
 function splitShadows(boxShadow: string): string[] {
   const shadows: string[] = [];
-  let current = '';
+  let current = "";
   let depth = 0;
 
   for (let i = 0; i < boxShadow.length; i++) {
     const char = boxShadow[i];
 
-    if (char === '(') {
+    if (char === "(") {
       depth++;
-    } else if (char === ')') {
+    } else if (char === ")") {
       depth--;
-    } else if (char === ',' && depth === 0) {
+    } else if (char === "," && depth === 0) {
       shadows.push(current.trim());
-      current = '';
+      current = "";
       continue;
     }
 
@@ -77,11 +77,11 @@ function parseSingleShadow(shadowStr: string): Shadow | null {
   const trimmed = shadowStr.trim();
 
   // 检查是否是 inset
-  const inset = trimmed.startsWith('inset');
+  const inset = trimmed.startsWith("inset");
   const str = inset ? trimmed.substring(5).trim() : trimmed;
 
   // 提取颜色（可能在开头或结尾）
-  let color = '#000000';
+  let color = "#000000";
   let values = str;
 
   // 尝试匹配颜色
@@ -93,7 +93,7 @@ function parseSingleShadow(shadowStr: string): Shadow | null {
 
   if (colorMatch) {
     color = colorMatch[0];
-    values = str.replace(color, '').trim();
+    values = str.replace(color, "").trim();
   }
 
   // 解析数值（offsetX offsetY blurRadius spreadRadius）
@@ -120,10 +120,7 @@ function parseSingleShadow(shadowStr: string): Shadow | null {
 /**
  * 创建阴影 ImageFilter
  */
-export function createShadowFilter(
-  shadow: Shadow,
-  CanvasKit: CanvasKit
-): ImageFilter | null {
+export function createShadowFilter(shadow: Shadow, CanvasKit: CanvasKit): ImageFilter | null {
   const { offsetX, offsetY, blurRadius, color } = shadow;
 
   // CanvasKit 不直接支持 spread，需要通过其他方式实现
@@ -141,17 +138,14 @@ export function createShadowFilter(
     blurRadius / 2, // sigmaX
     blurRadius / 2, // sigmaY
     ckColor,
-    null // input
+    null, // input
   );
 }
 
 /**
  * 创建多个阴影的组合 ImageFilter
  */
-export function createShadowFilters(
-  shadows: Shadow[],
-  CanvasKit: CanvasKit
-): ImageFilter | null {
+export function createShadowFilters(shadows: Shadow[], CanvasKit: CanvasKit): ImageFilter | null {
   const activeShadows = shadows.filter((shadow) => !shadow.inset);
   if (activeShadows.length === 0) {
     return null;

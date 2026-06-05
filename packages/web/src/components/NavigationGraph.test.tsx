@@ -41,7 +41,7 @@ class MockElement {
 
   constructor(
     public readonly config: Record<string, unknown>,
-    public readonly kind: MockElementKind
+    public readonly kind: MockElementKind,
   ) {
     this.fill = typeof config.fill === "string" ? config.fill : undefined;
     this.stroke = typeof config.stroke === "string" ? config.stroke : undefined;
@@ -73,7 +73,7 @@ vi.mock("leafer-ui", () => ({
   Path: MockPath,
   PointerEvent: { CLICK: "click", ENTER: "pointer.enter", LEAVE: "pointer.leave" },
   Rect: MockRect,
-  Text: MockText
+  Text: MockText,
 }));
 
 const pages: BaselinePage[] = [
@@ -84,7 +84,7 @@ const pages: BaselinePage[] = [
     id: "home",
     interactions: "submit search",
     name: "Home",
-    source_requirements: ["R-12345678"]
+    source_requirements: ["R-12345678"],
   },
   {
     copy: [{ context: "cta", text: "Pay" }],
@@ -93,8 +93,8 @@ const pages: BaselinePage[] = [
     id: "checkout",
     interactions: "complete order",
     name: "Checkout",
-    source_requirements: []
-  }
+    source_requirements: [],
+  },
 ];
 
 const roots: Root[] = [];
@@ -122,12 +122,12 @@ describe("normalizeNavigation", () => {
       normalizeNavigation([
         { from: "home", to: "checkout", trigger: "Start checkout", label: "Legacy checkout" },
         { from: "checkout", to: "home", label: "Back" },
-        { from: "home", to: "home" }
-      ])
+        { from: "home", to: "home" },
+      ]),
     ).toEqual([
       { from: "home", label: "Start checkout", to: "checkout" },
       { from: "checkout", label: "Back", to: "home" },
-      { from: "home", label: "No label", to: "home" }
+      { from: "home", label: "No label", to: "home" },
     ]);
   });
 });
@@ -149,7 +149,9 @@ describe("NavigationGraph", () => {
     const { root } = createTestRoot();
 
     await act(async () => {
-      root.render(<NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />);
+      root.render(
+        <NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />,
+      );
       await flushPromises();
     });
 
@@ -157,7 +159,7 @@ describe("NavigationGraph", () => {
     expect(leaferInstances[0]?.config).toMatchObject({
       height: 400,
       view: expect.any(HTMLElement),
-      width: 600
+      width: 600,
     });
     expect(leaferInstances[0]?.add).toHaveBeenCalled();
 
@@ -176,16 +178,16 @@ describe("NavigationGraph", () => {
         <NavigationGraph
           navigation={[{ from: "home", to: "checkout", label: "Legacy checkout", trigger: "Start checkout" }]}
           pages={pages}
-        />
+        />,
       );
       await flushPromises();
     });
 
     expect(findElement("node-label-home")?.config).toMatchObject({
-      text: "Home\n(2个功能)"
+      text: "Home\n(2个功能)",
     });
     expect(findElement("edge-label-home-checkout")?.config).toMatchObject({
-      text: "Start checkout"
+      text: "Start checkout",
     });
 
     const edge = findElement("edge-home-checkout", "Path");
@@ -194,10 +196,10 @@ describe("NavigationGraph", () => {
     const targetNode = findElement("node-checkout", "Rect");
 
     expect(edge?.config).toMatchObject({
-      stroke: "#a1a1aa"
+      stroke: "#a1a1aa",
     });
     expect(arrow?.config).toMatchObject({
-      fill: "#a1a1aa"
+      fill: "#a1a1aa",
     });
 
     const path = pathCommandsFromConfig(edge?.config.path);
@@ -213,7 +215,9 @@ describe("NavigationGraph", () => {
     const { root } = createTestRoot();
 
     await act(async () => {
-      root.render(<NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />);
+      root.render(
+        <NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />,
+      );
       await flushPromises();
     });
 
@@ -260,7 +264,9 @@ describe("NavigationGraph", () => {
     const { root } = createTestRoot();
 
     await act(async () => {
-      root.render(<NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />);
+      root.render(
+        <NavigationGraph navigation={[{ from: "home", to: "checkout", trigger: "Start checkout" }]} pages={pages} />,
+      );
       await flushPromises();
     });
 
@@ -302,7 +308,9 @@ describe("NavigationGraph", () => {
       await flushPromises();
     });
 
-    const button = Array.from(container.querySelectorAll("button")).find((candidate) => candidate.textContent === "Checkout");
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Checkout",
+    );
     expect(button).toBeInstanceOf(HTMLButtonElement);
 
     await act(async () => {

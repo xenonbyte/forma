@@ -2,7 +2,7 @@ export interface OrbitRunSummary {
   id?: string;
   startedAt?: string;
   completedAt: string;
-  trigger?: 'manual' | 'scheduled';
+  trigger?: "manual" | "scheduled";
   templateSkillId?: string | null;
   connectorsChecked: number;
   connectorsSucceeded: number;

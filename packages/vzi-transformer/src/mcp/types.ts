@@ -1,7 +1,7 @@
-import type { Annotation, VZIContent } from '@vzi-core/format';
-import type { IRBounds, IRElement, IRStyles, IntermediateRepresentation } from '@vzi-core/types';
+import type { Annotation, VZIContent } from "@vzi-core/format";
+import type { IRBounds, IRElement, IRStyles, IntermediateRepresentation } from "@vzi-core/types";
 
-export type OutputFormat = 'json' | 'markdown';
+export type OutputFormat = "json" | "markdown";
 
 export interface McpSourceSummary {
   tagName?: string;
@@ -15,12 +15,12 @@ export interface McpSourceSummary {
   alt?: string;
   target?: string;
   rel?: string;
-  landmark?: 'header' | 'main' | 'footer' | 'navigation' | 'section' | 'aside' | 'none';
-  componentRole?: 'primary-cta' | 'secondary-cta' | 'nav-link' | 'body-text' | 'media' | 'container' | 'other';
-  intent?: 'navigate' | 'submit' | 'open' | 'download' | 'none';
-  actionType?: 'link' | 'button' | 'none';
+  landmark?: "header" | "main" | "footer" | "navigation" | "section" | "aside" | "none";
+  componentRole?: "primary-cta" | "secondary-cta" | "nav-link" | "body-text" | "media" | "container" | "other";
+  intent?: "navigate" | "submit" | "open" | "download" | "none";
+  actionType?: "link" | "button" | "none";
   targetRoute?: string;
-  importance?: 'high' | 'medium' | 'low';
+  importance?: "high" | "medium" | "low";
   assetId?: string;
   stateClasses?: {
     hover?: string[];
@@ -50,16 +50,16 @@ export interface McpDesignTokens {
     name: string;
     value: string;
     category:
-      | 'primary'
-      | 'secondary'
-      | 'accent'
-      | 'background'
-      | 'text'
-      | 'border'
-      | 'danger'
-      | 'success'
-      | 'warning'
-      | 'other';
+      | "primary"
+      | "secondary"
+      | "accent"
+      | "background"
+      | "text"
+      | "border"
+      | "danger"
+      | "success"
+      | "warning"
+      | "other";
     frequency: number;
   }>;
   fonts: Array<{
@@ -105,7 +105,7 @@ export interface McpOverview {
     height: number;
   };
   elementCount: number;
-  complexity: 'simple' | 'medium' | 'complex';
+  complexity: "simple" | "medium" | "complex";
   version: string;
   createdAt: string;
   hasErrors: boolean;
@@ -164,12 +164,12 @@ export interface McpSearchResult {
 }
 
 export interface McpTokensOutput {
-  colors?: McpDesignTokens['colors'];
-  fonts?: McpDesignTokens['fonts'];
-  spacing?: McpDesignTokens['spacing'];
-  radii?: McpDesignTokens['radii'];
-  shadows?: McpDesignTokens['shadows'];
-  gradients?: McpDesignTokens['gradients'];
+  colors?: McpDesignTokens["colors"];
+  fonts?: McpDesignTokens["fonts"];
+  spacing?: McpDesignTokens["spacing"];
+  radii?: McpDesignTokens["radii"];
+  shadows?: McpDesignTokens["shadows"];
+  gradients?: McpDesignTokens["gradients"];
   elementCount: number;
 }
 
@@ -197,9 +197,9 @@ export interface McpUiHints {
 
 export interface McpAsset {
   id: string;
-  type: 'image' | 'icon' | 'other';
+  type: "image" | "icon" | "other";
   mimeType?: string;
-  source: 'url' | 'data-url' | 'inline' | 'unknown';
+  source: "url" | "data-url" | "inline" | "unknown";
   uri: string;
   rawUri?: string;
   normalizedUri?: string;
@@ -211,11 +211,11 @@ export interface McpAsset {
 
 export interface McpResponsiveSnapshot {
   id: string;
-  label: 'desktop' | 'tablet' | 'mobile' | 'custom';
+  label: "desktop" | "tablet" | "mobile" | "custom";
   viewportWidth: number;
   viewportHeight: number;
-  derivedFrom?: 'source-viewport' | 'breakpoint-class' | 'heuristic';
-  breakpoint?: 'sm' | 'md' | 'lg' | 'xl' | '2xl';
+  derivedFrom?: "source-viewport" | "breakpoint-class" | "heuristic";
+  breakpoint?: "sm" | "md" | "lg" | "xl" | "2xl";
 }
 
 export interface McpQualityMetrics {
@@ -240,19 +240,19 @@ export interface McpQualityMetrics {
 }
 
 export interface McpExtractData {
-  metadata: VZIContent['metadata'];
+  metadata: VZIContent["metadata"];
   ir: IntermediateRepresentation;
   tokens: {
-    colors: McpDesignTokens['colors'];
-    fonts: McpDesignTokens['fonts'];
-    spacing: McpDesignTokens['spacing'];
-    radii?: McpDesignTokens['radii'];
-    shadows?: McpDesignTokens['shadows'];
-    gradients?: McpDesignTokens['gradients'];
+    colors: McpDesignTokens["colors"];
+    fonts: McpDesignTokens["fonts"];
+    spacing: McpDesignTokens["spacing"];
+    radii?: McpDesignTokens["radii"];
+    shadows?: McpDesignTokens["shadows"];
+    gradients?: McpDesignTokens["gradients"];
   };
   annotations: McpAnnotationsOutput;
   source?: {
-    type: 'file' | 'url' | 'figma';
+    type: "file" | "url" | "figma";
     identifier: string;
     capturedAt: number;
   };
@@ -266,11 +266,11 @@ export interface McpExtractData {
 
 export interface McpExtractPayload {
   version: string;
-  type: 'html-extract' | 'vzi-extract' | 'figma-extract';
+  type: "html-extract" | "vzi-extract" | "figma-extract";
   data: McpExtractData;
   metadata: {
     extractedAt: string;
-    sourceType: 'html' | 'vzi' | 'figma';
+    sourceType: "html" | "vzi" | "figma";
   };
 }
 

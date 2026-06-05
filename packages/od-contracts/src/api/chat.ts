@@ -1,15 +1,15 @@
-import type { ProjectFile } from './files';
+import type { ProjectFile } from "./files";
 import type {
   PreviewCommentMember,
   PreviewCommentPosition,
   PreviewCommentSelectionKind,
   PreviewVisualMarkKind,
-} from './comments';
-import type { ResearchOptions } from './research';
-import type { RunContextSelection } from './context.js';
+} from "./comments";
+import type { ResearchOptions } from "./research";
+import type { RunContextSelection } from "./context.js";
 
-export type ChatRole = 'user' | 'assistant';
-export type ChatCommentSelectionKind = PreviewCommentSelectionKind | 'visual';
+export type ChatRole = "user" | "assistant";
+export type ChatCommentSelectionKind = PreviewCommentSelectionKind | "visual";
 
 export interface ChatRequest {
   agentId: string;
@@ -46,22 +46,22 @@ export interface ChatRunCreateRequest extends ChatRequest {
   clientRequestId: string;
 }
 
-export type ChatRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
+export type ChatRunStatus = "queued" | "running" | "succeeded" | "failed" | "canceled";
 
-export type ChatMessageFeedbackRating = 'positive' | 'negative';
+export type ChatMessageFeedbackRating = "positive" | "negative";
 
 export type ChatMessageFeedbackReasonCode =
-  | 'matched_request'
-  | 'strong_visual'
-  | 'useful_structure'
-  | 'easy_to_continue'
-  | 'followed_design_system'
-  | 'missed_request'
-  | 'weak_visual'
-  | 'incomplete_output'
-  | 'hard_to_use'
-  | 'missed_design_system'
-  | 'other';
+  | "matched_request"
+  | "strong_visual"
+  | "useful_structure"
+  | "easy_to_continue"
+  | "followed_design_system"
+  | "missed_request"
+  | "weak_visual"
+  | "incomplete_output"
+  | "hard_to_use"
+  | "missed_design_system"
+  | "other";
 
 export interface ChatMessageFeedback {
   rating: ChatMessageFeedbackRating;
@@ -106,7 +106,7 @@ export interface ChatRunCancelResponse {
 export interface ChatAttachment {
   path: string;
   name: string;
-  kind: 'image' | 'file';
+  kind: "image" | "file";
   size?: number;
 }
 
@@ -127,24 +127,24 @@ export interface ChatCommentAttachment {
   screenshotPath?: string;
   markKind?: PreviewVisualMarkKind;
   intent?: string;
-  source?: 'saved-comment' | 'board-batch';
+  source?: "saved-comment" | "board-batch";
 }
 
 export type PersistedAgentEvent =
-  | { kind: 'status'; label: string; detail?: string }
-  | { kind: 'text'; text: string }
-  | { kind: 'thinking'; text: string }
+  | { kind: "status"; label: string; detail?: string }
+  | { kind: "text"; text: string }
+  | { kind: "thinking"; text: string }
   | {
-      kind: 'live_artifact';
-      action: 'created' | 'updated' | 'deleted';
+      kind: "live_artifact";
+      action: "created" | "updated" | "deleted";
       projectId: string;
       artifactId: string;
       title: string;
       refreshStatus?: string;
     }
   | {
-      kind: 'live_artifact_refresh';
-      phase: 'started' | 'succeeded' | 'failed';
+      kind: "live_artifact_refresh";
+      phase: "started" | "succeeded" | "failed";
       projectId: string;
       artifactId: string;
       refreshId?: string;
@@ -152,10 +152,10 @@ export type PersistedAgentEvent =
       refreshedSourceCount?: number;
       error?: string;
     }
-  | { kind: 'tool_use'; id: string; name: string; input: unknown }
-  | { kind: 'tool_result'; toolUseId: string; content: string; isError: boolean }
-  | { kind: 'usage'; inputTokens?: number; outputTokens?: number; costUsd?: number; durationMs?: number }
-  | { kind: 'raw'; line: string };
+  | { kind: "tool_use"; id: string; name: string; input: unknown }
+  | { kind: "tool_result"; toolUseId: string; content: string; isError: boolean }
+  | { kind: "usage"; inputTokens?: number; outputTokens?: number; costUsd?: number; durationMs?: number }
+  | { kind: "raw"; line: string };
 
 export interface ChatMessage {
   id: string;

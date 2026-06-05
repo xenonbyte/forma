@@ -32,7 +32,7 @@ export async function verifyCanvasKitLoad(): Promise<VerifyResult> {
 
   try {
     // 动态导入 CanvasKit
-    const CanvasKitModule = await import('canvaskit-wasm');
+    const CanvasKitModule = await import("canvaskit-wasm");
 
     // 加载 WASM 模块（使用 any 类型断言以绕过复杂类型定义）
     const CanvasKit = await (CanvasKitModule.default as any)({
@@ -48,7 +48,7 @@ export async function verifyCanvasKitLoad(): Promise<VerifyResult> {
       success: true,
       message: `CanvasKit 加载成功 (${loadTime.toFixed(2)}ms)`,
       data: {
-        version: '0.40.0',
+        version: "0.40.0",
         loadTime,
       },
     };
@@ -65,26 +65,24 @@ export async function verifyCanvasKitLoad(): Promise<VerifyResult> {
  */
 export function verifyWebGLSupport(): VerifyResult {
   try {
-    const canvas = document.createElement('canvas');
-    const gl = canvas.getContext('webgl') || canvas.getContext('webgl2');
+    const canvas = document.createElement("canvas");
+    const gl = canvas.getContext("webgl") || canvas.getContext("webgl2");
 
     if (!gl) {
       return {
         success: false,
-        message: 'WebGL 不支持',
+        message: "WebGL 不支持",
       };
     }
 
-    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
-    const renderer = debugInfo
-      ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL)
-      : 'Unknown';
+    const debugInfo = gl.getExtension("WEBGL_debug_renderer_info");
+    const renderer = debugInfo ? gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) : "Unknown";
 
     return {
       success: true,
-      message: 'WebGL 支持',
+      message: "WebGL 支持",
       data: {
-        version: gl instanceof WebGL2RenderingContext ? 'WebGL 2.0' : 'WebGL 1.0',
+        version: gl instanceof WebGL2RenderingContext ? "WebGL 2.0" : "WebGL 1.0",
         renderer,
       },
     };
@@ -103,26 +101,26 @@ export async function verifySurfaceCreation(): Promise<VerifyResult> {
   const startTime = performance.now();
 
   try {
-    const CanvasKitModule = await import('canvaskit-wasm');
+    const CanvasKitModule = await import("canvaskit-wasm");
     const CanvasKit = await (CanvasKitModule.default as any)({
       locateFile: (file: string) => `https://unpkg.com/canvaskit-wasm@0.40.0/bin/${file}`,
     });
 
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = 800;
     canvas.height = 600;
 
     // 尝试创建 WebGL Surface
     let surface = CanvasKit.MakeWebGLCanvasSurface(canvas);
-    let backend = 'WebGL';
+    let backend = "WebGL";
 
     if (!surface) {
       // 降级到 CPU 渲染
       surface = CanvasKit.MakeCanvasSurface(canvas);
-      backend = 'CPU';
+      backend = "CPU";
 
       if (!surface) {
-        throw new Error('无法创建 Surface');
+        throw new Error("无法创建 Surface");
       }
     }
 
@@ -156,18 +154,18 @@ export async function verifyBasicRendering(): Promise<VerifyResult> {
   const startTime = performance.now();
 
   try {
-    const CanvasKitModule = await import('canvaskit-wasm');
+    const CanvasKitModule = await import("canvaskit-wasm");
     const CanvasKit = await (CanvasKitModule.default as any)({
       locateFile: (file: string) => `https://unpkg.com/canvaskit-wasm@0.40.0/bin/${file}`,
     });
 
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = 800;
     canvas.height = 600;
 
     const surface = CanvasKit.MakeWebGLCanvasSurface(canvas) || CanvasKit.MakeCanvasSurface(canvas);
     if (!surface) {
-      throw new Error('无法创建 Surface');
+      throw new Error("无法创建 Surface");
     }
 
     const skCanvas = surface.getCanvas();
@@ -191,7 +189,7 @@ export async function verifyBasicRendering(): Promise<VerifyResult> {
     // 使用默认字体
     const typeface = CanvasKit.Typeface.GetDefault();
     const font = new CanvasKit.Font(typeface, 24);
-    const textBlob = CanvasKit.TextBlob.MakeFromText('Hello CanvasKit!', font);
+    const textBlob = CanvasKit.TextBlob.MakeFromText("Hello CanvasKit!", font);
 
     skCanvas.drawTextBlob(textBlob, 50, 200, textPaint);
 
@@ -228,7 +226,7 @@ export async function verifyBasicRendering(): Promise<VerifyResult> {
  */
 export async function runPerformanceBenchmark(): Promise<VerifyResult> {
   try {
-    const CanvasKitModule = await import('canvaskit-wasm');
+    const CanvasKitModule = await import("canvaskit-wasm");
 
     const loadStart = performance.now();
     const CanvasKit = await (CanvasKitModule.default as any)({
@@ -236,14 +234,14 @@ export async function runPerformanceBenchmark(): Promise<VerifyResult> {
     });
     const loadTime = performance.now() - loadStart;
 
-    const canvas = document.createElement('canvas');
+    const canvas = document.createElement("canvas");
     canvas.width = 1920;
     canvas.height = 1080;
 
     const surfaceStart = performance.now();
     const surface = CanvasKit.MakeWebGLCanvasSurface(canvas) || CanvasKit.MakeCanvasSurface(canvas);
     if (!surface) {
-      throw new Error('无法创建 Surface');
+      throw new Error("无法创建 Surface");
     }
     const surfaceCreateTime = performance.now() - surfaceStart;
 
@@ -307,71 +305,71 @@ export async function runAllVerifications(): Promise<{
   results: VerifyResult[];
   allPassed: boolean;
 }> {
-  console.log('🔍 开始 CanvasKit 技术验证...\n');
+  console.log("🔍 开始 CanvasKit 技术验证...\n");
 
   const results: VerifyResult[] = [];
 
   // 1. WebGL 支持检测
-  console.log('1. 检测 WebGL 支持...');
+  console.log("1. 检测 WebGL 支持...");
   const webglResult = verifyWebGLSupport();
   results.push(webglResult);
-  console.log(webglResult.success ? '✅' : '❌', webglResult.message);
+  console.log(webglResult.success ? "✅" : "❌", webglResult.message);
   if (webglResult.data) {
-    console.log('   ', JSON.stringify(webglResult.data, null, 2));
+    console.log("   ", JSON.stringify(webglResult.data, null, 2));
   }
   console.log();
 
   // 2. CanvasKit 加载
-  console.log('2. 加载 CanvasKit WASM...');
+  console.log("2. 加载 CanvasKit WASM...");
   const loadResult = await verifyCanvasKitLoad();
   results.push(loadResult);
-  console.log(loadResult.success ? '✅' : '❌', loadResult.message);
+  console.log(loadResult.success ? "✅" : "❌", loadResult.message);
   if (loadResult.data) {
-    console.log('   ', JSON.stringify(loadResult.data, null, 2));
+    console.log("   ", JSON.stringify(loadResult.data, null, 2));
   }
   console.log();
 
   if (!loadResult.success) {
-    console.log('❌ CanvasKit 加载失败，停止后续验证');
+    console.log("❌ CanvasKit 加载失败，停止后续验证");
     return { results, allPassed: false };
   }
 
   // 3. Surface 创建
-  console.log('3. 创建 Surface...');
+  console.log("3. 创建 Surface...");
   const surfaceResult = await verifySurfaceCreation();
   results.push(surfaceResult);
-  console.log(surfaceResult.success ? '✅' : '❌', surfaceResult.message);
+  console.log(surfaceResult.success ? "✅" : "❌", surfaceResult.message);
   if (surfaceResult.data) {
-    console.log('   ', JSON.stringify(surfaceResult.data, null, 2));
+    console.log("   ", JSON.stringify(surfaceResult.data, null, 2));
   }
   console.log();
 
   // 4. 基本渲染
-  console.log('4. 测试基本渲染...');
+  console.log("4. 测试基本渲染...");
   const renderResult = await verifyBasicRendering();
   results.push(renderResult);
-  console.log(renderResult.success ? '✅' : '❌', renderResult.message);
+  console.log(renderResult.success ? "✅" : "❌", renderResult.message);
   if (renderResult.data) {
-    console.log('   ', JSON.stringify(renderResult.data, null, 2));
+    console.log("   ", JSON.stringify(renderResult.data, null, 2));
   }
   console.log();
 
   // 5. 性能测试
-  console.log('5. 运行性能基准测试...');
+  console.log("5. 运行性能基准测试...");
   const perfResult = await runPerformanceBenchmark();
   results.push(perfResult);
-  console.log(perfResult.success ? '✅' : '❌', perfResult.message);
+  console.log(perfResult.success ? "✅" : "❌", perfResult.message);
   if (perfResult.data) {
-    console.log('   ', JSON.stringify(perfResult.data, null, 2));
+    console.log("   ", JSON.stringify(perfResult.data, null, 2));
   }
   console.log();
 
   const allPassed = results.every((r) => r.success);
 
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-  console.log(allPassed ? '✅ 所有验证通过' : '❌ 部分验证失败');
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log(allPassed ? "✅ 所有验证通过" : "❌ 部分验证失败");
   console.log(`通过: ${results.filter((r) => r.success).length}/${results.length}`);
-  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
   return { results, allPassed };
 }

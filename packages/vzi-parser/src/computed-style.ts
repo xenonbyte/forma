@@ -7,8 +7,8 @@
  * - 支持样式继承和默认值
  */
 
-import type { IRStyles, IRBounds, IRPseudoElement } from '@vzi-core/types';
-import { JSDOM } from 'jsdom';
+import type { IRStyles, IRBounds, IRPseudoElement } from "@vzi-core/types";
+import { JSDOM } from "jsdom";
 
 /**
  * JSDOM 虚拟 DOM 环境配置
@@ -47,109 +47,109 @@ export interface ComputedStyleResult {
  */
 const CSS_PROPERTIES_TO_EXTRACT = [
   // 布局
-  'display',
-  'position',
-  'top',
-  'right',
-  'bottom',
-  'left',
-  'float',
-  'clear',
-  'z-index',
+  "display",
+  "position",
+  "top",
+  "right",
+  "bottom",
+  "left",
+  "float",
+  "clear",
+  "z-index",
 
   // Flexbox
-  'flex-direction',
-  'flex-wrap',
-  'justify-content',
-  'align-items',
-  'align-content',
-  'gap',
-  'row-gap',
-  'column-gap',
+  "flex-direction",
+  "flex-wrap",
+  "justify-content",
+  "align-items",
+  "align-content",
+  "gap",
+  "row-gap",
+  "column-gap",
 
   // Grid
-  'grid-template-columns',
-  'grid-template-rows',
-  'grid-gap',
+  "grid-template-columns",
+  "grid-template-rows",
+  "grid-gap",
 
   // 尺寸
-  'width',
-  'height',
-  'min-width',
-  'min-height',
-  'max-width',
-  'max-height',
+  "width",
+  "height",
+  "min-width",
+  "min-height",
+  "max-width",
+  "max-height",
 
   // 间距
-  'margin',
-  'margin-top',
-  'margin-right',
-  'margin-bottom',
-  'margin-left',
-  'padding',
-  'padding-top',
-  'padding-right',
-  'padding-bottom',
-  'padding-left',
+  "margin",
+  "margin-top",
+  "margin-right",
+  "margin-bottom",
+  "margin-left",
+  "padding",
+  "padding-top",
+  "padding-right",
+  "padding-bottom",
+  "padding-left",
 
   // 边框
-  'border',
-  'border-width',
-  'border-style',
-  'border-color',
-  'border-radius',
-  'border-top-left-radius',
-  'border-top-right-radius',
-  'border-bottom-left-radius',
-  'border-bottom-right-radius',
+  "border",
+  "border-width",
+  "border-style",
+  "border-color",
+  "border-radius",
+  "border-top-left-radius",
+  "border-top-right-radius",
+  "border-bottom-left-radius",
+  "border-bottom-right-radius",
 
   // 背景
-  'background',
-  'background-color',
-  'background-image',
-  'background-size',
-  'background-position',
-  'background-repeat',
+  "background",
+  "background-color",
+  "background-image",
+  "background-size",
+  "background-position",
+  "background-repeat",
 
   // 文字
-  'color',
-  'font',
-  'font-family',
-  'font-size',
-  'font-weight',
-  'font-style',
-  'line-height',
-  'text-align',
-  'text-decoration',
-  'text-transform',
-  'letter-spacing',
-  'word-spacing',
-  'white-space',
+  "color",
+  "font",
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "line-height",
+  "text-align",
+  "text-decoration",
+  "text-transform",
+  "letter-spacing",
+  "word-spacing",
+  "white-space",
 
   // 效果
-  'opacity',
-  'box-shadow',
-  'text-shadow',
-  'filter',
-  'backdrop-filter',
+  "opacity",
+  "box-shadow",
+  "text-shadow",
+  "filter",
+  "backdrop-filter",
 
   // 变换
-  'transform',
-  'transform-origin',
+  "transform",
+  "transform-origin",
 
   // 过渡和动画
-  'transition',
-  'animation',
+  "transition",
+  "animation",
 
   // 其他
-  'overflow',
-  'overflow-x',
-  'overflow-y',
-  'visibility',
-  'cursor',
-  'pointer-events',
-  'object-fit',
-  'object-position',
+  "overflow",
+  "overflow-x",
+  "overflow-y",
+  "visibility",
+  "cursor",
+  "pointer-events",
+  "object-fit",
+  "object-position",
 ];
 
 /**
@@ -184,17 +184,17 @@ export class ComputedStyleCalculator {
     // 3. 使用真实浏览器环境（如 Puppeteer）
 
     this.dom = new JSDOM(html, {
-      runScripts: 'outside-only',  // 不执行脚本，避免崩溃
-      resources: 'usable',          // 允许加载外部CSS
+      runScripts: "outside-only", // 不执行脚本，避免崩溃
+      resources: "usable", // 允许加载外部CSS
       pretendToBeVisual: true,
-      url: this.options.baseUrl || 'http://localhost',
+      url: this.options.baseUrl || "http://localhost",
       beforeParse: (window) => {
         // 设置视口尺寸
-        Object.defineProperty(window, 'innerWidth', {
+        Object.defineProperty(window, "innerWidth", {
           value: this.options.viewportWidth,
           writable: false,
         });
-        Object.defineProperty(window, 'innerHeight', {
+        Object.defineProperty(window, "innerHeight", {
           value: this.options.viewportHeight,
           writable: false,
         });
@@ -207,7 +207,7 @@ export class ComputedStyleCalculator {
     // 等待 DOM 完全解析和外部资源加载（带超时保护，防止外部 CSS 永久挂起）
     const loadTimeoutMs = this.options.loadTimeoutMs ?? 10000;
     await new Promise<void>((resolve) => {
-      if (this.document?.readyState === 'complete') {
+      if (this.document?.readyState === "complete") {
         resolve();
         return;
       }
@@ -220,16 +220,16 @@ export class ComputedStyleCalculator {
             clearTimeout(timeoutHandle);
             timeoutHandle = undefined;
           }
-          this.window?.removeEventListener('load', settle);
+          this.window?.removeEventListener("load", settle);
           resolve();
         }
       };
-      this.window?.addEventListener('load', settle);
+      this.window?.addEventListener("load", settle);
       timeoutHandle = setTimeout(() => {
         if (!settled) {
           console.warn(
             `[computed-style] JSDOM load event timed out after ${loadTimeoutMs}ms; ` +
-            'continuing with partial styles. Check for unreachable external CSS resources.'
+              "continuing with partial styles. Check for unreachable external CSS resources.",
           );
           settle();
         }
@@ -250,7 +250,7 @@ export class ComputedStyleCalculator {
    */
   computeStyle(selector?: string, element?: Element): ComputedStyleResult | null {
     if (!this.window || !this.document) {
-      throw new Error('JSDOM environment not initialized. Call initialize() first.');
+      throw new Error("JSDOM environment not initialized. Call initialize() first.");
     }
 
     const targetElement = element || (selector ? this.document.querySelector(selector) : null);
@@ -299,7 +299,7 @@ export class ComputedStyleCalculator {
 
     for (const property of CSS_PROPERTIES_TO_EXTRACT) {
       const value = computedStyle.getPropertyValue(property);
-      if (value && value !== 'initial' && value !== 'inherit') {
+      if (value && value !== "initial" && value !== "inherit") {
         const camelCaseProperty = this.toCamelCase(property);
         styles[camelCaseProperty] = this.parseStyleValue(value);
       }
@@ -320,7 +320,7 @@ export class ComputedStyleCalculator {
     let height = this.parsePixelValue(computedStyle.height);
 
     // 如果 width/height 为 auto 或无效，尝试使用 getBoundingClientRect
-    if ((!width || width <= 0) && typeof htmlElement.getBoundingClientRect === 'function') {
+    if ((!width || width <= 0) && typeof htmlElement.getBoundingClientRect === "function") {
       const rect = htmlElement.getBoundingClientRect();
       width = rect.width || 0;
       height = rect.height || 0;
@@ -331,10 +331,10 @@ export class ComputedStyleCalculator {
     let x = 0;
     let y = 0;
 
-    if (position === 'absolute' || position === 'fixed') {
+    if (position === "absolute" || position === "fixed") {
       x = this.parsePixelValue(computedStyle.left) || 0;
       y = this.parsePixelValue(computedStyle.top) || 0;
-    } else if (typeof htmlElement.getBoundingClientRect === 'function') {
+    } else if (typeof htmlElement.getBoundingClientRect === "function") {
       const rect = htmlElement.getBoundingClientRect();
       x = rect.left || 0;
       y = rect.top || 0;
@@ -405,8 +405,7 @@ export class ComputedStyleCalculator {
    */
   private parseContentValue(content: string): string {
     // 移除引号
-    if ((content.startsWith('"') && content.endsWith('"')) ||
-        (content.startsWith("'") && content.endsWith("'"))) {
+    if ((content.startsWith('"') && content.endsWith('"')) || (content.startsWith("'") && content.endsWith("'"))) {
       return content.slice(1, -1);
     }
     return content;
@@ -416,7 +415,7 @@ export class ComputedStyleCalculator {
    * 解析像素值
    */
   private parsePixelValue(value: string): number {
-    if (!value || value === 'auto' || value === 'none') {
+    if (!value || value === "auto" || value === "none") {
       return 0;
     }
     const match = value.match(/^(-?[\d.]+)px$/);
@@ -429,7 +428,7 @@ export class ComputedStyleCalculator {
    */
   private parseStyleValue(value: string): string | number {
     // 如果包含 CSS 变量，保留原值
-    if (value.includes('var(')) {
+    if (value.includes("var(")) {
       return value;
     }
 
@@ -495,7 +494,7 @@ export class ComputedStyleCalculator {
 export async function computeElementStyle(
   html: string,
   selector: string,
-  options?: ComputedStyleOptions
+  options?: ComputedStyleOptions,
 ): Promise<ComputedStyleResult | null> {
   const calculator = new ComputedStyleCalculator(options);
   try {
@@ -515,7 +514,7 @@ export async function computeElementStyle(
 export async function computeAllStyles(
   html: string,
   selectors: string[],
-  options?: ComputedStyleOptions
+  options?: ComputedStyleOptions,
 ): Promise<Map<string, ComputedStyleResult>> {
   const calculator = new ComputedStyleCalculator(options);
   try {

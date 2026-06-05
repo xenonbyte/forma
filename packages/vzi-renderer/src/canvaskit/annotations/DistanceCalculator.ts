@@ -5,13 +5,7 @@
  * 计算两个元素之间的距离标注数据
  */
 
-import type {
-  ElementBounds,
-  PageRect,
-  DistanceData,
-  RulerData,
-  CalculationResult,
-} from './types';
+import type { ElementBounds, PageRect, DistanceData, RulerData, CalculationResult } from "./types";
 
 // ============================================
 // 辅助函数
@@ -51,10 +45,7 @@ export function getAverage(numbers: number[]): number {
  * @param rect2 - 第二个矩形
  * @returns 是否相交
  */
-export function isIntersect(
-  rect1: ElementBounds,
-  rect2: ElementBounds
-): boolean {
+export function isIntersect(rect1: ElementBounds, rect2: ElementBounds): boolean {
   return !(
     rect1.right <= rect2.left ||
     rect1.left >= rect2.right ||
@@ -71,7 +62,7 @@ export function isIntersect(
  */
 export function getPosition(
   selected: ElementBounds,
-  target: ElementBounds
+  target: ElementBounds,
 ): {
   v?: [number, number]; // [距离, 方向: 0=目标在上, 1=选中在上]
   h?: [number, number]; // [距离, 方向: 0=目标在左, 1=选中在左]
@@ -109,14 +100,14 @@ export function getPosition(
  * 获取数字分组（平行和相交方向）
  */
 function getNums(
-  direction: 'v' | 'h',
+  direction: "v" | "h",
   verticalNums: number[],
-  horizontalNums: number[]
+  horizontalNums: number[],
 ): {
   parallel: number[];
   intersect: number[];
 } {
-  return direction === 'v'
+  return direction === "v"
     ? {
         parallel: [...verticalNums],
         intersect: [...horizontalNums],
@@ -130,10 +121,7 @@ function getNums(
 /**
  * 对数字对象进行排序
  */
-function getOrderedNums(nums: {
-  parallel: number[];
-  intersect: number[];
-}): {
+function getOrderedNums(nums: { parallel: number[]; intersect: number[] }): {
   parallel: number[];
   intersect: number[];
 } {
@@ -146,10 +134,7 @@ function getOrderedNums(nums: {
 /**
  * 获取中间索引
  */
-function getMidIndex(
-  intersectNums: number[],
-  closerIndex: number
-): [number, number] {
+function getMidIndex(intersectNums: number[], closerIndex: number): [number, number] {
   const flag = closerIndex === 0 ? 1 : -1;
   return [
     (intersectNums[0] - intersectNums[2]) * flag > 0 ? 0 : 1,
@@ -167,10 +152,8 @@ function getParallelSpacing(parallelNums: number[]): number {
 /**
  * 获取边距
  */
-function getMargin(intersectNums: number[], whichOne: 'smaller' | 'larger'): number {
-  return whichOne === 'smaller'
-    ? intersectNums[1] - intersectNums[0]
-    : intersectNums[3] - intersectNums[2];
+function getMargin(intersectNums: number[], whichOne: "smaller" | "larger"): number {
+  return whichOne === "smaller" ? intersectNums[1] - intersectNums[0] : intersectNums[3] - intersectNums[2];
 }
 
 // ============================================
@@ -188,7 +171,7 @@ function getMargin(intersectNums: number[], whichOne: 'smaller' | 'larger'): num
 export function calculateMarkData(
   selected: ElementBounds | null,
   target: ElementBounds,
-  pageRect: PageRect
+  pageRect: PageRect,
 ): CalculationResult {
   // 如果没有选中元素或者是同一个元素，返回空
   if (!selected || (selected.left === target.left && selected.top === target.top)) {
@@ -201,18 +184,8 @@ export function calculateMarkData(
   const selectedMidX = selected.left + selected.width / 2;
   const selectedMidY = selected.top + selected.height / 2;
 
-  const verticalNums = [
-    selected.top,
-    selected.bottom,
-    target.top,
-    target.bottom,
-  ];
-  const horizontalNums = [
-    selected.left,
-    selected.right,
-    target.left,
-    target.right,
-  ];
+  const verticalNums = [selected.top, selected.bottom, target.top, target.bottom];
+  const horizontalNums = [selected.left, selected.right, target.left, target.right];
 
   const distanceData: DistanceData[] = [];
   const rulerData: RulerData[] = [];
@@ -259,21 +232,12 @@ export function calculateMarkData(
         h: (selected.height / 2 + spacingV) / ph,
         distance: Math.round((selected.height / 2 + spacingV) * 100) / 100,
       });
-    } else if (
-      position.v &&
-      position.h &&
-      (position.v[0] === 0 || position.h[0] === 0)
-    ) {
+    } else if (position.v && position.h && (position.v[0] === 0 || position.h[0] === 0)) {
       // 相交于一点
       if (position.v[0] === 0 && position.h[0] === 0) {
         const sortedVNumbers = getSortedNumbers(verticalNums);
         const sortedHNumbers = getSortedNumbers(horizontalNums);
-        const edges = [
-          sortedVNumbers[0],
-          sortedVNumbers[3],
-          sortedHNumbers[0],
-          sortedHNumbers[3],
-        ];
+        const edges = [sortedVNumbers[0], sortedVNumbers[3], sortedHNumbers[0], sortedHNumbers[3]];
         const mids = [sortedVNumbers[1], sortedHNumbers[1]];
 
         const isBackslashed = position.v[1] === position.h[1];
@@ -294,59 +258,39 @@ export function calculateMarkData(
           distanceData.push({
             x: (index < 2 ? unfixedNum : edge) / pw,
             y: (index < 2 ? edge : unfixedNum) / ph,
-            [index < 2 ? 'w' : 'h']: d / (index < 2 ? pw : ph),
+            [index < 2 ? "w" : "h"]: d / (index < 2 ? pw : ph),
             distance: Math.round(d * 100) / 100,
           } as DistanceData);
         });
       } else {
-        const direction = position.v![0] !== 0 ? 'v' : 'h';
+        const direction = position.v![0] !== 0 ? "v" : "h";
         const nums = getNums(direction, verticalNums, horizontalNums);
         const posData = position[direction]!;
 
         distanceData.push({
-          x:
-            direction === 'v'
-              ? nums.intersect[1] / pw
-              : nums.parallel[1] / pw,
-          y:
-            direction === 'v'
-              ? nums.parallel[1] / ph
-              : nums.intersect[1] / ph,
-          [direction === 'v' ? 'h' : 'w']:
-            posData[0] / (direction === 'v' ? ph : pw),
+          x: direction === "v" ? nums.intersect[1] / pw : nums.parallel[1] / pw,
+          y: direction === "v" ? nums.parallel[1] / ph : nums.intersect[1] / ph,
+          [direction === "v" ? "h" : "w"]: posData[0] / (direction === "v" ? ph : pw),
           distance: Math.round(posData[0] * 100) / 100,
         } as DistanceData);
       }
     } else {
       // 只在一个方向不相交（平行方向）
-      const direction = position.v ? 'v' : 'h';
+      const direction = position.v ? "v" : "h";
       const closerIndex = position[direction]![1];
       const nums = getNums(direction, verticalNums, horizontalNums);
       const orderedNums = getOrderedNums(nums);
-      const mids = [
-        getAverage(orderedNums.parallel.slice(0, 2)),
-        getAverage(orderedNums.parallel.slice(2)),
-      ];
+      const mids = [getAverage(orderedNums.parallel.slice(0, 2)), getAverage(orderedNums.parallel.slice(2))];
       const midIndex = getMidIndex(nums.intersect, closerIndex);
       const parallelSpacing = getParallelSpacing(orderedNums.parallel);
-      const margins = [
-        getMargin(orderedNums.intersect, 'smaller'),
-        getMargin(orderedNums.intersect, 'larger'),
-      ];
+      const margins = [getMargin(orderedNums.intersect, "smaller"), getMargin(orderedNums.intersect, "larger")];
 
       // 平行方向间距
       if (parallelSpacing !== 0) {
         distanceData.push({
-          x:
-            direction === 'v'
-              ? getAverage(orderedNums.intersect.slice(1, 3)) / pw
-              : orderedNums.parallel[1] / pw,
-          y:
-            direction === 'v'
-              ? orderedNums.parallel[1] / ph
-              : getAverage(orderedNums.intersect.slice(1, 3)) / ph,
-          [direction === 'v' ? 'h' : 'w']:
-            parallelSpacing / (direction === 'v' ? ph : pw),
+          x: direction === "v" ? getAverage(orderedNums.intersect.slice(1, 3)) / pw : orderedNums.parallel[1] / pw,
+          y: direction === "v" ? orderedNums.parallel[1] / ph : getAverage(orderedNums.intersect.slice(1, 3)) / ph,
+          [direction === "v" ? "h" : "w"]: parallelSpacing / (direction === "v" ? ph : pw),
           distance: Math.round(parallelSpacing * 100) / 100,
         } as DistanceData);
       }
@@ -355,20 +299,12 @@ export function calculateMarkData(
       margins.forEach((margin, index) => {
         if (margin !== 0) {
           // rulerUnfixedStart 用于后续扩展，当前保留
-          const _rulerUnfixedStart =
-            midIndex[index] === 0 ? mids[0] : orderedNums.parallel[1];
+          const _rulerUnfixedStart = midIndex[index] === 0 ? mids[0] : orderedNums.parallel[1];
 
           distanceData.push({
-            x:
-              (direction === 'v'
-                ? orderedNums.intersect[index * 2]
-                : mids[midIndex[index]]) / pw,
-            y:
-              (direction === 'v'
-                ? mids[midIndex[index]]
-                : orderedNums.intersect[index * 2]) / ph,
-            [direction === 'v' ? 'w' : 'h']:
-              margin / (direction === 'v' ? pw : ph),
+            x: (direction === "v" ? orderedNums.intersect[index * 2] : mids[midIndex[index]]) / pw,
+            y: (direction === "v" ? mids[midIndex[index]] : orderedNums.intersect[index * 2]) / ph,
+            [direction === "v" ? "w" : "h"]: margin / (direction === "v" ? pw : ph),
             distance: Math.round(margin * 100) / 100,
           } as DistanceData);
         }

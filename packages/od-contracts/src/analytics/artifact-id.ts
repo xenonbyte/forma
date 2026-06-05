@@ -17,15 +17,12 @@ const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
 const FNV_PRIME = 0x100000001b3n;
 const MASK_64 = 0xffffffffffffffffn;
 
-export function anonymizeArtifactId(args: {
-  projectId: string;
-  fileName: string;
-}): string {
+export function anonymizeArtifactId(args: { projectId: string; fileName: string }): string {
   const input = `${args.projectId}:${args.fileName}`;
   let hash = FNV_OFFSET_BASIS;
   for (let i = 0; i < input.length; i++) {
     hash ^= BigInt(input.charCodeAt(i));
     hash = (hash * FNV_PRIME) & MASK_64;
   }
-  return hash.toString(16).padStart(16, '0');
+  return hash.toString(16).padStart(16, "0");
 }

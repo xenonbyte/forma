@@ -7,20 +7,20 @@
 // paths the user did not pick from this list.
 
 export type HostEditorId =
-  | 'cursor'
-  | 'vscode'
-  | 'windsurf'
-  | 'zed'
-  | 'qoder'
-  | 'antigravity'
-  | 'webstorm'
-  | 'idea'
-  | 'xcode'
-  | 'finder'
-  | 'explorer'
-  | 'file-manager'
-  | 'terminal'
-  | 'warp';
+  | "cursor"
+  | "vscode"
+  | "windsurf"
+  | "zed"
+  | "qoder"
+  | "antigravity"
+  | "webstorm"
+  | "idea"
+  | "xcode"
+  | "finder"
+  | "explorer"
+  | "file-manager"
+  | "terminal"
+  | "warp";
 
 export interface HostEditor {
   id: HostEditorId;
@@ -40,12 +40,12 @@ export interface HostEditor {
   // Platforms this entry can ever match. Calculated by the daemon at
   // request time; included so the UI can branch by host (e.g. show
   // Finder only on macOS).
-  platforms?: Array<'darwin' | 'win32' | 'linux'>;
+  platforms?: Array<"darwin" | "win32" | "linux">;
 }
 
 export interface HostEditorsResponse {
   editors: HostEditor[];
-  platform: 'darwin' | 'win32' | 'linux' | 'unknown';
+  platform: "darwin" | "win32" | "linux" | "unknown";
 }
 
 export interface OpenProjectInEditorRequest {

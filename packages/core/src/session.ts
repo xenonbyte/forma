@@ -7,12 +7,12 @@ import {
   getProductMutationLock,
   runProductMutationWithWarnings,
   type ProductMutationContext,
-  type ProductMutationLock
+  type ProductMutationLock,
 } from "./product-mutation-lock.js";
 import { readYamlAs, writeYamlAtomic } from "./yaml.js";
 
 const sessionSchema = z.object({
-  current_product: z.string().nullable()
+  current_product: z.string().nullable(),
 });
 
 export type FormaSession = z.infer<typeof sessionSchema>;
@@ -47,7 +47,7 @@ export class SessionService {
 
   async setCurrentProduct(productId: string): Promise<FormaSession> {
     return this.runProductMutation({ operation: "set_current_product", product_id: productId }, async () =>
-      this.setCurrentProductLocked(productId)
+      this.setCurrentProductLocked(productId),
     );
   }
 
@@ -62,14 +62,9 @@ export class SessionService {
 
   private async runProductMutation<T>(
     input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>
+    fn: (context: ProductMutationContext) => Promise<T>,
   ): Promise<T> {
-    return runProductMutationWithWarnings(
-      this.productMutationLock,
-      input,
-      fn,
-      this.onProductMutationWarning
-    );
+    return runProductMutationWithWarnings(this.productMutationLock, input, fn, this.onProductMutationWarning);
   }
 }
 

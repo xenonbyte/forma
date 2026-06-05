@@ -40,12 +40,7 @@ const METADATA = {
 };
 
 /** Minimal safe SVG with explicit width/height and aria-label on container */
-function makeSvg(
-  width: number,
-  height: number,
-  label?: string,
-  extraContent = "",
-): string {
+function makeSvg(width: number, height: number, label?: string, extraContent = ""): string {
   const labelAttr = label ? ` aria-label="${label}"` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"${labelAttr}><rect width="${width}" height="${height}"/>${extraContent}</svg>`;
 }

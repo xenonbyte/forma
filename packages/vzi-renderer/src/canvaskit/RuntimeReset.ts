@@ -1,6 +1,6 @@
-import { CanvasKitLoader } from './CanvasKitLoader';
-import { FontManager } from './FontManager';
-import { resetSurfaceManager } from './SurfaceManager';
+import { CanvasKitLoader } from "./CanvasKitLoader";
+import { FontManager } from "./FontManager";
+import { resetSurfaceManager } from "./SurfaceManager";
 
 /**
  * 重置浏览器端 CanvasKit runtime。

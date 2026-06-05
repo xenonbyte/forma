@@ -39,7 +39,7 @@ function emptyParsedDesignMd(): ParsedDesignMd {
     rounded: {},
     spacing: {},
     components: {},
-    warnings: []
+    warnings: [],
   };
 }
 

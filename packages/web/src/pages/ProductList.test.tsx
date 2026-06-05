@@ -6,7 +6,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProductList, ProductListContent } from "./ProductList.js";
-import { ApiError, type FormaApiClient, type Product, type RequirementWithDocument, type StyleMetadata } from "../api.js";
+import {
+  ApiError,
+  type FormaApiClient,
+  type Product,
+  type RequirementWithDocument,
+  type StyleMetadata,
+} from "../api.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -15,7 +21,7 @@ const style: StyleMetadata = {
   description: "Focused tool UI",
   design_md_path: "styles/linear/DESIGN.md",
   tokens_css_path: "styles/linear/tokens.css",
-  components_html_path: "styles/linear/components.html"
+  components_html_path: "styles/linear/components.html",
 };
 
 const configuredProduct: Product = {
@@ -45,7 +51,10 @@ afterEach(() => {
 
 describe("ProductList", () => {
   it("renders skeleton rows while loading instead of plain loading copy", async () => {
-    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {})),
+    );
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -54,7 +63,9 @@ describe("ProductList", () => {
     });
 
     expect(container.querySelector('[data-skeleton="list"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("Loading products, configuration state, and latest requirement status.");
+    expect(container.textContent).not.toContain(
+      "Loading products, configuration state, and latest requirement status.",
+    );
   });
 
   it("renders cleanup notices from delete navigation state after detail navigation", async () => {
@@ -66,11 +77,11 @@ describe("ProductList", () => {
           cleanupPending: true,
           productId: "P-123abc",
           recoveryWarnings: ["Recovered orphaned requirement index"],
-          sessionCleared: true
-        }
+          sessionCleared: true,
+        },
       },
       "",
-      "/products"
+      "/products",
     );
 
     await act(async () => {
@@ -82,10 +93,10 @@ describe("ProductList", () => {
               cleanupPending: true,
               productId: "P-123abc",
               recoveryWarnings: ["Recovered orphaned requirement index"],
-              sessionCleared: true
-            }
+              sessionCleared: true,
+            },
           }}
-        />
+        />,
       );
       await flushPromises();
     });
@@ -115,11 +126,11 @@ describe("ProductListContent", () => {
               updated_at: "2026-05-17T01:00:00.000Z",
               pages: [],
               navigation: [],
-              document_md: "# Checkout"
-            }
-          }
+              document_md: "# Checkout",
+            },
+          },
         }}
-      />
+      />,
     );
 
     expect(html).toContain("Checkout App");
@@ -155,10 +166,10 @@ describe("ProductListContent", () => {
         products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
         requirementSummaries={{
           "P-123abc": {
-            count: 0
-          }
+            count: 0,
+          },
         }}
-      />
+      />,
     );
 
     expect(html).toContain("View");
@@ -177,12 +188,12 @@ describe("ProductListContent", () => {
               description: "Mobile checkout workbench",
               platform: "web",
               brand_style: style.name,
-            }
-          }
+            },
+          },
         }}
         products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
         requirementSummaries={{ "P-123abc": { count: 0 } }}
-      />
+      />,
     );
 
     expect(html).toContain("Configuration incomplete");
@@ -201,12 +212,12 @@ describe("ProductListContent", () => {
               brand_style: style.name,
               languages: ["en", "zh-CN"],
               default_language: "en",
-            }
-          }
+            },
+          },
         }}
         products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
         requirementSummaries={{ "P-123abc": { count: 0 } }}
-      />
+      />,
     );
 
     expect(html).toContain("Configured");
@@ -225,13 +236,13 @@ describe("ProductListContent", () => {
               platform: "web",
               brand_style: style.name,
               languages: ["en", "zh-CN"],
-              default_language: "en"
-            }
-          }
+              default_language: "en",
+            },
+          },
         }}
         products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
         requirementSummaries={{ "P-123abc": { count: 0 } }}
-      />
+      />,
     );
 
     expect(html).toContain("Configured");
@@ -248,10 +259,10 @@ describe("ProductListContent", () => {
           client={client}
           products={[
             { id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" },
-            { id: "P-456def", name: "Admin App", description: "Internal admin" }
+            { id: "P-456def", name: "Admin App", description: "Internal admin" },
           ]}
           requirementSummaries={{ "P-123abc": { count: 0 }, "P-456def": { count: 0 } }}
-        />
+        />,
       );
       await flushPromises();
     });
@@ -263,10 +274,16 @@ describe("ProductListContent", () => {
       await flushPromises();
     });
 
-    const input = required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input");
+    const input = required(
+      container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'),
+      "confirmation input",
+    );
     await act(async () => {
       setInputValue(input, "P-123abc");
-      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      required(
+        container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'),
+        "final delete button",
+      ).click();
       await flushPromises();
     });
 
@@ -290,7 +307,7 @@ describe("ProductListContent", () => {
           client={client}
           products={[{ id: "P-123abc", name: "Checkout App", description: "Mobile checkout workbench" }]}
           requirementSummaries={{ "P-123abc": { count: 0 } }}
-        />
+        />,
       );
       await flushPromises();
     });
@@ -301,8 +318,14 @@ describe("ProductListContent", () => {
     });
 
     await act(async () => {
-      setInputValue(required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"), "P-123abc");
-      required(container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'), "final delete button").click();
+      setInputValue(
+        required(container.querySelector<HTMLInputElement>('input[name="confirm_product_id"]'), "confirmation input"),
+        "P-123abc",
+      );
+      required(
+        container.querySelector<HTMLButtonElement>('[data-confirm-delete-final="true"]'),
+        "final delete button",
+      ).click();
       await flushPromises();
     });
 
@@ -332,8 +355,8 @@ function createDeleteClient() {
       deleted: true as const,
       session_cleared: true,
       cleanup_pending: true,
-      recovery_warnings: ["Recovered orphaned requirement index"]
-    }))
+      recovery_warnings: ["Recovered orphaned requirement index"],
+    })),
   } satisfies Pick<FormaApiClient, "deleteProduct">;
 }
 
@@ -345,7 +368,7 @@ function createListClient() {
     deleteProduct: vi.fn(),
     getProduct: vi.fn(async (productId: string) => ({ ...configuredProduct, id: productId })),
     listProducts: vi.fn(async () => products),
-    listRequirements: vi.fn(async () => requirements)
+    listRequirements: vi.fn(async () => requirements),
   } satisfies Pick<FormaApiClient, "deleteProduct" | "getProduct" | "listProducts" | "listRequirements">;
 }
 

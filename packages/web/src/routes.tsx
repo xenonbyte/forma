@@ -52,85 +52,85 @@ export const routeTable: RouteDefinition[] = [
     context: "Products",
     navGroup: "products",
     path: "/products",
-    title: () => "Products"
+    title: () => "Products",
   },
   {
     component: ProductNewRoute,
     context: "Products",
     navGroup: "products",
     path: "/products/new",
-    title: () => "New product"
+    title: () => "New product",
   },
   {
     component: ProductDetailRoute,
     context: "Product",
     navGroup: "products",
     path: "/products/:productId",
-    title: ({ productId }) => productId
+    title: ({ productId }) => productId,
   },
   {
     component: BaselineView,
     context: "Baseline",
     navGroup: "products",
     path: "/products/:productId/baseline",
-    title: ({ productId }) => `${productId} baseline`
+    title: ({ productId }) => `${productId} baseline`,
   },
   {
     component: DesignViewRoute,
     context: "Design",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/design",
-    title: ({ reqId }) => `${reqId} design`
+    title: ({ reqId }) => `${reqId} design`,
   },
   {
     component: RequirementViewerRoute,
     context: "Design",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/viewer",
-    title: ({ reqId }) => `${reqId} 画布`
+    title: ({ reqId }) => `${reqId} 画布`,
   },
   {
     component: PageViewerRoute,
     context: "Design",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/pages/:pageId/viewer",
-    title: ({ pageId }) => `${pageId} 画布`
+    title: ({ pageId }) => `${pageId} 画布`,
   },
   {
     component: AnnotationPageRoute,
     context: "Annotation",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/annotation",
-    title: ({ reqId }) => `${reqId} annotation`
+    title: ({ reqId }) => `${reqId} annotation`,
   },
   {
     component: RequirementDetail,
     context: "Requirement",
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId",
-    title: ({ reqId }) => reqId
+    title: ({ reqId }) => reqId,
   },
   {
     component: StyleLibraryRoute,
     context: "Styles",
     navGroup: "styles",
     path: "/styles",
-    title: () => "Styles"
+    title: () => "Styles",
   },
   {
     component: StyleDetail,
     context: "Style",
     navGroup: "styles",
     path: "/styles/:name",
-    title: ({ name }) => name
+    title: ({ name }) => name,
   },
   {
     component: SettingsRoute,
     context: "Settings",
     navGroup: "settings",
     path: "/settings",
-    title: () => "Settings"
-  }
+    title: () => "Settings",
+  },
 ];
 
 export const notFoundRoute: RouteDefinition = {
@@ -138,7 +138,7 @@ export const notFoundRoute: RouteDefinition = {
   context: "Route",
   navGroup: "products",
   path: "*",
-  title: () => "Not found"
+  title: () => "Not found",
 };
 
 export function useCurrentRoute(): RouteMatch {
@@ -151,7 +151,14 @@ export function useCurrentRoute(): RouteMatch {
 
     const updateLocation = () => setLocation(readCurrentLocation());
     const handleAnchorClick = (event: MouseEvent) => {
-      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.shiftKey
+      ) {
         return;
       }
 
@@ -222,11 +229,19 @@ function DesignViewRoute(props: RoutePageProps) {
 }
 
 function RequirementViewerRoute(props: RoutePageProps) {
-  return <ViewerPage client={apiClient} params={props.params as { productId: string; reqId: string }} entry="requirement" />;
+  return (
+    <ViewerPage client={apiClient} params={props.params as { productId: string; reqId: string }} entry="requirement" />
+  );
 }
 
 function PageViewerRoute(props: RoutePageProps) {
-  return <ViewerPage client={apiClient} params={props.params as { productId: string; reqId: string; pageId: string }} entry="page" />;
+  return (
+    <ViewerPage
+      client={apiClient}
+      params={props.params as { productId: string; reqId: string; pageId: string }}
+      entry="page"
+    />
+  );
 }
 
 function ProductListRoute(props: RoutePageProps) {
@@ -299,7 +314,7 @@ function readCurrentLocation(): BrowserLocationSnapshot {
   return canUseDom()
     ? {
         navigationState: window.history.state,
-        pathname: `${window.location.pathname}${window.location.search}${window.location.hash}`
+        pathname: `${window.location.pathname}${window.location.search}${window.location.hash}`,
       }
     : { pathname: "/products" };
 }

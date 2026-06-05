@@ -16,7 +16,7 @@ export const formaInstallCommands = [
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff"
+  "fm-develop-design-handoff",
 ] as const;
 
 export type FormaInstallCommand = (typeof formaInstallCommands)[number];
@@ -116,7 +116,9 @@ export class InstallService {
     const protectedPaths = await this.installedPathsOwnedByOtherPlatforms(Array.from(selectedManifests.keys()));
     await this.transferBackupsToRemainingOwners(Array.from(selectedManifests.keys()), protectedPaths, backupByTarget);
 
-    const installedPaths = unique(Array.from(selectedManifests.values()).flatMap((manifest) => manifest.installed_paths));
+    const installedPaths = unique(
+      Array.from(selectedManifests.values()).flatMap((manifest) => manifest.installed_paths),
+    );
     for (const target of installedPaths.reverse()) {
       if (protectedPaths.has(target)) {
         continue;
@@ -155,7 +157,7 @@ export class InstallService {
       platform,
       source: join(this.templatesDir, "shared", "SKILL.md"),
       target: join(this.formaHome, "skills", "forma", "SKILL.md"),
-      record
+      record,
     });
   }
 
@@ -165,7 +167,7 @@ export class InstallService {
         platform,
         source: this.templatePath(platform, command),
         target: this.commandTargetPath(platform, command),
-        record
+        record,
       });
     }
   }
@@ -184,27 +186,37 @@ export class InstallService {
   private async installMcpConfigFallback(
     platform: AgentInstallPlatform,
     configPath: string,
-    record: InstallRecord
+    record: InstallRecord,
   ): Promise<void> {
     if (platform === "claude") {
-      await this.writeJsonConfig(platform, configPath, (config) => ({
-        ...withoutTopLevelForma(config),
-        mcpServers: {
-          ...asRecord(config.mcpServers),
-          forma: stdioMcpServerConfig(this.mcpCommand)
-        }
-      }), record);
+      await this.writeJsonConfig(
+        platform,
+        configPath,
+        (config) => ({
+          ...withoutTopLevelForma(config),
+          mcpServers: {
+            ...asRecord(config.mcpServers),
+            forma: stdioMcpServerConfig(this.mcpCommand),
+          },
+        }),
+        record,
+      );
       return;
     }
 
     if (platform === "gemini") {
-      await this.writeJsonConfig(platform, configPath, (config) => ({
-        ...config,
-        mcpServers: {
-          ...asRecord(config.mcpServers),
-          forma: stdioMcpServerConfig(this.mcpCommand)
-        }
-      }), record);
+      await this.writeJsonConfig(
+        platform,
+        configPath,
+        (config) => ({
+          ...config,
+          mcpServers: {
+            ...asRecord(config.mcpServers),
+            forma: stdioMcpServerConfig(this.mcpCommand),
+          },
+        }),
+        record,
+      );
       return;
     }
 
@@ -224,7 +236,7 @@ export class InstallService {
   private async uninstallMcpConfig(
     platform: AgentInstallPlatform,
     configPaths: string[],
-    backupByTarget: Map<string, string>
+    backupByTarget: Map<string, string>,
   ): Promise<void> {
     const configPath = configPaths[0];
     if (!configPath) {
@@ -306,15 +318,15 @@ export class InstallService {
     return {
       env: {
         HOME: this.userHome,
-        USERPROFILE: this.userHome
-      }
+        USERPROFILE: this.userHome,
+      },
     };
   }
 
   private async restoreConfigBackup(
     platform: AgentInstallPlatform,
     configPath: string,
-    backupPath: string
+    backupPath: string,
   ): Promise<void> {
     const currentContent = await readFile(configPath, "utf8");
     const backupContent = await readFile(backupPath, "utf8");
@@ -336,7 +348,7 @@ export class InstallService {
     platform: AgentInstallPlatform,
     configPath: string,
     update: (config: Record<string, unknown>) => Record<string, unknown>,
-    record: InstallRecord
+    record: InstallRecord,
   ): Promise<void> {
     const existingContent = await readOptionalText(configPath);
     const existingConfig = existingContent ? parseJsonObject(existingContent, configPath) : {};
@@ -349,7 +361,7 @@ export class InstallService {
   private async writeCodexConfig(
     platform: AgentInstallPlatform,
     configPath: string,
-    record: InstallRecord
+    record: InstallRecord,
   ): Promise<void> {
     const existing = await readOptionalText(configPath);
     const next = appendCodexManagedSection(removeCodexManagedSection(existing ?? ""), this.mcpCommand);
@@ -372,7 +384,7 @@ export class InstallService {
     platform: AgentInstallPlatform,
     target: string,
     content: string,
-    backups: InstallBackupRecord[]
+    backups: InstallBackupRecord[],
   ): Promise<void> {
     const existing = await readOptionalText(target);
     await this.backupExistingTargetIfNeeded(platform, target, backups);
@@ -388,7 +400,7 @@ export class InstallService {
   private async backupExistingTargetIfNeeded(
     platform: AgentInstallPlatform,
     target: string,
-    backups: InstallBackupRecord[]
+    backups: InstallBackupRecord[],
   ): Promise<void> {
     const existing = await readOptionalText(target);
     if (existing === undefined || backups.some((backup) => backup.target === target)) {
@@ -458,17 +470,14 @@ export class InstallService {
     }
 
     const dir = dirname(target);
-    const roots = [
-      join(this.userHome, ".codex", "skills"),
-      join(this.userHome, ".codex", "prompts", "skills")
-    ];
+    const roots = [join(this.userHome, ".codex", "skills"), join(this.userHome, ".codex", "prompts", "skills")];
     return roots.some((root) => pathIsWithin(root, dir)) ? dir : undefined;
   }
 
   private async writeManifest(
     platform: AgentInstallPlatform,
     record: InstallRecord,
-    existingManifest?: InstallManifest
+    existingManifest?: InstallManifest,
   ): Promise<void> {
     const carriedBackups = await this.backupsForInstalledPathsFromOtherManifests(platform, record.installedPaths);
     const currentTargets = new Set([...record.installedPaths, ...record.configPaths]);
@@ -479,7 +488,7 @@ export class InstallService {
       installed_paths: unique(record.installedPaths),
       backups: mergeBackupRecords(retainedBackups, carriedBackups, record.backups),
       config_paths: unique(record.configPaths),
-      installed_at: new Date().toISOString()
+      installed_at: new Date().toISOString(),
     };
     await writeYamlAtomic(this.manifestFile(platform), manifest);
   }
@@ -487,7 +496,7 @@ export class InstallService {
   private async cleanupStaleManifestTargets(
     platform: AgentInstallPlatform,
     existingManifest: InstallManifest | undefined,
-    record: InstallRecord
+    record: InstallRecord,
   ): Promise<void> {
     if (!existingManifest) {
       return;
@@ -599,7 +608,7 @@ export class InstallService {
 
   private async backupsForInstalledPathsFromOtherManifests(
     platform: AgentInstallPlatform,
-    installedPaths: string[]
+    installedPaths: string[],
   ): Promise<InstallBackupRecord[]> {
     const installed = new Set(installedPaths);
     const backups: InstallBackupRecord[] = [];
@@ -620,7 +629,7 @@ export class InstallService {
   private async transferBackupsToRemainingOwners(
     selectedPlatforms: AgentInstallPlatform[],
     protectedPaths: Set<string>,
-    backupByTarget: Map<string, string>
+    backupByTarget: Map<string, string>,
   ): Promise<void> {
     if (protectedPaths.size === 0 || backupByTarget.size === 0) {
       return;
@@ -648,7 +657,7 @@ export class InstallService {
       if (transferred.length > 0) {
         await writeYamlAtomic(this.manifestFile(platform), {
           ...manifest,
-          backups: mergeBackupRecords(manifest.backups, transferred)
+          backups: mergeBackupRecords(manifest.backups, transferred),
         });
       }
     }
@@ -672,15 +681,17 @@ const defaultMcpCommandRunner: FormaMcpCommandRunner = {
         rejectCommand(new Error(`${command} exited with ${code ?? `signal ${signal ?? "unknown"}`}`));
       });
     });
-  }
+  },
 };
 
-function stdioMcpServerConfig(mcpCommand: FormaMcpCommand): FormaMcpCommand & { type: "stdio"; env: Record<string, string> } {
+function stdioMcpServerConfig(
+  mcpCommand: FormaMcpCommand,
+): FormaMcpCommand & { type: "stdio"; env: Record<string, string> } {
   return {
     type: "stdio",
     command: mcpCommand.command,
     args: mcpCommand.args,
-    env: {}
+    env: {},
   };
 }
 
@@ -688,18 +699,18 @@ function officialMcpInstallCommand(platform: AgentInstallPlatform, mcpCommand: F
   if (platform === "claude") {
     return {
       command: "claude",
-      args: ["mcp", "add-json", "--scope", "user", "forma", JSON.stringify(stdioMcpServerConfig(mcpCommand))]
+      args: ["mcp", "add-json", "--scope", "user", "forma", JSON.stringify(stdioMcpServerConfig(mcpCommand))],
     };
   }
   if (platform === "gemini") {
     return {
       command: "gemini",
-      args: ["mcp", "add", "--scope", "user", "--transport", "stdio", "forma", mcpCommand.command, ...mcpCommand.args]
+      args: ["mcp", "add", "--scope", "user", "--transport", "stdio", "forma", mcpCommand.command, ...mcpCommand.args],
     };
   }
   return {
     command: "codex",
-    args: ["mcp", "add", "forma", "--", mcpCommand.command, ...mcpCommand.args]
+    args: ["mcp", "add", "forma", "--", mcpCommand.command, ...mcpCommand.args],
   };
 }
 

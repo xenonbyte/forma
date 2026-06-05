@@ -15,7 +15,7 @@ describe("Skeleton components", () => {
     const html = renderToStaticMarkup(<SkeletonList />);
 
     expect(html).toContain('data-skeleton="list"');
-    expect((html.match(/data-skeleton="card"/g) ?? [])).toHaveLength(3);
+    expect(html.match(/data-skeleton="card"/g) ?? []).toHaveLength(3);
   });
 
   it("renders fixed detail skeleton sections", () => {

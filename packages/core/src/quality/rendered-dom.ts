@@ -52,7 +52,10 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
   function parseRgbString(value: string): [number, number, number, number] | null {
     const m = value.match(/rgba?\(([^)]+)\)/i);
     if (!m) return null;
-    const parts = m[1].split(/[,/\s]+/).map((p) => p.trim()).filter((p) => p.length > 0);
+    const parts = m[1]
+      .split(/[,/\s]+/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
     if (parts.length < 3) return null;
     const r = Number(parts[0]);
     const g = Number(parts[1]);
@@ -66,10 +69,10 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
   // oklch()/color-mix()/color(...) verbatim (not rgb()); painting the value and
   // reading the pixel back resolves ANY browser-renderable color to sRGB bytes.
   const colorCache = new Map<string, [number, number, number, number]>();
-  const probeCanvas = document.createElement('canvas');
+  const probeCanvas = document.createElement("canvas");
   probeCanvas.width = 1;
   probeCanvas.height = 1;
-  const probeCtx = probeCanvas.getContext('2d', { willReadFrequently: true });
+  const probeCtx = probeCanvas.getContext("2d", { willReadFrequently: true });
 
   /**
    * Resolve any computed CSS color string to sRGB rgba (0–255, alpha 0–1). Tries a
@@ -85,10 +88,10 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     if (!out && probeCtx) {
       // An invalid color assignment leaves fillStyle unchanged; probe two sentinels
       // to tell "accepted" (both normalize equal) from "rejected" (stay different).
-      probeCtx.fillStyle = '#000';
+      probeCtx.fillStyle = "#000";
       probeCtx.fillStyle = value;
       const a1 = probeCtx.fillStyle;
-      probeCtx.fillStyle = '#fff';
+      probeCtx.fillStyle = "#fff";
       probeCtx.fillStyle = value;
       const a2 = probeCtx.fillStyle;
       if (a1 === a2) {
@@ -104,7 +107,10 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return resolved;
   }
 
-  function compositeOver(fg: [number, number, number, number], bg: [number, number, number, number]): [number, number, number, number] {
+  function compositeOver(
+    fg: [number, number, number, number],
+    bg: [number, number, number, number],
+  ): [number, number, number, number] {
     const a = Math.max(0, Math.min(1, fg[3]));
     const bgA = Math.max(0, Math.min(1, bg[3]));
     const outA = a + bgA * (1 - a);
@@ -122,7 +128,7 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     let node: Element | null = el;
     let solid = true;
     let sawBgLayer = false; // a background color has joined the stack
-    let sealed = false;     // an opaque layer caps the background; stop collecting
+    let sealed = false; // an opaque layer caps the background; stop collecting
     while (node) {
       const cs = getComputedStyle(node);
       const op = parseFloat(cs.opacity);
@@ -138,7 +144,7 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
       }
       if (!sealed) {
         // A gradient/background-image is the actual backdrop here; not a solid color.
-        if (cs.backgroundImage && cs.backgroundImage !== 'none') {
+        if (cs.backgroundImage && cs.backgroundImage !== "none") {
           solid = false;
           break;
         }
@@ -153,7 +159,7 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
           layers.push(bg);
           sawBgLayer = true;
           if (bg[3] >= 1) sealed = true; // opaque: stop collecting, but keep
-                                         // scanning ancestors for a fading group
+          // scanning ancestors for a fading group
         }
       }
       node = node.parentElement;
@@ -166,7 +172,7 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
   }
 
   function primaryFamily(cs: CSSStyleDeclaration): string {
-    return (cs.fontFamily.split(',')[0] ?? '').replace(/['"]/g, '').trim().toLowerCase();
+    return (cs.fontFamily.split(",")[0] ?? "").replace(/['"]/g, "").trim().toLowerCase();
   }
 
   // CSS opacity compounds multiplicatively down the ancestor chain, but
@@ -207,17 +213,20 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
    * would judge the child's pixels against the wrong style and double-count it.
    */
   function directText(el: Element): string {
-    let out = '';
+    let out = "";
     for (const child of Array.from(el.childNodes)) {
-      if (child.nodeType === 3) out += child.textContent ?? '';
+      if (child.nodeType === 3) out += child.textContent ?? "";
     }
     return out;
   }
 
-  function placeholderText(el: Element, cs: CSSStyleDeclaration): { text: string; color: [number, number, number, number] } | null {
-    const placeholder = el.getAttribute('placeholder');
+  function placeholderText(
+    el: Element,
+    cs: CSSStyleDeclaration,
+  ): { text: string; color: [number, number, number, number] } | null {
+    const placeholder = el.getAttribute("placeholder");
     if (!placeholder || placeholder.trim().length === 0) return null;
-    const pcs = getComputedStyle(el, '::placeholder');
+    const pcs = getComputedStyle(el, "::placeholder");
     const pColor = pcs && pcs.color ? resolveRgba(pcs.color) : resolveRgba(cs.color);
     return { text: placeholder, color: pColor };
   }
@@ -229,26 +238,37 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
    * label (their .value is a submit value like "on"), so they are skipped. Returns
    * the visible label + its rendered color, or null when there is none to judge.
    */
-  function formControlText(el: Element, cs: CSSStyleDeclaration): { text: string; color: [number, number, number, number] } | null {
+  function formControlText(
+    el: Element,
+    cs: CSSStyleDeclaration,
+  ): { text: string; color: [number, number, number, number] } | null {
     const tag = el.tagName.toLowerCase();
     const control = el as HTMLInputElement | HTMLTextAreaElement;
-    const value = control.value != null ? String(control.value) : '';
+    const value = control.value != null ? String(control.value) : "";
 
-    if (tag === 'textarea') {
+    if (tag === "textarea") {
       if (value.trim().length > 0) return { text: value, color: resolveRgba(cs.color) };
       return placeholderText(el, cs);
     }
-    if (tag !== 'input') return null;
+    if (tag !== "input") return null;
 
-    const type = (el.getAttribute('type') ?? 'text').toLowerCase();
+    const type = (el.getAttribute("type") ?? "text").toLowerCase();
     // Buttons paint their value as the label.
-    if (type === 'submit' || type === 'button' || type === 'reset') {
+    if (type === "submit" || type === "button" || type === "reset") {
       return value.trim().length > 0 ? { text: value, color: resolveRgba(cs.color) } : null;
     }
     // Textual inputs paint their value; password masks it (skip value), but all
     // of these can show placeholder text.
-    if (type === 'text' || type === 'search' || type === 'email' || type === 'tel' || type === 'url' || type === 'number' || type === 'password') {
-      if (value.trim().length > 0 && type !== 'password') {
+    if (
+      type === "text" ||
+      type === "search" ||
+      type === "email" ||
+      type === "tel" ||
+      type === "url" ||
+      type === "number" ||
+      type === "password"
+    ) {
+      if (value.trim().length > 0 && type !== "password") {
         return { text: value, color: resolveRgba(cs.color) };
       }
       return placeholderText(el, cs);
@@ -259,13 +279,13 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
 
   function visit(el: Element): void {
     const cs = getComputedStyle(el);
-    if (cs.visibility === 'hidden' || cs.display === 'none') return;
+    if (cs.visibility === "hidden" || cs.display === "none") return;
     // An ancestor display:none leaves this element's own computed display intact,
     // so check actual layout: an unrendered element generates no client rects.
     if (el.getClientRects().length === 0) return;
 
     const tag = el.tagName.toLowerCase();
-    if (tag === 'input' || tag === 'textarea') {
+    if (tag === "input" || tag === "textarea") {
       const fc = formControlText(el, cs);
       if (fc) pushNode(el, cs, fc.color, fc.text);
       return;
@@ -273,12 +293,15 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
 
     // <select> renders its selected option's label; that text lives in descendant
     // <option> nodes, so directText(select) misses it — capture it explicitly.
-    if (tag === 'select') {
+    if (tag === "select") {
       const sel = el as HTMLSelectElement;
-      const opt = sel.selectedOptions && sel.selectedOptions.length > 0
-        ? sel.selectedOptions[0]
-        : (sel.options ? sel.options[sel.selectedIndex] : null);
-      const label = opt ? (opt.textContent ?? '') : '';
+      const opt =
+        sel.selectedOptions && sel.selectedOptions.length > 0
+          ? sel.selectedOptions[0]
+          : sel.options
+            ? sel.options[sel.selectedIndex]
+            : null;
+      const label = opt ? (opt.textContent ?? "") : "";
       if (label.trim().length > 0) pushNode(el, cs, resolveRgba(cs.color), label);
       return;
     }

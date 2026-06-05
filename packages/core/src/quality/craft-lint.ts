@@ -1,6 +1,6 @@
-import type { ArtifactCraftCheck } from '../artifact-manifest.js';
-import { compositeOver, contrastRatio, type Rgb } from './contrast.js';
-import type { RenderedDomSnapshot, RenderedTextNode } from './rendered-dom.js';
+import type { ArtifactCraftCheck } from "../artifact-manifest.js";
+import { compositeOver, contrastRatio, type Rgb } from "./contrast.js";
+import type { RenderedDomSnapshot, RenderedTextNode } from "./rendered-dom.js";
 
 export interface LintOptions {
   /** WCAG AA normal-text minimum. Default 4.5. */
@@ -58,7 +58,7 @@ function contrastCheck(nodes: RenderedTextNode[], min: number): ArtifactCraftChe
   // white fallback (which would produce both false fails and false passes).
   const judgeable = nodes.filter((n) => n.backgroundSolid);
   const skipped = nodes.length - judgeable.length;
-  const skipNote = skipped > 0 ? ` (${skipped} skipped: non-solid background)` : '';
+  const skipNote = skipped > 0 ? ` (${skipped} skipped: non-solid background)` : "";
 
   const failures: Array<{ text: string; ratio: number }> = [];
   for (const n of judgeable) {
@@ -68,12 +68,15 @@ function contrastCheck(nodes: RenderedTextNode[], min: number): ArtifactCraftChe
     if (ratio < min) failures.push({ text: n.text, ratio });
   }
   if (failures.length === 0) {
-    return { id: 'contrast-aa', passed: true, detail: `all ${judgeable.length} text node(s) ≥ ${min}:1${skipNote}` };
+    return { id: "contrast-aa", passed: true, detail: `all ${judgeable.length} text node(s) ≥ ${min}:1${skipNote}` };
   }
   const worst = failures.reduce((a, b) => (b.ratio < a.ratio ? b : a));
-  const sample = failures.slice(0, 3).map((f) => `"${f.text}" (${f.ratio.toFixed(2)}:1)`).join('; ');
+  const sample = failures
+    .slice(0, 3)
+    .map((f) => `"${f.text}" (${f.ratio.toFixed(2)}:1)`)
+    .join("; ");
   return {
-    id: 'contrast-aa',
+    id: "contrast-aa",
     passed: false,
     detail: `${failures.length}/${judgeable.length} text node(s) below ${min}:1 (worst ${worst.ratio.toFixed(2)}:1)${skipNote}. e.g. ${sample}`,
   };
@@ -83,9 +86,9 @@ function typeScaleCheck(nodes: RenderedTextNode[], max: number): ArtifactCraftCh
   const sizes = [...new Set(nodes.map((n) => n.fontSizePx))].sort((a, b) => a - b);
   const passed = sizes.length <= max;
   return {
-    id: 'type-scale',
+    id: "type-scale",
     passed,
-    detail: `${sizes.length} distinct font size(s) (max ${max}): [${sizes.join(', ')}]`,
+    detail: `${sizes.length} distinct font size(s) (max ${max}): [${sizes.join(", ")}]`,
   };
 }
 
@@ -103,7 +106,7 @@ function colorPaletteCheck(nodes: RenderedTextNode[], max: number): ArtifactCraf
   }
   const passed = colors.size <= max;
   return {
-    id: 'color-palette',
+    id: "color-palette",
     passed,
     detail: `${colors.size} distinct text+background color(s) (max ${max})`,
   };
@@ -113,8 +116,8 @@ function fontFamilyCheck(nodes: RenderedTextNode[], max: number): ArtifactCraftC
   const families = [...new Set(nodes.map((n) => n.fontFamily).filter((f) => f.length > 0))];
   const passed = families.length <= max;
   return {
-    id: 'font-families',
+    id: "font-families",
     passed,
-    detail: `${families.length} distinct font famil(ies) (max ${max}): [${families.join(', ')}]`,
+    detail: `${families.length} distinct font famil(ies) (max ${max}): [${families.join(", ")}]`,
   };
 }

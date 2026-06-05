@@ -16,23 +16,23 @@
  * implementations via ExportArchiveAssetsDeps.
  */
 
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import type { DesignPointer } from './product.js';
-import type { Platform } from './schemas.js';
-import type { IconGeneratedFrom } from './artifact-icon-extraction.js';
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import type { DesignPointer } from "./product.js";
+import type { Platform } from "./schemas.js";
+import type { IconGeneratedFrom } from "./artifact-icon-extraction.js";
 import {
   exportRequirementIcons,
   type ExportRequirementIconsDeps,
   type ExportRequirementIconsResult,
-} from './requirement-icon-export.js';
+} from "./requirement-icon-export.js";
 import {
   captureRequirementVzi,
   type CaptureRequirementVziDeps,
   type CaptureRequirementVziResult,
-} from './requirement-vzi-capture.js';
-import { FormaError } from './errors.js';
-import type { GetRequirementPageIds } from './requirement-design-pointer-filter.js';
+} from "./requirement-vzi-capture.js";
+import { FormaError } from "./errors.js";
+import type { GetRequirementPageIds } from "./requirement-design-pointer-filter.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
 
@@ -136,10 +136,10 @@ export async function exportArchiveAssets(
   } catch (err) {
     if (err instanceof FormaError) throw err;
     throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
+      "ARTIFACT_WRITE_FAIL",
       `Archive-asset export (icons phase) failed for requirement ${requirementId}: ` +
         `${err instanceof Error ? err.message : String(err)}`,
-      { productId, requirementId, phase: 'icons', cause: String(err) },
+      { productId, requirementId, phase: "icons", cause: String(err) },
     );
   }
 
@@ -150,10 +150,10 @@ export async function exportArchiveAssets(
   } catch (err) {
     if (err instanceof FormaError) throw err;
     throw new FormaError(
-      'ARTIFACT_WRITE_FAIL',
+      "ARTIFACT_WRITE_FAIL",
       `Archive-asset export (VZI phase) failed for requirement ${requirementId}: ` +
         `${err instanceof Error ? err.message : String(err)}`,
-      { productId, requirementId, phase: 'vzi', cause: String(err) },
+      { productId, requirementId, phase: "vzi", cause: String(err) },
     );
   }
 

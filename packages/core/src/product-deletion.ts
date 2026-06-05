@@ -25,7 +25,13 @@ export interface ProductDeletionRecoveryResult {
   warnings: string[];
 }
 
-export type ProductDeletionPhase = "created" | "backed_up" | "session_written" | "index_written" | "moved" | "committed";
+export type ProductDeletionPhase =
+  | "created"
+  | "backed_up"
+  | "session_written"
+  | "index_written"
+  | "moved"
+  | "committed";
 
 export interface ProductDeletionState {
   schema_version: 1;
@@ -37,7 +43,14 @@ export interface ProductDeletionState {
   phase: ProductDeletionPhase;
   backups: { products_yaml: "backups/products.yaml"; session_yaml?: "backups/session.yaml" };
   moved_paths: Array<{
-    kind: "product_data" | "product_artifact_storage" | "component_library" | "component_library_latest" | "component_library_metadata" | "component_library_versions" | "component_library_sessions";
+    kind:
+      | "product_data"
+      | "product_artifact_storage"
+      | "component_library"
+      | "component_library_latest"
+      | "component_library_metadata"
+      | "component_library_versions"
+      | "component_library_sessions";
     original_path: string;
     staged_path: string;
     required: boolean;
@@ -49,7 +62,10 @@ export interface ProductDeletionState {
 
 export interface ProductDeletionHooks {
   afterPhasePersisted?: (state: ProductDeletionState) => Promise<void> | void;
-  beforeMovePath?: (entry: ProductDeletionState["moved_paths"][number], state: ProductDeletionState) => Promise<void> | void;
+  beforeMovePath?: (
+    entry: ProductDeletionState["moved_paths"][number],
+    state: ProductDeletionState,
+  ) => Promise<void> | void;
   beforeCleanupOperationDir?: (operationDir: string, state: ProductDeletionState) => Promise<void> | void;
 }
 
@@ -61,50 +77,74 @@ export interface ProductDeletionRuntime {
 
 const phaseSchema = z.enum(["created", "backed_up", "session_written", "index_written", "moved", "committed"]);
 
-const relativePathSchema = z.string().min(1).refine((value) => !isAbsolute(value) && !normalize(value).split(/[\\/]/).includes(".."), {
-  message: "path must be relative"
-});
+const relativePathSchema = z
+  .string()
+  .min(1)
+  .refine((value) => !isAbsolute(value) && !normalize(value).split(/[\\/]/).includes(".."), {
+    message: "path must be relative",
+  });
 
-const movedPathSchema = z.object({
-  kind: z.enum(["product_data", "product_artifact_storage", "component_library", "component_library_latest", "component_library_metadata", "component_library_versions", "component_library_sessions"]),
-  original_path: relativePathSchema,
-  staged_path: relativePathSchema,
-  required: z.boolean()
-}).strict();
+const movedPathSchema = z
+  .object({
+    kind: z.enum([
+      "product_data",
+      "product_artifact_storage",
+      "component_library",
+      "component_library_latest",
+      "component_library_metadata",
+      "component_library_versions",
+      "component_library_sessions",
+    ]),
+    original_path: relativePathSchema,
+    staged_path: relativePathSchema,
+    required: z.boolean(),
+  })
+  .strict();
 
-const productDeletionStateSchema = z.object({
-  schema_version: z.literal(1),
-  operation_id: z.string().min(1),
-  product_id: productIdSchema,
-  created_at: z.string().min(1),
-  updated_at: z.string().min(1),
-  committed: z.boolean(),
-  phase: phaseSchema,
-  backups: z.object({
-    products_yaml: z.literal("backups/products.yaml"),
-    session_yaml: z.literal("backups/session.yaml").optional()
-  }).strict(),
-  moved_paths: z.array(movedPathSchema),
-  missing_paths: z.array(relativePathSchema),
-  session_was_current: z.boolean(),
-  warnings: z.array(z.string())
-}).strict().superRefine((state, context) => {
-  if (state.committed !== (state.phase === "committed")) {
-    context.addIssue({
-      code: "custom",
-      message: "committed must be true only when phase is committed",
-      path: ["committed"]
-    });
-  }
-});
+const productDeletionStateSchema = z
+  .object({
+    schema_version: z.literal(1),
+    operation_id: z.string().min(1),
+    product_id: productIdSchema,
+    created_at: z.string().min(1),
+    updated_at: z.string().min(1),
+    committed: z.boolean(),
+    phase: phaseSchema,
+    backups: z
+      .object({
+        products_yaml: z.literal("backups/products.yaml"),
+        session_yaml: z.literal("backups/session.yaml").optional(),
+      })
+      .strict(),
+    moved_paths: z.array(movedPathSchema),
+    missing_paths: z.array(relativePathSchema),
+    session_was_current: z.boolean(),
+    warnings: z.array(z.string()),
+  })
+  .strict()
+  .superRefine((state, context) => {
+    if (state.committed !== (state.phase === "committed")) {
+      context.addIssue({
+        code: "custom",
+        message: "committed must be true only when phase is committed",
+        path: ["committed"],
+      });
+    }
+  });
 
-const productIndexSchema = z.object({
-  products: z.array(z.object({
-    id: productIdSchema,
-    name: z.string().min(1),
-    description: z.string()
-  }).strict())
-}).strict();
+const productIndexSchema = z
+  .object({
+    products: z.array(
+      z
+        .object({
+          id: productIdSchema,
+          name: z.string().min(1),
+          description: z.string(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 
 type ProductDeletionStateInput = Omit<ProductDeletionState, "updated_at">;
 const nonTerminalDesignSessionStatuses = new Set([
@@ -113,7 +153,7 @@ const nonTerminalDesignSessionStatuses = new Set([
   "failed_operation",
   "failed_commit",
   "blocked_manual_edit",
-  "commit_recovery_required"
+  "commit_recovery_required",
 ]);
 
 export function validateDeleteProductInput(input: DeleteProductInput): string {
@@ -127,7 +167,7 @@ export function validateDeleteProductInput(input: DeleteProductInput): string {
   if (input.confirm_product_id !== input.product_id) {
     throw new FormaError("INVALID_INPUT", "confirm_product_id must match product_id", {
       product_id: input.product_id,
-      confirm_product_id: input.confirm_product_id
+      confirm_product_id: input.confirm_product_id,
     });
   }
   return parsedProductId.data;
@@ -135,7 +175,7 @@ export function validateDeleteProductInput(input: DeleteProductInput): string {
 
 export async function deleteProductLocked(
   runtime: ProductDeletionRuntime,
-  input: DeleteProductInput
+  input: DeleteProductInput,
 ): Promise<DeleteProductResult> {
   const productId = input.product_id;
   const recovery = await recoverPendingProductDeletesLocked(runtime);
@@ -157,7 +197,7 @@ export async function deleteProductLocked(
     moved_paths: [],
     missing_paths: [],
     session_was_current: false,
-    warnings: []
+    warnings: [],
   };
 
   try {
@@ -182,7 +222,9 @@ export async function deleteProductLocked(
       state = { ...state, backups: { products_yaml: "backups/products.yaml", session_yaml: "backups/session.yaml" } };
     }
 
-    const session = sessionExists ? await readYaml<{ current_product: string | null }>(sessionFile) : { current_product: null };
+    const session = sessionExists
+      ? await readYaml<{ current_product: string | null }>(sessionFile)
+      : { current_product: null };
     const productData = join("data", productId);
     const productArtifactStorage = join("data", "products", productId);
     const libraryFile = join("library", `${productId}.lib.pen`);
@@ -196,7 +238,7 @@ export async function deleteProductLocked(
         kind: "product_data",
         original_path: productData,
         staged_path: join("staged", "data", productId),
-        required: true
+        required: true,
       });
     } else {
       missingPaths.push(productData);
@@ -206,7 +248,7 @@ export async function deleteProductLocked(
         kind: "product_artifact_storage",
         original_path: productArtifactStorage,
         staged_path: join("staged", "data", "products", productId),
-        required: false
+        required: false,
       });
     }
     const componentLibraryFile = runtime.products.componentLibraryFile(productId);
@@ -215,15 +257,27 @@ export async function deleteProductLocked(
         kind: "component_library_latest",
         original_path: libraryFile,
         staged_path: join("staged", "library", `${productId}.lib.pen`),
-        required: false
+        required: false,
       });
     } else {
       missingPaths.push(libraryFile);
     }
     for (const entry of [
-      { kind: "component_library_metadata" as const, original_path: libraryMetadata, staged_path: join("staged", "library", `${productId}.components.yaml`) },
-      { kind: "component_library_versions" as const, original_path: libraryVersions, staged_path: join("staged", "library", `${productId}.versions`) },
-      { kind: "component_library_sessions" as const, original_path: librarySessions, staged_path: join("staged", "library", `${productId}.sessions`) }
+      {
+        kind: "component_library_metadata" as const,
+        original_path: libraryMetadata,
+        staged_path: join("staged", "library", `${productId}.components.yaml`),
+      },
+      {
+        kind: "component_library_versions" as const,
+        original_path: libraryVersions,
+        staged_path: join("staged", "library", `${productId}.versions`),
+      },
+      {
+        kind: "component_library_sessions" as const,
+        original_path: librarySessions,
+        staged_path: join("staged", "library", `${productId}.sessions`),
+      },
     ]) {
       if (await pathExists(join(runtime.home, entry.original_path))) {
         movedPaths.push({ ...entry, required: false });
@@ -237,7 +291,7 @@ export async function deleteProductLocked(
       phase: "backed_up",
       moved_paths: movedPaths,
       missing_paths: missingPaths,
-      session_was_current: session.current_product === productId
+      session_was_current: session.current_product === productId,
     });
     await runtime.hooks?.afterPhasePersisted?.(state);
 
@@ -250,7 +304,7 @@ export async function deleteProductLocked(
     const indexFile = join(runtime.home, "data", "products.yaml");
     const index = productIndexSchema.parse(await readYaml(indexFile));
     await writeYamlAtomic(indexFile, {
-      products: index.products.filter((product) => product.id !== productId)
+      products: index.products.filter((product) => product.id !== productId),
     });
     state = await persistState(operationDir, { ...state, phase: "index_written" });
     await runtime.hooks?.afterPhasePersisted?.(state);
@@ -273,7 +327,7 @@ export async function deleteProductLocked(
         deleted: true,
         session_cleared: state.session_was_current,
         cleanup_pending: false,
-        recovery_warnings: recovery.warnings
+        recovery_warnings: recovery.warnings,
       };
     } catch (error) {
       return {
@@ -287,9 +341,9 @@ export async function deleteProductLocked(
             errorMessage(error),
             runtime.home,
             operationDir,
-            state.operation_id
-          )}`
-        ]
+            state.operation_id,
+          )}`,
+        ],
       };
     }
   } catch (error) {
@@ -300,7 +354,7 @@ export async function deleteProductLocked(
         ...originalErrorDetails(error),
         rollback_error: errorMessage(rollbackError),
         operation_id: state.operation_id,
-        product_id: productId
+        product_id: productId,
       });
     }
     throw error;
@@ -308,7 +362,7 @@ export async function deleteProductLocked(
 }
 
 export async function recoverPendingProductDeletesLocked(
-  runtime: ProductDeletionRuntime
+  runtime: ProductDeletionRuntime,
 ): Promise<ProductDeletionRecoveryResult> {
   const deletionsDir = join(runtime.home, "tmp", "deletions");
   const entries = await readdir(deletionsDir, { withFileTypes: true }).catch((error: unknown) => {
@@ -333,7 +387,9 @@ export async function recoverPendingProductDeletesLocked(
         result.cleaned += 1;
         continue;
       }
-      throw recoveryFailed("Product deletion recovery failed: missing or corrupt state", { operation_dir: operationDir });
+      throw recoveryFailed("Product deletion recovery failed: missing or corrupt state", {
+        operation_dir: operationDir,
+      });
     }
 
     const state = stateResult.state;
@@ -353,7 +409,11 @@ export async function recoverPendingProductDeletesLocked(
   return result;
 }
 
-async function rollbackOperation(home: string, operationDir: string, knownState?: ProductDeletionState): Promise<string[]> {
+async function rollbackOperation(
+  home: string,
+  operationDir: string,
+  knownState?: ProductDeletionState,
+): Promise<string[]> {
   const state = knownState ?? (await requireValidState(operationDir));
   if (state.committed === true) {
     return [];
@@ -375,13 +435,15 @@ async function rollbackOperation(home: string, operationDir: string, knownState?
       await mkdir(dirname(originalPath), { recursive: true });
       await rename(stagedPath, originalPath);
     } else if (stagedExists && originalExists) {
-      warnings.push(`Product deletion rollback found duplicate staged path ${entry.staged_path}; preserving ${entry.original_path}`);
+      warnings.push(
+        `Product deletion rollback found duplicate staged path ${entry.staged_path}; preserving ${entry.original_path}`,
+      );
     } else if (!stagedExists && !originalExists && entry.required) {
       throw recoveryFailed("Product deletion recovery failed: required moved path is missing", {
         operation_id: state.operation_id,
         product_id: state.product_id,
         original_path: entry.original_path,
-        staged_path: entry.staged_path
+        staged_path: entry.staged_path,
       });
     }
   }
@@ -398,7 +460,7 @@ async function rollbackOperation(home: string, operationDir: string, knownState?
 async function movePlannedPath(
   home: string,
   operationDir: string,
-  entry: ProductDeletionState["moved_paths"][number]
+  entry: ProductDeletionState["moved_paths"][number],
 ): Promise<void> {
   const originalPath = resolveInside(home, entry.original_path);
   const stagedPath = resolveInside(operationDir, entry.staged_path);
@@ -410,7 +472,7 @@ async function movePlannedPath(
     }
     throw recoveryFailed("Product deletion failed: required path disappeared before move", {
       original_path: entry.original_path,
-      staged_path: entry.staged_path
+      staged_path: entry.staged_path,
     });
   }
 
@@ -418,7 +480,12 @@ async function movePlannedPath(
   await rename(originalPath, stagedPath);
 }
 
-async function restoreBackup(home: string, operationDir: string, backupPath: string, destination: string): Promise<void> {
+async function restoreBackup(
+  home: string,
+  operationDir: string,
+  backupPath: string,
+  destination: string,
+): Promise<void> {
   const source = resolveInside(operationDir, backupPath);
   if (!(await pathExists(source))) {
     throw recoveryFailed("Product deletion recovery failed: backup is missing", { backup_path: backupPath });
@@ -438,7 +505,7 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
     throw new FormaError("LOCK_CORRUPT", "Active design session lock is corrupt", {
       product_id: productId,
       local_active_path: activePath,
-      cause: errorMessage(error)
+      cause: errorMessage(error),
     });
   }
 
@@ -450,13 +517,20 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
     local_active_path: stringOrNull(active.local_active_path),
     canvas_path: stringOrNull(active.canvas_path),
     staging_path: stringOrNull(active.staging_path),
-    status
+    status,
   };
-  const corruptionCode = status === "failed_commit" || status === "commit_recovery_required"
-    ? "PRODUCT_DELETION_RECOVERY_FAILED"
-    : "LOCK_CORRUPT";
+  const corruptionCode =
+    status === "failed_commit" || status === "commit_recovery_required"
+      ? "PRODUCT_DELETION_RECOVERY_FAILED"
+      : "LOCK_CORRUPT";
   const sessionId = requireActiveString(active.session_id, "session_id", corruptionCode, details);
-  const localActivePath = await validateLeasePath(home, active.local_active_path, "local_active_path", corruptionCode, details);
+  const localActivePath = await validateLeasePath(
+    home,
+    active.local_active_path,
+    "local_active_path",
+    corruptionCode,
+    details,
+  );
   await validateLeasePath(home, active.owner_path, "owner_path", corruptionCode, details);
   await validateLeasePath(home, active.canvas_path, "canvas_path", corruptionCode, details);
   await validateLeasePath(home, active.staging_path, "staging_path", corruptionCode, details);
@@ -467,14 +541,14 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
     throw new FormaError(corruptionCode, "Local active design session lock is corrupt", {
       ...details,
       local_active_path: localActivePath,
-      cause: errorMessage(error)
+      cause: errorMessage(error),
     });
   }
   if (localActive.session_id !== sessionId) {
     throw new FormaError(corruptionCode, "Active design session lock is inconsistent with local active file", {
       ...details,
       local_active_path: localActivePath,
-      local_session_id: stringOrNull(localActive.session_id)
+      local_session_id: stringOrNull(localActive.session_id),
     });
   }
 
@@ -494,28 +568,28 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
         : `${String(active.staging_path)}/design_session.yaml`,
       "session_record_path",
       corruptionCode,
-      checkedDetails
+      checkedDetails,
     );
     const sessionRecord = await readDesignSessionRecord(sessionRecordPath, corruptionCode, checkedDetails);
     if (sessionRecord.session_id !== sessionId) {
       throw new FormaError(corruptionCode, "Design session record does not match active lease", {
         ...checkedDetails,
         session_record_path: sessionRecordPath,
-        record_session_id: sessionRecord.session_id
+        record_session_id: sessionRecord.session_id,
       });
     }
     if (nonTerminalDesignSessionStatuses.has(sessionRecord.status)) {
       throw new FormaError("PRODUCT_MUTATION_LOCKED", "Design session is active", {
         ...checkedDetails,
         status: sessionRecord.status,
-        session_record_path: sessionRecordPath
+        session_record_path: sessionRecordPath,
       });
     }
     if (sessionRecord.status !== "committed" && sessionRecord.status !== "discarded") {
       throw new FormaError("LOCK_CORRUPT", "Design session record has an invalid status", {
         ...checkedDetails,
         status: sessionRecord.status,
-        session_record_path: sessionRecordPath
+        session_record_path: sessionRecordPath,
       });
     }
     return;
@@ -526,7 +600,7 @@ async function assertNoBlockingDesignSession(home: string, productId: string): P
 async function readDesignSessionRecord(
   sessionRecordPath: string,
   code: "LOCK_CORRUPT" | "PRODUCT_DELETION_RECOVERY_FAILED",
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
 ): Promise<{ session_id: string; status: string }> {
   let record: Record<string, unknown>;
   try {
@@ -535,12 +609,12 @@ async function readDesignSessionRecord(
     throw new FormaError(code, "Design session record is corrupt", {
       ...details,
       session_record_path: sessionRecordPath,
-      cause: errorMessage(error)
+      cause: errorMessage(error),
     });
   }
   return {
     session_id: requireActiveString(record.session_id, "session_id", code, details),
-    status: typeof record.status === "string" ? record.status : "running"
+    status: typeof record.status === "string" ? record.status : "running",
   };
 }
 
@@ -552,7 +626,7 @@ function requireActiveString(
   value: unknown,
   field: string,
   code: "LOCK_CORRUPT" | "PRODUCT_DELETION_RECOVERY_FAILED",
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
 ): string {
   if (typeof value === "string" && value.length > 0) {
     return value;
@@ -565,22 +639,39 @@ async function validateLeasePath(
   value: unknown,
   field: string,
   code: "LOCK_CORRUPT" | "PRODUCT_DELETION_RECOVERY_FAILED" | "PRODUCT_DELETION_RECOVERY_FAILED",
-  details: Record<string, unknown>
+  details: Record<string, unknown>,
 ): Promise<string> {
-  const raw = requireActiveString(value, field, code === "PRODUCT_DELETION_RECOVERY_FAILED" ? "LOCK_CORRUPT" : code, details);
+  const raw = requireActiveString(
+    value,
+    field,
+    code === "PRODUCT_DELETION_RECOVERY_FAILED" ? "LOCK_CORRUPT" : code,
+    details,
+  );
   if (isAbsolute(raw)) {
-    throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
+    throw new FormaError(code, "Active design session path is outside the current home", {
+      ...details,
+      field,
+      path: raw,
+    });
   }
   const resolvedHome = resolve(home);
   const resolved = resolve(resolvedHome, raw);
   if (resolved !== resolvedHome && !resolved.startsWith(`${resolvedHome}/`)) {
-    throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
+    throw new FormaError(code, "Active design session path is outside the current home", {
+      ...details,
+      field,
+      path: raw,
+    });
   }
   try {
     const realHome = await realpath(resolvedHome);
     const real = await realpath(resolved);
     if (real !== realHome && !real.startsWith(`${realHome}/`)) {
-      throw new FormaError(code, "Active design session path is outside the current home", { ...details, field, path: raw });
+      throw new FormaError(code, "Active design session path is outside the current home", {
+        ...details,
+        field,
+        path: raw,
+      });
     }
     return real;
   } catch (error) {
@@ -591,7 +682,7 @@ async function validateLeasePath(
       ...details,
       field,
       path: raw,
-      cause: errorMessage(error)
+      cause: errorMessage(error),
     });
   }
 }
@@ -634,7 +725,9 @@ async function requireValidState(operationDir: string): Promise<ProductDeletionS
   throw recoveryFailed("Product deletion recovery failed: missing or corrupt state", { operation_dir: operationDir });
 }
 
-async function readState(operationDir: string): Promise<{ status: "valid"; state: ProductDeletionState } | { status: "missing" | "corrupt" }> {
+async function readState(
+  operationDir: string,
+): Promise<{ status: "valid"; state: ProductDeletionState } | { status: "missing" | "corrupt" }> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(await readFile(join(operationDir, "state.json"), "utf8"));
@@ -695,20 +788,20 @@ function originalErrorDetails(error: unknown): Record<string, unknown> {
     return {
       error_code: error.code,
       message: error.message,
-      cause: error.details
+      cause: error.details,
     };
   }
   if (error instanceof Error) {
     return {
       error_code: error.name,
       message: error.message,
-      cause: error.cause === undefined ? undefined : String(error.cause)
+      cause: error.cause === undefined ? undefined : String(error.cause),
     };
   }
   return {
     error_code: "UNKNOWN",
     message: String(error),
-    cause: undefined
+    cause: undefined,
   };
 }
 
@@ -723,9 +816,7 @@ function errorMessage(error: unknown): string {
 }
 
 function sanitizePathDiagnostic(message: string, home: string, operationDir: string, operationId: string): string {
-  return message
-    .split(operationDir).join(`tmp/deletions/${operationId}`)
-    .split(home).join("<forma_home>");
+  return message.split(operationDir).join(`tmp/deletions/${operationId}`).split(home).join("<forma_home>");
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

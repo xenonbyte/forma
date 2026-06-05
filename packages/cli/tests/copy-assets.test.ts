@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { assertBuiltInStyles, assertCopiedBuiltInStyles, assertWebAssets, assetCopies, copyAssets } from "../../../scripts/copy-assets.ts";
+import {
+  assertBuiltInStyles,
+  assertCopiedBuiltInStyles,
+  assertWebAssets,
+  assetCopies,
+  copyAssets,
+} from "../../../scripts/copy-assets.ts";
 
 const formaCommands = [
   "fm-list-product",
@@ -13,7 +19,7 @@ const formaCommands = [
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff"
+  "fm-develop-design-handoff",
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
@@ -25,7 +31,7 @@ const removedLegacyDesignTools = [
   "rollback_design",
   "diff_designs",
   "get_design_annotations",
-  "export_design_asset"
+  "export_design_asset",
 ] as const;
 
 const codexSkillDescriptions = {
@@ -34,9 +40,10 @@ const codexSkillDescriptions = {
   "fm-requirement": "Add or update a Forma requirement from any granularity of product input.",
   "fm-rollback-design": "Roll back a Forma design artifact to a previous version.",
   "fm-design": "Generate a static-HTML page design for a Forma requirement via MCP, then self-review.",
-  "fm-refine-components": "Generate or refine a Forma product component library (static HTML) via MCP, then self-review.",
+  "fm-refine-components":
+    "Generate or refine a Forma product component library (static HTML) via MCP, then self-review.",
   "fm-change-style": "Re-skin a Forma artifact under a new brand and system style via MCP, then self-review.",
-  "fm-develop-design-handoff": "Read an archived Forma design handoff and its page UI trees to implement the frontend."
+  "fm-develop-design-handoff": "Read an archived Forma design handoff and its page UI trees to implement the frontend.",
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";
@@ -67,9 +74,19 @@ describe("copy-assets built-in style checks", () => {
     expect(styles.length).toBeGreaterThanOrEqual(50);
     expect(styles).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "linear-app", designMdPath: "styles/linear-app/DESIGN.md", tokensCssPath: "styles/linear-app/tokens.css", componentsHtmlPath: "styles/linear-app/components.html" }),
-        expect.objectContaining({ name: "claude", designMdPath: "styles/claude/DESIGN.md", tokensCssPath: "styles/claude/tokens.css", componentsHtmlPath: "styles/claude/components.html" })
-      ])
+        expect.objectContaining({
+          name: "linear-app",
+          designMdPath: "styles/linear-app/DESIGN.md",
+          tokensCssPath: "styles/linear-app/tokens.css",
+          componentsHtmlPath: "styles/linear-app/components.html",
+        }),
+        expect.objectContaining({
+          name: "claude",
+          designMdPath: "styles/claude/DESIGN.md",
+          tokensCssPath: "styles/claude/tokens.css",
+          componentsHtmlPath: "styles/claude/components.html",
+        }),
+      ]),
     );
   });
 
@@ -86,7 +103,7 @@ describe("copy-assets built-in style checks", () => {
     await writeStyleFiles(copiedStylesDir, "stale-style");
 
     await expect(assertCopiedBuiltInStyles(sourceStylesDir, copiedStylesDir)).rejects.toThrow(
-      "Copied built-in styles do not match source styles"
+      "Copied built-in styles do not match source styles",
     );
   });
 });
@@ -130,7 +147,7 @@ describe("agent template inventory", () => {
       "navigation references",
       "remove_page_ids",
       "languages.length * page_count > 10",
-      "translations"
+      "translations",
     ];
 
     for (const platform of ["claude", "codex", "gemini"] as const) {
@@ -145,9 +162,9 @@ describe("agent template inventory", () => {
     for (const command of formaCommands) {
       const template = await readFile(templateUrl("codex", command), "utf8");
 
-      expect(
-        template.startsWith(`---\nname: ${command}\ndescription: ${codexSkillDescriptions[command]}\n---\n`)
-      ).toBe(true);
+      expect(template.startsWith(`---\nname: ${command}\ndescription: ${codexSkillDescriptions[command]}\n---\n`)).toBe(
+        true,
+      );
       expect(template).toContain(`# Forma route: ${command}`);
       expect(template).toContain(`Codex route: \`$${command}\``);
     }
@@ -217,8 +234,8 @@ describe("agent template inventory", () => {
         {
           label: "agent templates",
           source: fileURLToPath(agentTemplatesDir),
-          target: copiedTemplatesDir
-        }
+          target: copiedTemplatesDir,
+        },
       ]);
 
       const shared = await readFile(join(copiedTemplatesDir, "shared", "SKILL.md"), "utf8");
@@ -259,14 +276,14 @@ describe("copy-assets Web asset checks", () => {
 
     await rm(target, { recursive: true, force: true });
     await expect(copyAssets([{ label: "web dist", source: missingSource, target }])).rejects.toThrow(
-      "Missing web dist"
+      "Missing web dist",
     );
   });
 
   it("requires copied Web assets to include index, JavaScript, and CSS bundles", async () => {
     const webAssetsDir = await mkdtemp(join(tmpdir(), "forma-web-assets-"));
     await mkdir(join(webAssetsDir, "assets"), { recursive: true });
-    await writeFile(join(webAssetsDir, "index.html"), "<!doctype html><div id=\"root\"></div>", "utf8");
+    await writeFile(join(webAssetsDir, "index.html"), '<!doctype html><div id="root"></div>', "utf8");
     await writeFile(join(webAssetsDir, "assets", "index.js"), "console.log('forma');", "utf8");
 
     await expect(assertWebAssets(webAssetsDir)).rejects.toThrow("CSS bundle");
@@ -302,11 +319,11 @@ async function writeStylesYaml(stylesDir: string, names: string[]) {
           "    description: Test style",
           `    design_md_path: styles/${name}/DESIGN.md`,
           `    tokens_css_path: styles/${name}/tokens.css`,
-          `    components_html_path: styles/${name}/components.html`
-        ].join("\n")
-      )
+          `    components_html_path: styles/${name}/components.html`,
+        ].join("\n"),
+      ),
     ].join("\n"),
-    "utf8"
+    "utf8",
   );
 }
 

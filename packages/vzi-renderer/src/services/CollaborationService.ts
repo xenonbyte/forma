@@ -36,16 +36,16 @@ export interface CollaborationUser {
  * 协作消息类型
  */
 export type CollaborationMessageType =
-  | 'join'           // 用户加入
-  | 'leave'          // 用户离开
-  | 'cursor'         // 光标移动
-  | 'select'         // 元素选择
-  | 'deselect'       // 取消选择
-  | 'edit'           // 元素编辑
-  | 'ping'           // 心跳
-  | 'pong'           // 心跳响应
-  | 'sync'           // 全量同步
-  | 'error';         // 错误
+  | "join" // 用户加入
+  | "leave" // 用户离开
+  | "cursor" // 光标移动
+  | "select" // 元素选择
+  | "deselect" // 取消选择
+  | "edit" // 元素编辑
+  | "ping" // 心跳
+  | "pong" // 心跳响应
+  | "sync" // 全量同步
+  | "error"; // 错误
 
 /**
  * 协作消息
@@ -134,16 +134,16 @@ export interface CollaborationServiceEvents {
  * 默认用户颜色
  */
 const DEFAULT_USER_COLORS = [
-  '#FF6B6B', // 红
-  '#4ECDC4', // 青
-  '#45B7D1', // 蓝
-  '#96CEB4', // 绿
-  '#FFEAA7', // 黄
-  '#DDA0DD', // 紫
-  '#98D8C8', // 薄荷
-  '#F7DC6F', // 金
-  '#BB8FCE', // 淡紫
-  '#85C1E9', // 天蓝
+  "#FF6B6B", // 红
+  "#4ECDC4", // 青
+  "#45B7D1", // 蓝
+  "#96CEB4", // 绿
+  "#FFEAA7", // 黄
+  "#DDA0DD", // 紫
+  "#98D8C8", // 薄荷
+  "#F7DC6F", // 金
+  "#BB8FCE", // 淡紫
+  "#85C1E9", // 天蓝
 ];
 
 /**
@@ -159,10 +159,7 @@ export class CollaborationService {
   private isConnected = false;
   private colorIndex = 0;
 
-  constructor(
-    config: CollaborationServiceConfig,
-    events: Partial<CollaborationServiceEvents> = {}
-  ) {
+  constructor(config: CollaborationServiceConfig, events: Partial<CollaborationServiceEvents> = {}) {
     this.config = {
       reconnectInterval: 3000,
       maxReconnectAttempts: 5,
@@ -196,7 +193,7 @@ export class CollaborationService {
         };
 
         this.ws.onerror = (error) => {
-          this.events.onError?.(new Error('WebSocket error'));
+          this.events.onError?.(new Error("WebSocket error"));
           reject(error);
         };
 
@@ -227,7 +224,7 @@ export class CollaborationService {
    */
   private send(type: CollaborationMessageType, data: unknown): void {
     if (!this.ws || !this.isConnected) {
-      console.warn('CollaborationService: Cannot send message, not connected');
+      console.warn("CollaborationService: Cannot send message, not connected");
       return;
     }
 
@@ -254,32 +251,32 @@ export class CollaborationService {
       }
 
       switch (message.type) {
-        case 'join':
+        case "join":
           this.handleUserJoin(message.data as JoinMessageData);
           break;
 
-        case 'leave':
+        case "leave":
           this.handleUserLeave(message.senderId);
           break;
 
-        case 'cursor':
+        case "cursor":
           this.handleCursorUpdate(message.senderId, message.data as CursorMessageData);
           break;
 
-        case 'select':
+        case "select":
           this.handleSelectUpdate(message.senderId, message.data as SelectMessageData);
           break;
 
-        case 'sync':
+        case "sync":
           this.handleSync(message.data as { users: CollaborationUser[] });
           break;
 
-        case 'pong':
+        case "pong":
           // 心跳响应，不需要处理
           break;
       }
     } catch (error) {
-      console.error('CollaborationService: Failed to parse message', error);
+      console.error("CollaborationService: Failed to parse message", error);
     }
   }
 
@@ -370,7 +367,7 @@ export class CollaborationService {
    */
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(() => {
-      this.send('ping', {});
+      this.send("ping", {});
     }, this.config.heartbeatInterval);
   }
 
@@ -392,32 +389,28 @@ export class CollaborationService {
    * 发送光标位置
    */
   sendCursor(x: number, y: number): void {
-    this.send('cursor', { x, y });
+    this.send("cursor", { x, y });
   }
 
   /**
    * 发送选择状态
    */
   sendSelection(elementIds: string[]): void {
-    this.send('select', { elementIds });
+    this.send("select", { elementIds });
   }
 
   /**
    * 发送取消选择
    */
   sendDeselect(): void {
-    this.send('deselect', {});
+    this.send("deselect", {});
   }
 
   /**
    * 发送编辑操作
    */
-  sendEdit(operation: {
-    type: string;
-    elementId: string;
-    changes: unknown;
-  }): void {
-    this.send('edit', operation);
+  sendEdit(operation: { type: string; elementId: string; changes: unknown }): void {
+    this.send("edit", operation);
   }
 
   /**

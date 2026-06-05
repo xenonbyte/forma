@@ -4,7 +4,7 @@
  * 管理可拖动的视口系统，支持坐标转换
  */
 
-import type { ViewportConfig, ViewportState } from './types';
+import type { ViewportConfig, ViewportState } from "./types";
 
 /**
  * 默认视口配置
@@ -112,10 +112,7 @@ export class ViewportManager {
   pan(dx: number, dy: number): void {
     if (!this.config.pannable) return;
 
-    this.setOffset(
-      this.state.offset.x + dx,
-      this.state.offset.y + dy
-    );
+    this.setOffset(this.state.offset.x + dx, this.state.offset.y + dy);
   }
 
   /**
@@ -276,12 +273,7 @@ export class ViewportManager {
   /**
    * 检测设计稿区域是否在视口中可见
    */
-  isRectVisible(
-    designX: number,
-    designY: number,
-    designWidth: number,
-    designHeight: number
-  ): boolean {
+  isRectVisible(designX: number, designY: number, designWidth: number, designHeight: number): boolean {
     const { offset, scale } = this.state;
     const viewportWidth = this.config.viewportWidth ?? 0;
     const viewportHeight = this.config.viewportHeight ?? 0;
@@ -304,12 +296,7 @@ export class ViewportManager {
   /**
    * 计算将指定设计稿区域居中显示所需的偏移
    */
-  centerOn(
-    designX: number,
-    designY: number,
-    designWidth: number,
-    designHeight: number
-  ): void {
+  centerOn(designX: number, designY: number, designWidth: number, designHeight: number): void {
     const viewportWidth = this.config.viewportWidth ?? 0;
     const viewportHeight = this.config.viewportHeight ?? 0;
     const scale = this.state.scale;
@@ -324,11 +311,7 @@ export class ViewportManager {
   /**
    * 计算适应整个设计稿的缩放比例
    */
-  fitToView(
-    designWidth: number,
-    designHeight: number,
-    padding: number = 50
-  ): void {
+  fitToView(designWidth: number, designHeight: number, padding: number = 50): void {
     const viewportWidth = this.config.viewportWidth ?? 0;
     const viewportHeight = this.config.viewportHeight ?? 0;
 

@@ -101,6 +101,9 @@ export function buildMachineInfo(username: string | undefined): MachineInfo {
 }
 
 export function diagnosticsFileName(prefix: string, now: Date = new Date()): string {
-  const iso = now.toISOString().replace(/[:.]/g, "-").replace(/-\d{3}Z$/, "Z");
+  const iso = now
+    .toISOString()
+    .replace(/[:.]/g, "-")
+    .replace(/-\d{3}Z$/, "Z");
   return `${prefix}-${iso}.zip`;
 }

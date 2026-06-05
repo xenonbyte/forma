@@ -9,8 +9,8 @@
  * - 间距令牌（常用间距值）
  */
 
-import { memo, useState, useMemo, useCallback } from 'react';
-import type { ColorToken, FontToken, ColorCategory } from '../../types/design-tokens';
+import { memo, useState, useMemo, useCallback } from "react";
+import type { ColorToken, FontToken, ColorCategory } from "../../types/design-tokens";
 
 /**
  * 间距令牌类型
@@ -39,19 +39,19 @@ export interface TokenPanelProps {
   /** 样式对象 */
   style?: React.CSSProperties;
   /** 令牌点击回调（用于复制等操作） */
-  onTokenClick?: (type: 'color' | 'font' | 'spacing', token: unknown) => void;
+  onTokenClick?: (type: "color" | "font" | "spacing", token: unknown) => void;
 }
 
 /**
  * 面板样式常量
  */
 const PANEL_STYLES = {
-  headerBg: '#f5f5f5',
-  headerColor: '#333333',
-  borderColor: '#e0e0e0',
-  labelColor: '#666666',
-  valueColor: '#333333',
-  sectionTitleColor: '#888888',
+  headerBg: "#f5f5f5",
+  headerColor: "#333333",
+  borderColor: "#e0e0e0",
+  labelColor: "#666666",
+  valueColor: "#333333",
+  sectionTitleColor: "#888888",
   fontSize: 12,
   lineHeight: 1.5,
 };
@@ -60,45 +60,45 @@ const PANEL_STYLES = {
  * 颜色类别中文映射
  */
 const COLOR_CATEGORY_NAMES: Record<ColorCategory, string> = {
-  primary: '主色',
-  secondary: '辅色',
-  accent: '强调色',
-  background: '背景色',
-  text: '文本色',
-  border: '边框色',
-  other: '其他',
+  primary: "主色",
+  secondary: "辅色",
+  accent: "强调色",
+  background: "背景色",
+  text: "文本色",
+  border: "边框色",
+  other: "其他",
 };
 
 /**
  * 颜色类别排序
  */
 const COLOR_CATEGORY_ORDER: ColorCategory[] = [
-  'primary',
-  'secondary',
-  'accent',
-  'background',
-  'text',
-  'border',
-  'other',
+  "primary",
+  "secondary",
+  "accent",
+  "background",
+  "text",
+  "border",
+  "other",
 ];
 
 /**
  * 标签页类型
  */
-type TabType = 'colors' | 'fonts' | 'spacing';
+type TabType = "colors" | "fonts" | "spacing";
 
 /**
  * 令牌类型（用于回调）
  */
-type TokenType = 'color' | 'font' | 'spacing';
+type TokenType = "color" | "font" | "spacing";
 
 /**
  * 标签页配置
  */
 const TABS: { key: TabType; label: string; icon: string; tokenType: TokenType }[] = [
-  { key: 'colors', label: '颜色', icon: '🎨', tokenType: 'color' },
-  { key: 'fonts', label: '字体', icon: '🔤', tokenType: 'font' },
-  { key: 'spacing', label: '间距', icon: '↔️', tokenType: 'spacing' },
+  { key: "colors", label: "颜色", icon: "🎨", tokenType: "color" },
+  { key: "fonts", label: "字体", icon: "🔤", tokenType: "font" },
+  { key: "spacing", label: "间距", icon: "↔️", tokenType: "spacing" },
 ];
 
 /**
@@ -109,28 +109,26 @@ interface SectionTitleProps {
   count?: number;
 }
 
-const SectionTitle = memo<SectionTitleProps>((({ title, count }) => (
+const SectionTitle = memo<SectionTitleProps>(({ title, count }) => (
   <div
     style={{
-      padding: '8px 12px 4px',
+      padding: "8px 12px 4px",
       fontSize: 11,
       fontWeight: 600,
       color: PANEL_STYLES.sectionTitleColor,
-      textTransform: 'uppercase',
-      letterSpacing: '0.5px',
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center',
+      textTransform: "uppercase",
+      letterSpacing: "0.5px",
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
     }}
   >
     <span>{title}</span>
-    {count !== undefined && (
-      <span style={{ fontWeight: 400 }}>{count}</span>
-    )}
+    {count !== undefined && <span style={{ fontWeight: 400 }}>{count}</span>}
   </div>
-)));
+));
 
-SectionTitle.displayName = 'SectionTitle';
+SectionTitle.displayName = "SectionTitle";
 
 /**
  * 颜色令牌项组件
@@ -140,25 +138,25 @@ interface ColorTokenItemProps {
   onClick?: () => void;
 }
 
-const ColorTokenItem = memo<ColorTokenItemProps>((({ token, onClick }) => (
+const ColorTokenItem = memo<ColorTokenItemProps>(({ token, onClick }) => (
   <div
     style={{
-      display: 'flex',
-      alignItems: 'center',
+      display: "flex",
+      alignItems: "center",
       gap: 10,
-      padding: '6px 12px',
+      padding: "6px 12px",
       borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-      cursor: onClick ? 'pointer' : 'default',
+      cursor: onClick ? "pointer" : "default",
     }}
     onClick={onClick}
-    title={onClick ? '点击复制颜色值' : undefined}
+    title={onClick ? "点击复制颜色值" : undefined}
   >
     {/* 颜色预览 */}
     <div
       style={{
         width: 28,
         height: 28,
-        backgroundColor: token.value || 'transparent',
+        backgroundColor: token.value || "transparent",
         border: `1px solid ${PANEL_STYLES.borderColor}`,
         borderRadius: 4,
         flexShrink: 0,
@@ -174,9 +172,9 @@ const ColorTokenItem = memo<ColorTokenItemProps>((({ token, onClick }) => (
             fontSize: PANEL_STYLES.fontSize,
             color: PANEL_STYLES.valueColor,
             fontWeight: 500,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
           }}
         >
           {token.name}
@@ -187,7 +185,7 @@ const ColorTokenItem = memo<ColorTokenItemProps>((({ token, onClick }) => (
       <div
         style={{
           fontSize: 11,
-          fontFamily: 'monospace',
+          fontFamily: "monospace",
           color: PANEL_STYLES.labelColor,
         }}
       >
@@ -206,9 +204,9 @@ const ColorTokenItem = memo<ColorTokenItemProps>((({ token, onClick }) => (
       ×{token.frequency}
     </div>
   </div>
-)));
+));
 
-ColorTokenItem.displayName = 'ColorTokenItem';
+ColorTokenItem.displayName = "ColorTokenItem";
 
 /**
  * 字体令牌项组件
@@ -219,29 +217,29 @@ interface FontTokenItemProps {
   onClick?: () => void;
 }
 
-const FontTokenItem = memo<FontTokenItemProps>((({ token, index, onClick }) => (
+const FontTokenItem = memo<FontTokenItemProps>(({ token, index, onClick }) => (
   <div
     style={{
-      display: 'flex',
-      alignItems: 'flex-start',
+      display: "flex",
+      alignItems: "flex-start",
       gap: 10,
-      padding: '8px 12px',
+      padding: "8px 12px",
       borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-      cursor: onClick ? 'pointer' : 'default',
+      cursor: onClick ? "pointer" : "default",
     }}
     onClick={onClick}
-    title={onClick ? '点击复制字体信息' : undefined}
+    title={onClick ? "点击复制字体信息" : undefined}
   >
     {/* 序号 */}
     <div
       style={{
         width: 20,
         height: 20,
-        borderRadius: '50%',
-        backgroundColor: '#f0f0f0',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        borderRadius: "50%",
+        backgroundColor: "#f0f0f0",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         fontSize: 10,
         color: PANEL_STYLES.labelColor,
         flexShrink: 0,
@@ -258,9 +256,9 @@ const FontTokenItem = memo<FontTokenItemProps>((({ token, index, onClick }) => (
           fontSize: PANEL_STYLES.fontSize,
           color: PANEL_STYLES.valueColor,
           fontWeight: 500,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
         }}
       >
         {token.fontFamily}
@@ -272,20 +270,14 @@ const FontTokenItem = memo<FontTokenItemProps>((({ token, index, onClick }) => (
           fontSize: 11,
           color: PANEL_STYLES.labelColor,
           marginTop: 2,
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '4px 8px',
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "4px 8px",
         }}
       >
-        {token.fontSize && (
-          <span>{token.fontSize}px</span>
-        )}
-        {token.fontWeight && (
-          <span>· {token.fontWeight}</span>
-        )}
-        {token.lineHeight && (
-          <span>· {token.lineHeight}</span>
-        )}
+        {token.fontSize && <span>{token.fontSize}px</span>}
+        {token.fontWeight && <span>· {token.fontWeight}</span>}
+        {token.lineHeight && <span>· {token.lineHeight}</span>}
       </div>
 
       {/* 使用场景 */}
@@ -295,7 +287,7 @@ const FontTokenItem = memo<FontTokenItemProps>((({ token, index, onClick }) => (
             fontSize: 10,
             color: PANEL_STYLES.labelColor,
             marginTop: 4,
-            fontStyle: 'italic',
+            fontStyle: "italic",
           }}
         >
           {token.usage}
@@ -314,9 +306,9 @@ const FontTokenItem = memo<FontTokenItemProps>((({ token, index, onClick }) => (
       ×{token.frequency}
     </div>
   </div>
-)));
+));
 
-FontTokenItem.displayName = 'FontTokenItem';
+FontTokenItem.displayName = "FontTokenItem";
 
 /**
  * 间距令牌项组件
@@ -326,27 +318,27 @@ interface SpacingTokenItemProps {
   onClick?: () => void;
 }
 
-const SpacingTokenItem = memo<SpacingTokenItemProps>((({ token, onClick }) => (
+const SpacingTokenItem = memo<SpacingTokenItemProps>(({ token, onClick }) => (
   <div
     style={{
-      display: 'flex',
-      alignItems: 'center',
+      display: "flex",
+      alignItems: "center",
       gap: 10,
-      padding: '6px 12px',
+      padding: "6px 12px",
       borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-      cursor: onClick ? 'pointer' : 'default',
+      cursor: onClick ? "pointer" : "default",
     }}
     onClick={onClick}
-    title={onClick ? '点击复制间距值' : undefined}
+    title={onClick ? "点击复制间距值" : undefined}
   >
     {/* 间距预览 */}
     <div
       style={{
         width: 28,
         height: 28,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         flexShrink: 0,
       }}
     >
@@ -354,7 +346,7 @@ const SpacingTokenItem = memo<SpacingTokenItemProps>((({ token, onClick }) => (
         style={{
           width: Math.min(token.value, 28),
           height: Math.min(token.value, 28),
-          backgroundColor: '#0066ff',
+          backgroundColor: "#0066ff",
           opacity: 0.3,
           borderRadius: 2,
         }}
@@ -366,7 +358,7 @@ const SpacingTokenItem = memo<SpacingTokenItemProps>((({ token, onClick }) => (
       <div
         style={{
           fontSize: PANEL_STYLES.fontSize,
-          fontFamily: 'monospace',
+          fontFamily: "monospace",
           color: PANEL_STYLES.valueColor,
         }}
       >
@@ -395,9 +387,9 @@ const SpacingTokenItem = memo<SpacingTokenItemProps>((({ token, onClick }) => (
       ×{token.frequency}
     </div>
   </div>
-)));
+));
 
-SpacingTokenItem.displayName = 'SpacingTokenItem';
+SpacingTokenItem.displayName = "SpacingTokenItem";
 
 /**
  * 空状态组件
@@ -406,20 +398,20 @@ interface EmptyStateProps {
   type: TabType;
 }
 
-const EmptyState = memo<EmptyStateProps>((({ type }) => {
+const EmptyState = memo<EmptyStateProps>(({ type }) => {
   const messages: Record<TabType, string> = {
-    colors: '暂无颜色令牌',
-    fonts: '暂无字体令牌',
-    spacing: '暂无间距令牌',
+    colors: "暂无颜色令牌",
+    fonts: "暂无字体令牌",
+    spacing: "暂无间距令牌",
   };
 
   return (
     <div
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
         height: 150,
         color: PANEL_STYLES.labelColor,
         fontSize: PANEL_STYLES.fontSize,
@@ -429,9 +421,9 @@ const EmptyState = memo<EmptyStateProps>((({ type }) => {
       <div>{messages[type]}</div>
     </div>
   );
-}));
+});
 
-EmptyState.displayName = 'EmptyState';
+EmptyState.displayName = "EmptyState";
 
 /**
  * 颜色列表组件
@@ -441,13 +433,13 @@ interface ColorListProps {
   onTokenClick?: (token: ColorToken) => void;
 }
 
-const ColorList = memo<ColorListProps>((({ tokens, onTokenClick }) => {
+const ColorList = memo<ColorListProps>(({ tokens, onTokenClick }) => {
   // 按类别分组
   const groupedTokens = useMemo(() => {
     const groups = new Map<ColorCategory, ColorToken[]>();
 
     for (const token of tokens) {
-      const category = token.category || 'other';
+      const category = token.category || "other";
       if (!groups.has(category)) {
         groups.set(category, []);
       }
@@ -463,7 +455,7 @@ const ColorList = memo<ColorListProps>((({ tokens, onTokenClick }) => {
   }, [tokens]);
 
   // 按顺序渲染
-  const orderedCategories = COLOR_CATEGORY_ORDER.filter(cat => groupedTokens.has(cat));
+  const orderedCategories = COLOR_CATEGORY_ORDER.filter((cat) => groupedTokens.has(cat));
 
   if (orderedCategories.length === 0) {
     return <EmptyState type="colors" />;
@@ -471,29 +463,22 @@ const ColorList = memo<ColorListProps>((({ tokens, onTokenClick }) => {
 
   return (
     <>
-      {orderedCategories.map(category => {
+      {orderedCategories.map((category) => {
         const categoryTokens = groupedTokens.get(category)!;
         return (
           <div key={category}>
-            <SectionTitle
-              title={COLOR_CATEGORY_NAMES[category]}
-              count={categoryTokens.length}
-            />
+            <SectionTitle title={COLOR_CATEGORY_NAMES[category]} count={categoryTokens.length} />
             {categoryTokens.map((token, index) => (
-              <ColorTokenItem
-                key={`${token.value}-${index}`}
-                token={token}
-                onClick={() => onTokenClick?.(token)}
-              />
+              <ColorTokenItem key={`${token.value}-${index}`} token={token} onClick={() => onTokenClick?.(token)} />
             ))}
           </div>
         );
       })}
     </>
   );
-}));
+});
 
-ColorList.displayName = 'ColorList';
+ColorList.displayName = "ColorList";
 
 /**
  * 字体列表组件
@@ -503,7 +488,7 @@ interface FontListProps {
   onTokenClick?: (token: FontToken) => void;
 }
 
-const FontList = memo<FontListProps>((({ tokens, onTokenClick }) => {
+const FontList = memo<FontListProps>(({ tokens, onTokenClick }) => {
   // 按频率排序
   const sortedTokens = useMemo(() => {
     return [...tokens].sort((a, b) => b.frequency - a.frequency);
@@ -526,9 +511,9 @@ const FontList = memo<FontListProps>((({ tokens, onTokenClick }) => {
       ))}
     </>
   );
-}));
+});
 
-FontList.displayName = 'FontList';
+FontList.displayName = "FontList";
 
 /**
  * 间距列表组件
@@ -538,7 +523,7 @@ interface SpacingListProps {
   onTokenClick?: (token: SpacingToken) => void;
 }
 
-const SpacingList = memo<SpacingListProps>((({ tokens, onTokenClick }) => {
+const SpacingList = memo<SpacingListProps>(({ tokens, onTokenClick }) => {
   // 按频率排序
   const sortedTokens = useMemo(() => {
     return [...tokens].sort((a, b) => b.frequency - a.frequency);
@@ -560,124 +545,116 @@ const SpacingList = memo<SpacingListProps>((({ tokens, onTokenClick }) => {
       ))}
     </>
   );
-}));
+});
 
-SpacingList.displayName = 'SpacingList';
+SpacingList.displayName = "SpacingList";
 
 /**
  * 设计令牌面板主组件
  */
-export const TokenPanel: React.FC<TokenPanelProps> = memo(({
-  colorTokens = [],
-  fontTokens = [],
-  spacingTokens = [],
-  className,
-  style,
-  onTokenClick,
-}) => {
-  // 当前标签页
-  const [activeTab, setActiveTab] = useState<TabType>('colors');
+export const TokenPanel: React.FC<TokenPanelProps> = memo(
+  ({ colorTokens = [], fontTokens = [], spacingTokens = [], className, style, onTokenClick }) => {
+    // 当前标签页
+    const [activeTab, setActiveTab] = useState<TabType>("colors");
 
-  // 计算各类型数量
-  const counts = useMemo(() => ({
-    colors: colorTokens.length,
-    fonts: fontTokens.length,
-    spacing: spacingTokens.length,
-  }), [colorTokens, fontTokens, spacingTokens]);
+    // 计算各类型数量
+    const counts = useMemo(
+      () => ({
+        colors: colorTokens.length,
+        fonts: fontTokens.length,
+        spacing: spacingTokens.length,
+      }),
+      [colorTokens, fontTokens, spacingTokens],
+    );
 
-  // 令牌点击处理
-  const handleTokenClick = useCallback((type: TokenType, token: unknown) => {
-    onTokenClick?.(type, token);
-  }, [onTokenClick]);
+    // 令牌点击处理
+    const handleTokenClick = useCallback(
+      (type: TokenType, token: unknown) => {
+        onTokenClick?.(type, token);
+      },
+      [onTokenClick],
+    );
 
-  return (
-    <div
-      className={className}
-      style={{
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#ffffff',
-        border: `1px solid ${PANEL_STYLES.borderColor}`,
-        borderRadius: 4,
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        ...style,
-      }}
-    >
-      {/* 头部标签页 */}
+    return (
       <div
+        className={className}
         style={{
-          display: 'flex',
-          borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
-          backgroundColor: PANEL_STYLES.headerBg,
+          width: "100%",
+          height: "100%",
+          backgroundColor: "#ffffff",
+          border: `1px solid ${PANEL_STYLES.borderColor}`,
+          borderRadius: 4,
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+          ...style,
         }}
       >
-        {TABS.map(tab => (
-          <button
-            key={tab.key}
-            style={{
-              flex: 1,
-              padding: '10px 8px',
-              border: 'none',
-              background: activeTab === tab.key ? '#ffffff' : 'transparent',
-              cursor: 'pointer',
-              fontSize: 11,
-              fontWeight: activeTab === tab.key ? 600 : 400,
-              color: activeTab === tab.key ? PANEL_STYLES.valueColor : PANEL_STYLES.labelColor,
-              borderBottom: activeTab === tab.key ? '2px solid #0066ff' : '2px solid transparent',
-              transition: 'all 0.15s ease',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 4,
-            }}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            <span>{tab.icon}</span>
-            <span>{tab.label}</span>
-            <span
+        {/* 头部标签页 */}
+        <div
+          style={{
+            display: "flex",
+            borderBottom: `1px solid ${PANEL_STYLES.borderColor}`,
+            backgroundColor: PANEL_STYLES.headerBg,
+          }}
+        >
+          {TABS.map((tab) => (
+            <button
+              key={tab.key}
               style={{
-                fontSize: 10,
-                opacity: 0.7,
+                flex: 1,
+                padding: "10px 8px",
+                border: "none",
+                background: activeTab === tab.key ? "#ffffff" : "transparent",
+                cursor: "pointer",
+                fontSize: 11,
+                fontWeight: activeTab === tab.key ? 600 : 400,
+                color: activeTab === tab.key ? PANEL_STYLES.valueColor : PANEL_STYLES.labelColor,
+                borderBottom: activeTab === tab.key ? "2px solid #0066ff" : "2px solid transparent",
+                transition: "all 0.15s ease",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 4,
               }}
+              onClick={() => setActiveTab(tab.key)}
             >
-              ({counts[tab.key]})
-            </span>
-          </button>
-        ))}
+              <span>{tab.icon}</span>
+              <span>{tab.label}</span>
+              <span
+                style={{
+                  fontSize: 10,
+                  opacity: 0.7,
+                }}
+              >
+                ({counts[tab.key]})
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* 内容区域 */}
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+          }}
+        >
+          {activeTab === "colors" && (
+            <ColorList tokens={colorTokens} onTokenClick={(token) => handleTokenClick("color", token)} />
+          )}
+
+          {activeTab === "fonts" && (
+            <FontList tokens={fontTokens} onTokenClick={(token) => handleTokenClick("font", token)} />
+          )}
+
+          {activeTab === "spacing" && (
+            <SpacingList tokens={spacingTokens} onTokenClick={(token) => handleTokenClick("spacing", token)} />
+          )}
+        </div>
       </div>
+    );
+  },
+);
 
-      {/* 内容区域 */}
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-        }}
-      >
-        {activeTab === 'colors' && (
-          <ColorList
-            tokens={colorTokens}
-            onTokenClick={(token) => handleTokenClick('color', token)}
-          />
-        )}
-
-        {activeTab === 'fonts' && (
-          <FontList
-            tokens={fontTokens}
-            onTokenClick={(token) => handleTokenClick('font', token)}
-          />
-        )}
-
-        {activeTab === 'spacing' && (
-          <SpacingList
-            tokens={spacingTokens}
-            onTokenClick={(token) => handleTokenClick('spacing', token)}
-          />
-        )}
-      </div>
-    </div>
-  );
-});
-
-TokenPanel.displayName = 'TokenPanel';
+TokenPanel.displayName = "TokenPanel";
