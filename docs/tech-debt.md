@@ -12,7 +12,6 @@ the existing test suite as a guardrail, one file at a time.
 
 | File | Lines | Suggested split boundary |
 |---|---|---|
-| `packages/core/src/schema-normalization.ts` | ~2200 | Separate preflight/dry-run, cutover, and recovery/restore into sibling modules behind a thin facade. |
 | `packages/server/src/routes.ts` | ~1350 | Split by route family: artifact serving (bundle/icon/preview/vzi), baseline compat, requirement/design routes. The path-safety helpers (`resolveServedFile`, `setArtifactSecurityHeaders`) belong in a shared `artifact-serving.ts`. |
 | `packages/mcp/src/tools.ts` | ~1250 | Group tool handlers by domain (product, requirement, artifact, design, handoff) into per-domain files re-exported from `tools.ts`. |
 | `packages/vzi-parser/src/puppeteer-parser.ts` | ~2000 | Extract launch/sandbox handling, snapshot styling, and extraction into helpers. |

@@ -51,8 +51,6 @@ Run commands from the repository root during development. The root `bin/forma.js
 forma version
 forma status
 forma serve
-forma schema-normalization-dry-run --home /path/to/forma-home
-forma v6-schema-cutover --home /path/to/forma-home
 forma install --platform claude,codex,gemini
 ```
 
@@ -67,11 +65,11 @@ node bin/forma.js install --platform claude,codex,gemini
 
 `forma status` reports the Forma data directory, installed agent platforms, Pencil CLI availability/authentication, and Web server state. `forma serve` starts the local Web admin, defaulting to `127.0.0.1:3000`.
 
-## v6 Schema Normalization
+## v6 Strict Read Model
 
-Existing runtime YAML is not rewritten automatically by `forma serve`, MCP startup, Web startup, or status reads. Use `forma schema-normalization-dry-run --home <path>` first; it writes only `$FORMA_HOME/normalization-preflight/v6-{timestamp}/report.yaml`. Then run `forma v6-schema-cutover --home <path>` to require the current passing preflight report, create `$FORMA_HOME/normalization-backups/v6-{timestamp}/`, write a journal, rewrite documented legacy YAML fields, and commit `.v6-schema-cutover-committed`.
+Current v6 startup does not include an in-place compatibility upgrade path. `forma serve`, MCP startup, and Web startup run strict v6 read-model validation. Data that still contains removed legacy fields or misses v6-required contracts fails startup; repair the Forma home out of band before starting normal workflows.
 
-If startup enters recovery-only mode, use `forma recover-v6-normalization-journal --home <path> --backup-dir <path>` or `forma restore-v6-normalization-backup --home <path> --backup-dir <path> --confirm restore_v6_backup`. Backup directories must stay under the current `$FORMA_HOME/normalization-backups/`.
+`forma status` remains a read-only status report. It does not rewrite YAML, recover files, validate or repair the Forma home, or provide a reduced compatibility mode.
 
 ## Web Admin
 

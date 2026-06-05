@@ -4,11 +4,11 @@
 
 - DESIGN v6 sections: `验收标准`, `当前代码冲突清单`, `实施顺序` step 12, all prior implementation sections.
 - DESIGN v6 acceptance IDs: all acceptance items 1 through 63.
-- Depends on: specs 01 through 11.
+- Depends on: specs 02 and 04 through 11.
 
 ## Goal
 
-Define the final verification gate for a v6 implementation branch. This gate proves that schema cutover, strict read model, app-bound Pencil sessions, requirement-level design model, MCP tools, agent templates, Server/Web routes, UI canvas, and removal of old surfaces all satisfy DESIGN v6.
+Define the final verification gate for a v6 implementation branch. This gate proves that the strict read model, app-bound Pencil sessions, requirement-level design model, MCP tools, agent templates, Server/Web routes, UI canvas, and removal of old surfaces all satisfy DESIGN v6.
 
 ## Non-Goals
 
@@ -23,20 +23,18 @@ Define the final verification gate for a v6 implementation branch. This gate pro
 
 Run verification in this order:
 
-1. Schema normalization and semantic contract unit tests.
-2. Async startup and limited-mode tests.
-3. Cutover, recovery, and rollback tests.
-4. Legacy public surface negative tests.
-5. Strict schema and read-model tests.
-6. Pencil adapter, lock, session, manual edit, and journal recovery tests.
-7. Core design model, index, quality, semantic, component, history tests.
-8. MCP tool schema and handler tests.
-9. Agent template and installer tests.
-10. Server route and Web API client tests.
-11. Web UI canvas, accessibility, responsive, and i18n tests.
-12. Repository-wide typecheck and full test suite.
-13. Live Pencil interactive smoke.
-14. Negative `rg` runtime-surface checks.
+1. Strict schema, semantic contract, and read-model tests.
+2. Async startup tests, including validation-failure startup.
+3. Legacy public surface negative tests.
+4. Pencil adapter, lock, session, manual edit, and journal recovery tests.
+5. Core design model, index, quality, semantic, component, history tests.
+6. MCP tool schema and handler tests.
+7. Agent template and installer tests.
+8. Server route and Web API client tests.
+9. Web UI canvas, accessibility, responsive, and i18n tests.
+10. Repository-wide typecheck and full test suite.
+11. Live Pencil interactive smoke.
+12. Negative `rg` runtime-surface checks.
 
 Earlier failures block later release claims.
 
@@ -76,7 +74,7 @@ Old design public names:
 Allowed locations for these old names:
 
 - `design-version/`,
-- migration or removal docs,
+- removal docs,
 - changelog entries,
 - negative tests that assert unknown tool, unknown command, or default 404,
 - this spec set where old names are described as removed.
@@ -117,26 +115,6 @@ Tests and static checks must prove:
 - strict schemas reject `components_initialized`,
 - `design.yaml` paths are `$FORMA_HOME` relative in canonical fields,
 - API/MCP are allowed to return absolute paths only for display.
-
-## Normalization Verification
-
-Required tests:
-
-- dry-run report success,
-- dry-run no runtime writes,
-- latest report selection,
-- report missing/stale/failed/ambiguous,
-- cutover success,
-- cutover backup failure,
-- cutover strict schema failure,
-- explicit journal recovery success,
-- explicit journal recovery failure,
-- rollback success,
-- manifest missing,
-- backup hash mismatch,
-- runtime path escape,
-- partial restore failure,
-- old schema smoke failure.
 
 ## Session Verification
 

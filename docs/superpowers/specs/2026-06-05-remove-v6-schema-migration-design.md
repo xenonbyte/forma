@@ -1,6 +1,6 @@
 # 移除 v6 Schema 迁移 / 兼容子系统
 
-- 状态：已确认（维护者拍板发布边界），待编写实现计划
+- 状态：已实现
 - 日期：2026-06-05
 - 分支：`refactor/remove-v6-schema-migration`
 - 取代：本设计移除 `2026-05-21-forma-v6-01-preflight-normalization-design.md` 与 `2026-05-21-forma-v6-03-cutover-normalization-design.md` 所定义的功能

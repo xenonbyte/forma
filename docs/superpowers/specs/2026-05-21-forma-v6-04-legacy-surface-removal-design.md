@@ -4,7 +4,7 @@
 
 - DESIGN v6 sections: `MCP / Agent 工具调整`, `Web / Server API 调整`, `Agent 模板要求`, `当前代码冲突清单`, `实施顺序` step 4.
 - DESIGN v6 acceptance IDs: 6, 13, 21, 38, 56.
-- Depends on: `2026-05-21-forma-v6-03-cutover-normalization-design.md`.
+- Depends on: `2026-05-21-forma-v6-02-async-startup-design.md`.
 
 ## Goal
 
@@ -15,7 +15,7 @@ Remove all public legacy page-level design surfaces before v6 strict read and wr
 - Do not implement new v6 design write tools.
 - Do not implement new requirement-level Web routes beyond removal tests.
 - Do not delete private helper code unless it is reachable from public runtime surface.
-- Do not rewrite old migration documents that intentionally describe removed names.
+- Do not rewrite historical snapshots that intentionally describe removed names.
 
 ## Public Legacy Surfaces To Remove
 
@@ -64,7 +64,7 @@ Docs/help/user-visible registries:
 - Removed server API routes are not registered. Requests receive default 404.
 - Removed Web design detail route is excluded from SPA fallback and receives default 404.
 - Documentation and help must describe v6 alternatives without advertising removed names as available commands.
-- Old names may remain only in migration documents, removal notes, DESIGN documents, changelog text, and negative tests that assert unknown/404 behavior.
+- Old names may remain only in historical design notes, removal notes, changelog text, and negative tests that assert unknown/404 behavior.
 
 ## Replacement Mapping
 
@@ -118,4 +118,4 @@ This stage documents replacement names only as forward references. It must not e
 - Agent installer tests assert managed `fm-refine-design` files are removed and non-managed files are preserved.
 - Server route tests assert old `/api/designs/:designId/*` routes return 404.
 - Web route tests assert old design detail path is excluded from SPA fallback.
-- Documentation checks search for removed names and allow only migration/removal/negative-test contexts.
+- Documentation checks search for removed names and allow only historical/removal/negative-test contexts.

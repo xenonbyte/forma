@@ -10,11 +10,9 @@ The installer also writes shared Forma guidance and MCP configuration for the se
 
 Claude and Gemini expose routes as `/fm-*`. Codex exposes each route as a skill and uses `$fm-*`.
 
-## v6 Schema Normalization
+## v6 Runtime Validation
 
-If `fm-status` reports `SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED`, do not continue product or design work. Ask the operator to run `forma schema-normalization-dry-run --home <path>` and then `forma v6-schema-cutover --home <path>` after reviewing the report.
-
-If `fm-status` reports `SCHEMA_NORMALIZATION_RECOVERY_REQUIRED`, do not retry normal tools. Use the explicit operator recovery commands: `forma recover-v6-normalization-journal --home <path> --backup-dir <path>` or `forma restore-v6-normalization-backup --home <path> --backup-dir <path> --confirm restore_v6_backup`.
+Forma agents work only against data that passes the current v6 read model. If startup fails, or normal Forma tools are unavailable because the Forma home fails v6 read-model validation, stop product and design work and ask the operator to repair the data out of band. Agents must not retry normal tools expecting an automatic upgrade or reduced compatibility mode.
 
 ## Commands
 

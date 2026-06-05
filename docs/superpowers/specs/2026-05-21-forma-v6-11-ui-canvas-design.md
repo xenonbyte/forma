@@ -207,7 +207,6 @@ Applies to:
 - `DesignSceneCanvas`,
 - `DesignView`,
 - `PropertyPanel`,
-- recovery/preflight pages,
 - session status components,
 - graph canvas controls,
 - tooltips,

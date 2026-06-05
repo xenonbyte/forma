@@ -2,8 +2,8 @@
 
 ## Source Design Scope
 
-- DESIGN v6 sections: `Web / Server API 调整`, `后台 UI 调整` status inputs, `锁与失败恢复` limited modes, `实施顺序` step 10.
-- DESIGN v6 acceptance IDs: 5, 6, 7, 38, 54, 59, 60.
+- DESIGN v6 sections: `Web / Server API 调整`, `后台 UI 调整` status inputs, `锁与失败恢复`, `实施顺序` step 10.
+- DESIGN v6 acceptance IDs: 5, 6, 7, 38, 54, 60.
 - Depends on: `2026-05-21-forma-v6-08-mcp-tools-design.md`.
 
 ## Goal
@@ -90,19 +90,9 @@ Register:
 | `/api/products/:productId/component-library/session/:sessionId/discard` | `POST` | `discard_product_component_session` |
 | `/api/products/:productId/design/session/:sessionId/recover-commit-journal` | `POST` | `recover_design_commit_journal` |
 
-## Limited Mode Behavior
+## Strict Startup Boundary
 
-In `preflight_only`:
-
-- register status and preflight-only backend entry,
-- do not register mutation routes,
-- non-status API calls return 409 `SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED`.
-
-In `recovery_only`:
-
-- register recovery status and recovery write routes from spec 03,
-- do not register product/requirement/design/component mutation routes,
-- non-recovery API calls return 409 `SCHEMA_NORMALIZATION_RECOVERY_REQUIRED`.
+Server/Web routes register only after strict v6 read-model validation succeeds. Legacy or incomplete data fails startup instead of exposing a reduced compatibility UI or API set.
 
 ## Baseline Image Route
 
@@ -185,7 +175,6 @@ UI is allowed to display paths returned by APIs but must not send them into muta
 - Baseline image route uses v6 requirement-level preview lookup.
 - `DesignView` route no longer uses `designId`.
 - Mutation routes reject path-like fields.
-- Preflight/recovery-only modes block design mutation routes with normalization errors.
 
 ## Verification
 

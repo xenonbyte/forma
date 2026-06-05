@@ -8,7 +8,7 @@
 
 ## Goal
 
-Enable strict v6 runtime schemas and read models after committed cutover, without registering new v6 write tools. Runtime reads must stop depending on `components_initialized`, `design_id`, page-level `D-*` design state, and deterministic old preview fallbacks.
+Enable strict v6 runtime schemas and read models without registering new v6 write tools. Runtime reads must stop depending on `components_initialized`, `design_id`, page-level `D-*` design state, and deterministic old preview fallbacks.
 
 ## Non-Goals
 
@@ -20,14 +20,9 @@ Enable strict v6 runtime schemas and read models after committed cutover, withou
 
 ## Strict Runtime Startup
 
-Normal startup requires:
+Normal startup requires strict schemas to accept all product, requirement, baseline, copy translation, and v6 read-model files.
 
-- `$FORMA_HOME/.v6-schema-cutover-committed` exists,
-- raw recovery reader reports no recovery-required normalization journal,
-- strict schemas accept all product, requirement, baseline, copy translation, and v6 read-model files.
-
-If committed marker is missing, startup enters `preflight_only`.
-If recovery state blocks strict store, startup enters `recovery_only`.
+If the Forma home still contains legacy fields or lacks required v6 contracts, startup fails with the validation error. There is no reduced compatibility server or automatic data rewrite path.
 
 ## Product Schema Requirements
 
@@ -219,10 +214,8 @@ Deletion recovery must:
 ## Failure Handling
 
 - Invalid strict schema returns schema validation error and does not fall back to old schema.
-- Reappearance of `design_id` or `components_initialized` after cutover is invalid data.
+- Reappearance of `design_id` or `components_initialized` in current v6 data is invalid.
 - Missing current component snapshot returns component library read-model blocker, not product config fallback.
-- Missing committed marker enters preflight-only mode.
-- Recovery-required normalization state enters recovery-only mode.
 - Missing requirement-level preview for baseline image returns `BASELINE_IMAGE_NOT_FOUND`, not old preview fallback.
 - Product deletion with active, corrupt, or unaudited v6 design lease must return the stable deletion error before moving product data or component library files.
 
@@ -253,4 +246,4 @@ Deletion recovery must:
 - Baseline preview tests cover candidate sort order, same timestamp id tie-break, archived requirements, pending/expired pages, and no `D-*` fallback.
 - Product deletion tests cover v6 library paths and active session blocking.
 - Product deletion tests cover terminal audited cleanup, terminal audit missing, lease path escape, local active mismatch, corrupt lease, commit recovery required, recovery warnings for residual component library files, and no file movement before stable errors.
-- Startup tests cover committed marker required for normal strict mode.
+- Startup tests cover strict validation failure for legacy or incomplete data.

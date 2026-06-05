@@ -13,11 +13,9 @@ Forma MCP tools return JSON text content. Tool failures use a stable payload sha
 
 Agents should read session state before route-specific work and should not infer the active product from chat history alone.
 
-## Schema Normalization Limited Mode
+## Strict Startup Validation
 
-When v6 schema normalization blocks startup, the MCP server registers only limited tools. `fm-status` returns the side-effect-free `schema_normalization` state. Other normal tools return `SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED` or `SCHEMA_NORMALIZATION_RECOVERY_REQUIRED` and do not construct runtime services or rewrite YAML.
-
-Run the explicit CLI/API recovery flow outside MCP: `schema-normalization-dry-run`, `v6-schema-cutover`, `recover-v6-normalization-journal`, or `restore-v6-normalization-backup`. Status reads never recover, restore, or rewrite files.
+The MCP server starts only after the Forma home passes strict v6 read-model validation. There is no reduced compatibility tool set for legacy data. If validation fails, the server reports the failure instead of registering normal tools, and status reads do not rewrite YAML or recover files.
 
 ## Products
 

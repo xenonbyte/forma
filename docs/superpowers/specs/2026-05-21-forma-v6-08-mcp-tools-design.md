@@ -216,12 +216,7 @@ It must not accept a file path.
 ## Stable Error Payloads
 
 MCP handler failures must use `isError: true` and preserve stable error code details from core.
-
-Normalization limited mode:
-
-- keeps only `fm-status` raw status available,
-- other Forma tool handlers return `SCHEMA_NORMALIZATION_PREFLIGHT_REQUIRED` or `SCHEMA_NORMALIZATION_RECOVERY_REQUIRED`,
-- details are exactly `SchemaNormalizationRecoveryState`.
+Strict startup validation must happen before the v6 tool registry is exposed. If validation fails, MCP startup fails instead of registering partial compatibility handlers.
 
 ## Removed Tool Behavior
 
@@ -252,12 +247,11 @@ Explicit calls must not enter Forma handlers.
 - Session-scoped wrapper tools inject paths internally and export only to session-owned directories.
 - Commit and component refresh schemas enforce AI review input rules.
 - Stable core errors propagate through MCP without being renamed.
-- Limited normalization mode returns shared normalization details.
 
 ## Verification
 
 - MCP tool list tests cover new and removed tools.
 - Schema tests reject forbidden path parameters for every wrapper and apply operation payload.
 - Handler tests confirm each MCP tool calls the corresponding core service.
-- Error tests cover `FORBIDDEN_PATH_PARAMETER`, `DESIGN_SESSION_ACTIVE`, component refresh stable errors, normalization limited mode, and store method unavailable only where transitional test doubles omit a method.
+- Error tests cover `FORBIDDEN_PATH_PARAMETER`, `DESIGN_SESSION_ACTIVE`, component refresh stable errors, strict startup validation, and store method unavailable only where transitional test doubles omit a method.
 - Negative tests confirm old tool names are unknown.
