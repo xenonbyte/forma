@@ -133,6 +133,9 @@ Forma v6 在引入「strict schema 读模型」（运行时启动强制校验所
 | 4 个迁移 CLI 命令 | 可用 | 移除（`Unknown command`） |
 | `/api/recovery/schema-normalization*` | 可用 | 移除（404） |
 | `.v6-schema-cutover-committed` 标记 | 启动前提条件 | 不再检查（残留无害） |
+| product.yaml / 产品 config 含未知（旧）字段 | 静默丢弃（zod strip） | 拒绝并 fail loud（`Unrecognized key`） |
+
+> **附带扩展（随本次一并纳入，超出原删除范围）**：`packages/core/src/product.ts` 的 `productIndexEntrySchema` / `productIndexSchema` / `productRequirementPointerSchema` / `productSchema` / `productConfigSchema` 均加 `.strict()`，把 product/config 读模型对未知字段从静默丢弃改为拒绝，深化目标 2「对非 v6 数据 fail loud」。`packages/core/tests/product-pen-compat.test.ts` 同步从「宽松丢弃旧字段」改写为「拒绝旧字段（`Unrecognized key`）」。
 
 ## 验证策略
 
