@@ -1,10 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Canvas, buildViewerModel } from "@xenonbyte/forma-viewer";
+import type { ViewerModel } from "@xenonbyte/forma-viewer";
 
-import { formatApiError, type ApiErrorInfo } from "../api.js";
+import { formatApiError, type ApiErrorInfo, type FormaApiClient } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel } from "../components/Layout.js";
+import { mapArtifactsToViewerInputs } from "../viewer/mapArtifacts.js";
+import { createWebResourceResolver } from "../viewer/resolver.js";
 
-// Local types — NOT imported from api.ts (api.ts will be updated in D1-05)
+/**
+ * Legacy artifact summary shape — kept exported only because RequirementDetail
+ * still imports it; the canonical type now lives in api.ts (cleanup lands with
+ * the RequirementDetail rewrite).
+ */
 export interface ArtifactSummary {
   id: string;
   kind: string;
@@ -16,37 +24,52 @@ export interface ArtifactSummary {
   updated_at: string;
 }
 
-export interface DesignViewClientDep {
-  listProductArtifacts(productId: string, kind?: string): Promise<{ artifacts: ArtifactSummary[] }>;
-}
+export type DesignViewClient = Pick<FormaApiClient, "getProduct" | "getRequirement" | "listProductArtifacts">;
 
 export interface DesignViewProps {
-  client: DesignViewClientDep;
+  client: DesignViewClient;
   params: Record<string, string>;
 }
 
 type ViewState =
   | { status: "loading" }
   | { status: "error"; error: ApiErrorInfo }
-  | { status: "ready"; artifacts: ArtifactSummary[] };
+  | { status: "empty"; uiAffected: boolean }
+  | { status: "ready"; model: ViewerModel };
 
 export function DesignView({ client, params }: DesignViewProps) {
   const t = useT();
   const productId = params.productId ?? "";
   const requirementId = params.reqId ?? params.requirementId ?? "";
   const [state, setState] = useState<ViewState>({ status: "loading" });
-  const [lightboxArtifact, setLightboxArtifact] = useState<ArtifactSummary | null>(null);
+  const resolver = useMemo(() => createWebResourceResolver(productId), [productId]);
 
   useEffect(() => {
     let cancelled = false;
     setState({ status: "loading" });
 
-    client
-      .listProductArtifacts(productId, "html")
-      .then(({ artifacts }) => {
-        if (!cancelled) {
-          setState({ status: "ready", artifacts: filterDesignArtifacts(artifacts, requirementId) });
+    Promise.all([
+      client.getProduct(productId),
+      client.getRequirement(productId, requirementId),
+      client.listProductArtifacts(productId),
+    ])
+      .then(([product, requirement, artifactList]) => {
+        if (cancelled) {
+          return;
         }
+        const requirementArtifacts = artifactList.artifacts.filter(
+          (artifact) => artifact.requirement_id === requirementId,
+        );
+        const inputs = mapArtifactsToViewerInputs({
+          artifacts: requirementArtifacts,
+          pages: requirement.pages.map((page) => ({ page_id: page.page_id, name: page.name })),
+          platform: product.platform,
+        });
+        if (inputs.length === 0) {
+          setState({ status: "empty", uiAffected: requirement.ui_affected !== false });
+          return;
+        }
+        setState({ status: "ready", model: buildViewerModel({ entry: "requirement", artifacts: inputs }) });
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -75,99 +98,34 @@ export function DesignView({ client, params }: DesignViewProps) {
     );
   }
 
-  const { artifacts } = state;
+  const backHref = `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`;
 
   return (
-    <div className="space-y-5">
-      {/* Header row */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-zinc-500">{t("design.view")}</p>
-          {requirementId ? (
-            <h2 className="mt-1 text-lg font-semibold tracking-normal text-zinc-950">{requirementId}</h2>
-          ) : null}
-        </div>
+    <div className="flex h-[calc(100vh-8rem)] flex-col gap-2">
+      {/* 顶栏:返回需求详情链接 + 需求 ID */}
+      <div className="flex items-center justify-between gap-3">
+        <a
+          className="inline-flex items-center gap-1 rounded-md text-sm font-medium text-zinc-600 transition hover:text-zinc-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+          href={backHref}
+        >
+          ← {t("action.backToRequirement")}
+        </a>
+        <h2 className="truncate text-sm font-semibold tracking-normal text-zinc-950">{requirementId}</h2>
       </div>
 
-      {/* Empty state */}
-      {artifacts.length === 0 ? (
-        <div className="flex min-h-48 items-center justify-center rounded-lg border border-zinc-200 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm text-zinc-500">No designs yet</p>
-        </div>
-      ) : (
-        /* PNG grid */
-        <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4" role="list">
-          {artifacts.map((artifact) => {
-            const previewSrc = artifactPreviewUrl(productId, artifact.id, "1x");
-            return (
-              <li key={artifact.id}>
-                <button
-                  className="group w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm transition hover:border-amber-300 hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-                  onClick={() => setLightboxArtifact(artifact)}
-                  type="button"
-                >
-                  <img
-                    alt={artifact.title}
-                    className="h-40 w-full object-cover object-top transition group-hover:opacity-90"
-                    src={previewSrc}
-                  />
-                  <div className="border-t border-zinc-100 px-3 py-2 text-left">
-                    <p className="truncate text-xs font-medium text-zinc-700">{artifact.title}</p>
-                    <p className="mt-0.5 truncate text-xs text-zinc-400">{artifact.kind}</p>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {/* Lightbox */}
-      {lightboxArtifact ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          data-lightbox-overlay="true"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              setLightboxArtifact(null);
-            }
-          }}
-          role="dialog"
-          aria-label={lightboxArtifact.title}
-          aria-modal="true"
-        >
-          <div className="relative max-h-full max-w-4xl overflow-auto rounded-lg bg-white shadow-2xl">
-            <button
-              aria-label="Close"
-              className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-zinc-700 shadow transition hover:bg-white hover:text-zinc-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-              onClick={() => setLightboxArtifact(null)}
-              type="button"
-            >
-              ×
-            </button>
-            <img
-              alt={lightboxArtifact.title}
-              className="block max-h-[80vh] w-auto rounded-lg"
-              src={artifactPreviewUrl(productId, lightboxArtifact.id, "2x")}
-            />
+      <div className="relative flex-1 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+        {state.status === "empty" ? (
+          <div className="flex h-full items-center justify-center p-8">
+            <div className="w-full max-w-md">
+              <StatePanel state="empty" title={t("design.view")}>
+                {state.uiAffected ? t("design.canvasEmpty") : t("design.noUiChanges")}
+              </StatePanel>
+            </div>
           </div>
-        </div>
-      ) : null}
+        ) : (
+          <Canvas model={state.model} mode="design" resolver={resolver} />
+        )}
+      </div>
     </div>
   );
 }
-
-function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
-  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
-}
-
-function filterDesignArtifacts(artifacts: ArtifactSummary[], requirementId: string): ArtifactSummary[] {
-  return artifacts.filter((artifact) => {
-    if (nonDesignGridKinds.has(artifact.kind)) {
-      return false;
-    }
-    return requirementId ? artifact.requirement_id === requirementId : true;
-  });
-}
-
-const nonDesignGridKinds = new Set(["design-system", "component-library"]);

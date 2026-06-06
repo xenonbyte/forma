@@ -29,6 +29,20 @@ describe("matchRoute", () => {
     expect(match.pathname).toBe("/products/P-123abc/requirements/R-12345678/design");
   });
 
+  it("does not match the removed viewer routes while the design route still matches", () => {
+    const requirementViewer = matchRoute("/products/P-123abc/requirements/R-12345678/viewer");
+    expect(requirementViewer.found).toBe(false);
+    expect(requirementViewer.route.path).toBe("*");
+
+    const pageViewer = matchRoute("/products/P-123abc/requirements/R-12345678/pages/login/viewer");
+    expect(pageViewer.found).toBe(false);
+    expect(pageViewer.route.path).toBe("*");
+
+    const design = matchRoute("/products/P-123abc/requirements/R-12345678/design");
+    expect(design.found).toBe(true);
+    expect(design.route.path).toBe("/products/:productId/requirements/:reqId/design");
+  });
+
   it("keeps delete navigation state when navigating back to products", () => {
     const deleteState = {
       productDelete: {

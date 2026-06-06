@@ -1,11 +1,26 @@
 // @vitest-environment happy-dom
 
-import { act } from "react";
+import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DesignView } from "./DesignView.js";
-import type { ArtifactSummary, DesignViewClientDep } from "./DesignView.js";
+const canvasSpy = vi.hoisted(() => vi.fn());
+
+// 仅替换 Canvas 为记录 props 的桩;buildViewerModel 等其余导出保持真实实现,
+// 让模型形状(tiles/groups/entry)在断言里保持真实。
+vi.mock("@xenonbyte/forma-viewer", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@xenonbyte/forma-viewer")>();
+  return {
+    ...actual,
+    Canvas: (props: unknown) => {
+      canvasSpy(props);
+      return createElement("div", { "data-testid": "canvas" });
+    },
+  };
+});
+
+import { DesignView, type DesignViewClient } from "./DesignView.js";
+import type { ViewerModel, ResourceResolver, CanvasMode } from "@xenonbyte/forma-viewer";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -22,116 +37,91 @@ afterEach(() => {
     container.remove();
   }
   vi.restoreAllMocks();
-  window.history.replaceState({}, "", "/products");
+  canvasSpy.mockClear();
 });
 
-describe("DesignView", () => {
-  it("shows empty state when no artifacts returned", async () => {
-    const client: DesignViewClientDep = {
-      listProductArtifacts: vi.fn(async () => ({ artifacts: [] })),
-    };
-    const { container, root } = createTestRoot();
+interface FakeClientOverrides {
+  getProduct?: DesignViewClient["getProduct"];
+  getRequirement?: DesignViewClient["getRequirement"];
+  listProductArtifacts?: DesignViewClient["listProductArtifacts"];
+}
 
-    await act(async () => {
-      root.render(<DesignView client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc", "html");
-    expect(container.textContent).toContain("No designs yet");
-  });
-
-  it("renders PNG grid when artifacts are available", async () => {
-    const artifacts: ArtifactSummary[] = [
-      {
-        id: "A-111",
-        kind: "html",
-        requirement_id: "R-12345678",
-        title: "Home Page",
-        updated_at: "2026-05-28T00:00:00Z",
-      },
-      {
-        id: "A-222",
-        kind: "html",
-        requirement_id: "R-12345678",
-        title: "Checkout Page",
-        updated_at: "2026-05-28T00:00:00Z",
-      },
-      {
-        id: "A-333",
-        kind: "html",
-        requirement_id: "R-87654321",
-        title: "Profile Page",
-        updated_at: "2026-05-28T00:00:00Z",
-      },
-      {
-        id: "A-444",
-        kind: "design-system",
-        requirement_id: "R-12345678",
-        title: "Design System",
-        updated_at: "2026-05-28T00:00:00Z",
-      },
-      {
-        id: "A-555",
-        kind: "component-library",
-        requirement_id: "R-12345678",
-        title: "Component Library",
-        updated_at: "2026-05-28T00:00:00Z",
-      },
-    ];
-    const client: DesignViewClientDep = {
-      listProductArtifacts: vi.fn(async () => ({ artifacts })),
-    };
-    const { container, root } = createTestRoot();
-
-    await act(async () => {
-      root.render(<DesignView client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc", "html");
-    const images = container.querySelectorAll("img");
-    expect(images.length).toBe(2);
-    const srcs = Array.from(images).map((img) => img.getAttribute("src") ?? "");
-    expect(srcs).toEqual([
-      "/api/products/P-123abc/artifacts/A-111/preview/1x",
-      "/api/products/P-123abc/artifacts/A-222/preview/1x",
-    ]);
-  });
-
-  it("opens lightbox on artifact click", async () => {
-    const artifacts: ArtifactSummary[] = [
-      {
-        id: "A-111",
-        kind: "html",
-        requirement_id: "R-12345678",
-        title: "Home Page",
-        updated_at: "2026-05-28T00:00:00Z",
-      },
-    ];
-    const client: DesignViewClientDep = {
-      listProductArtifacts: vi.fn(async () => ({ artifacts })),
-    };
-    const { container, root } = createTestRoot();
-
-    await act(async () => {
-      root.render(<DesignView client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    // Click the artifact button to open the lightbox
-    const button = container.querySelector("button") as HTMLButtonElement;
-    await act(async () => {
-      button.click();
-    });
-
-    // A 2x preview image should now be visible in the lightbox
-    const allImages = container.querySelectorAll("img");
-    const lightboxImg = Array.from(allImages).find((img) => (img.getAttribute("src") ?? "").includes("/preview/2x"));
-    expect(lightboxImg).not.toBeUndefined();
-    expect(lightboxImg?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-111/preview/2x");
-  });
-});
+function fakeClient(overrides: FakeClientOverrides = {}): DesignViewClient {
+  return {
+    getProduct: async () => ({ id: "p1", name: "P", description: "", platform: "web" }),
+    getRequirement: async () => ({
+      id: "r1",
+      title: "需求",
+      product_id: "p1",
+      status: "active",
+      created_at: "",
+      updated_at: "",
+      navigation: [],
+      document_md: "",
+      pages: [
+        { baseline_page: "login", design_status: "done", name: "登录页", page_id: "login" },
+        { baseline_page: "settings", design_status: "done", name: "设置页", page_id: "settings" },
+      ],
+    }),
+    listProductArtifacts: async () => ({
+      artifacts: [
+        {
+          id: "a",
+          kind: "design-page",
+          title: "登录页",
+          updated_at: "",
+          superseded: false,
+          requirement_id: "r1",
+          page_id: "login",
+          variant: "default",
+          current_version: 1,
+        },
+        {
+          id: "d",
+          kind: "design-page",
+          title: "登录页 宽屏",
+          updated_at: "",
+          superseded: false,
+          requirement_id: "r1",
+          page_id: "login",
+          variant: "wide",
+          current_version: 2,
+        },
+        {
+          id: "b",
+          kind: "design-page",
+          title: "设置页",
+          updated_at: "",
+          superseded: false,
+          requirement_id: "r1",
+          page_id: "settings",
+          variant: "default",
+          current_version: 1,
+        },
+        {
+          id: "c",
+          kind: "design-page",
+          title: "别的需求",
+          updated_at: "",
+          superseded: false,
+          requirement_id: "r2",
+          page_id: "login",
+          variant: "default",
+          current_version: 1,
+        },
+        {
+          id: "lib",
+          kind: "component-library",
+          title: "组件库",
+          updated_at: "",
+          superseded: false,
+          requirement_id: "r1",
+        },
+      ],
+    }),
+    ...overrides,
+  } as unknown as DesignViewClient;
+}
 
 function createTestRoot() {
   const container = document.createElement("div");
@@ -146,4 +136,133 @@ async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
 }
+
+interface CanvasCallProps {
+  model: ViewerModel;
+  mode: CanvasMode;
+  resolver: ResourceResolver;
+}
+
+describe("DesignView", () => {
+  // TEST-WEB-001: 纯画布渲染 — Canvas 收到 requirement 模型与产品 resolver,无 PNG 网格。
+  it("renders Canvas with a requirement-entry model and product-scoped resolver, without a PNG grid", async () => {
+    const client = fakeClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "p1", reqId: "r1" }} />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector("[data-testid='canvas']")).toBeTruthy();
+    expect(canvasSpy).toHaveBeenCalled();
+    const props = canvasSpy.mock.calls.at(-1)?.[0] as CanvasCallProps;
+
+    expect(props.mode).toBe("design");
+    expect(props.model.entry).toBe("requirement");
+    // r2 的 c 与 component-library 的 lib 被排除;tile id = artifactId:version:variant。
+    expect(props.model.tiles.map((tile) => tile.id).sort()).toEqual(["a:1:default", "b:1:default", "d:2:wide"]);
+
+    expect(props.resolver.resolve({ artifactId: "a", version: 1, kind: "bundle" })).toBe(
+      "/api/products/p1/artifacts/a/versions/1/bundle/index.html",
+    );
+
+    // 旧 PNG 网格 / lightbox 已删除:页面上不应有任何 img。
+    expect(container.querySelectorAll("img").length).toBe(0);
+  });
+
+  it("renders a top bar with a back link to the requirement detail and the requirement id", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={fakeClient()} params={{ productId: "p1", reqId: "r1" }} />);
+      await flushPromises();
+    });
+
+    const backLink = container.querySelector('a[href="/products/p1/requirements/r1"]');
+    expect(backLink).not.toBeNull();
+    expect(container.textContent).toContain("r1");
+  });
+
+  // TEST-WEB-002: 空态/ui_affected=false/加载/错误态。
+  it("shows the canvas empty state when the requirement has no renderable design artifacts", async () => {
+    const client = fakeClient({
+      listProductArtifacts: (async () => ({ artifacts: [] })) as DesignViewClient["listProductArtifacts"],
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "p1", reqId: "r1" }} />);
+      await flushPromises();
+    });
+
+    expect(canvasSpy).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-testid='canvas']")).toBeNull();
+    expect(container.textContent).toContain("No designs on the canvas yet");
+  });
+
+  it("shows the dedicated empty state when requirement.ui_affected is false", async () => {
+    const client = fakeClient({
+      getRequirement: (async () => ({
+        id: "r1",
+        title: "需求",
+        product_id: "p1",
+        status: "active",
+        created_at: "",
+        updated_at: "",
+        navigation: [],
+        document_md: "",
+        ui_affected: false,
+        pages: [],
+      })) as unknown as DesignViewClient["getRequirement"],
+      listProductArtifacts: (async () => ({ artifacts: [] })) as DesignViewClient["listProductArtifacts"],
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "p1", reqId: "r1" }} />);
+      await flushPromises();
+    });
+
+    expect(canvasSpy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("This requirement has no UI changes");
+    expect(container.textContent).not.toContain("No designs on the canvas yet");
+  });
+
+  it("shows the loading state while requests are pending", async () => {
+    const never = new Promise<never>(() => {});
+    const client = fakeClient({
+      getProduct: (() => never) as unknown as DesignViewClient["getProduct"],
+      getRequirement: (() => never) as unknown as DesignViewClient["getRequirement"],
+      listProductArtifacts: (() => never) as unknown as DesignViewClient["listProductArtifacts"],
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "p1", reqId: "r1" }} />);
+    });
+
+    expect(container.textContent).toContain("Design view");
+    expect(container.querySelector("[data-testid='canvas']")).toBeNull();
+  });
+
+  it("shows the error state when loading fails", async () => {
+    const client = fakeClient({
+      getRequirement: (async () => {
+        throw new Error("boom");
+      }) as unknown as DesignViewClient["getRequirement"],
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={client} params={{ productId: "p1", reqId: "r1" }} />);
+      await flushPromises();
+    });
+
+    expect(canvasSpy).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Design canvas unavailable");
+    expect(container.textContent).toContain("boom");
+  });
+});

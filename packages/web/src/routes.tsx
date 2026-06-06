@@ -7,7 +7,6 @@ import { ProductDetail, type ProductDeleteNavigationState } from "./pages/Produc
 import { ProductList } from "./pages/ProductList.js";
 import { ProductNew } from "./pages/ProductNew.js";
 import { DesignView } from "./pages/DesignView.js";
-import { ViewerPage } from "./pages/ViewerPage.js";
 import { RequirementDetail } from "./pages/RequirementDetail.js";
 import { Settings } from "./pages/Settings.js";
 import { AnnotationPage } from "./pages/AnnotationPage.js";
@@ -81,20 +80,6 @@ export const routeTable: RouteDefinition[] = [
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/design",
     title: ({ reqId }) => `${reqId} design`,
-  },
-  {
-    component: RequirementViewerRoute,
-    context: "Design",
-    navGroup: "products",
-    path: "/products/:productId/requirements/:reqId/viewer",
-    title: ({ reqId }) => `${reqId} 画布`,
-  },
-  {
-    component: PageViewerRoute,
-    context: "Design",
-    navGroup: "products",
-    path: "/products/:productId/requirements/:reqId/pages/:pageId/viewer",
-    title: ({ pageId }) => `${pageId} 画布`,
   },
   {
     component: AnnotationPageRoute,
@@ -226,22 +211,6 @@ function AnnotationPageRoute(props: RoutePageProps) {
 
 function DesignViewRoute(props: RoutePageProps) {
   return <DesignView client={apiClient} params={props.params} />;
-}
-
-function RequirementViewerRoute(props: RoutePageProps) {
-  return (
-    <ViewerPage client={apiClient} params={props.params as { productId: string; reqId: string }} entry="requirement" />
-  );
-}
-
-function PageViewerRoute(props: RoutePageProps) {
-  return (
-    <ViewerPage
-      client={apiClient}
-      params={props.params as { productId: string; reqId: string; pageId: string }}
-      entry="page"
-    />
-  );
 }
 
 function ProductListRoute(props: RoutePageProps) {
