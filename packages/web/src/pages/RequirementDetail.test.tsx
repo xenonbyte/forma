@@ -130,7 +130,8 @@ describe("RequirementDetail document card", () => {
     expect(container.querySelector('[aria-live="polite"]')?.textContent).not.toContain("Copied");
   });
 
-  it("shows a failed state when the clipboard write rejects", async () => {
+  it("shows a failed state when the clipboard write rejects and reverts to idle after 2s", async () => {
+    vi.useFakeTimers();
     const writeText = vi.fn(async () => {
       throw new Error("denied");
     });
@@ -146,9 +147,47 @@ describe("RequirementDetail document card", () => {
     });
 
     expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Copy failed");
+
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).not.toContain("Copy failed");
+  });
+
+  it("re-announces failure on consecutive copy failures", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    stubClipboard(writeText);
+    const client = createClient(uiRequirement, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    const copyButton = container.querySelector<HTMLButtonElement>('button[aria-label="Copy document"]');
+
+    await act(async () => {
+      copyButton?.click();
+      await flushPromises();
+    });
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Copy failed");
+
+    // advance past revert timer so state goes to idle
+    await act(async () => {
+      vi.advanceTimersByTime(2000);
+    });
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).not.toContain("Copy failed");
+
+    // second failure should re-announce
+    await act(async () => {
+      copyButton?.click();
+      await flushPromises();
+    });
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Copy failed");
   });
 
   it("shows a failed state when the clipboard API is unavailable", async () => {
+    vi.useFakeTimers();
     Object.defineProperty(globalThis.navigator, "clipboard", { configurable: true, value: undefined });
     const client = createClient(uiRequirement, [currentArtifact]);
     const { container } = await renderDetail(client);
@@ -181,9 +220,11 @@ describe("RequirementDetail open design action", () => {
 
     expect(container.textContent).toContain("No UI changes");
     expect(container.querySelector('a[href$="/design"]')).toBeNull();
-    const disabled = container.querySelector('[aria-label="Open design"]');
+    const disabled = container.querySelector<HTMLButtonElement>('[aria-label="Open design"]');
     expect(disabled).not.toBeNull();
     expect(disabled?.tagName).not.toBe("A");
+    expect(disabled?.tagName).toBe("BUTTON");
+    expect(disabled?.disabled).toBe(true);
     expect(disabled?.getAttribute("title")).toBe("No design available to open");
   });
 
@@ -192,10 +233,34 @@ describe("RequirementDetail open design action", () => {
     const { container } = await renderDetail(client);
 
     expect(container.querySelector('a[href$="/design"]')).toBeNull();
-    const disabled = container.querySelector('[aria-label="Open design"]');
+    const disabled = container.querySelector<HTMLButtonElement>('[aria-label="Open design"]');
     expect(disabled).not.toBeNull();
     expect(disabled?.tagName).not.toBe("A");
+    expect(disabled?.tagName).toBe("BUTTON");
+    expect(disabled?.disabled).toBe(true);
     expect(disabled?.getAttribute("title")).toBe("No design available to open");
+  });
+
+  it("still renders the document and disables open design when listProductArtifacts rejects", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = {
+      getRequirement: vi.fn(async () => uiRequirement),
+      listProductArtifacts: vi.fn(async () => {
+        throw new Error("network error");
+      }),
+    };
+    const { container } = await renderDetail(client);
+
+    expect(container.textContent).toContain("Details of the change.");
+    expect(container.querySelector('a[href$="/design"]')).toBeNull();
+    const disabled = container.querySelector<HTMLButtonElement>('[aria-label="Open design"]');
+    expect(disabled).not.toBeNull();
+    expect(disabled?.tagName).toBe("BUTTON");
+    expect(disabled?.disabled).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "listProductArtifacts failed; open-design action disabled",
+      expect.any(Error),
+    );
   });
 
   it("links open design to the requirement design route when enabled", async () => {

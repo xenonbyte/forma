@@ -38,7 +38,10 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
       .then(async (requirement) => {
         const artifactsResult = await client
           .listProductArtifacts(productId, "html")
-          .catch(() => ({ artifacts: [] as ArtifactSummary[] }));
+          .catch((error: unknown) => {
+            console.warn("listProductArtifacts failed; open-design action disabled", error);
+            return { artifacts: [] as ArtifactSummary[] };
+          });
         if (!cancelled) {
           setState({ artifacts: artifactsResult.artifacts, requirement, status: "ready" });
         }
@@ -146,6 +149,10 @@ function CopyDocumentButton({ text }: { text: string }) {
       }, 2000);
     } catch {
       setCopyState("failed");
+      revertTimerRef.current = setTimeout(() => {
+        revertTimerRef.current = null;
+        setCopyState("idle");
+      }, 2000);
     }
   };
 
@@ -176,14 +183,15 @@ function OpenDesignAction({ enabled, href }: { enabled: boolean; href: string })
 
   if (!enabled) {
     return (
-      <span
-        aria-disabled="true"
+      <button
         aria-label={t("action.openDesign")}
-        className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-400"
+        className={iconButtonClasses}
+        disabled
         title={t("requirement.openDesignDisabled")}
+        type="button"
       >
         <OpenDesignIcon />
-      </span>
+      </button>
     );
   }
 
