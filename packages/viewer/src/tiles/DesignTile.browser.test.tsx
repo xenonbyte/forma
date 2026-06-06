@@ -54,8 +54,9 @@ describe("DesignTile", () => {
 
   it("sandboxes the iframe without allow-scripts", () => {
     const container = render(<DesignTile tile={tile} resolver={resolver} />);
-    const sandbox = container.querySelector("iframe")!.getAttribute("sandbox") ?? "";
-    expect(sandbox).not.toBeNull();
+    const sandboxAttr = container.querySelector("iframe")!.getAttribute("sandbox");
+    expect(sandboxAttr).not.toBeNull();
+    const sandbox = sandboxAttr ?? "";
     expect(sandbox).not.toContain("allow-scripts");
     // No-coexistence contract (TEST-VIEWER-001): allow-same-origin + allow-scripts
     // together let the framed document lift its own sandbox — equivalent to no sandbox.
