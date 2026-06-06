@@ -412,6 +412,41 @@ describe("extractDom via renderArtifactPreview", () => {
     }
   }, 60000);
 
+  it("samples rootCorners: a rounded non-full-bleed card is excluded by the full-bleed gate", async () => {
+    // The card is 200px wide (far below 98% of viewport) and centered via margin:auto.
+    // The gate requires width >= innerWidth * 0.98 AND top <= 2, so the card must not appear
+    // in rootCorners even though it has border-radius:24px.
+    // Body has no border-radius (square), so every sampled entry must have all-zero radiusPx.
+    const bundleDir = join(tmpdir(), `forma-snap17-${randomBytes(6).toString("hex")}`);
+    const outDir = join(bundleDir, "preview");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "index.html"),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div style="width:200px;margin:40px auto;border-radius:24px;background:#e0e0e0;padding:16px">
+           <p style="color:#111111;font-size:16px;font-family:Inter;margin:0">Centered card</p>
+         </div>
+       </body></html>`,
+      "utf8",
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const corners = result.snapshot!.rootCorners;
+      expect(corners).toBeDefined();
+      // body is always sampled
+      const body = corners!.find((c) => c.tag === "body");
+      expect(body).toBeDefined();
+      // The rounded card must NOT appear — the gate excludes it because it is only 200px wide.
+      const card = corners!.find((c) => c.tag === "div");
+      expect(card).toBeUndefined();
+      // Therefore every sampled entry has all-zero radiusPx.
+      for (const c of corners!) expect(c.radiusPx).toEqual([0, 0, 0, 0]);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("includes text rendered directly under <body>", async () => {
     const bundleDir = join(tmpdir(), `forma-snap12-${randomBytes(6).toString("hex")}`);
     const outDir = join(bundleDir, "preview");
