@@ -17,7 +17,10 @@ export function DesignTile({ tile, resolver }: DesignTileProps): React.ReactElem
       src={src}
       width={tile.width}
       height={tile.height}
-      // 允许同源资源读取与表单展示,但不含 allow-scripts。
+      // allow-same-origin and allow-scripts must never coexist: a framed
+      // document with both can remove its own sandbox attribute, making
+      // the sandbox effectively meaningless. We include allow-same-origin
+      // for resource loading but explicitly omit allow-scripts.
       sandbox="allow-same-origin allow-forms"
       style={{ border: "none", display: "block", background: "#fff" }}
     />

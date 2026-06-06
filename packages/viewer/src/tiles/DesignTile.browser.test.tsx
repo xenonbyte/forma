@@ -54,9 +54,12 @@ describe("DesignTile", () => {
 
   it("sandboxes the iframe without allow-scripts", () => {
     const container = render(<DesignTile tile={tile} resolver={resolver} />);
-    const sandbox = container.querySelector("iframe")!.getAttribute("sandbox");
+    const sandbox = container.querySelector("iframe")!.getAttribute("sandbox") ?? "";
     expect(sandbox).not.toBeNull();
-    expect(sandbox!).not.toContain("allow-scripts");
+    expect(sandbox).not.toContain("allow-scripts");
+    // No-coexistence contract (TEST-VIEWER-001): allow-same-origin + allow-scripts
+    // together let the framed document lift its own sandbox — equivalent to no sandbox.
+    expect(sandbox.includes("allow-same-origin") && sandbox.includes("allow-scripts")).toBe(false);
   });
 
   it("sizes the iframe to the tile intrinsic dimensions", () => {
