@@ -444,6 +444,54 @@ export class RequirementService {
     return next;
   }
 
+  async markPageDesignDone(requirementId: string, pageId: string): Promise<Requirement> {
+    const productId = await this.productIdForRequirement(requirementId);
+    return this.runProductMutation({ operation: "mark_page_design_done", product_id: productId }, async () =>
+      this.markPageDesignDoneLocked(requirementId, pageId),
+    );
+  }
+
+  async markPageDesignDoneLocked(requirementId: string, pageId: string): Promise<Requirement> {
+    const current = await this.readRequirementById(requirementId);
+    if (current.status !== "submitted" && current.status !== "active") {
+      throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
+        requirement_id: requirementId,
+        status: current.status,
+      });
+    }
+
+    let matched = false;
+    const pages = current.pages.map((page) => {
+      if (page.page_id !== pageId) {
+        return page;
+      }
+      matched = true;
+      return requirementPageSchema.parse({ ...page, design_status: "done" });
+    });
+    if (!matched) {
+      throw new FormaError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
+        requirement_id: requirementId,
+        page_id: pageId,
+      });
+    }
+
+    const next = requirementSchema.parse({
+      ...current,
+      status: resolveRequirementStatus(pages),
+      updated_at: new Date().toISOString(),
+      pages,
+    });
+    const file = this.requirementFile(next.product_id, next.id);
+    const snapshots = await snapshotFiles([file]);
+    try {
+      await writeYamlAtomic(file, next);
+    } catch (error) {
+      await restoreSnapshots(snapshots);
+      throw error;
+    }
+    return next;
+  }
+
   async getRequirement(input: { requirement_id: string } | { product_id: string }): Promise<RequirementWithDocument> {
     if ("requirement_id" in input) {
       const requirement = await this.readRequirementById(input.requirement_id);

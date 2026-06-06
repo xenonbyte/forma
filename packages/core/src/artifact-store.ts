@@ -39,6 +39,13 @@ export interface WriteArtifactVersionInput {
   version?: number;
   manifest: ArtifactManifest;
   files: Map<string, Buffer>;
+  beforeWriteLocked?(input: { productId: string; artifactId: string }): Promise<void> | void;
+  afterWriteLocked?(input: {
+    productId: string;
+    artifactId: string;
+    version: number;
+    etag: string;
+  }): Promise<void> | void;
 }
 
 export interface ArtifactStore {
@@ -269,8 +276,9 @@ class ArtifactStoreImpl implements ArtifactStore {
   }
 
   async writeArtifactVersion(input: WriteArtifactVersionInput): Promise<{ version: number; etag: string }> {
-    const { productId, artifactId, manifest, files } = input;
+    const { productId, artifactId, manifest, files, beforeWriteLocked, afterWriteLocked } = input;
     return this.lock.run({ operation: "write_artifact_version", product_id: productId }, async () => {
+      await beforeWriteLocked?.({ productId, artifactId });
       // Allocate the version inside the lock so concurrent saves to the same
       // artifact cannot pick the same number (read-then-write race).
       const version = input.version ?? (await this.nextArtifactVersion(productId, artifactId));
@@ -308,6 +316,7 @@ class ArtifactStoreImpl implements ArtifactStore {
             cause: String(err),
           });
         }
+        await afterWriteLocked?.({ productId, artifactId, version, etag });
         return { version, etag };
       } catch (err) {
         await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);

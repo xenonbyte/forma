@@ -6,17 +6,14 @@
  *   2. validateStaticArtifact   (P4.2)
  *   3. renderArtifactPreview    (P3) — browser render outside any lock
  *   4. artifacts.writeArtifactVersion — has its own internal lock
- *   5. products.setDesignPointerLocked — inside runProductMutation (design-page only)
+ *   5. products.setDesignPointerLocked — inside the artifact write lock (design-page only)
  *
  * Does NOT import from store.ts to avoid circular dependencies.
  * store.ts satisfies the narrow SaveDesignDeps interface declared here.
  *
  * NOTE ON LOCKING:
- *   writeArtifactVersion acquires the product mutation lock internally.
- *   setDesignPointerLocked is wrapped in runProductMutation separately.
- *   The two operations are NOT in the same lock scope; if pointer update
- *   fails after a successful version write the version is orphaned (no pointer),
- *   which is a recoverable state.
+ *   writeArtifactVersion acquires the product mutation lock internally. Design
+ *   page pointer updates and store-level commit hooks run inside that lock.
  */
 
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -35,7 +32,6 @@ import { validateStaticArtifact } from "./artifact-static-validation.js";
 import { renderArtifactPreview } from "./preview-renderer.js";
 import { lintCraft } from "./quality/craft-lint.js";
 import type { ProductService } from "./product.js";
-import type { ProductMutationContext } from "./product-mutation-lock.js";
 import { FormaError } from "./errors.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
@@ -57,6 +53,16 @@ export interface SaveDesignInput {
   };
   /** Pass to add a new version to an existing artifact; omit to create a new artifact (v1). */
   artifactId?: string;
+  commitHooks?: {
+    beforeWriteLocked?(): Promise<void> | void;
+    afterPointerLocked?(input: {
+      artifactId: string;
+      version: number;
+      requirementId: string;
+      pageId: string;
+      variant: string;
+    }): Promise<void> | void;
+  };
 }
 
 export interface SaveDesignResult {
@@ -68,10 +74,6 @@ export interface SaveDesignResult {
 export interface SaveDesignDeps {
   artifacts: ArtifactStore;
   products: ProductService;
-  runProductMutation: <T>(
-    input: { operation: string; product_id?: string },
-    fn: (context: ProductMutationContext) => Promise<T>,
-  ) => Promise<T>;
   productsRoot: string;
 }
 
@@ -95,7 +97,7 @@ function decodeUtf8(buf: Buffer, path: string): string {
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesignInput): Promise<SaveDesignResult> {
-  const { artifacts, products, runProductMutation } = deps;
+  const { artifacts, products } = deps;
   const { productId, kind, html, title, forma } = input;
 
   // ── Step 1: localizeArtifactAssets (pure, no lock) ───────────────────────────
@@ -231,22 +233,29 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     artifactId,
     manifest,
     files: finalFiles,
-  });
-
-  // ── Step 8: Update design pointer (design-page only, separate runProductMutation)
-  if (kind === "design-page" && forma.requirementId && forma.pageId) {
-    const variant = forma.variant ?? "default";
-    await runProductMutation({ operation: "save_design_pointer", product_id: productId }, async () => {
+    ...(input.commitHooks?.beforeWriteLocked ? { beforeWriteLocked: input.commitHooks.beforeWriteLocked } : {}),
+    afterWriteLocked: async ({ version: writtenVersion }) => {
+      if (kind !== "design-page" || !forma.requirementId || !forma.pageId) {
+        return;
+      }
+      const variant = forma.variant ?? "default";
       await products.setDesignPointerLocked(productId, {
-        requirementId: forma.requirementId!,
-        pageId: forma.pageId!,
+        requirementId: forma.requirementId,
+        pageId: forma.pageId,
         variant,
         artifactId,
-        version,
+        version: writtenVersion,
         designStatus: "active",
       });
-    });
-  }
+      await input.commitHooks?.afterPointerLocked?.({
+        artifactId,
+        version: writtenVersion,
+        requirementId: forma.requirementId,
+        pageId: forma.pageId,
+        variant,
+      });
+    },
+  });
 
   return { artifactId, version, previewStatus: finalPreviewStatus };
 }

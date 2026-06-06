@@ -14,8 +14,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFormaStore } from "../src/store.js";
+import { createArtifactStore, type ArtifactStore } from "../src/artifact-store.js";
 import { FormaError } from "../src/errors.js";
 import type { ArtifactManifest } from "../src/artifact-manifest.js";
+import { getFormaPaths } from "../src/paths.js";
+import { getProductMutationLock } from "../src/product-mutation-lock.js";
 
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-store-mut-"));
@@ -26,7 +29,22 @@ async function createTestStore() {
   });
 }
 
-async function seedProductWithPage(store: Awaited<ReturnType<typeof createTestStore>>) {
+function createDeferred<T = void>() {
+  let resolvePromise!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
+
+interface SeedPageInput {
+  page_id: string;
+  name: string;
+  baseline_page: string;
+  features: string;
+}
+
+async function seedProductWithPages(store: Awaited<ReturnType<typeof createTestStore>>, pages: SeedPageInput[]) {
   const product = await store.products.createProduct({
     name: "Checkout App",
     description: "Mobile checkout workbench",
@@ -38,19 +56,25 @@ async function seedProductWithPage(store: Awaited<ReturnType<typeof createTestSt
     default_language: "en",
   });
   const req = await store.requirements.createEmptyRequirement(product.id, "Checkout flow");
-  const pageId = "page-cart-01";
   await store.requirements.saveRequirement({
     requirement_id: req.id,
     document_md: "# Checkout flow\nUsers can checkout items.",
     ui_affected: true,
-    pages: [{ page_id: pageId, name: "Cart Page", baseline_page: "cart", change_type: "new", features: "Cart" }],
+    pages: pages.map((page) => ({ ...page, change_type: "new" })),
     navigation: [],
     translations: [],
     rules: [],
     remove_rule_ids: [],
     remove_page_ids: [],
   });
-  return { product, requirementId: req.id, pageId };
+  return { product, requirementId: req.id, pageIds: pages.map((page) => page.page_id) };
+}
+
+async function seedProductWithPage(store: Awaited<ReturnType<typeof createTestStore>>) {
+  const seeded = await seedProductWithPages(store, [
+    { page_id: "page-cart-01", name: "Cart Page", baseline_page: "cart", features: "Cart" },
+  ]);
+  return { product: seeded.product, requirementId: seeded.requirementId, pageId: seeded.pageIds[0] };
 }
 
 const DESIGN_HTML = "<!doctype html><html><body><h1>x</h1></body></html>";
@@ -105,6 +129,63 @@ describe("Review #4: generateRequirementDesign validates requirement + page", ()
     expect(await store.artifacts.listArtifacts(other.id)).toEqual([]);
   });
 
+  it("marks a generated page done and activates a single-page requirement", async () => {
+    const store = await createTestStore();
+    const { product, requirementId, pageId } = await seedProductWithPage(store);
+
+    await expect(store.requirements.getRequirement({ requirement_id: requirementId })).resolves.toMatchObject({
+      status: "submitted",
+      pages: [expect.objectContaining({ page_id: pageId, design_status: "pending" })],
+    });
+
+    await store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Cart design",
+      pageId,
+      brandStyle: "ant",
+    });
+
+    await expect(store.requirements.getRequirement({ requirement_id: requirementId })).resolves.toMatchObject({
+      status: "active",
+      pages: [expect.objectContaining({ page_id: pageId, design_status: "done" })],
+    });
+  });
+
+  it("keeps the requirement submitted until every page has a generated design", async () => {
+    const store = await createTestStore();
+    const { product, requirementId, pageIds } = await seedProductWithPages(store, [
+      { page_id: "page-cart-01", name: "Cart Page", baseline_page: "cart", features: "Cart" },
+      { page_id: "page-summary-01", name: "Summary Page", baseline_page: "summary", features: "Summary" },
+    ]);
+
+    await store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Cart design",
+      pageId: pageIds[0],
+      brandStyle: "ant",
+    });
+    const afterFirstDesign = await store.requirements.getRequirement({ requirement_id: requirementId });
+    expect(afterFirstDesign.status).toBe("submitted");
+    expect(Object.fromEntries(afterFirstDesign.pages.map((page) => [page.page_id, page.design_status]))).toEqual({
+      "page-cart-01": "done",
+      "page-summary-01": "pending",
+    });
+
+    await store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Summary design",
+      pageId: pageIds[1],
+      brandStyle: "ant",
+    });
+
+    const afterSecondDesign = await store.requirements.getRequirement({ requirement_id: requirementId });
+    expect(afterSecondDesign.status).toBe("active");
+    expect(Object.fromEntries(afterSecondDesign.pages.map((page) => [page.page_id, page.design_status]))).toEqual({
+      "page-cart-01": "done",
+      "page-summary-01": "done",
+    });
+  });
+
   it("appends repeated page generations to the current artifact so rollback can target prior versions", async () => {
     const store = await createTestStore();
     const { product, requirementId, pageId } = await seedProductWithPage(store);
@@ -131,6 +212,213 @@ describe("Review #4: generateRequirementDesign validates requirement + page", ()
       version: 2,
     });
   });
+
+  it("rejects stale page revisions before writing an artifact or pointer", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-mut-stale-"));
+    const lock = getProductMutationLock(home);
+    const realArtifacts = createArtifactStore(getFormaPaths(home).productsDir, lock);
+    const writeStarted = createDeferred();
+    const releaseWrite = createDeferred();
+    const artifactStore: ArtifactStore = {
+      writeArtifact: realArtifacts.writeArtifact.bind(realArtifacts),
+      readArtifact: realArtifacts.readArtifact.bind(realArtifacts),
+      listArtifacts: realArtifacts.listArtifacts.bind(realArtifacts),
+      deleteArtifact: realArtifacts.deleteArtifact.bind(realArtifacts),
+      readArtifactVersion: realArtifacts.readArtifactVersion.bind(realArtifacts),
+      listArtifactVersions: realArtifacts.listArtifactVersions.bind(realArtifacts),
+      async writeArtifactVersion(input) {
+        writeStarted.resolve();
+        await releaseWrite.promise;
+        return realArtifacts.writeArtifactVersion(input);
+      },
+    };
+    const store = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      artifactStore,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+    const { product, requirementId, pageId } = await seedProductWithPage(store);
+
+    const savePromise = store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Stale cart design",
+      pageId,
+      brandStyle: "ant",
+    });
+    await writeStarted.promise;
+
+    await store.requirements.updateRequirement({
+      requirement_id: requirementId,
+      document_md: "# Checkout flow\nUsers can checkout items with updated cart behavior.",
+      pages: [{ page_id: pageId, name: "Cart Page", baseline_page: "cart", features: "Cart v2" }],
+      navigation: [],
+      expired_pages: [pageId],
+    });
+    releaseWrite.resolve();
+
+    await expect(savePromise).rejects.toSatisfy(
+      (e: unknown) => e instanceof FormaError && e.code === "REQUIREMENT_REVISION_CONFLICT",
+    );
+    await expect(store.products.getDesignPointer(product.id, requirementId, pageId, "default")).resolves.toBeUndefined();
+    await expect(store.artifacts.listArtifacts(product.id)).resolves.toEqual([]);
+    await expect(store.requirements.getRequirement({ requirement_id: requirementId })).resolves.toMatchObject({
+      status: "submitted",
+      pages: [expect.objectContaining({ page_id: pageId, design_status: "expired" })],
+    });
+  }, 90000);
+
+  it("allows concurrent saves for different pages in the same requirement", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-mut-parallel-"));
+    const lock = getProductMutationLock(home);
+    const realArtifacts = createArtifactStore(getFormaPaths(home).productsDir, lock);
+    const writesQueued = createDeferred();
+    const writeQueue: Array<{ pageId?: string; release: ReturnType<typeof createDeferred> }> = [];
+    const artifactStore: ArtifactStore = {
+      writeArtifact: realArtifacts.writeArtifact.bind(realArtifacts),
+      readArtifact: realArtifacts.readArtifact.bind(realArtifacts),
+      listArtifacts: realArtifacts.listArtifacts.bind(realArtifacts),
+      deleteArtifact: realArtifacts.deleteArtifact.bind(realArtifacts),
+      readArtifactVersion: realArtifacts.readArtifactVersion.bind(realArtifacts),
+      listArtifactVersions: realArtifacts.listArtifactVersions.bind(realArtifacts),
+      async writeArtifactVersion(input) {
+        const release = createDeferred();
+        writeQueue.push({ pageId: input.manifest.forma?.pageId, release });
+        if (writeQueue.length === 2) {
+          writesQueued.resolve();
+        }
+        await release.promise;
+        return realArtifacts.writeArtifactVersion(input);
+      },
+    };
+    const store = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      artifactStore,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+    const { product, requirementId, pageIds } = await seedProductWithPages(store, [
+      { page_id: "page-cart-01", name: "Cart Page", baseline_page: "cart", features: "Cart" },
+      { page_id: "page-summary-01", name: "Summary Page", baseline_page: "summary", features: "Summary" },
+    ]);
+
+    const cartSave = store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Cart design",
+      pageId: pageIds[0],
+      brandStyle: "ant",
+    });
+    const summarySave = store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Summary design",
+      pageId: pageIds[1],
+      brandStyle: "ant",
+    });
+    await writesQueued.promise;
+
+    const cartWrite = writeQueue.find((entry) => entry.pageId === pageIds[0]);
+    const summaryWrite = writeQueue.find((entry) => entry.pageId === pageIds[1]);
+    expect(cartWrite).toBeDefined();
+    expect(summaryWrite).toBeDefined();
+
+    cartWrite?.release.resolve();
+    await expect(cartSave).resolves.toMatchObject({ version: 1 });
+    await expect(store.requirements.getRequirement({ requirement_id: requirementId })).resolves.toMatchObject({
+      status: "submitted",
+      pages: [
+        expect.objectContaining({ page_id: pageIds[0], design_status: "done" }),
+        expect.objectContaining({ page_id: pageIds[1], design_status: "pending" }),
+      ],
+    });
+
+    summaryWrite?.release.resolve();
+    await expect(summarySave).resolves.toMatchObject({ version: 1 });
+    await expect(store.requirements.getRequirement({ requirement_id: requirementId })).resolves.toMatchObject({
+      status: "active",
+      pages: [
+        expect.objectContaining({ page_id: pageIds[0], design_status: "done" }),
+        expect.objectContaining({ page_id: pageIds[1], design_status: "done" }),
+      ],
+    });
+  }, 90000);
+
+  it("rejects stale rule revisions before marking a generated page done", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-mut-rules-"));
+    const lock = getProductMutationLock(home);
+    const realArtifacts = createArtifactStore(getFormaPaths(home).productsDir, lock);
+    const writeStarted = createDeferred();
+    const releaseWrite = createDeferred();
+    const artifactStore: ArtifactStore = {
+      writeArtifact: realArtifacts.writeArtifact.bind(realArtifacts),
+      readArtifact: realArtifacts.readArtifact.bind(realArtifacts),
+      listArtifacts: realArtifacts.listArtifacts.bind(realArtifacts),
+      deleteArtifact: realArtifacts.deleteArtifact.bind(realArtifacts),
+      readArtifactVersion: realArtifacts.readArtifactVersion.bind(realArtifacts),
+      listArtifactVersions: realArtifacts.listArtifactVersions.bind(realArtifacts),
+      async writeArtifactVersion(input) {
+        writeStarted.resolve();
+        await releaseWrite.promise;
+        return realArtifacts.writeArtifactVersion(input);
+      },
+    };
+    const store = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      artifactStore,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+    const { product, requirementId, pageId } = await seedProductWithPage(store);
+
+    const savePromise = store.generateRequirementDesign(product.id, requirementId, {
+      html: DESIGN_HTML,
+      title: "Rule-stale cart design",
+      pageId,
+      brandStyle: "ant",
+    });
+    await writeStarted.promise;
+
+    await store.requirements.saveRequirement({
+      requirement_id: requirementId,
+      document_md: "# Checkout flow\nUsers can checkout items.",
+      ui_affected: true,
+      pages: [
+        {
+          page_id: pageId,
+          name: "Cart Page",
+          baseline_page: "cart",
+          features: "Cart",
+          change_type: "new",
+        },
+      ],
+      navigation: [],
+      translations: [],
+      rules: [
+        {
+          id: "target-page-rule",
+          page_id: pageId,
+          given: "The cart has discounted items",
+          when: "The design renders totals",
+          then: "Show discount rows before the final total",
+        },
+      ],
+      remove_rule_ids: [],
+      remove_page_ids: [],
+    });
+    releaseWrite.resolve();
+
+    await expect(savePromise).rejects.toSatisfy(
+      (e: unknown) => e instanceof FormaError && e.code === "REQUIREMENT_REVISION_CONFLICT",
+    );
+    await expect(store.products.getDesignPointer(product.id, requirementId, pageId, "default")).resolves.toBeUndefined();
+    await expect(store.artifacts.listArtifacts(product.id)).resolves.toEqual([]);
+    await expect(store.requirements.getRequirement({ requirement_id: requirementId })).resolves.toMatchObject({
+      status: "submitted",
+      pages: [expect.objectContaining({ page_id: pageId, design_status: "pending" })],
+    });
+  }, 90000);
 });
 
 describe("Review #5: changeArtifactStyle rejects unsupported source kinds", () => {

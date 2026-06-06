@@ -20,7 +20,7 @@ import {
   type ProductMutationContext,
   type ProductMutationLock,
 } from "./product-mutation-lock.js";
-import { RequirementService } from "./requirement.js";
+import { RequirementService, type RequirementWithDocument, type StoredRule } from "./requirement.js";
 import { SessionService } from "./session.js";
 import { StyleService } from "./styles.js";
 import { getFormaPaths } from "./paths.js";
@@ -173,6 +173,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
         requirement_product_id: requirement.product_id,
       });
     }
+    assertRequirementAcceptsDesignCommit(requirement);
     if (!requirement.pages.some((page) => page.page_id === input.pageId)) {
       throw new FormaError("REQUIREMENT_PAGE_NOT_FOUND", "Requirement page not found", {
         product_id: productId,
@@ -180,6 +181,7 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
         page_id: input.pageId,
       });
     }
+    const rules = await requirements.getProductRules(productId);
 
     const variant = input.variant ?? "default";
     const existingPointer = await products.getDesignPointer(productId, requirementId, input.pageId, variant);
@@ -198,6 +200,18 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
         platform: input.platform,
         language: input.language,
         provenance: input.provenance,
+      },
+      commitHooks: {
+        beforeWriteLocked: async () => {
+          const [current, currentRules] = await Promise.all([
+            requirements.getRequirement({ requirement_id: requirementId }),
+            requirements.getProductRules(productId),
+          ]);
+          assertSameRequirementRevision(requirement, rules, current, currentRules, input.pageId);
+        },
+        afterPointerLocked: async () => {
+          await requirements.markPageDesignDoneLocked(requirementId, input.pageId);
+        },
       },
     });
     return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
@@ -298,6 +312,67 @@ function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     sessions,
     styles,
   };
+}
+
+function assertRequirementAcceptsDesignCommit(requirement: RequirementWithDocument): void {
+  if (requirement.status !== "submitted" && requirement.status !== "active") {
+    throw new FormaError("REQUIREMENT_STATUS_INVALID", "Requirement status invalid", {
+      requirement_id: requirement.id,
+      status: requirement.status,
+    });
+  }
+}
+
+function assertSameRequirementRevision(
+  expected: RequirementWithDocument,
+  expectedRules: StoredRule[],
+  current: RequirementWithDocument,
+  currentRules: StoredRule[],
+  pageId: string,
+): void {
+  assertRequirementAcceptsDesignCommit(current);
+  if (
+    JSON.stringify(toDesignCommitRevision(expected, expectedRules, pageId)) ===
+    JSON.stringify(toDesignCommitRevision(current, currentRules, pageId))
+  ) {
+    return;
+  }
+
+  const expectedPage = expected.pages.find((page) => page.page_id === pageId);
+  const currentPage = current.pages.find((page) => page.page_id === pageId);
+  const expectedDesignRules = filterDesignContextRules(expectedRules, pageId);
+  const currentDesignRules = filterDesignContextRules(currentRules, pageId);
+  throw new FormaError("REQUIREMENT_REVISION_CONFLICT", "Requirement changed before design save completed", {
+    requirement_id: expected.id,
+    page_id: pageId,
+    expected_updated_at: expected.updated_at,
+    current_updated_at: current.updated_at,
+    expected_status: expected.status,
+    current_status: current.status,
+    expected_page_design_status: expectedPage?.design_status,
+    current_page_design_status: currentPage?.design_status,
+    expected_rule_ids: expectedDesignRules.map((rule) => rule.id),
+    current_rule_ids: currentDesignRules.map((rule) => rule.id),
+  });
+}
+
+function toDesignCommitRevision(requirement: RequirementWithDocument, rules: StoredRule[], pageId: string): unknown {
+  const { status: _status, updated_at: _updatedAt, pages, ...revision } = requirement;
+  return {
+    ...revision,
+    rules: filterDesignContextRules(rules, pageId),
+    pages: pages.map((page) => {
+      if (page.page_id === pageId) {
+        return page;
+      }
+      const { design_status: _designStatus, ...pageRevision } = page;
+      return pageRevision;
+    }),
+  };
+}
+
+function filterDesignContextRules(rules: StoredRule[], pageId: string): StoredRule[] {
+  return rules.filter((rule) => rule.page_id === pageId || rule.page_id === undefined);
 }
 
 // Strict-by-default startup contract: the store refuses to come up if ANY
