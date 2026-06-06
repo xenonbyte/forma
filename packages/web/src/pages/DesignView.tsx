@@ -4,7 +4,7 @@ import type { ViewerModel } from "@xenonbyte/forma-viewer";
 
 import { formatApiError, type ApiErrorInfo, type FormaApiClient } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { StatePanel } from "../components/Layout.js";
+import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
 import { mapArtifactsToViewerInputs } from "../viewer/mapArtifacts.js";
 import { createWebResourceResolver } from "../viewer/resolver.js";
 
@@ -90,15 +90,19 @@ export function DesignView({ client, params }: DesignViewProps) {
     );
   }
 
+  const backHref = `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`;
+
   if (state.status === "error") {
     return (
-      <StatePanel state="error" title={t("design.canvasUnavailable")}>
+      <StatePanel
+        action={<PrimaryActionLink href={backHref}>{t("action.backToRequirement")}</PrimaryActionLink>}
+        state="error"
+        title={t("design.canvasUnavailable")}
+      >
         {state.error.error_code} - {state.error.message}
       </StatePanel>
     );
   }
-
-  const backHref = `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`;
 
   return (
     <div className="flex h-[calc(100vh-8rem)] flex-col gap-2">
