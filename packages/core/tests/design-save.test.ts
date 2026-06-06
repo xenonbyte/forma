@@ -341,6 +341,43 @@ describe("saveDesignArtifact", () => {
     expect(check.detail).toContain("skipped (platform=undefined)");
   }, 90000);
 
+  // TEST-CORE-002b: getProduct throws during platform resolution → save still succeeds; platform treated as undefined
+  it("getProduct throws during platform resolution → save succeeds; screen-edge-radius detail shows skipped (platform=undefined)", async () => {
+    const baseDeps = makeDeps();
+    // Wrap the real products service so only getProduct throws; all other methods
+    // delegate to the original (prototype-based) instance.
+    const realProducts = baseDeps.products;
+    const throwingProducts = new Proxy(realProducts, {
+      get(target, prop) {
+        if (prop === "getProduct") {
+          return async () => {
+            throw new Error("boom");
+          };
+        }
+        const val = (target as Record<string | symbol, unknown>)[prop];
+        return typeof val === "function" ? (val as Function).bind(target) : val;
+      },
+    });
+    const deps: typeof baseDeps = { ...baseDeps, products: throwingProducts };
+    const input = await makeCleanInput({
+      forma: { requirementId: "req-pt", pageId: "page-pt", variant: "default" }, // no platform
+    });
+
+    // Save must not throw despite getProduct failing
+    const result = await saveDesignArtifact(deps, input);
+    expect(result.previewStatus).toBe("ready");
+
+    // platform must be absent from manifest (treated as undefined)
+    const manifest = await readManifest(baseDeps.productsRoot, result.artifactId);
+    expect(manifest.forma.platform).toBeUndefined();
+
+    // screen-edge-radius must report skipped (platform=undefined) — proving the catch branch ran
+    const check = manifest.forma.quality.craftChecks.find((c: { id: string }) => c.id === "screen-edge-radius");
+    expect(check).toBeTruthy();
+    expect(check.passed).toBe(true);
+    expect(check.detail).toContain("skipped (platform=undefined)");
+  }, 90000);
+
   // TEST-CORE-003: mobile product → 390×884 render viewport (NOT the 390×844 web canvas tile) + active screen-edge-radius
   it("mobile product → renders at 390×884 viewport and screen-edge-radius check is active (not skipped)", async () => {
     await store.products.initProductConfig(productId, {
