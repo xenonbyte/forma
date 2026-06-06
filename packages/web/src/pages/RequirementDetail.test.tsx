@@ -5,20 +5,19 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RequirementDetail } from "./RequirementDetail.js";
-import type { ArtifactSummary } from "./DesignView.js";
-import type { FormaApiClient, RequirementWithDocument } from "../api.js";
+import type { ArtifactSummary, RequirementWithDocument } from "../api.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const noUiRequirement: RequirementWithDocument = {
+const uiRequirement: RequirementWithDocument = {
   id: "R-12345678",
   product_id: "P-123abc",
-  title: "Copy-only policy update",
+  title: "Checkout UI update",
   status: "active",
   created_at: "2026-05-17T00:00:00.000Z",
   updated_at: "2026-05-17T01:00:00.000Z",
-  ui_affected: false,
-  document_md: "# Copy-only policy update\n\nNo interface work is needed.",
+  ui_affected: true,
+  document_md: "# Checkout UI update\n\nDetails of the change.",
   pages: [
     {
       page_id: "checkout",
@@ -31,21 +30,29 @@ const noUiRequirement: RequirementWithDocument = {
   navigation: [{ from: "policy", to: "checkout", label: "applies to" }],
 };
 
-const uiRequirementWithLegacyDesignId: RequirementWithDocument = {
-  ...noUiRequirement,
-  title: "Checkout UI update",
-  ui_affected: true,
-  document_md: "# Checkout UI update",
-  pages: [
-    {
-      page_id: "checkout",
-      baseline_page: "checkout",
-      name: "Checkout",
-      design_status: "done",
-      copy: [],
-    },
-  ],
-  navigation: [],
+const noUiRequirement: RequirementWithDocument = {
+  ...uiRequirement,
+  title: "Copy-only policy update",
+  ui_affected: false,
+  document_md: "# Copy-only policy update\n\nNo interface work is needed.",
+};
+
+const currentArtifact: ArtifactSummary = {
+  id: "A-current",
+  kind: "design-page",
+  title: "Checkout design",
+  requirement_id: "R-12345678",
+  updated_at: "2026-05-28T00:00:00.000Z",
+  superseded: false,
+};
+
+const otherArtifact: ArtifactSummary = {
+  id: "A-other",
+  kind: "design-page",
+  title: "Other requirement design",
+  requirement_id: "R-other",
+  updated_at: "2026-05-28T00:00:00.000Z",
+  superseded: false,
 };
 
 const roots: Root[] = [];
@@ -60,131 +67,169 @@ afterEach(() => {
   for (const container of containers.splice(0)) {
     container.remove();
   }
+  Reflect.deleteProperty(globalThis.navigator, "clipboard");
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
-describe("RequirementDetail", () => {
-  it("shows no-UI state while hiding design actions and history", async () => {
-    const client = {
-      getRequirement: vi.fn(async () => noUiRequirement),
-    } satisfies Pick<FormaApiClient, "getRequirement">;
-    const { container, root } = createTestRoot();
+describe("RequirementDetail document card", () => {
+  it("renders only the status row and document card", async () => {
+    const client = createClient(uiRequirement, [currentArtifact]);
+    const { container, root } = await renderDetail(client);
 
-    await act(async () => {
-      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    expect(container.textContent).toContain("No UI changes");
-    expect(container.textContent).toContain("No interface work is needed.");
-    expect(container.textContent).toContain("applies to");
-    expect(container.textContent).not.toContain("Open design");
-    expect(container.textContent).not.toContain("Design history");
-    expect(container.querySelector('a[href*="/designs/"]')).toBeNull();
-  });
-
-  it("links UI-affecting pages to the requirement-level design view without legacy design ids", async () => {
-    const client = {
-      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-    } satisfies Pick<FormaApiClient, "getRequirement">;
-    const { container, root } = createTestRoot();
-
-    await act(async () => {
-      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    expect(container.textContent).toContain("Checkout UI update");
-    expect(container.textContent).toContain("Open design");
-    expect(
-      container.querySelector('a[href="/products/P-123abc/requirements/R-12345678/design?page_id=checkout"]'),
-    ).not.toBeNull();
-    expect(container.querySelector('a[href*="/designs/"]')).toBeNull();
-    expect(container.innerHTML).not.toContain("/products/P-123abc/requirements/R-12345678/designs/D-12345678");
-  });
-
-  it("shows artifact preview PNG when artifacts are available", async () => {
-    const artifact: ArtifactSummary = {
-      id: "A-test",
-      kind: "page_design",
-      title: "Checkout design",
-      requirement_id: "R-12345678",
-      updated_at: "2026-05-28T00:00:00.000Z",
-    };
-    const client = {
-      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      listProductArtifacts: vi.fn(async () => ({ artifacts: [artifact] })),
-    };
-    const { container, root } = createTestRoot();
-
-    await act(async () => {
-      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
-      await flushPromises();
-    });
-
-    const img = container.querySelector("img");
-    expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-test/preview/1x");
+    expect(container.textContent).toContain("Details of the change.");
+    expect(container.textContent).toContain("R-12345678");
     expect(client.listProductArtifacts).toHaveBeenCalledWith("P-123abc", "html");
+
+    expect(container.textContent).not.toContain("Requirement pages");
+    expect(container.textContent).not.toContain("applies to");
+    expect(container.textContent).not.toContain("Open in app");
+    expect(container.querySelector("img")).toBeNull();
+    expect(container.innerHTML).not.toContain("forma://");
+    expect(container.innerHTML).not.toContain("xl:grid-cols");
+    expect(container.querySelector('a[href*="page_id="]')).toBeNull();
   });
 
-  it("filters artifact previews to the current requirement", async () => {
-    const artifacts: ArtifactSummary[] = [
-      {
-        id: "A-other",
-        kind: "html",
-        requirement_id: "R-other",
-        title: "Other requirement design",
-        updated_at: "2026-05-28T00:00:00.000Z",
-      },
-      {
-        id: "A-current",
-        kind: "html",
-        requirement_id: "R-12345678",
-        title: "Current requirement design",
-        updated_at: "2026-05-28T00:00:00.000Z",
-      },
-      {
-        id: "A-design-system",
-        kind: "design-system",
-        title: "Product baseline",
-        updated_at: "2026-05-28T00:00:00.000Z",
-      },
-    ];
-    const client = {
-      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      listProductArtifacts: vi.fn(async () => ({ artifacts })),
-    };
-    const { container, root } = createTestRoot();
+  it("shows both icon actions on the document card", async () => {
+    const client = createClient(uiRequirement, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    const copyButton = container.querySelector('button[aria-label="Copy document"]');
+    expect(copyButton).not.toBeNull();
+    expect(copyButton?.querySelector("svg")).not.toBeNull();
+
+    const openDesign = container.querySelector('a[aria-label="Open design"]');
+    expect(openDesign).not.toBeNull();
+    expect(openDesign?.querySelector("svg")).not.toBeNull();
+  });
+
+  it("copies the document, announces success politely, and reverts after 2s", async () => {
+    vi.useFakeTimers();
+    const writeText = vi.fn(async () => {});
+    stubClipboard(writeText);
+    const client = createClient(uiRequirement, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    const copyButton = container.querySelector<HTMLButtonElement>('button[aria-label="Copy document"]');
+    expect(copyButton).not.toBeNull();
 
     await act(async () => {
-      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      copyButton?.click();
       await flushPromises();
     });
 
-    const img = container.querySelector("img");
-    expect(img).not.toBeNull();
-    expect(img?.getAttribute("src")).toBe("/api/products/P-123abc/artifacts/A-current/preview/1x");
-  });
-
-  it("shows deep-link button for UI-affecting requirements", async () => {
-    const client = {
-      getRequirement: vi.fn(async () => uiRequirementWithLegacyDesignId),
-      listProductArtifacts: vi.fn(async () => ({ artifacts: [] })),
-    };
-    const { container, root } = createTestRoot();
+    expect(writeText).toHaveBeenCalledWith(uiRequirement.document_md);
+    const liveRegion = container.querySelector('[aria-live="polite"]');
+    expect(liveRegion).not.toBeNull();
+    expect(liveRegion?.textContent).toContain("Copied");
 
     await act(async () => {
-      root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+      vi.advanceTimersByTime(2000);
+    });
+
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).not.toContain("Copied");
+  });
+
+  it("shows a failed state when the clipboard write rejects", async () => {
+    const writeText = vi.fn(async () => {
+      throw new Error("denied");
+    });
+    stubClipboard(writeText);
+    const client = createClient(uiRequirement, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    const copyButton = container.querySelector<HTMLButtonElement>('button[aria-label="Copy document"]');
+
+    await act(async () => {
+      copyButton?.click();
       await flushPromises();
     });
 
-    const deepLink = container.querySelector('a[href^="forma://"]');
-    expect(deepLink).not.toBeNull();
-    expect(deepLink?.getAttribute("href")).toBe("forma://products/P-123abc/requirements/R-12345678/artifacts");
-    expect(deepLink?.textContent).toContain("Open in app");
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Copy failed");
+  });
+
+  it("shows a failed state when the clipboard API is unavailable", async () => {
+    Object.defineProperty(globalThis.navigator, "clipboard", { configurable: true, value: undefined });
+    const client = createClient(uiRequirement, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    const copyButton = container.querySelector<HTMLButtonElement>('button[aria-label="Copy document"]');
+
+    await act(async () => {
+      copyButton?.click();
+      await flushPromises();
+    });
+
+    expect(container.querySelector('[aria-live="polite"]')?.textContent).toContain("Copy failed");
+  });
+
+  it("disables copy when the document is empty", async () => {
+    const client = createClient({ ...uiRequirement, document_md: "" }, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    expect(container.textContent).toContain("No markdown document is stored for this requirement.");
+    const copyButton = container.querySelector<HTMLButtonElement>('button[aria-label="Copy document"]');
+    expect(copyButton).not.toBeNull();
+    expect(copyButton?.disabled).toBe(true);
   });
 });
+
+describe("RequirementDetail open design action", () => {
+  it("disables open design when the requirement has no UI changes", async () => {
+    const client = createClient(noUiRequirement, [currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    expect(container.textContent).toContain("No UI changes");
+    expect(container.querySelector('a[href$="/design"]')).toBeNull();
+    const disabled = container.querySelector('[aria-label="Open design"]');
+    expect(disabled).not.toBeNull();
+    expect(disabled?.tagName).not.toBe("A");
+    expect(disabled?.getAttribute("title")).toBe("No design available to open");
+  });
+
+  it("disables open design when no html artifact belongs to the requirement", async () => {
+    const client = createClient(uiRequirement, [otherArtifact]);
+    const { container } = await renderDetail(client);
+
+    expect(container.querySelector('a[href$="/design"]')).toBeNull();
+    const disabled = container.querySelector('[aria-label="Open design"]');
+    expect(disabled).not.toBeNull();
+    expect(disabled?.tagName).not.toBe("A");
+    expect(disabled?.getAttribute("title")).toBe("No design available to open");
+  });
+
+  it("links open design to the requirement design route when enabled", async () => {
+    const client = createClient(uiRequirement, [otherArtifact, currentArtifact]);
+    const { container } = await renderDetail(client);
+
+    const link = container.querySelector('a[aria-label="Open design"]');
+    expect(link).not.toBeNull();
+    expect(link?.getAttribute("href")).toBe("/products/P-123abc/requirements/R-12345678/design");
+  });
+});
+
+function createClient(requirement: RequirementWithDocument, artifacts: ArtifactSummary[]) {
+  return {
+    getRequirement: vi.fn(async () => requirement),
+    listProductArtifacts: vi.fn(async () => ({ artifacts })),
+  };
+}
+
+function stubClipboard(writeText: (text: string) => Promise<void>) {
+  Object.defineProperty(globalThis.navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+}
+
+async function renderDetail(client: ReturnType<typeof createClient>) {
+  const { container, root } = createTestRoot();
+  await act(async () => {
+    root.render(<RequirementDetail client={client} params={{ productId: "P-123abc", reqId: "R-12345678" }} />);
+    await flushPromises();
+  });
+  return { container, root };
+}
 
 function createTestRoot() {
   const container = document.createElement("div");

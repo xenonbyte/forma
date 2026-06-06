@@ -8,22 +8,6 @@ import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
 import { mapArtifactsToViewerInputs } from "../viewer/mapArtifacts.js";
 import { createWebResourceResolver } from "../viewer/resolver.js";
 
-/**
- * Legacy artifact summary shape — kept exported only because RequirementDetail
- * still imports it; the canonical type now lives in api.ts (cleanup lands with
- * the RequirementDetail rewrite).
- */
-export interface ArtifactSummary {
-  id: string;
-  kind: string;
-  requirement_id?: string;
-  title: string;
-  preview_url?: string;
-  source_skill_id?: string;
-  superseded?: boolean;
-  updated_at: string;
-}
-
 export type DesignViewClient = Pick<FormaApiClient, "getProduct" | "getRequirement" | "listProductArtifacts">;
 
 export interface DesignViewProps {

@@ -1,21 +1,19 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   apiClient,
   formatApiError,
   type ApiErrorInfo,
+  type ArtifactSummary,
   type FormaApiClient,
   type RequirementWithDocument,
 } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel, WorkSurface } from "../components/Layout.js";
 import { StatusBadge } from "../components/StatusBadge.js";
-import type { ArtifactSummary } from "./DesignView.js";
 
 export interface RequirementDetailProps {
-  client?: Pick<FormaApiClient, "getRequirement"> & {
-    listProductArtifacts?: (productId: string, kind?: string) => Promise<{ artifacts: ArtifactSummary[] }>;
-  };
+  client?: Pick<FormaApiClient, "getRequirement" | "listProductArtifacts">;
   onBreadcrumbLabel?: (key: string, label: string) => void;
   params: Record<string, string>;
 }
@@ -38,9 +36,9 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
     client
       .getRequirement(productId, requirementId)
       .then(async (requirement) => {
-        const artifactsResult = client.listProductArtifacts
-          ? await client.listProductArtifacts(productId, "html").catch(() => ({ artifacts: [] }))
-          : { artifacts: [] };
+        const artifactsResult = await client
+          .listProductArtifacts(productId, "html")
+          .catch(() => ({ artifacts: [] as ArtifactSummary[] }));
         if (!cancelled) {
           setState({ artifacts: artifactsResult.artifacts, requirement, status: "ready" });
         }
@@ -79,139 +77,176 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
   }
 
   const requirement = state.requirement;
-  const artifacts = state.artifacts;
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
-  const latestArtifact =
-    artifacts.find((artifact) => artifact.requirement_id === requirementId && artifact.kind !== "design-system") ??
-    null;
+  const designEnabled =
+    !noUiChanges && state.artifacts.some((artifact) => artifact.requirement_id === requirementId);
+  const designHref = `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/design`;
+
+  const documentActions = (
+    <div className="flex items-center gap-2">
+      <CopyDocumentButton text={requirement.document_md} />
+      <OpenDesignAction enabled={designEnabled} href={designHref} />
+    </div>
+  );
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
-      <div className="space-y-5">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusBadge status={requirement.status} />
-            {noUiChanges ? (
-              <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold leading-none text-zinc-700">
-                {t("requirement.noUiChanges")}
-              </span>
-            ) : null}
-            <span className="font-mono text-xs text-zinc-500">{requirement.id}</span>
-          </div>
-        </div>
-
-        {hasDocument ? (
-          <WorkSurface title={t("requirement.document")}>
-            <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
-              {requirement.document_md}
-            </pre>
-          </WorkSurface>
-        ) : (
-          <StatePanel state="empty" title={t("requirement.document")}>
-            {t("requirement.documentEmpty")}
-          </StatePanel>
-        )}
-
-        {requirement.pages.length === 0 ? (
-          <StatePanel state="empty" title={t("requirement.pages")}>
-            {t("requirement.pagesEmpty")}
-          </StatePanel>
-        ) : (
-          <WorkSurface title={t("requirement.pages")}>
-            <div className="divide-y divide-zinc-200">
-              {requirement.pages.map((page) => (
-                <article className="grid gap-3 py-4 lg:grid-cols-[minmax(0,1fr)_8rem_10rem]" key={page.page_id}>
-                  <div className="min-w-0">
-                    <h2 className="truncate text-sm font-semibold text-zinc-950">{page.name}</h2>
-                    <p className="mt-1 font-mono text-xs text-zinc-500">{page.page_id}</p>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      {t("requirement.baseline")}: {page.baseline_page}
-                    </p>
-                  </div>
-                  <div className="flex items-center">
-                    {noUiChanges ? (
-                      <span className="text-sm text-zinc-500">{t("requirement.noUiChanges")}</span>
-                    ) : (
-                      <StatusBadge status={page.design_status} />
-                    )}
-                  </div>
-                  <div className="flex items-center">
-                    {noUiChanges ? (
-                      <span className="text-sm text-zinc-500">{t("requirement.noDesignAction")}</span>
-                    ) : (
-                      <a
-                        className={secondaryLinkClasses}
-                        href={`/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/design?page_id=${encodeURIComponent(page.page_id)}`}
-                      >
-                        {t("action.openDesign")}
-                      </a>
-                    )}
-                  </div>
-                </article>
-              ))}
-            </div>
-          </WorkSurface>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        {!noUiChanges ? (
-          <WorkSurface title={t("design.artifactPreview")}>
-            {latestArtifact ? (
-              <div className="space-y-3">
-                <img
-                  alt={latestArtifact.title}
-                  className="max-h-[200px] w-full rounded-md border border-zinc-200 object-contain"
-                  src={artifactPreviewUrl(productId, latestArtifact.id, "1x")}
-                />
-                <a
-                  className={secondaryLinkClasses}
-                  href={`forma://products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/artifacts`}
-                >
-                  {t("action.openInApp")}
-                </a>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <p className="text-sm text-zinc-500">{t("design.noArtifactYet")}</p>
-                <a
-                  className={secondaryLinkClasses}
-                  href={`forma://products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/artifacts`}
-                >
-                  {t("action.openInApp")}
-                </a>
-              </div>
-            )}
-          </WorkSurface>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <StatusBadge status={requirement.status} />
+        {noUiChanges ? (
+          <span className="inline-flex items-center rounded-md border border-zinc-200 bg-zinc-50 px-2 py-1 text-xs font-semibold leading-none text-zinc-700">
+            {t("requirement.noUiChanges")}
+          </span>
         ) : null}
-        <WorkSurface title={t("requirement.navigation")}>
-          {requirement.navigation.length === 0 ? (
-            <p className="text-sm text-zinc-500">{t("requirement.navigationEmpty")}</p>
-          ) : (
-            <div className="space-y-2">
-              {requirement.navigation.map((edge, index) => (
-                <div
-                  className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm"
-                  key={`${edge.from}-${edge.to}-${index}`}
-                >
-                  <span className="font-mono text-zinc-700">{edge.from}</span>
-                  <span className="px-2 text-zinc-400">{t("common.to")}</span>
-                  <span className="font-mono text-zinc-700">{edge.to}</span>
-                  {edge.label ? <span className="ml-2 text-zinc-500">{edge.label}</span> : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </WorkSurface>
+        <span className="font-mono text-xs text-zinc-500">{requirement.id}</span>
       </div>
+
+      {hasDocument ? (
+        <WorkSurface actions={documentActions} title={t("requirement.document")}>
+          <pre className="max-h-[36rem] overflow-auto whitespace-pre-wrap rounded-md border border-zinc-200 bg-zinc-50 p-3 font-mono text-sm leading-6 text-zinc-800">
+            {requirement.document_md}
+          </pre>
+        </WorkSurface>
+      ) : (
+        <StatePanel action={documentActions} state="empty" title={t("requirement.document")}>
+          {t("requirement.documentEmpty")}
+        </StatePanel>
+      )}
     </div>
   );
 }
 
-const secondaryLinkClasses =
-  "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+function CopyDocumentButton({ text }: { text: string }) {
+  const t = useT();
+  const [copyState, setCopyState] = useState<"copied" | "failed" | "idle">("idle");
+  const revertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-function artifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string {
-  return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`;
+  useEffect(() => {
+    return () => {
+      if (revertTimerRef.current !== null) {
+        clearTimeout(revertTimerRef.current);
+      }
+    };
+  }, []);
+
+  const disabled = text.trim().length === 0;
+
+  const handleCopy = async () => {
+    if (revertTimerRef.current !== null) {
+      clearTimeout(revertTimerRef.current);
+      revertTimerRef.current = null;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyState("copied");
+      revertTimerRef.current = setTimeout(() => {
+        revertTimerRef.current = null;
+        setCopyState("idle");
+      }, 2000);
+    } catch {
+      setCopyState("failed");
+    }
+  };
+
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span
+        aria-live="polite"
+        className={copyState === "failed" ? "text-xs font-medium text-red-600" : "sr-only"}
+      >
+        {copyState === "copied" ? t("action.copied") : copyState === "failed" ? t("action.copyFailed") : ""}
+      </span>
+      <button
+        aria-label={t("action.copyDocument")}
+        className={iconButtonClasses}
+        disabled={disabled}
+        onClick={() => void handleCopy()}
+        title={t("action.copyDocument")}
+        type="button"
+      >
+        {copyState === "copied" ? <CheckIcon /> : <CopyIcon />}
+      </button>
+    </span>
+  );
+}
+
+function OpenDesignAction({ enabled, href }: { enabled: boolean; href: string }) {
+  const t = useT();
+
+  if (!enabled) {
+    return (
+      <span
+        aria-disabled="true"
+        aria-label={t("action.openDesign")}
+        className="inline-flex h-8 w-8 cursor-not-allowed items-center justify-center rounded-md border border-zinc-200 bg-zinc-50 text-zinc-400"
+        title={t("requirement.openDesignDisabled")}
+      >
+        <OpenDesignIcon />
+      </span>
+    );
+  }
+
+  return (
+    <a aria-label={t("action.openDesign")} className={iconButtonClasses} href={href} title={t("action.openDesign")}>
+      <OpenDesignIcon />
+    </a>
+  );
+}
+
+const iconButtonClasses =
+  "inline-flex h-8 w-8 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-700 transition hover:border-amber-200 hover:bg-amber-50 hover:text-zinc-950 active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:hover:border-zinc-200 disabled:hover:bg-white";
+
+function CopyIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <rect height="13" rx="2" width="13" x="9" y="9" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function OpenDesignIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
+  );
 }
