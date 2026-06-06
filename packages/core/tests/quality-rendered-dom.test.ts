@@ -475,6 +475,37 @@ describe("extractDom via renderArtifactPreview", () => {
     }
   }, 60000);
 
+  it("samples rootCorners: a top-only full-bleed header marks only top corners as screen-edge contacts", async () => {
+    const bundleDir = join(tmpdir(), `forma-snap19-${randomBytes(6).toString("hex")}`);
+    const outDir = join(bundleDir, "preview");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "index.html"),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <header style="width:100%;height:240px;border-bottom-left-radius:24px;border-bottom-right-radius:24px;background:#e0e0e0">
+           <p style="color:#111111;font-size:16px;font-family:Inter;margin:0">Rounded top section</p>
+         </header>
+       </body></html>`,
+      "utf8",
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      expect(result.snapshot).toBeDefined();
+      if (!result.snapshot) throw new Error("missing rendered DOM snapshot");
+      const corners = result.snapshot.rootCorners;
+      expect(corners).toBeDefined();
+      if (!corners) throw new Error("missing rootCorners");
+      const header = corners.find((c) => c.tag === "header");
+      expect(header).toBeDefined();
+      if (!header) throw new Error("missing header root corner sample");
+      expect(header.radiusPx).toEqual([0, 0, 24, 24]);
+      expect(header.edgeContact).toEqual([true, true, false, false]);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("includes text rendered directly under <body>", async () => {
     const bundleDir = join(tmpdir(), `forma-snap12-${randomBytes(6).toString("hex")}`);
     const outDir = join(bundleDir, "preview");

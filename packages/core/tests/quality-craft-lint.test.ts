@@ -139,6 +139,16 @@ describe("lintCraft", () => {
     expect(c.detail).toBe("div has rounded outer corner(s): [24,24,24,24]px");
   });
 
+  it("screen-edge-radius ignores rounded corners that do not touch the matching viewport corner", () => {
+    const corners: RootCornerSample[] = [
+      { tag: "body", radiusPx: [0, 0, 0, 0], coversViewport: true, edgeContact: [true, true, true, true] },
+      { tag: "header", radiusPx: [0, 0, 24, 24], coversViewport: true, edgeContact: [true, true, false, false] },
+    ];
+    const c = check(lintCraft(snap([node()], corners), { platform: "mobile" }), "screen-edge-radius");
+    expect(c.passed).toBe(true);
+    expect(c.detail).toBe("all root corners square (2 element(s) checked)");
+  });
+
   it("screen-edge-radius lists at most 3 violating elements", () => {
     const corners: RootCornerSample[] = [
       { tag: "div", radiusPx: [8, 8, 0, 0], coversViewport: true },

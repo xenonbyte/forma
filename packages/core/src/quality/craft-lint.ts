@@ -1,6 +1,6 @@
 import type { ArtifactCraftCheck } from "../artifact-manifest.js";
 import { compositeOver, contrastRatio, type Rgb } from "./contrast.js";
-import type { RenderedDomSnapshot, RenderedTextNode } from "./rendered-dom.js";
+import type { RenderedDomSnapshot, RenderedTextNode, RootCornerSample } from "./rendered-dom.js";
 
 export interface LintOptions {
   /** WCAG AA normal-text minimum. Default 4.5. */
@@ -69,7 +69,9 @@ function screenEdgeRadiusCheck(snapshot: RenderedDomSnapshot, platform?: string)
   if (!corners) {
     return { id: "screen-edge-radius", passed: true, detail: "skipped (no rootCorners in snapshot)" };
   }
-  const rounded = corners.filter((c) => c.radiusPx.some((r) => r > 0));
+  const rounded = corners
+    .map((c) => ({ tag: c.tag, radiusPx: screenEdgeRadii(c) }))
+    .filter((c) => c.radiusPx.some((r) => r > 0));
   if (rounded.length === 0) {
     return {
       id: "screen-edge-radius",
@@ -82,6 +84,16 @@ function screenEdgeRadiusCheck(snapshot: RenderedDomSnapshot, platform?: string)
     .map((c) => `${c.tag} has rounded outer corner(s): [${c.radiusPx.join(",")}]px`)
     .join("; ");
   return { id: "screen-edge-radius", passed: false, detail: sample };
+}
+
+function screenEdgeRadii(sample: RootCornerSample): [number, number, number, number] {
+  const edgeContact = sample.edgeContact ?? [true, true, true, true];
+  return [
+    edgeContact[0] ? sample.radiusPx[0] : 0,
+    edgeContact[1] ? sample.radiusPx[1] : 0,
+    edgeContact[2] ? sample.radiusPx[2] : 0,
+    edgeContact[3] ? sample.radiusPx[3] : 0,
+  ];
 }
 
 function contrastCheck(nodes: RenderedTextNode[], min: number): ArtifactCraftCheck {

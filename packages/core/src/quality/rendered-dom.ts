@@ -38,6 +38,11 @@ export interface RootCornerSample {
   tag: string;
   /** computed corner radii in CSS px, TL/TR/BR/BL order (percentages resolved against the side length) */
   radiusPx: [number, number, number, number];
+  /**
+   * true when the matching corner touches the viewport corner, in TL/TR/BR/BL order.
+   * Optional for backward compatibility with hand-built snapshots.
+   */
+  edgeContact?: [boolean, boolean, boolean, boolean];
   /** true when the element spans the viewport edge (body is always sampled as true) */
   coversViewport: boolean;
 }
@@ -46,10 +51,10 @@ export interface RenderedDomSnapshot {
   viewport: { width: number; height: number };
   textNodes: RenderedTextNode[];
   /**
-   * Corner radii of the page roots: document.body plus every direct body child
-   * that renders as a full-bleed root container (width ≥ 98% of the viewport,
-   * top ≤ 2px). Optional for backward compatibility: hand-built snapshots may
-   * omit it, in which case the screen-edge-radius check reports skipped.
+   * Corner radii of the page roots: document.body plus descendant candidates
+   * that render as full-bleed containers touching at least one viewport corner.
+   * Optional for backward compatibility: hand-built snapshots may omit it, in
+   * which case the screen-edge-radius check reports skipped.
    */
   rootCorners?: RootCornerSample[];
 }
@@ -366,9 +371,25 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     return max;
   }
 
-  function sampleCorners(el: Element): RootCornerSample {
+  const EDGE_EPSILON = 2;
+
+  function cornerEdgeContact(rect: DOMRect): [boolean, boolean, boolean, boolean] {
+    const touchesLeft = rect.left <= EDGE_EPSILON;
+    const touchesTop = rect.top <= EDGE_EPSILON;
+    const touchesRight = rect.right >= window.innerWidth - EDGE_EPSILON;
+    const touchesBottom = rect.bottom >= window.innerHeight - EDGE_EPSILON;
+    return [
+      touchesTop && touchesLeft,
+      touchesTop && touchesRight,
+      touchesBottom && touchesRight,
+      touchesBottom && touchesLeft,
+    ];
+  }
+
+  function sampleCorners(el: Element, edgeContactOverride?: [boolean, boolean, boolean, boolean]): RootCornerSample {
     const cs = getComputedStyle(el);
     const rect = el.getBoundingClientRect();
+    const edgeContact = edgeContactOverride ?? cornerEdgeContact(rect);
     return {
       tag: el.tagName.toLowerCase(),
       radiusPx: [
@@ -377,14 +398,15 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
         cornerRadiusPx(cs.borderBottomRightRadius, rect),
         cornerRadiusPx(cs.borderBottomLeftRadius, rect),
       ],
-      coversViewport: true,
+      edgeContact,
+      coversViewport: edgeContact.some(Boolean),
     };
   }
 
   const rootCorners: RootCornerSample[] = [];
   if (document.body) {
     const sampled = new Set<Element>();
-    rootCorners.push(sampleCorners(document.body));
+    rootCorners.push(sampleCorners(document.body, [true, true, true, true]));
     sampled.add(document.body);
 
     let cornerVisited = 0;
@@ -394,9 +416,10 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
       cornerVisited++;
 
       const rect = el.getBoundingClientRect();
-      if (el.getClientRects().length > 0 && rect.width >= window.innerWidth * 0.98 && rect.top <= 2) {
+      const edgeContact = cornerEdgeContact(rect);
+      if (el.getClientRects().length > 0 && rect.width >= window.innerWidth * 0.98 && edgeContact.some(Boolean)) {
         if (!sampled.has(el)) {
-          rootCorners.push(sampleCorners(el));
+          rootCorners.push(sampleCorners(el, edgeContact));
           sampled.add(el);
         }
       }
