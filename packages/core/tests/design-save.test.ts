@@ -354,8 +354,8 @@ describe("saveDesignArtifact", () => {
             throw new Error("boom");
           };
         }
-        const val = (target as Record<string | symbol, unknown>)[prop];
-        return typeof val === "function" ? (val as Function).bind(target) : val;
+        const val: unknown = Reflect.get(target, prop);
+        return typeof val === "function" ? val.bind(target) : val;
       },
     });
     const deps: typeof baseDeps = { ...baseDeps, products: throwingProducts };
