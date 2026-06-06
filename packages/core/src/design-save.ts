@@ -20,6 +20,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { VIEWPORT_PRESETS } from "@vzi-core/parser";
 import type { ArtifactStore } from "./artifact-store.js";
 import type {
   ArtifactCraftCheck,
@@ -126,6 +127,21 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   }
 
   // ── Step 3: Render preview to a temp dir (no lock, browser render) ───────────
+  // Resolve platform: explicit input wins, else fall back to product config.
+  let platform = forma.platform;
+  if (platform === undefined) {
+    try {
+      platform = (await products.getProduct(productId)).platform;
+    } catch {
+      // Resolution failure is treated as "unconfigured" and must not change save
+      // semantics; observable via the screen-edge-radius detail (platform=undefined).
+      platform = undefined;
+    }
+  }
+  // Mobile renders at VIEWPORT_PRESETS.mobile (390×884) — the *render* viewport.
+  // Deliberately distinct from the 390×844 web canvas tile (mapArtifacts.ts).
+  const viewport = platform === "mobile" ? VIEWPORT_PRESETS.mobile : undefined;
+
   const tempDir = join(tmpdir(), `forma-save-${randomBytes(8).toString("hex")}`);
   let previewStatus: "ready" | "failed" = "failed";
   let previewError: string | undefined;
@@ -144,7 +160,12 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
 
     const previewOutDir = join(tempDir, "preview");
     try {
-      const renderResult = await renderArtifactPreview({ bundleDir: tempDir, outDir: previewOutDir, extractDom: true });
+      const renderResult = await renderArtifactPreview({
+        bundleDir: tempDir,
+        outDir: previewOutDir,
+        extractDom: true,
+        ...(viewport ? { viewport } : {}),
+      });
       preview1xBuf = await readFile(join(previewOutDir, "1x.png"));
       preview2xBuf = await readFile(join(previewOutDir, "2x.png"));
       previewStatus = "ready";
@@ -154,7 +175,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
         ];
       } else if (renderResult.snapshot) {
         try {
-          craftChecks = lintCraft(renderResult.snapshot);
+          craftChecks = lintCraft(renderResult.snapshot, { platform });
         } catch (err) {
           // Lint is observable but non-blocking: record a single failed check.
           craftChecks = [
@@ -202,6 +223,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
 
   const formaExtension: ArtifactFormaExtension = {
     ...forma,
+    ...(platform !== undefined ? { platform } : {}),
     ...(kind === "design-page" ? { variant: forma.variant ?? "default" } : {}),
     assets,
     preview: {

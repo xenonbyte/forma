@@ -96,6 +96,14 @@ function makeDeps() {
   };
 }
 
+async function readManifest(productsRoot: string, artifactId: string, version = 1) {
+  const manifestJson = await readFile(
+    join(productsRoot, productId, "od-project", "artifacts", artifactId, `v${version}`, "manifest.json"),
+    "utf8",
+  );
+  return JSON.parse(manifestJson);
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe("saveDesignArtifact", () => {
@@ -289,5 +297,79 @@ describe("saveDesignArtifact", () => {
       expect(typeof c.id).toBe("string");
       expect(typeof c.passed).toBe("boolean");
     }
+  }, 90000);
+
+  // TEST-CORE-002: forma.platform omitted → resolved from product config; manifest forma.platform filled
+  it("forma.platform omitted → falls back to product config; manifest.forma.platform filled; screen-edge-radius skipped for non-mobile", async () => {
+    await store.products.initProductConfig(productId, {
+      platform: "web",
+      brand_style: "minimal",
+      languages: ["zh-CN"],
+      default_language: "zh-CN",
+    });
+    const input = await makeCleanInput({
+      forma: { requirementId: "req-p1", pageId: "page-p1", variant: "default" }, // no platform
+    });
+    const deps = makeDeps();
+
+    const result = await saveDesignArtifact(deps, input);
+    expect(result.previewStatus).toBe("ready");
+
+    const manifest = await readManifest(deps.productsRoot, result.artifactId);
+    expect(manifest.forma.platform).toBe("web");
+    const check = manifest.forma.quality.craftChecks.find((c: { id: string }) => c.id === "screen-edge-radius");
+    expect(check).toBeTruthy();
+    expect(check.passed).toBe(true);
+    expect(check.detail).toContain("skipped (platform=web)");
+  }, 90000);
+
+  // TEST-CORE-002: unconfigured product → platform=undefined, observable in screen-edge-radius detail
+  it("unconfigured product → screen-edge-radius detail shows skipped (platform=undefined); manifest.forma.platform absent", async () => {
+    const input = await makeCleanInput({
+      forma: { requirementId: "req-p2", pageId: "page-p2", variant: "default" },
+    });
+    const deps = makeDeps();
+
+    const result = await saveDesignArtifact(deps, input);
+    expect(result.previewStatus).toBe("ready");
+
+    const manifest = await readManifest(deps.productsRoot, result.artifactId);
+    expect(manifest.forma.platform).toBeUndefined();
+    const check = manifest.forma.quality.craftChecks.find((c: { id: string }) => c.id === "screen-edge-radius");
+    expect(check).toBeTruthy();
+    expect(check.passed).toBe(true);
+    expect(check.detail).toContain("skipped (platform=undefined)");
+  }, 90000);
+
+  // TEST-CORE-003: mobile product → 390×884 render viewport (NOT the 390×844 web canvas tile) + active screen-edge-radius
+  it("mobile product → renders at 390×884 viewport and screen-edge-radius check is active (not skipped)", async () => {
+    await store.products.initProductConfig(productId, {
+      platform: "mobile",
+      brand_style: "minimal",
+      languages: ["zh-CN"],
+      default_language: "zh-CN",
+    });
+    const input = await makeCleanInput({
+      forma: { requirementId: "req-p3", pageId: "page-p3", variant: "default" },
+    });
+    const deps = makeDeps();
+
+    const result = await saveDesignArtifact(deps, input);
+    expect(result.previewStatus).toBe("ready");
+
+    const manifest = await readManifest(deps.productsRoot, result.artifactId);
+    expect(manifest.forma.platform).toBe("mobile");
+    const check = manifest.forma.quality.craftChecks.find((c: { id: string }) => c.id === "screen-edge-radius");
+    expect(check).toBeTruthy();
+    expect(check.detail).not.toMatch(/^skipped/);
+    // makeCleanInput HTML has square root corners → the active check passes
+    expect(check.passed).toBe(true);
+
+    const png = await readFile(
+      join(deps.productsRoot, productId, "od-project", "artifacts", result.artifactId, "v1", "preview", "1x.png"),
+    );
+    const meta = await sharp(png).metadata();
+    expect(meta.width).toBe(390);
+    expect(meta.height).toBe(884);
   }, 90000);
 });
