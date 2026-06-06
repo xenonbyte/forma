@@ -32,9 +32,26 @@ export interface RenderedTextNode {
   text: string;
 }
 
+/** A page-root element sampled for outer corner rounding (screen-edge-radius rule). */
+export interface RootCornerSample {
+  /** lowercased tag name */
+  tag: string;
+  /** computed corner radii in CSS px, TL/TR/BR/BL order (percentages resolved against the side length) */
+  radiusPx: [number, number, number, number];
+  /** true when the element spans the viewport edge (body is always sampled as true) */
+  coversViewport: boolean;
+}
+
 export interface RenderedDomSnapshot {
   viewport: { width: number; height: number };
   textNodes: RenderedTextNode[];
+  /**
+   * Corner radii of the page roots: document.body plus every direct body child
+   * that renders as a full-bleed root container (width ≥ 98% of the viewport,
+   * top ≤ 2px). Optional for backward compatibility: hand-built snapshots may
+   * omit it, in which case the screen-edge-radius check reports skipped.
+   */
+  rootCorners?: RootCornerSample[];
 }
 
 /**
@@ -329,8 +346,51 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     for (let i = children.length - 1; i >= 0; i--) stack.push(children[i]);
   }
 
+  // Sample the page roots' corner radii for the screen-edge-radius rule: body
+  // (always, it touches the viewport edge by definition) plus each direct body
+  // child rendering as a full-bleed root container. Computed border-*-radius is
+  // one or two <length-percentage>s ("8px", "50%", "8px 16px"); percentages
+  // resolve against the corresponding box side, so any positive percentage
+  // yields a positive px value (recorded as non-zero).
+  function cornerRadiusPx(value: string, rect: DOMRect): number {
+    const parts = value.trim().split(/\s+/);
+    let max = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const num = parseFloat(parts[i]);
+      if (!Number.isFinite(num) || num <= 0) continue;
+      const px = parts[i].endsWith("%") ? (num / 100) * (i === 0 ? rect.width : rect.height) : num;
+      if (px > max) max = px;
+    }
+    return max;
+  }
+
+  function sampleCorners(el: Element): RootCornerSample {
+    const cs = getComputedStyle(el);
+    const rect = el.getBoundingClientRect();
+    return {
+      tag: el.tagName.toLowerCase(),
+      radiusPx: [
+        cornerRadiusPx(cs.borderTopLeftRadius, rect),
+        cornerRadiusPx(cs.borderTopRightRadius, rect),
+        cornerRadiusPx(cs.borderBottomRightRadius, rect),
+        cornerRadiusPx(cs.borderBottomLeftRadius, rect),
+      ],
+      coversViewport: true,
+    };
+  }
+
+  const rootCorners: RootCornerSample[] = [];
+  if (document.body) {
+    rootCorners.push(sampleCorners(document.body));
+    for (const child of Array.from(document.body.children)) {
+      const rect = child.getBoundingClientRect();
+      if (rect.width >= window.innerWidth * 0.98 && rect.top <= 2) rootCorners.push(sampleCorners(child));
+    }
+  }
+
   return {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     textNodes,
+    rootCorners,
   };
 }

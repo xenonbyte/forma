@@ -330,6 +330,88 @@ describe("extractDom via renderArtifactPreview", () => {
     }
   }, 60000);
 
+  it("samples rootCorners: a rounded full-bleed root container is detected", async () => {
+    const bundleDir = join(tmpdir(), `forma-snap14-${randomBytes(6).toString("hex")}`);
+    const outDir = join(bundleDir, "preview");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "index.html"),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div style="width:100%;min-height:100vh;border-radius:24px;background:#f0f0f0">
+           <p style="color:#111111;font-size:16px;font-family:Inter;margin:0">Rounded shell</p>
+         </div>
+       </body></html>`,
+      "utf8",
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const corners = result.snapshot!.rootCorners;
+      expect(corners).toBeDefined();
+      // body is always sampled, with square corners here
+      const body = corners!.find((c) => c.tag === "body");
+      expect(body).toBeDefined();
+      expect(body!.coversViewport).toBe(true);
+      expect(body!.radiusPx).toEqual([0, 0, 0, 0]);
+      // the full-width child is sampled and its rounding detected on all corners
+      const shell = corners!.find((c) => c.tag === "div");
+      expect(shell).toBeDefined();
+      expect(shell!.radiusPx).toEqual([24, 24, 24, 24]);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("samples rootCorners: a square root container reports all-zero radii", async () => {
+    const bundleDir = join(tmpdir(), `forma-snap15-${randomBytes(6).toString("hex")}`);
+    const outDir = join(bundleDir, "preview");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "index.html"),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div style="width:100%;min-height:100vh;background:#f0f0f0">
+           <p style="color:#111111;font-size:16px;font-family:Inter;margin:0">Square shell</p>
+         </div>
+       </body></html>`,
+      "utf8",
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const corners = result.snapshot!.rootCorners;
+      expect(corners).toBeDefined();
+      expect(corners!.length).toBeGreaterThanOrEqual(2); // body + the full-width div
+      for (const c of corners!) expect(c.radiusPx).toEqual([0, 0, 0, 0]);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("samples rootCorners: a percentage border-radius is recorded as non-zero px", async () => {
+    const bundleDir = join(tmpdir(), `forma-snap16-${randomBytes(6).toString("hex")}`);
+    const outDir = join(bundleDir, "preview");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "index.html"),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div style="width:100%;min-height:100vh;border-radius:5%;background:#f0f0f0">
+           <p style="color:#111111;font-size:16px;font-family:Inter;margin:0">Percent rounded shell</p>
+         </div>
+       </body></html>`,
+      "utf8",
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const corners = result.snapshot!.rootCorners;
+      const shell = corners!.find((c) => c.tag === "div");
+      expect(shell).toBeDefined();
+      for (const r of shell!.radiusPx) expect(r).toBeGreaterThan(0);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("includes text rendered directly under <body>", async () => {
     const bundleDir = join(tmpdir(), `forma-snap12-${randomBytes(6).toString("hex")}`);
     const outDir = join(bundleDir, "preview");

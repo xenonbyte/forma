@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lintCraft } from "../src/quality/craft-lint.js";
-import type { RenderedDomSnapshot, RenderedTextNode } from "../src/quality/rendered-dom.js";
+import type { RenderedDomSnapshot, RenderedTextNode, RootCornerSample } from "../src/quality/rendered-dom.js";
 
 function node(over: Partial<RenderedTextNode> = {}): RenderedTextNode {
   return {
@@ -15,8 +15,8 @@ function node(over: Partial<RenderedTextNode> = {}): RenderedTextNode {
   };
 }
 
-function snap(nodes: RenderedTextNode[]): RenderedDomSnapshot {
-  return { viewport: { width: 1280, height: 800 }, textNodes: nodes };
+function snap(nodes: RenderedTextNode[], rootCorners?: RootCornerSample[]): RenderedDomSnapshot {
+  return { viewport: { width: 1280, height: 800 }, textNodes: nodes, ...(rootCorners ? { rootCorners } : {}) };
 }
 
 function check(checks: ReturnType<typeof lintCraft>, id: string) {
@@ -29,7 +29,7 @@ describe("lintCraft", () => {
   it("emits one check per rule with id+passed", () => {
     const checks = lintCraft(snap([node()]));
     const ids = checks.map((c) => c.id).sort();
-    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "type-scale"]);
+    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "screen-edge-radius", "type-scale"]);
     for (const c of checks) expect(typeof c.passed).toBe("boolean");
   });
 
@@ -127,5 +127,56 @@ describe("lintCraft", () => {
     expect(() => lintCraft(snap([]))).not.toThrow();
     const empty = lintCraft(snap([]));
     expect(empty.every((c) => c.passed)).toBe(true);
+  });
+
+  it("screen-edge-radius fails on mobile when a root container has a rounded outer corner", () => {
+    const corners: RootCornerSample[] = [
+      { tag: "body", radiusPx: [0, 0, 0, 0], coversViewport: true },
+      { tag: "div", radiusPx: [24, 24, 24, 24], coversViewport: true },
+    ];
+    const c = check(lintCraft(snap([node()], corners), { platform: "mobile" }), "screen-edge-radius");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toBe("div has rounded outer corner(s): [24,24,24,24]px");
+  });
+
+  it("screen-edge-radius lists at most 3 violating elements", () => {
+    const corners: RootCornerSample[] = [
+      { tag: "div", radiusPx: [8, 8, 0, 0], coversViewport: true },
+      { tag: "main", radiusPx: [16, 16, 16, 16], coversViewport: true },
+      { tag: "section", radiusPx: [0, 0, 12, 12], coversViewport: true },
+      { tag: "article", radiusPx: [4, 4, 4, 4], coversViewport: true },
+    ];
+    const c = check(lintCraft(snap([node()], corners), { platform: "mobile" }), "screen-edge-radius");
+    expect(c.passed).toBe(false);
+    expect(c.detail).toContain("div has rounded outer corner(s): [8,8,0,0]px");
+    expect(c.detail).toContain("main");
+    expect(c.detail).toContain("section");
+    expect(c.detail).not.toContain("article");
+  });
+
+  it("screen-edge-radius passes on mobile when all root corners are square", () => {
+    const corners: RootCornerSample[] = [
+      { tag: "body", radiusPx: [0, 0, 0, 0], coversViewport: true },
+      { tag: "div", radiusPx: [0, 0, 0, 0], coversViewport: true },
+    ];
+    const c = check(lintCraft(snap([node()], corners), { platform: "mobile" }), "screen-edge-radius");
+    expect(c.passed).toBe(true);
+    expect(c.detail).toBe("all root corners square (2 element(s) checked)");
+  });
+
+  it("screen-edge-radius is skipped for non-mobile platforms (including undefined)", () => {
+    const corners: RootCornerSample[] = [{ tag: "div", radiusPx: [24, 24, 24, 24], coversViewport: true }];
+    const desktop = check(lintCraft(snap([node()], corners), { platform: "desktop" }), "screen-edge-radius");
+    expect(desktop.passed).toBe(true);
+    expect(desktop.detail).toBe("skipped (platform=desktop)");
+    const none = check(lintCraft(snap([node()], corners)), "screen-edge-radius");
+    expect(none.passed).toBe(true);
+    expect(none.detail).toBe("skipped (platform=undefined)");
+  });
+
+  it("screen-edge-radius is skipped on mobile when the snapshot has no rootCorners (back-compat)", () => {
+    const c = check(lintCraft(snap([node()]), { platform: "mobile" }), "screen-edge-radius");
+    expect(c.passed).toBe(true);
+    expect(c.detail).toBe("skipped (no rootCorners in snapshot)");
   });
 });

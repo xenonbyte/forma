@@ -114,7 +114,7 @@ describe("dogfood: 需求设计画布", () => {
 
     const checks = lintCraft(extractSnapshotInPage());
     const ids = checks.map((c) => c.id).sort();
-    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "type-scale"]);
+    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "screen-edge-radius", "type-scale"]);
     for (const c of checks) {
       expect(c.passed, `${c.id}: ${c.detail ?? ""}`).toBe(true);
     }

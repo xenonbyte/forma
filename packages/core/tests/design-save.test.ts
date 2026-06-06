@@ -282,7 +282,7 @@ describe("saveDesignArtifact", () => {
     const checks = manifest.forma.quality?.craftChecks;
     expect(Array.isArray(checks)).toBe(true);
     const ids = checks.map((c: { id: string }) => c.id).sort();
-    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "type-scale"]);
+    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "screen-edge-radius", "type-scale"]);
     const contrast = checks.find((c: { id: string }) => c.id === "contrast-aa");
     expect(contrast?.detail).toMatch(/\d+ text node/);
     for (const c of checks) {

@@ -11,9 +11,11 @@ export interface LintOptions {
   maxColors?: number;
   /** Max distinct font families (typography discipline). Default 3. */
   maxFontFamilies?: number;
+  /** Target platform; "mobile" enables the screen-edge-radius rule. No default. */
+  platform?: string;
 }
 
-const DEFAULTS: Required<LintOptions> = {
+const DEFAULTS: Required<Omit<LintOptions, "platform">> = {
   minContrast: 4.5,
   maxDistinctFontSizes: 8,
   maxColors: 12,
@@ -49,7 +51,37 @@ export function lintCraft(snapshot: RenderedDomSnapshot, options: LintOptions = 
     typeScaleCheck(visible, opts.maxDistinctFontSizes),
     colorPaletteCheck(visible, opts.maxColors),
     fontFamilyCheck(visible, opts.maxFontFamilies),
+    screenEdgeRadiusCheck(snapshot, options.platform),
   ];
+}
+
+/**
+ * Mobile screens render edge-to-edge: a rounded outer corner on a page root
+ * (body, or a full-bleed top-level container) leaves a visible notch against
+ * the device edge. Only enforced when platform === "mobile"; the check is
+ * always emitted (skipped otherwise) for observability.
+ */
+function screenEdgeRadiusCheck(snapshot: RenderedDomSnapshot, platform?: string): ArtifactCraftCheck {
+  if (platform !== "mobile") {
+    return { id: "screen-edge-radius", passed: true, detail: `skipped (platform=${platform})` };
+  }
+  const corners = snapshot.rootCorners;
+  if (!corners) {
+    return { id: "screen-edge-radius", passed: true, detail: "skipped (no rootCorners in snapshot)" };
+  }
+  const rounded = corners.filter((c) => c.radiusPx.some((r) => r > 0));
+  if (rounded.length === 0) {
+    return {
+      id: "screen-edge-radius",
+      passed: true,
+      detail: `all root corners square (${corners.length} element(s) checked)`,
+    };
+  }
+  const sample = rounded
+    .slice(0, 3)
+    .map((c) => `${c.tag} has rounded outer corner(s): [${c.radiusPx.join(",")}]px`)
+    .join("; ");
+  return { id: "screen-edge-radius", passed: false, detail: sample };
 }
 
 function contrastCheck(nodes: RenderedTextNode[], min: number): ArtifactCraftCheck {
