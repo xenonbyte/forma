@@ -254,6 +254,22 @@ describe("StylePickerDialog", () => {
     ).toEqual(["desktop", "mobile", "tablet", "web"]);
   });
 
+  it("TEST-WEB-007: mobile mock outer element has no rounded class and no 9:41 status bar", async () => {
+    await renderOpenPicker({ platform: "tablet" });
+
+    const mobileMock = required(
+      document.body.querySelector<HTMLElement>('[data-preview-mock="mobile"]'),
+      "mobile preview mock",
+    );
+    // The outer wrapper div (first child of the data-preview-mock element) must not carry rounded-* classes
+    const outerWrapper = mobileMock.firstElementChild as HTMLElement | null;
+    expect(outerWrapper).not.toBeNull();
+    expect(outerWrapper!.className).not.toMatch(/rounded-\[24px\]/);
+    expect(outerWrapper!.className).not.toMatch(/border-\[6px\]/);
+    // No fake "9:41" status bar text anywhere inside the mobile mock
+    expect(mobileMock.textContent).not.toContain("9:41");
+  });
+
   it("focuses the first option on open and restores focus to the trigger on close", async () => {
     const { container } = await renderPicker({ platform: "web" });
     const trigger = required(

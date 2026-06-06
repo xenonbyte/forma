@@ -561,11 +561,10 @@ function ProductStyleMobilePreview({ styleItem }: { styleItem: ProductStyleTempl
   return (
     <div className="flex justify-center" data-preview-mock="mobile">
       <div
-        className="w-[220px] overflow-hidden rounded-[24px] border-[6px]"
-        style={{ background: colors.surface, borderColor: "#111827" }}
+        className="w-[220px] overflow-hidden border border-zinc-200"
+        style={{ background: colors.surface }}
       >
-        <div className="px-4 pt-3 text-[10px] font-medium">9:41</div>
-        <div className="px-4 pb-3">
+        <div className="px-4 pb-3 pt-3">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold" style={{ color: colors.textPrimary }}>
               项目管理
@@ -845,9 +844,8 @@ function MobileSpecPreview({ spec }: { spec: DesignSpecTemplate }) {
 
   return (
     <div className="flex justify-center" data-preview-mock="mobile" data-spec-preview-mock="mobile">
-      <div className="w-[220px] overflow-hidden rounded-[24px] border-[6px] border-zinc-900 bg-white">
-        <div className="px-4 pt-3 text-[10px] font-medium">9:41</div>
-        <div className="px-4 pb-4">
+      <div className="w-[220px] overflow-hidden border border-zinc-200 bg-white">
+        <div className="px-4 pb-4 pt-3">
           <div className="mb-3 flex items-center justify-between">
             <div className="text-sm font-semibold text-zinc-900">产品</div>
             <div className="text-xs text-zinc-500">•••</div>

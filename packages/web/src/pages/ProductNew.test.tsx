@@ -166,6 +166,28 @@ describe("ProductNew", () => {
     ).toEqual(["desktop", "mobile", "tablet", "web"]);
   });
 
+  it("TEST-WEB-007: mobile preview mock outer element has square corners and no 9:41 status bar", async () => {
+    const client = createClient();
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductNew client={client} navigate={vi.fn()} />);
+      await flushPromises();
+    });
+
+    await openStylePicker(container);
+
+    const mobileMock = required(
+      document.body.querySelector<HTMLElement>('[data-preview-mock="mobile"]'),
+      "mobile preview mock",
+    );
+    const outerWrapper = mobileMock.firstElementChild as HTMLElement | null;
+    expect(outerWrapper).not.toBeNull();
+    expect(outerWrapper!.className).not.toMatch(/rounded-\[24px\]/);
+    expect(outerWrapper!.className).not.toMatch(/border-\[6px\]/);
+    expect(mobileMock.textContent).not.toContain("9:41");
+  });
+
   it("requests style detail and updates the preview from the selected style template", async () => {
     const client = createClient();
     const { container, root } = createTestRoot();
