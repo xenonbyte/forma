@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Forma is a pnpm workspace for a local Pencil-backed design workspace. Source code is split by package under `packages/`: `core` holds persistence, schemas, requirements, designs (artifacts), styles, and validation; `mcp` exposes agent tools; `server` provides the Fastify API and static Web serving; `web` is the React/Vite admin UI; `desktop`/`viewer` render artifact bundles (Electron app + pure renderer); `agent` contains command templates; `cli` provides the `forma` binary. The `od-*` packages (`od-contracts`, `od-host`, `od-plugin-runtime`, `od-platform`, `od-sidecar`/`od-sidecar-proto`, `od-diagnostics`) are the Open Design renderer/plugin subsystem. Tests live in `packages/*/tests/**/*.test.ts` and `packages/web/src/**/*.test.ts(x)`. Supporting files are in `scripts/`, `docs/`, `styles/`, `design-version/`, and `bin/`.
+Forma is a pnpm workspace for a local Pencil-backed design workspace. Source code is split by package under `packages/`: `core` holds persistence, schemas, requirements, designs (artifacts), styles, and validation; `mcp` exposes agent tools; `server` provides the Fastify API and static Web serving; `web` is the React/Vite admin UI; `desktop`/`viewer` render artifact bundles (Electron app + pure renderer); `agent` contains command templates; `cli` provides the `forma` binary. The `od-*` packages (`od-contracts`, `od-host`, `od-plugin-runtime`, `od-platform`, `od-sidecar`/`od-sidecar-proto`, `od-diagnostics`) are the Open Design renderer/plugin subsystem. Tests live in `packages/*/tests/**/*.test.ts` and `packages/web/src/**/*.test.ts(x)`. Supporting files are in `scripts/`, `styles/`, `design-version/`, and `bin/`.
 
 ## Build, Test, and Development Commands
 
