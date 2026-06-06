@@ -362,6 +362,34 @@ describe("extractDom via renderArtifactPreview", () => {
     }
   }, 60000);
 
+  it("samples rootCorners: a nested rounded full-bleed screen is detected", async () => {
+    const bundleDir = join(tmpdir(), `forma-snap18-${randomBytes(6).toString("hex")}`);
+    const outDir = join(bundleDir, "preview");
+    await mkdir(bundleDir, { recursive: true });
+    await writeFile(
+      join(bundleDir, "index.html"),
+      `<!doctype html><html><body style="margin:0;background:#ffffff">
+         <div id="app" style="width:100%;min-height:100vh;background:#ffffff">
+           <main style="width:100%;min-height:100vh;border-radius:24px;background:#f0f0f0">
+             <p style="color:#111111;font-size:16px;font-family:Inter;margin:0">Nested rounded screen</p>
+           </main>
+         </div>
+       </body></html>`,
+      "utf8",
+    );
+
+    try {
+      const result = await renderArtifactPreview({ bundleDir, outDir, extractDom: true });
+      const corners = result.snapshot!.rootCorners;
+      expect(corners).toBeDefined();
+      const shell = corners!.find((c) => c.tag === "main");
+      expect(shell).toBeDefined();
+      expect(shell!.radiusPx).toEqual([24, 24, 24, 24]);
+    } finally {
+      await rm(bundleDir, { recursive: true, force: true });
+    }
+  }, 60000);
+
   it("samples rootCorners: a square root container reports all-zero radii", async () => {
     const bundleDir = join(tmpdir(), `forma-snap15-${randomBytes(6).toString("hex")}`);
     const outDir = join(bundleDir, "preview");

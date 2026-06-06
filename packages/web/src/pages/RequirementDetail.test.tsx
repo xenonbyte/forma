@@ -42,6 +42,9 @@ const currentArtifact: ArtifactSummary = {
   kind: "design-page",
   title: "Checkout design",
   requirement_id: "R-12345678",
+  page_id: "checkout",
+  variant: "default",
+  current_version: 1,
   updated_at: "2026-05-28T00:00:00.000Z",
   superseded: false,
 };
@@ -51,6 +54,17 @@ const otherArtifact: ArtifactSummary = {
   kind: "design-page",
   title: "Other requirement design",
   requirement_id: "R-other",
+  updated_at: "2026-05-28T00:00:00.000Z",
+  superseded: false,
+};
+
+const incompleteArtifact: ArtifactSummary = {
+  id: "A-incomplete",
+  kind: "design-page",
+  title: "Incomplete requirement design",
+  requirement_id: "R-12345678",
+  page_id: "checkout",
+  variant: "default",
   updated_at: "2026-05-28T00:00:00.000Z",
   superseded: false,
 };
@@ -236,6 +250,18 @@ describe("RequirementDetail open design action", () => {
     const disabled = container.querySelector<HTMLButtonElement>('[aria-label="Open design"]');
     expect(disabled).not.toBeNull();
     expect(disabled?.tagName).not.toBe("A");
+    expect(disabled?.tagName).toBe("BUTTON");
+    expect(disabled?.disabled).toBe(true);
+    expect(disabled?.getAttribute("title")).toBe("No design available to open");
+  });
+
+  it("disables open design when the requirement artifact is not renderable on the design canvas", async () => {
+    const client = createClient(uiRequirement, [incompleteArtifact]);
+    const { container } = await renderDetail(client);
+
+    expect(container.querySelector('a[href$="/design"]')).toBeNull();
+    const disabled = container.querySelector<HTMLButtonElement>('[aria-label="Open design"]');
+    expect(disabled).not.toBeNull();
     expect(disabled?.tagName).toBe("BUTTON");
     expect(disabled?.disabled).toBe(true);
     expect(disabled?.getAttribute("title")).toBe("No design available to open");

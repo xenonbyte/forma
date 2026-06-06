@@ -83,7 +83,10 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
   const hasDocument = requirement.document_md.trim().length > 0;
   const noUiChanges = requirement.ui_affected === false;
   const designEnabled =
-    !noUiChanges && state.artifacts.some((artifact) => artifact.requirement_id === requirementId);
+    !noUiChanges &&
+    state.artifacts.some(
+      (artifact) => artifact.requirement_id === requirementId && isRenderableDesignArtifact(artifact),
+    );
   const designHref = `/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}/design`;
 
   const documentActions = (
@@ -117,6 +120,15 @@ export function RequirementDetail({ client = apiClient, onBreadcrumbLabel, param
         </StatePanel>
       )}
     </div>
+  );
+}
+
+function isRenderableDesignArtifact(artifact: ArtifactSummary): boolean {
+  return (
+    artifact.kind === "design-page" &&
+    Boolean(artifact.page_id) &&
+    Boolean(artifact.variant) &&
+    typeof artifact.current_version === "number"
   );
 }
 

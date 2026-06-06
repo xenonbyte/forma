@@ -347,8 +347,10 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
   }
 
   // Sample the page roots' corner radii for the screen-edge-radius rule: body
-  // (always, it touches the viewport edge by definition) plus each direct body
-  // child rendering as a full-bleed root container. Computed border-*-radius is
+  // (always, it touches the viewport edge by definition) plus bounded descendant
+  // candidates rendering as full-bleed root containers. Real generated bundles
+  // commonly nest the screen as body > #app > main; direct-body sampling would
+  // miss rounded outer corners in that structure. Computed border-*-radius is
   // one or two <length-percentage>s ("8px", "50%", "8px 16px"); percentages
   // resolve against the corresponding box side, so any positive percentage
   // yields a positive px value (recorded as non-zero).
@@ -381,10 +383,26 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
 
   const rootCorners: RootCornerSample[] = [];
   if (document.body) {
+    const sampled = new Set<Element>();
     rootCorners.push(sampleCorners(document.body));
-    for (const child of Array.from(document.body.children)) {
-      const rect = child.getBoundingClientRect();
-      if (rect.width >= window.innerWidth * 0.98 && rect.top <= 2) rootCorners.push(sampleCorners(child));
+    sampled.add(document.body);
+
+    let cornerVisited = 0;
+    const cornerStack = Array.from(document.body.children).reverse();
+    while (cornerStack.length > 0 && cornerVisited < MAX_VISITED) {
+      const el = cornerStack.pop()!;
+      cornerVisited++;
+
+      const rect = el.getBoundingClientRect();
+      if (el.getClientRects().length > 0 && rect.width >= window.innerWidth * 0.98 && rect.top <= 2) {
+        if (!sampled.has(el)) {
+          rootCorners.push(sampleCorners(el));
+          sampled.add(el);
+        }
+      }
+
+      const children = el.children;
+      for (let i = children.length - 1; i >= 0; i--) cornerStack.push(children[i]);
     }
   }
 
