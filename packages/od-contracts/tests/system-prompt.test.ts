@@ -119,6 +119,80 @@ describe("mobile de-shell (spec §5.4)", () => {
   });
 });
 
+const SQUARE_EDGE_SENTENCE =
+  "The outermost screen edges MUST be square — no border-radius on <body> or any full-bleed root container (no rounded screen silhouette).";
+
+function countOccurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
+// TEST-PROMPT-001 — discovery.ts fixed square-edge sentences (SPEC-BEHAVIOR-001).
+describe("mobile square outer edges — discovery (SPEC-BEHAVIOR-001)", () => {
+  it("Mobile app prototype entry carries the square-edge rule right after the de-shell rule", () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).toContain(SQUARE_EDGE_SENTENCE);
+    expect(DISCOVERY_AND_PHILOSOPHY).toContain(
+      "do NOT draw any device shell (no phone frame, bezel, notch chrome, status bar, or gesture bar). " +
+        SQUARE_EDGE_SENTENCE,
+    );
+  });
+
+  it("iOS entry parenthetical requires square outer corners", () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).toContain(
+      "(no iPhone frame, no notch or pill chrome, no status bar, no gesture bar, square outer corners — no rounded screen edges)",
+    );
+  });
+
+  it("Android entry parenthetical requires square outer corners", () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).toContain(
+      "(no Pixel frame, status bar, or nav bar chrome, square outer corners — no rounded screen edges)",
+    );
+  });
+
+  it("multi-screen side-by-side panels keep square outer edges", () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).toContain(
+      "compose the screens as plain content panels with square outer edges",
+    );
+  });
+});
+
+// TEST-PROMPT-002 — system.ts conditional square-edge injection (SPEC-BEHAVIOR-001).
+describe("mobile square outer edges — system metadata rules (SPEC-BEHAVIOR-001)", () => {
+  it("cross-platform deliverable rule carries the sentence when more than one target is selected", () => {
+    const prompt = composeSystemPrompt({
+      metadata: { kind: "prototype", platformTargets: ["mobile-ios", "mobile-android"] } as any,
+    });
+    expect(prompt).toMatch(
+      /- \*\*cross-platform deliverable rule\*\*:.*The outermost screen edges MUST be square — no border-radius on <body> or any full-bleed root container \(no rounded screen silhouette\)\./,
+    );
+  });
+
+  it("product-realism rule carries the sentence for kind=prototype", () => {
+    const prompt = composeSystemPrompt({ metadata: { kind: "prototype" } as any });
+    expect(prompt).toMatch(
+      /- \*\*product-realism rule\*\*:.*The outermost screen edges MUST be square — no border-radius on <body> or any full-bleed root container \(no rounded screen silhouette\)\./,
+    );
+  });
+
+  it("a single platform target does not inject the cross-platform copy of the sentence", () => {
+    const prompt = composeSystemPrompt({
+      metadata: { kind: "prototype", platformTargets: ["mobile-ios"] } as any,
+    });
+    expect(prompt).not.toContain("- **cross-platform deliverable rule**:");
+    // discovery copy + product-realism copy only
+    expect(countOccurrences(prompt, SQUARE_EDGE_SENTENCE)).toBe(2);
+  });
+
+  it("neither metadata-conditional copy fires for a single-target non-product kind", () => {
+    const prompt = composeSystemPrompt({
+      metadata: { kind: "deck", platformTargets: ["mobile-ios"] } as any,
+    });
+    expect(prompt).not.toContain("- **cross-platform deliverable rule**:");
+    expect(prompt).not.toContain("- **product-realism rule**:");
+    // only the always-on discovery copy remains
+    expect(countOccurrences(prompt, SQUARE_EDGE_SENTENCE)).toBe(1);
+  });
+});
+
 import { OFFICIAL_DESIGNER_PROMPT } from "../src/prompts/official-system.js";
 
 describe("scope fidelity (spec §5.5)", () => {
