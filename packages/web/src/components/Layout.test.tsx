@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { LocaleProvider } from "../LocaleContext.js";
 import { setLocale } from "../i18n.js";
-import { Layout } from "./Layout.js";
+import { Layout, WorkSurface } from "./Layout.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -214,6 +214,53 @@ describe("Layout shell", () => {
     expect(stylesLink.className).toContain("w-10");
     expect(stylesLink.querySelector('[data-nav-active-accent="true"]')).not.toBeNull();
     expect(required(stylesLink.querySelector("span:last-child"), "styles label").className).toContain("md:hidden");
+  });
+});
+
+describe("WorkSurface", () => {
+  it("renders title and children without actions slot — DOM structure unchanged", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<WorkSurface title="My Panel">hello</WorkSurface>);
+    });
+
+    const section = required(container.querySelector("section"), "section");
+    const titleDiv = required(section.querySelector("div"), "title div");
+    const h2 = required(titleDiv.querySelector("h2"), "h2");
+    expect(h2.textContent).toBe("My Panel");
+    // When no actions: title div must NOT be a flex container wrapping justify-between
+    expect(titleDiv.className).not.toContain("justify-between");
+    // h2 must be the direct (and only) child of the title div
+    expect(titleDiv.children.length).toBe(1);
+    expect(titleDiv.children[0]).toBe(h2);
+    expect(section.textContent).toContain("hello");
+  });
+
+  it("renders actions slot to the right of the title", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <WorkSurface title="Actions Panel" actions={<button type="button">Edit</button>}>
+          body content
+        </WorkSurface>,
+      );
+    });
+
+    const section = required(container.querySelector("section"), "section");
+    const titleRow = required(section.querySelector("div"), "title row");
+    // Must be a flex justify-between row
+    expect(titleRow.className).toContain("flex");
+    expect(titleRow.className).toContain("justify-between");
+    // h2 is still present with correct text
+    expect(required(titleRow.querySelector("h2"), "h2").textContent).toBe("Actions Panel");
+    // The button (actions) is rendered inside the title row
+    const btn = titleRow.querySelector("button");
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toBe("Edit");
+    // Body content is still present
+    expect(section.textContent).toContain("body content");
   });
 });
 

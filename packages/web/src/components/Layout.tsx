@@ -148,12 +148,27 @@ export function StatePanel({ action, children, state, title }: StatePanelProps) 
   );
 }
 
-export function WorkSurface({ children, title }: { children: ReactNode; title: string }) {
+export function WorkSurface({
+  children,
+  title,
+  actions,
+}: {
+  children: ReactNode;
+  title: string;
+  actions?: ReactNode;
+}) {
   return (
     <section className="min-w-0 rounded-lg border border-zinc-200 bg-white shadow-sm">
-      <div className="border-b border-zinc-200 px-4 py-3">
-        <h2 className="text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
-      </div>
+      {actions !== undefined ? (
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3">
+          <h2 className="text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
+          {actions}
+        </div>
+      ) : (
+        <div className="border-b border-zinc-200 px-4 py-3">
+          <h2 className="text-sm font-semibold tracking-normal text-zinc-950">{title}</h2>
+        </div>
+      )}
       <div className="p-4">{children}</div>
     </section>
   );
