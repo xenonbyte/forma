@@ -131,13 +131,9 @@ Known limitations:
 
 Forma installs command templates for Claude, Codex, and Gemini. Claude and Gemini use `/fm-*` routes; Codex uses `$fm-*` skills. The current command set covers product selection, confirmed product deletion, unified requirement capture, design planning, component refinement, style changes, rollback, and status checks.
 
-See [docs/AGENT.md](docs/AGENT.md) for the command table and recommended first-time and iterative workflows.
-
 ## MCP Tools
 
 The MCP server exposes tool families for sessions, products, requirements, baselines, styles, copy, utilities, and structured error reporting. Legacy page-level design MCP tools are no longer registered; requirement-level v6 design session tools replace that surface. Requirement changes remain centered on `save_requirement`; there is no requirement deletion MCP tool. Product rules use `get_product_rules`, and multilingual copy uses `get_page_copy` / `update_page_copy`.
-
-See [docs/MCP.md](docs/MCP.md) for tool groups, current behavior, and the frontend development data path.
 
 ## Data Location
 
