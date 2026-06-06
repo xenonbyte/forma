@@ -75,7 +75,7 @@ afterEach(() => {
 describe("RequirementDetail document card", () => {
   it("renders only the status row and document card", async () => {
     const client = createClient(uiRequirement, [currentArtifact]);
-    const { container, root } = await renderDetail(client);
+    const { container } = await renderDetail(client);
 
     expect(container.textContent).toContain("Details of the change.");
     expect(container.textContent).toContain("R-12345678");
