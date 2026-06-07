@@ -369,3 +369,89 @@ describe("validateStaticArtifact", () => {
     expect(violations.length).toBeGreaterThanOrEqual(2);
   });
 });
+
+// ─── Security regression suite (R7) ──────────────────────────────────────────
+// These vectors are the safety precondition for no-sandbox Puppeteer rendering
+// and CSP-less iframe embedding. Removing or weakening any case requires a
+// security review (see docs/hardening-requirements.md R7).
+describe("static validator security regressions (R7)", () => {
+  function expectRejected(result: ReturnType<typeof validateStaticArtifact>, fragment: string) {
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.violations.join("\n")).toContain(fragment);
+    }
+  }
+
+  it("rejects <meta http-equiv=refresh>", () => {
+    const result = validateStaticArtifact({
+      html: `<html><head><meta http-equiv="REFRESH" content="0;url=https://evil.example"></head><body></body></html>`,
+    });
+    expectRejected(result, "refresh");
+  });
+
+  it("rejects iframe srcdoc (covered by the iframe rule)", () => {
+    const result = validateStaticArtifact({
+      html: `<html><body><iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe></body></html>`,
+    });
+    expectRejected(result, "<iframe>");
+  });
+
+  it("rejects foreignObject inside SVG files", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div>html island</div></foreignObject></svg>`;
+    const result = validateStaticArtifact({ html: "<html><body></body></html>", svgFiles: new Map([["a.svg", svg]]) });
+    expectRejected(result, "foreignobject");
+  });
+
+  it("rejects iframe smuggled into an SVG file", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><iframe src="x"></iframe></svg>`;
+    const result = validateStaticArtifact({ html: "<html><body></body></html>", svgFiles: new Map([["a.svg", svg]]) });
+    expectRejected(result, "<iframe>");
+  });
+
+  it("rejects javascript: in SVG animate to/from/values", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><a><animate attributeName="href" to="javascript:alert(1)"/></a></svg>`;
+    const result = validateStaticArtifact({ html: "<html><body></body></html>", svgFiles: new Map([["a.svg", svg]]) });
+    expectRejected(result, "javascript:");
+  });
+
+  it("rejects javascript: in a later SVG animate values entry", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><a><animate attributeName="href" values="#safe;javascript:alert(1)"/></a></svg>`;
+    const result = validateStaticArtifact({ html: "<html><body></body></html>", svgFiles: new Map([["a.svg", svg]]) });
+    expectRejected(result, "javascript:");
+  });
+
+  it("rejects remote URLs inside CSS image-set()", () => {
+    const result = validateStaticArtifact({
+      html: `<html><head><style>.x { background: image-set("https://evil.example/a.png" 1x); }</style></head><body></body></html>`,
+    });
+    expectRejected(result, "image-set");
+  });
+
+  it("rejects remote URLs in later CSS image-set() candidates", () => {
+    const result = validateStaticArtifact({
+      html: `<html><head><style>.x { background: image-set("/safe.png" 1x, "https://evil.example/a.png" 2x); }</style></head><body></body></html>`,
+    });
+    expectRejected(result, "image-set");
+  });
+
+  it("rejects remote @font-face src (existing url() rule)", () => {
+    const result = validateStaticArtifact({
+      html: `<html><head><style>@font-face { font-family: x; src: url(https://evil.example/f.woff2); }</style></head><body></body></html>`,
+    });
+    expectRejected(result, "Remote CSS url()");
+  });
+
+  it("rejects whitespace-obfuscated javascript: URLs", () => {
+    const result = validateStaticArtifact({
+      html: `<html><body><a href="java\tscript:alert(1)">x</a></body></html>`,
+    });
+    expectRejected(result, "javascript:");
+  });
+
+  it("rejects numeric-entity-obfuscated javascript: URLs", () => {
+    const result = validateStaticArtifact({
+      html: `<html><body><a href="&#106;avascript:alert(1)">x</a></body></html>`,
+    });
+    expectRejected(result, "javascript:");
+  });
+});
