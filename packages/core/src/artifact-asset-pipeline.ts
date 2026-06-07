@@ -105,7 +105,16 @@ function parseDataUrl(url: string): ParsedDataUrl | null {
     payload = Buffer.from(body, "base64");
   } else {
     // url-encoded
-    payload = Buffer.from(decodeURIComponent(body), "utf8");
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(body);
+    } catch (err) {
+      throw new FormaError("ARTIFACT_INVALID_INPUT", `Malformed url-encoded data: URL payload (${mime})`, {
+        mime,
+        cause: String(err),
+      });
+    }
+    payload = Buffer.from(decoded, "utf8");
   }
 
   return { mime, charset, isBase64, payload };

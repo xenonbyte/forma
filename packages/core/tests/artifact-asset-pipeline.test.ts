@@ -423,3 +423,15 @@ describe("Custom assetDirName", () => {
     expect([...result.files.keys()][0]).toMatch(/^static\//);
   });
 });
+
+// ─── R4: parseDataUrl error classification ───────────────────────────────────
+
+describe("parseDataUrl error classification (R4)", () => {
+  it("rejects malformed url-encoded data URLs with ARTIFACT_INVALID_INPUT", async () => {
+    // %E0%A4%A is a truncated percent-escape — decodeURIComponent throws URIError
+    const html = `<img src="data:image/svg+xml,%E0%A4%A">`;
+    await expect(localizeArtifactAssets({ html })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+    });
+  });
+});
