@@ -191,7 +191,6 @@ class ArtifactStoreImpl implements ArtifactStore {
           await retentionHook(artifactId, productId);
         }
 
-        console.log("[artifact-store] written:", artifactId);
         return { artifactId, etag };
       } catch (err) {
         // Clean up tmp dir if it still exists (e.g., error before rename attempt)
