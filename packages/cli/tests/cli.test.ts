@@ -569,39 +569,43 @@ describe("runCli", () => {
   it("serve start writes pid state with 0600 permissions and tightens an existing loose file", async () => {
     const { chmod, stat, writeFile: fsWriteFile, mkdir: fsMkdir } = await import("node:fs/promises");
     const home = await mkdtemp();
-    const formaHome = join(home, ".forma");
-    await fsMkdir(formaHome, { recursive: true });
+    try {
+      const formaHome = join(home, ".forma");
+      await fsMkdir(formaHome, { recursive: true });
 
-    const metadata = {
-      schema_version: 1,
-      marker: "xenonbyte.forma.serve",
-      home: formaHome,
-      pid: 4242,
-      token: "perm-token",
-      started_at: "2026-05-17T00:00:00.000Z",
-      log: join(formaHome, "serve.log"),
-    };
+      const metadata = {
+        schema_version: 1,
+        marker: "xenonbyte.forma.serve",
+        home: formaHome,
+        pid: 4242,
+        token: "perm-token",
+        started_at: "2026-05-17T00:00:00.000Z",
+        log: join(formaHome, "serve.log"),
+      };
 
-    // Minimal CliEnv: writeText is NOT overridden so the production default
-    // (0600 mode) is what actually writes serve.pid.
-    const result = await runCli(["serve", "start"], {
-      formaHome,
-      currentPid: 1111,
-      now: () => new Date("2026-05-17T00:00:00.000Z"),
-      createServeToken: () => "perm-token",
-      isPidAlive: (pid) => pid === 4242,
-      verifyServerProcess: async () => true,
-      spawnDetachedServer: async (options) => {
-        await fsWriteFile(join(formaHome, "serve.pid"), "loose stale state", { encoding: "utf8", mode: 0o644 });
-        await chmod(join(formaHome, "serve.pid"), 0o644);
-        await fsWriteFile(options.runtimeFile, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
-        return { pid: 4242 };
-      },
-    });
+      // Minimal CliEnv: writeText is NOT overridden so the production default
+      // (0600 mode) is what actually writes serve.pid.
+      const result = await runCli(["serve", "start"], {
+        formaHome,
+        currentPid: 1111,
+        now: () => new Date("2026-05-17T00:00:00.000Z"),
+        createServeToken: () => "perm-token",
+        isPidAlive: (pid) => pid === 4242,
+        verifyServerProcess: async () => true,
+        spawnDetachedServer: async (options) => {
+          await fsWriteFile(join(formaHome, "serve.pid"), "loose stale state", { encoding: "utf8", mode: 0o644 });
+          await chmod(join(formaHome, "serve.pid"), 0o644);
+          await fsWriteFile(options.runtimeFile, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+          return { pid: 4242 };
+        },
+      });
 
-    expect(result.exitCode).toBe(0);
-    const pidStat = await stat(join(formaHome, "serve.pid"));
-    expect(pidStat.mode & 0o777).toBe(0o600);
+      expect(result.exitCode).toBe(0);
+      const pidStat = await stat(join(formaHome, "serve.pid"));
+      expect(pidStat.mode & 0o777).toBe(0o600);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("foreground internal writes runtime state with 0600 permissions and receives token from env only", async () => {

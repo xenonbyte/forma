@@ -520,9 +520,10 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
       (async (file, content) => {
         await mkdir(dirname(file), { recursive: true });
         // Serve state files carry the ownership token — owner-only by default.
+        // Tighten a pre-existing loose file BEFORE writing new content into it
+        // (mode below only applies on creation); ENOENT means a fresh file.
+        await chmod(file, 0o600).catch(() => undefined);
         await writeFile(file, content, { encoding: "utf8", mode: 0o600 });
-        // mode is only applied on creation; chmod tightens existing loose files.
-        await chmod(file, 0o600);
       }),
     appendText:
       env.appendText ??
