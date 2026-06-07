@@ -71,7 +71,7 @@ describe("preview chromium launch args (R11)", () => {
     vi.stubEnv("CI", "");
     vi.stubEnv("FORMA_PREVIEW_ALLOW_NO_SANDBOX", "");
     try {
-      expect(previewChromiumLaunchArgs()).toEqual([]);
+      expect(previewChromiumLaunchArgs()).toEqual(["--disable-dev-shm-usage"]);
     } finally {
       vi.unstubAllEnvs();
     }
@@ -83,7 +83,7 @@ describe("preview chromium launch args (R11)", () => {
     vi.stubEnv("CI", "");
     vi.stubEnv("FORMA_PREVIEW_ALLOW_NO_SANDBOX", "1");
     try {
-      expect(previewChromiumLaunchArgs()).toEqual(["--no-sandbox", "--disable-setuid-sandbox"]);
+      expect(previewChromiumLaunchArgs()).toEqual(["--disable-dev-shm-usage", "--no-sandbox", "--disable-setuid-sandbox"]);
     } finally {
       vi.unstubAllEnvs();
     }

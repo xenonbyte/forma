@@ -31,12 +31,16 @@ const RELEVANT_RESOURCE_TYPES = new Set(["image", "stylesheet", "font", "media"]
  * "failed" (design-save.ts), so a sandbox-incompatible host degrades safely.
  */
 export function previewChromiumLaunchArgs(): string[] {
+  const args = ["--disable-dev-shm-usage"];
   const allowNoSandbox =
     process.env.FORMA_PREVIEW_ALLOW_NO_SANDBOX === "1" ||
     process.env.VITEST === "true" ||
     process.env.NODE_ENV === "test" ||
     process.env.CI === "true";
-  return allowNoSandbox ? ["--no-sandbox", "--disable-setuid-sandbox"] : [];
+  if (allowNoSandbox) {
+    args.push("--no-sandbox", "--disable-setuid-sandbox");
+  }
+  return args;
 }
 
 /**
