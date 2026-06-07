@@ -161,6 +161,11 @@ export class ProductService {
     return this.runProductMutation({ operation: "create_product" }, async () => this.createProductLocked(input));
   }
 
+  /**
+   * Must be called while holding the product mutation lock — `createProduct`
+   * is the locked entry point. Calling this directly skips collision-safe
+   * allocation guarantees that depend on the lock.
+   */
   async createProductLocked(input: { name: string; description: string }): Promise<Product> {
     const index = await this.readProductIndex();
     const id = await this.allocateProductId(index.products);
