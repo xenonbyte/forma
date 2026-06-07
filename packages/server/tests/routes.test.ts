@@ -2055,10 +2055,20 @@ describe("origin middleware (SPEC-IF-HTTP-004)", () => {
   });
 });
 
+function captureLogStream(): { lines: string[]; stream: { write(chunk: string): void } } {
+  const lines: string[] = [];
+  return { lines, stream: { write: (chunk: string) => void lines.push(chunk) } };
+}
+
 describe("audit log (SPEC-OBS-004)", () => {
   it("logs audit line for mutation route with required fields", async () => {
     const store = fakeStore();
-    const app = await appWith(store);
+    const capture = captureLogStream();
+    const app = await buildServer({
+      store,
+      logger: { level: "info", stream: capture.stream },
+    });
+    apps.push(app);
 
     const response = await app.inject({
       method: "POST",
@@ -2068,13 +2078,23 @@ describe("audit log (SPEC-OBS-004)", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    // Verify that request.log.info is available within the request handler
-    // and that the mutation origin check logs the expected data
+    const entries = capture.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const audit = entries.find((entry) => entry["msg"] === "mutation origin check");
+    expect(audit).toMatchObject({
+      origin: "http://localhost:5173",
+      formaClient: "web-admin",
+      allowed: true,
+    });
   });
 
   it("logs allowed: false for blocked mutation request", async () => {
     const store = fakeStore();
-    const app = await appWith(store);
+    const capture = captureLogStream();
+    const app = await buildServer({
+      store,
+      logger: { level: "info", stream: capture.stream },
+    });
+    apps.push(app);
 
     const response = await app.inject({
       method: "POST",
@@ -2085,8 +2105,13 @@ describe("audit log (SPEC-OBS-004)", () => {
 
     expect(response.statusCode).toBe(403);
     expect(response.json().error_code).toBe("ARTIFACT_FORBIDDEN_ORIGIN");
-    // Verify that request.log.info is available within the request handler
-    // and that the mutation origin check logs the expected data
+    const entries = capture.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const audit = entries.find((entry) => entry["msg"] === "mutation origin check");
+    expect(audit).toMatchObject({
+      origin: "https://evil.com",
+      formaClient: null,
+      allowed: false,
+    });
   });
 });
 

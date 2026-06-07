@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { timingSafeEqual } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import { extname, join, resolve, sep } from "node:path";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from "fastify";
 import { createFormaStore, FormaError } from "@xenonbyte/forma-core";
 import { registerRoutes, RouteHttpError, type FormaRoutesStore } from "./routes.js";
 
@@ -17,6 +17,8 @@ export interface BuildServerOptions {
    * binds (see `index.ts`).
    */
   authToken?: string;
+  /** Fastify logger options (e.g. a pino instance/stream for tests). Defaults to disabled. */
+  logger?: FastifyServerOptions["logger"];
 }
 
 export type FormaServer = FastifyInstance;
@@ -25,7 +27,7 @@ export interface FormaServerStore extends FormaRoutesStore {
 }
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FormaServer> {
-  const app = Fastify();
+  const app = Fastify({ logger: options.logger ?? false });
   const authToken = options.authToken?.trim();
   if (authToken) {
     registerApiBearerAuth(app, authToken);
