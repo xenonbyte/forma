@@ -91,6 +91,10 @@ export interface IconExtractionResult {
   manifest: IconManifest;
 }
 
+// ─── Internal constants ───────────────────────────────────────────────────────
+
+const SHARP_PIXEL_LIMIT = 64_000_000; // ~64 MP
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 const ICON_SOURCE_ORDER_ATTR = "data-forma-icon-source-order";
@@ -392,7 +396,7 @@ export async function extractIconAssets(
         const targetH = Math.round(baseH * density);
         let pngBuf: Buffer;
         try {
-          pngBuf = await sharp(svgBuf, { density: 96 * density })
+          pngBuf = await sharp(svgBuf, { density: 96 * density, limitInputPixels: SHARP_PIXEL_LIMIT })
             .resize({ width: targetW, height: targetH, fit: "fill" })
             .png()
             .toBuffer();
@@ -400,7 +404,7 @@ export async function extractIconAssets(
           throw new FormaError(
             "ARTIFACT_INVALID_INPUT",
             `Failed to rasterize icon SVG at index ${i}: ${e instanceof Error ? e.message : String(e)}`,
-            { index: i, sharpError: e instanceof Error ? e.message : String(e) },
+            { index: i, budget: "SHARP_PIXEL_LIMIT", sharpError: e instanceof Error ? e.message : String(e) },
           );
         }
 

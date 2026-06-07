@@ -17,6 +17,41 @@ import sharp from "sharp";
 import type { ArtifactAssetEntry } from "./artifact-manifest.js";
 import { FormaError } from "./errors.js";
 
+// ─── Input budgets (R3) ──────────────────────────────────────────────────────
+// Enforced at the single entry point all save paths share (design-save →
+// localizeArtifactAssets). Constants, not configuration: a generated page that
+// exceeds these is a malfunctioning generator, not a use case.
+
+/** Max bytes of input HTML (single generated page). */
+export const MAX_HTML_BYTES = 4 * 1024 * 1024; // 4 MiB
+/** Max total bytes across all localized asset files of one artifact version. */
+export const MAX_TOTAL_ASSET_BYTES = 48 * 1024 * 1024; // 48 MiB
+/** Max number of localized asset files in one artifact version. */
+export const MAX_ASSET_COUNT = 200;
+/** sharp decode ceiling — rejects raster decompression bombs before resize. */
+const SHARP_PIXEL_LIMIT = 64_000_000; // ~64 MP
+
+export function assertArtifactAssetBudgets(files: ReadonlyMap<string, Buffer>): void {
+  if (files.size > MAX_ASSET_COUNT) {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", `Artifact asset count exceeds the ${MAX_ASSET_COUNT} budget`, {
+      budget: "MAX_ASSET_COUNT",
+      limit: MAX_ASSET_COUNT,
+      actual: files.size,
+    });
+  }
+  let totalAssetBytes = 0;
+  for (const buf of files.values()) {
+    totalAssetBytes += buf.byteLength;
+  }
+  if (totalAssetBytes > MAX_TOTAL_ASSET_BYTES) {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", `Artifact assets exceed the ${MAX_TOTAL_ASSET_BYTES}-byte budget`, {
+      budget: "MAX_TOTAL_ASSET_BYTES",
+      limit: MAX_TOTAL_ASSET_BYTES,
+      actual: totalAssetBytes,
+    });
+  }
+}
+
 // ─── Public types ─────────────────────────────────────────────────────────────
 
 export interface LocalizeInput {
@@ -137,6 +172,18 @@ function rejectRemote(url: string): void {
 
 // ─── Raster down-sampling ─────────────────────────────────────────────────────
 
+/** Resize one density tier with the decode pixel ceiling; wrap sharp errors. */
+async function resizeTier(master: Buffer, width: number): Promise<Buffer> {
+  try {
+    return await sharp(master, { limitInputPixels: SHARP_PIXEL_LIMIT }).resize({ width }).toBuffer();
+  } catch (err) {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", "Raster image processing failed", {
+      budget: "SHARP_PIXEL_LIMIT",
+      cause: String(err),
+    });
+  }
+}
+
 interface DensityTier {
   label: string;
   density: number;
@@ -168,7 +215,7 @@ async function downsampleRaster(
   // @2x: genuine downsample only when strictly smaller than master; otherwise the
   // width collapsed (tiny master) — reuse master bytes and mark degraded.
   if (w2x > 0 && w2x < masterWidth) {
-    const buf = await sharp(master).resize({ width: w2x }).toBuffer();
+    const buf = await resizeTier(master, w2x);
     tiers.push({ label: "2x", density: 2, buffer: buf });
   } else {
     tiers.push({ label: "2x", density: 2, buffer: master });
@@ -178,7 +225,7 @@ async function downsampleRaster(
   // @1x: always emit. Genuine downsample only when strictly smaller than master;
   // otherwise reuse master bytes (never upscale) and mark degraded.
   if (w1x > 0 && w1x < masterWidth) {
-    const buf = await sharp(master).resize({ width: w1x }).toBuffer();
+    const buf = await resizeTier(master, w1x);
     tiers.push({ label: "1x", density: 1, buffer: buf });
   } else {
     tiers.push({ label: "1x", density: 1, buffer: master });
@@ -260,7 +307,15 @@ async function localizeDataUrl(parsed: ParsedDataUrl, ctx: Context): Promise<str
     }
 
     // Get master width
-    const meta = await sharp(payload).metadata();
+    let meta: import("sharp").Metadata;
+    try {
+      meta = await sharp(payload, { limitInputPixels: SHARP_PIXEL_LIMIT }).metadata();
+    } catch (err) {
+      throw new FormaError("ARTIFACT_INVALID_INPUT", "Raster image metadata read failed", {
+        budget: "SHARP_PIXEL_LIMIT",
+        cause: String(err),
+      });
+    }
     const masterWidth = meta.width ?? 1;
 
     const { tiers, degraded } = await downsampleRaster(payload, masterWidth);
@@ -442,6 +497,15 @@ function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density: numb
 export async function localizeArtifactAssets(input: LocalizeInput): Promise<LocalizeResult> {
   const { html, assetDirName = "assets" } = input;
 
+  const htmlBytes = Buffer.byteLength(html, "utf8");
+  if (htmlBytes > MAX_HTML_BYTES) {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", `HTML exceeds the ${MAX_HTML_BYTES}-byte budget`, {
+      budget: "MAX_HTML_BYTES",
+      limit: MAX_HTML_BYTES,
+      actual: htmlBytes,
+    });
+  }
+
   const ctx: Context = {
     assetDir: assetDirName,
     files: new Map(),
@@ -583,6 +647,8 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
       }
     }
   }
+
+  assertArtifactAssetBudgets(ctx.files);
 
   return {
     html: root.toString(),

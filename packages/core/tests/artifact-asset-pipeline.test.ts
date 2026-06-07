@@ -13,7 +13,13 @@
 import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { localizeArtifactAssets } from "../src/artifact-asset-pipeline.js";
+import {
+  localizeArtifactAssets,
+  MAX_HTML_BYTES,
+  MAX_ASSET_COUNT,
+  MAX_TOTAL_ASSET_BYTES,
+  assertArtifactAssetBudgets,
+} from "../src/artifact-asset-pipeline.js";
 import { FormaError } from "../src/errors.js";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -433,5 +439,94 @@ describe("parseDataUrl error classification (R4)", () => {
     await expect(localizeArtifactAssets({ html })).rejects.toMatchObject({
       code: "ARTIFACT_INVALID_INPUT",
     });
+  });
+});
+
+// ─── PNG header helpers ───────────────────────────────────────────────────────
+
+function crc32(buf: Buffer): number {
+  let crc = 0xffffffff;
+  for (const byte of buf) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBuf = Buffer.from(type, "ascii");
+  const body = Buffer.concat([typeBuf, data]);
+  // Chunk layout: length(4) + type+data(body) + crc(4) — exactly body.length + 8.
+  const chunk = Buffer.alloc(4 + body.length + 4);
+  chunk.writeUInt32BE(data.length, 0);
+  body.copy(chunk, 4);
+  chunk.writeUInt32BE(crc32(body), 4 + body.length);
+  return chunk;
+}
+
+function makePngHeaderWithDimensions(width: number, height: number): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // truecolor
+  return Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), pngChunk("IHDR", ihdr), pngChunk("IEND", Buffer.alloc(0))]);
+}
+
+// ─── R3: input budgets ────────────────────────────────────────────────────────
+
+describe("input budgets (R3)", () => {
+  it("rejects HTML over MAX_HTML_BYTES with ARTIFACT_INVALID_INPUT", async () => {
+    const html = `<html><body>${"x".repeat(MAX_HTML_BYTES + 1)}</body></html>`;
+    await expect(localizeArtifactAssets({ html })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "MAX_HTML_BYTES" }),
+    });
+  });
+
+  it("rejects asset count over MAX_ASSET_COUNT with ARTIFACT_INVALID_INPUT", async () => {
+    // Each unique data URL becomes a distinct asset file (svg here → 1 file each).
+    const imgs = Array.from(
+      { length: MAX_ASSET_COUNT + 1 },
+      (_, i) => `<img src="data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg'><text>${i}</text></svg>`)}">`,
+    ).join("");
+    await expect(localizeArtifactAssets({ html: `<html><body>${imgs}</body></html>` })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "MAX_ASSET_COUNT" }),
+    });
+  });
+
+  it("rejects total localized asset bytes over MAX_TOTAL_ASSET_BYTES with ARTIFACT_INVALID_INPUT", () => {
+    const files = new Map([["assets/too-large.bin", Buffer.alloc(MAX_TOTAL_ASSET_BYTES + 1)]]);
+    let error: unknown;
+
+    try {
+      assertArtifactAssetBudgets(files);
+    } catch (err) {
+      error = err;
+    }
+
+    expect(error).toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "MAX_TOTAL_ASSET_BYTES" }),
+    });
+  });
+
+  it("wraps sharp pixel-limit rejection as ARTIFACT_INVALID_INPUT", async () => {
+    const png = makePngHeaderWithDimensions(65_000_000, 1);
+    const html = `<html><body><img src="data:image/png;base64,${png.toString("base64")}"></body></html>`;
+
+    await expect(localizeArtifactAssets({ html })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "SHARP_PIXEL_LIMIT" }),
+    });
+  });
+
+  it("accepts a normal-sized page unchanged", async () => {
+    const html = `<html><body><p>ok</p></body></html>`;
+    const result = await localizeArtifactAssets({ html });
+    expect(result.files.size).toBe(0);
   });
 });

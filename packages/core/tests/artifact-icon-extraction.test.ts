@@ -414,6 +414,19 @@ describe("Case 17: non-renderable SVGs are skipped", () => {
   });
 });
 
+// ─── R3: icon raster pixel-limit ─────────────────────────────────────────────
+
+describe("icon raster pixel-limit (R3)", () => {
+  it("wraps icon SVG raster pixel-limit rejection as ARTIFACT_INVALID_INPUT", async () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="9000" height="9000" aria-label="Huge"><rect width="9000" height="9000"/></svg>`;
+
+    await expect(extractIconAssets(wrapInHtml([svg]), METADATA, { densities: [1] })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "SHARP_PIXEL_LIMIT" }),
+    });
+  });
+});
+
 describe("Case 18: non-rendered or unsupported SVGs are not icon occurrences", () => {
   it("skips template, hidden, zero-size, and unsupported <use>-only SVGs while preserving visible source order", async () => {
     const hiddenSprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none" width="24" height="24"><symbol id="sprite-check"><path d="M20 6L9 17l-5-5"/></symbol></svg>`;
