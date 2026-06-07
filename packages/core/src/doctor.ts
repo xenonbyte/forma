@@ -9,7 +9,9 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { FormaError } from "./errors.js";
+import { requirementSchema } from "./requirement.js";
 import { createStrictFormaStore } from "./store.js";
+import { readYamlAs } from "./yaml.js";
 
 export interface WorkspaceFinding {
   kind: "schema" | "orphan" | "index";
@@ -56,7 +58,7 @@ export async function diagnoseWorkspace(options: { home: string }): Promise<Work
     const requirementIds = await listRequirementIds(options.home, entry.id, findings);
     for (const requirementId of requirementIds) {
       try {
-        const requirement = await store.requirements.getRequirement({ requirement_id: requirementId });
+        const requirement = await readRequirementAt(options.home, entry.id, requirementId);
         if (requirement.product_id !== entry.id) {
           findings.push({
             kind: "schema",
@@ -127,6 +129,10 @@ async function listRequirementIds(home: string, productId: string, findings: Wor
     findings.push(toFinding("schema", error, { product_id: productId, file: `data/${productId}` }));
     return [];
   }
+}
+
+async function readRequirementAt(home: string, productId: string, requirementId: string) {
+  return readYamlAs(join(home, "data", productId, requirementId, "requirement.yaml"), requirementSchema);
 }
 
 function toFinding(

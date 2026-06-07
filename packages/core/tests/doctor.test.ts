@@ -140,4 +140,24 @@ describe("diagnoseWorkspace (F4)", () => {
     );
     expect(mismatchForB).toHaveLength(0);
   });
+
+  it("does not misreport product-scoped duplicate requirement ids as mismatches", async () => {
+    const home = await testHome();
+    const store = await createFormaStore({ home });
+    const productA = await store.products.createProduct({ name: "A", description: "a" });
+    const productB = await store.products.createProduct({ name: "B", description: "b" });
+    const requirementId = "R-aabbccdd";
+
+    const dirA = join(home, "data", productA.id, requirementId);
+    await mkdir(dirA, { recursive: true });
+    await writeFile(join(dirA, "requirement.yaml"), minimalRequirementYaml(requirementId, productA.id), "utf8");
+
+    const dirB = join(home, "data", productB.id, requirementId);
+    await mkdir(dirB, { recursive: true });
+    await writeFile(join(dirB, "requirement.yaml"), minimalRequirementYaml(requirementId, productB.id), "utf8");
+
+    const diagnosis = await diagnoseWorkspace({ home });
+
+    expect(diagnosis.findings.filter((f) => f.error_code === "REQUIREMENT_PRODUCT_MISMATCH")).toEqual([]);
+  });
 });

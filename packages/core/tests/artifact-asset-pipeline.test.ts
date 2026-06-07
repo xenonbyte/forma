@@ -529,6 +529,26 @@ describe("input budgets (R3)", () => {
     });
   });
 
+  it("wraps sharp pixel-limit rejection for explicit raster srcset candidates", async () => {
+    const png = makePngHeaderWithDimensions(65_000_000, 1);
+    const html = `<html><body><img srcset="data:image/png;base64,${png.toString("base64")} 2x"></body></html>`;
+
+    await expect(localizeArtifactAssets({ html })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "SHARP_PIXEL_LIMIT" }),
+    });
+  });
+
+  it("wraps sharp validation failures for explicit AVIF srcset candidates", async () => {
+    const avif = Buffer.from("not an avif");
+    const html = `<html><body><img srcset="data:image/avif;base64,${avif.toString("base64")} 2x"></body></html>`;
+
+    await expect(localizeArtifactAssets({ html })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "SHARP_PIXEL_LIMIT" }),
+    });
+  });
+
   it("accepts a normal-sized page unchanged", async () => {
     const html = `<html><body><p>ok</p></body></html>`;
     const result = await localizeArtifactAssets({ html });

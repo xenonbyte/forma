@@ -98,7 +98,7 @@ const MIME_TO_EXT: Record<string, string> = {
   "application/octet-stream": "bin",
 };
 
-const RASTER_MIMES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif"]);
+const RASTER_MIMES = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif", "image/avif"]);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -476,13 +476,21 @@ function parseDescriptorDensity(descriptor: string): number | undefined {
  * the candidate's descriptor (e.g. "2x") keeps pointing at the exact pixels the
  * author supplied instead of mislabeling a down-sampled @1x file.
  */
-function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density: number): string {
+async function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density: number): Promise<string> {
   const { mime, payload } = parsed;
   const ext = mimeToExt(mime);
   const hash = contentHash(payload);
   const path = `${ctx.assetDir}/${hash}.${ext}`;
 
   if (!ctx.files.has(path)) {
+    try {
+      await sharp(payload, { limitInputPixels: SHARP_PIXEL_LIMIT }).metadata();
+    } catch (err) {
+      throw new FormaError("ARTIFACT_INVALID_INPUT", "Raster image metadata read failed", {
+        budget: "SHARP_PIXEL_LIMIT",
+        cause: String(err),
+      });
+    }
     ctx.files.set(path, payload);
   }
   const existing = ctx.assets.get(path);
@@ -552,7 +560,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
           // Store the candidate at its declared density (default 1x) so the
           // descriptor keeps pointing at the exact image the author provided.
           const path = RASTER_MIMES.has(parsed.mime)
-            ? localizeRasterSingle(parsed, ctx, parseDescriptorDensity(descriptor) ?? 1)
+            ? await localizeRasterSingle(parsed, ctx, parseDescriptorDensity(descriptor) ?? 1)
             : await localizeDataUrl(parsed, ctx);
           newParts.push(descriptor ? `${path} ${descriptor}` : path);
           changed = true;
