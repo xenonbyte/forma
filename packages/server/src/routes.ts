@@ -194,14 +194,13 @@ function checkMutationOrigin(request: FastifyRequest, reply: FastifyReply): bool
   const formaClientStr = Array.isArray(formaClient) ? formaClient[0] : (formaClient ?? null);
   const allowed = isOriginAllowed(originStr, request);
 
-  console.log(
-    JSON.stringify({
-      timestamp: new Date().toISOString(),
-      route: request.url,
+  request.log.info(
+    {
       origin: originStr ?? null,
-      "x-forma-client": formaClientStr,
+      formaClient: formaClientStr,
       allowed,
-    }),
+    },
+    "mutation origin check",
   );
 
   if (!allowed) {
