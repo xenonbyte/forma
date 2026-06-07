@@ -796,6 +796,53 @@ async function mkdtemp(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forma-cli-"));
 }
 
+describe("forma doctor (F4)", () => {
+  it("reports a clean empty workspace and exits 0", async () => {
+    const home = await mkdtemp();
+    const formaHome = join(home, ".forma");
+
+    const result = await runCli(["doctor"], { formaHome });
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain("Workspace is clean");
+  });
+
+  it("reports findings and exits 1 on a corrupt index", async () => {
+    const { mkdir: fsMkdir, writeFile: fsWriteFile } = await import("node:fs/promises");
+    const home = await mkdtemp();
+    const formaHome = join(home, ".forma");
+    await fsMkdir(join(formaHome, "data"), { recursive: true });
+    await fsWriteFile(join(formaHome, "data", "products.yaml"), "{{{{ not yaml", "utf8");
+
+    const result = await runCli(["doctor"], { formaHome });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout).toContain("[index]");
+    expect(result.stdout).toContain("data/products.yaml");
+  });
+
+  it("is listed in usage", async () => {
+    const result = await runCli(["--help"], { formaHome: "/tmp/unused" });
+    expect(result.stdout).toContain("doctor");
+  });
+
+  it("suggests forma doctor when strict startup validation fails", async () => {
+    const strictError = new Error("strict validation failed") as Error & { code: string };
+    strictError.code = "STRICT_SCHEMA_VALIDATION_FAILED";
+
+    const result = await runCli(["mcp"], {
+      formaHome: "/tmp/unused",
+      startMcp: async () => {
+        throw strictError;
+      },
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("strict validation failed");
+    expect(result.stderr).toContain("Run `forma doctor` to locate invalid workspace data.");
+  });
+});
+
 // R1: the managed serve child no longer receives the token via argv — it is
 // delivered through FORMA_SERVE_TOKEN env only and must not appear in `ps`.
 function formaServerCommandLine(options: { home: string; startedAt: string }): string {

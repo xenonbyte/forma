@@ -7,6 +7,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   InstallService,
+  diagnoseWorkspace,
   formaCoreVersion,
   readYaml,
   type AgentInstallPlatform,
@@ -168,10 +169,17 @@ export async function runCli(argv: string[] = process.argv.slice(2), env: CliEnv
       return await runStatus(args, runtimeEnv, output);
     }
 
+    if (command === "doctor") {
+      return await runDoctor(args, runtimeEnv, output);
+    }
+
     output.stderr(`Unknown command: ${command}\n\n${usage()}`);
     return output.result(1);
   } catch (error) {
     output.stderr(`${errorMessage(error)}\n`);
+    if (isStrictValidationError(error)) {
+      output.stderr("Run `forma doctor` to locate invalid workspace data.\n");
+    }
     return output.result(1);
   }
 }
@@ -291,6 +299,25 @@ async function runStatus(args: string[], env: RuntimeCliEnv, output: CliOutput):
   );
   output.stdout(`Web server: ${serverStatus.running ? "running" : "stopped"}\n`);
   return output.result(0);
+}
+
+async function runDoctor(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
+  assertNoExtraArgs(args);
+
+  const diagnosis = await diagnoseWorkspace({ home: env.formaHome });
+  output.stdout(`Checked ${diagnosis.products_checked} product(s) in ${env.formaHome}\n`);
+
+  if (diagnosis.findings.length === 0) {
+    output.stdout("Workspace is clean\n");
+    return output.result(0);
+  }
+
+  for (const finding of diagnosis.findings) {
+    const scope = finding.file ?? [finding.product_id, finding.requirement_id].filter(Boolean).join("/");
+    output.stdout(`[${finding.kind}] ${scope ? `${scope}: ` : ""}${finding.error_code} ${finding.message}\n`);
+  }
+  output.stdout(`${diagnosis.findings.length} finding(s)\n`);
+  return output.result(1);
 }
 
 async function stopServer(env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
@@ -783,6 +810,7 @@ function usage(): string {
     "  install [--platform claude,codex,gemini]",
     "  uninstall [--platform claude,codex,gemini]",
     "  status",
+    "  doctor",
     "  version",
   ]
     .join("\n")
@@ -1106,4 +1134,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isStrictValidationError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "STRICT_SCHEMA_VALIDATION_FAILED"
+  );
 }
