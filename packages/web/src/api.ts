@@ -245,6 +245,8 @@ export interface ArtifactSummary {
   variant?: string;
   /** 当前版本指针的版本号;legacy flat artifact 无此字段。 */
   current_version?: number;
+  /** F3: immutable version count from the server list endpoint. */
+  version_count?: number;
   superseded: boolean;
 }
 
@@ -260,6 +262,9 @@ export interface ArtifactDetail {
     requirementId?: string;
   };
   preview_url?: string;
+  /** F3: immutable version numbers, ascending. */
+  versions?: number[];
+  current_version?: number;
 }
 
 export interface RequirementDesignHistoryEntry {
@@ -418,6 +423,7 @@ export interface FormaApiClient {
     input: { format?: string; node_id: string },
   ): Promise<RequirementDesignAssetExport>;
   getArtifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string;
+  getArtifactVersionPreviewUrl(productId: string, artifactId: string, version: number, resolution: "1x" | "2x"): string;
   getBaseline(productId: string): Promise<ProductBaseline>;
   getPageCopy(productId: string, pageId: string, requirementId?: string): Promise<PageCopyPayload>;
   getProduct(productId: string): Promise<Product>;
@@ -656,6 +662,8 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       ),
     getArtifactPreviewUrl: (productId, artifactId, resolution) =>
       `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`,
+    getArtifactVersionPreviewUrl: (productId, artifactId, version, resolution) =>
+      `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/preview/${resolution}.png`,
     getBaseline: (productId) =>
       apiRecord<ProductBaseline>(`/api/products/${encodeURIComponent(productId)}/baseline`, requestOptions(fetcher)),
     getPageCopy: (productId, pageId, requirementId) => {

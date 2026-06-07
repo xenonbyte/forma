@@ -7,6 +7,7 @@ import { ProductDetail, type ProductDeleteNavigationState } from "./pages/Produc
 import { ProductList } from "./pages/ProductList.js";
 import { ProductNew } from "./pages/ProductNew.js";
 import { DesignView } from "./pages/DesignView.js";
+import { VersionCompare } from "./pages/VersionCompare.js";
 import { RequirementDetail } from "./pages/RequirementDetail.js";
 import { Settings } from "./pages/Settings.js";
 import { AnnotationPage } from "./pages/AnnotationPage.js";
@@ -80,6 +81,13 @@ export const routeTable: RouteDefinition[] = [
     navGroup: "products",
     path: "/products/:productId/requirements/:reqId/design",
     title: ({ reqId }) => `${reqId} design`,
+  },
+  {
+    component: VersionCompareRoute,
+    context: "Design",
+    navGroup: "products",
+    path: "/products/:productId/artifacts/:artifactId/compare",
+    title: ({ artifactId }) => `${artifactId} compare`,
   },
   {
     component: AnnotationPageRoute,
@@ -203,6 +211,10 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
   }
 
   return { found: false, hash, navigationState: undefined, params: {}, pathname, route: notFoundRoute };
+}
+
+function VersionCompareRoute(props: RoutePageProps) {
+  return <VersionCompare client={apiClient} params={props.params} />;
 }
 
 function AnnotationPageRoute(props: RoutePageProps) {

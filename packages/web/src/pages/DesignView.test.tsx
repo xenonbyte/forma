@@ -75,6 +75,7 @@ function fakeClient(overrides: FakeClientOverrides = {}): DesignViewClient {
           page_id: "login",
           variant: "default",
           current_version: 1,
+          version_count: 1,
         },
         {
           id: "d",
@@ -85,7 +86,8 @@ function fakeClient(overrides: FakeClientOverrides = {}): DesignViewClient {
           requirement_id: "r1",
           page_id: "login",
           variant: "wide",
-          current_version: 2,
+          current_version: 1,
+          version_count: 2,
         },
         {
           id: "b",
@@ -97,6 +99,7 @@ function fakeClient(overrides: FakeClientOverrides = {}): DesignViewClient {
           page_id: "settings",
           variant: "default",
           current_version: 1,
+          version_count: 1,
         },
         {
           id: "c",
@@ -108,6 +111,7 @@ function fakeClient(overrides: FakeClientOverrides = {}): DesignViewClient {
           page_id: "login",
           variant: "default",
           current_version: 1,
+          version_count: 1,
         },
         {
           id: "lib",
@@ -163,7 +167,7 @@ describe("DesignView", () => {
     expect(props.mode).toBe("design");
     expect(props.model.entry).toBe("requirement");
     // r2 的 c 与 component-library 的 lib 被排除;tile id = artifactId:version:variant。
-    expect(props.model.tiles.map((tile) => tile.id).sort()).toEqual(["a:1:default", "b:1:default", "d:2:wide"]);
+    expect(props.model.tiles.map((tile) => tile.id).sort()).toEqual(["a:1:default", "b:1:default", "d:1:wide"]);
 
     expect(props.resolver.resolve({ artifactId: "a", version: 1, kind: "bundle" })).toBe(
       "/api/products/p1/artifacts/a/versions/1/bundle/index.html",
@@ -264,5 +268,18 @@ describe("DesignView", () => {
     expect(canvasSpy).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Design canvas unavailable");
     expect(container.textContent).toContain("boom");
+  });
+
+  it("shows a compare entry for artifacts with 2+ versions (F3)", async () => {
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<DesignView client={fakeClient()} params={{ productId: "p1", reqId: "r1" }} />);
+      await flushPromises();
+    });
+
+    const link = container.querySelector('a[href="/products/p1/artifacts/d/compare"]');
+    expect(link).not.toBeNull();
+    expect(link?.textContent).toContain("登录页 宽屏");
   });
 });
