@@ -1,7 +1,7 @@
 import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { accessSync, closeSync, constants, openSync, readFileSync, rmSync } from "node:fs";
-import { access, appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, appendFile, chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -332,7 +332,8 @@ async function writeCommandReturn(output: CliOutput, value: Promise<CliServerSta
 
 async function runForegroundServeChild(args: string[], env: RuntimeCliEnv, output: CliOutput): Promise<CliResult> {
   const options = parseForegroundServeArgs(args);
-  const token = options.token ?? process.env.FORMA_SERVE_TOKEN;
+  // R1: the ownership token arrives via env only — never via argv (visible in `ps`).
+  const token = process.env.FORMA_SERVE_TOKEN;
   const serveHome = options.home ?? process.env.FORMA_HOME ?? env.formaHome;
   if (serveHome !== env.formaHome) {
     throw new Error(`Foreground serve home ${serveHome} does not match resolved Forma home ${env.formaHome}`);
@@ -378,15 +379,10 @@ async function removeServeStateFiles(env: RuntimeCliEnv): Promise<void> {
   await Promise.all([env.removeFile(servePidFile(env.formaHome)), env.removeFile(serveRuntimeFile(env.formaHome))]);
 }
 
-function parseForegroundServeArgs(args: string[]): { token?: string; home?: string; startedAt?: string } {
-  const options: { token?: string; home?: string; startedAt?: string } = {};
+function parseForegroundServeArgs(args: string[]): { home?: string; startedAt?: string } {
+  const options: { home?: string; startedAt?: string } = {};
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
-    if (arg === "--serve-token") {
-      options.token = requireOptionValue(args, index, arg);
-      index += 1;
-      continue;
-    }
     if (arg === "--serve-home") {
       options.home = requireOptionValue(args, index, arg);
       index += 1;
@@ -523,7 +519,10 @@ function resolveCliEnv(env: CliEnv): RuntimeCliEnv {
       env.writeText ??
       (async (file, content) => {
         await mkdir(dirname(file), { recursive: true });
-        await writeFile(file, content, "utf8");
+        // Serve state files carry the ownership token — owner-only by default.
+        await writeFile(file, content, { encoding: "utf8", mode: 0o600 });
+        // mode is only applied on creation; chmod tightens existing loose files.
+        await chmod(file, 0o600);
       }),
     appendText:
       env.appendText ??
@@ -873,8 +872,6 @@ async function defaultSpawnDetachedServer(
         options.entrypoint,
         "serve",
         "--foreground-internal",
-        "--serve-token",
-        options.token,
         "--serve-home",
         options.formaHome,
         "--serve-started-at",
@@ -1018,9 +1015,11 @@ async function defaultVerifyServerProcess(
 ): Promise<boolean> {
   try {
     const command = await readProcessCommand(metadata.pid);
+    // The token is deliberately NOT matched here: it must never appear in the
+    // process command line. Strong ownership comes from the random token in
+    // the 0600 serve state files; this check pins entrypoint + home + start.
     return (
       commandIncludesArgs(command, [packageCliEntrypoint(), "serve", "--foreground-internal"]) &&
-      commandIncludesArgPair(command, "--serve-token", metadata.token) &&
       commandIncludesArgPair(command, "--serve-home", metadata.home) &&
       commandIncludesArgPair(command, "--serve-started-at", metadata.started_at)
     );

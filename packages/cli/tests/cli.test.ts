@@ -169,8 +169,6 @@ describe("runCli", () => {
       [
         "serve",
         "--foreground-internal",
-        "--serve-token",
-        "child-token",
         "--serve-home",
         env.state.formaHome,
         "--serve-started-at",
@@ -196,8 +194,6 @@ describe("runCli", () => {
       [
         "serve",
         "--foreground-internal",
-        "--serve-token",
-        "child-token",
         "--serve-home",
         join(env.state.home, "other-forma-home"),
         "--serve-started-at",
@@ -396,7 +392,6 @@ describe("runCli", () => {
       isPidAlive: (pid) => pid === 5432,
       readProcessCommand: async () =>
         formaServerCommandLine({
-          token: "other-token",
           home: otherHome,
           startedAt,
         }),
@@ -570,6 +565,118 @@ describe("runCli", () => {
     expect(result.stdout).toContain("Web server: stopped");
     expect(result.stderr).toContain("Invalid manifest for claude");
   });
+
+  it("serve start writes pid state with 0600 permissions and tightens an existing loose file", async () => {
+    const { chmod, stat, writeFile: fsWriteFile, mkdir: fsMkdir } = await import("node:fs/promises");
+    const home = await mkdtemp();
+    const formaHome = join(home, ".forma");
+    await fsMkdir(formaHome, { recursive: true });
+
+    const metadata = {
+      schema_version: 1,
+      marker: "xenonbyte.forma.serve",
+      home: formaHome,
+      pid: 4242,
+      token: "perm-token",
+      started_at: "2026-05-17T00:00:00.000Z",
+      log: join(formaHome, "serve.log"),
+    };
+
+    // Minimal CliEnv: writeText is NOT overridden so the production default
+    // (0600 mode) is what actually writes serve.pid.
+    const result = await runCli(["serve", "start"], {
+      formaHome,
+      currentPid: 1111,
+      now: () => new Date("2026-05-17T00:00:00.000Z"),
+      createServeToken: () => "perm-token",
+      isPidAlive: (pid) => pid === 4242,
+      verifyServerProcess: async () => true,
+      spawnDetachedServer: async (options) => {
+        await fsWriteFile(join(formaHome, "serve.pid"), "loose stale state", { encoding: "utf8", mode: 0o644 });
+        await chmod(join(formaHome, "serve.pid"), 0o644);
+        await fsWriteFile(options.runtimeFile, `${JSON.stringify(metadata, null, 2)}\n`, "utf8");
+        return { pid: 4242 };
+      },
+    });
+
+    expect(result.exitCode).toBe(0);
+    const pidStat = await stat(join(formaHome, "serve.pid"));
+    expect(pidStat.mode & 0o777).toBe(0o600);
+  });
+
+  it("foreground internal writes runtime state with 0600 permissions and receives token from env only", async () => {
+    const { chmod, stat, writeFile: fsWriteFile, mkdir: fsMkdir } = await import("node:fs/promises");
+    const env = await testEnv({
+      currentPid: 7777,
+      startWebServer: async () => undefined,
+      useDefaultStartServer: true,
+    });
+    const runtimeFile = join(env.state.formaHome, "serve.state.json");
+    await fsMkdir(env.state.formaHome, { recursive: true });
+    await fsWriteFile(runtimeFile, "loose stale runtime", { encoding: "utf8", mode: 0o644 });
+    await chmod(runtimeFile, 0o644);
+    process.env.FORMA_SERVE_TOKEN = "child-token";
+    process.env.FORMA_SERVE_READY_FILE = runtimeFile;
+    process.env.FORMA_SERVE_STARTED_AT = "2026-05-17T00:00:00.000Z";
+    process.env.FORMA_SERVE_LOG_FILE = join(env.state.formaHome, "serve.log");
+    try {
+      const result = await runCli(
+        [
+          "serve",
+          "--foreground-internal",
+          "--serve-home",
+          env.state.formaHome,
+          "--serve-started-at",
+          "2026-05-17T00:00:00.000Z",
+        ],
+        env,
+      );
+
+      expect(result.exitCode).toBe(0);
+      const runtimeStat = await stat(runtimeFile);
+      expect(runtimeStat.mode & 0o777).toBe(0o600);
+      await expect(readFile(runtimeFile, "utf8").then(JSON.parse)).resolves.toMatchObject({
+        pid: 7777,
+        token: "child-token",
+      });
+    } finally {
+      delete process.env.FORMA_SERVE_TOKEN;
+      delete process.env.FORMA_SERVE_READY_FILE;
+      delete process.env.FORMA_SERVE_STARTED_AT;
+      delete process.env.FORMA_SERVE_LOG_FILE;
+    }
+  });
+
+  it("verifies owned children without exposing the token in the process command", async () => {
+    const startedAt = "2026-05-17T00:00:00.000Z";
+    let observedCommand = "";
+    let env: CliEnv & { state: TestState };
+    env = await testEnv({
+      useDefaultServerStatus: true,
+      useDefaultVerifyServerProcess: true,
+      isPidAlive: (pid) => pid === 4321,
+      readProcessCommand: async () => {
+        observedCommand = formaServerCommandLine({ home: env.state.formaHome, startedAt });
+        return observedCommand;
+      },
+    });
+    await mkdir(env.state.formaHome, { recursive: true });
+    const metadata = serveMetadata({
+      home: env.state.formaHome,
+      pid: 4321,
+      token: "owned-token",
+      started_at: startedAt,
+      log: join(env.state.formaHome, "serve.log"),
+    });
+    await writeFile(join(env.state.formaHome, "serve.pid"), JSON.stringify(metadata), "utf8");
+    await writeFile(join(env.state.formaHome, "serve.state.json"), JSON.stringify(metadata), "utf8");
+
+    const status = await runCli(["status"], env);
+
+    expect(status.stdout).toContain("Web server: running");
+    expect(observedCommand).not.toContain("owned-token");
+    expect(observedCommand).not.toContain("--serve-token");
+  });
 });
 
 type TestEnvOverrides = Partial<CliEnv> & {
@@ -685,14 +792,14 @@ async function mkdtemp(): Promise<string> {
   return mkdtemp(join(tmpdir(), "forma-cli-"));
 }
 
-function formaServerCommandLine(options: { token: string; home: string; startedAt: string }): string {
+// R1: the managed serve child no longer receives the token via argv — it is
+// delivered through FORMA_SERVE_TOKEN env only and must not appear in `ps`.
+function formaServerCommandLine(options: { home: string; startedAt: string }): string {
   return [
     process.execPath,
     fileURLToPath(new URL("../bin/forma.js", import.meta.url)),
     "serve",
     "--foreground-internal",
-    "--serve-token",
-    options.token,
     "--serve-home",
     options.home,
     "--serve-started-at",
