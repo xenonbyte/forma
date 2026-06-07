@@ -2114,7 +2114,7 @@ describe("audit log (SPEC-OBS-004)", () => {
 
     expect(response.statusCode).toBe(200);
     const entries = capture.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-    const audit = entries.find((entry) => entry["msg"] === "mutation origin check");
+    const audit = entries.find((entry) => entry.msg === "mutation origin check");
     expect(audit).toMatchObject({
       origin: "http://localhost:5173",
       formaClient: "web-admin",
@@ -2141,7 +2141,7 @@ describe("audit log (SPEC-OBS-004)", () => {
     expect(response.statusCode).toBe(403);
     expect(response.json().error_code).toBe("ARTIFACT_FORBIDDEN_ORIGIN");
     const entries = capture.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-    const audit = entries.find((entry) => entry["msg"] === "mutation origin check");
+    const audit = entries.find((entry) => entry.msg === "mutation origin check");
     expect(audit).toMatchObject({
       origin: "https://evil.com",
       formaClient: null,
