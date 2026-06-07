@@ -29,7 +29,7 @@ export const MAX_TOTAL_ASSET_BYTES = 48 * 1024 * 1024; // 48 MiB
 /** Max number of localized asset files in one artifact version. */
 export const MAX_ASSET_COUNT = 200;
 /** sharp decode ceiling — rejects raster decompression bombs before resize. */
-const SHARP_PIXEL_LIMIT = 64_000_000; // ~64 MP
+const SHARP_PIXEL_LIMIT = 64_000_000; // ~64 MP — keep in sync with artifact-icon-extraction.ts
 
 export function assertArtifactAssetBudgets(files: ReadonlyMap<string, Buffer>): void {
   if (files.size > MAX_ASSET_COUNT) {
@@ -172,7 +172,11 @@ function rejectRemote(url: string): void {
 
 // ─── Raster down-sampling ─────────────────────────────────────────────────────
 
-/** Resize one density tier with the decode pixel ceiling; wrap sharp errors. */
+/**
+ * Resize one density tier with the decode pixel ceiling. All sharp errors are
+ * tagged with the SHARP_PIXEL_LIMIT budget; details.cause carries the original
+ * message for disambiguation (corrupt input vs. genuine pixel-limit overflow).
+ */
 async function resizeTier(master: Buffer, width: number): Promise<Buffer> {
   try {
     return await sharp(master, { limitInputPixels: SHARP_PIXEL_LIMIT }).resize({ width }).toBuffer();

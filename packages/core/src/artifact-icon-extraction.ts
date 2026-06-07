@@ -93,7 +93,7 @@ export interface IconExtractionResult {
 
 // ─── Internal constants ───────────────────────────────────────────────────────
 
-const SHARP_PIXEL_LIMIT = 64_000_000; // ~64 MP
+const SHARP_PIXEL_LIMIT = 64_000_000; // ~64 MP — keep in sync with artifact-asset-pipeline.ts
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 

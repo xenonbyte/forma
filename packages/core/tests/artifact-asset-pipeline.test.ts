@@ -515,6 +515,11 @@ describe("input budgets (R3)", () => {
   });
 
   it("wraps sharp pixel-limit rejection as ARTIFACT_INVALID_INPUT", async () => {
+    // The fixture has no IDAT — sharp rejects it with a corrupt-header error
+    // at the metadata() call. The wrap still fires via the same try/catch,
+    // confirming ARTIFACT_INVALID_INPUT is thrown for all sharp failures.
+    // It does NOT exercise limitInputPixels' own "exceeds pixel limit" path;
+    // that would require a real raster > 64 MP.
     const png = makePngHeaderWithDimensions(65_000_000, 1);
     const html = `<html><body><img src="data:image/png;base64,${png.toString("base64")}"></body></html>`;
 
