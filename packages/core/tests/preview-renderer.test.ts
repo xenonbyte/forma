@@ -1,8 +1,8 @@
 import { mkdir, mkdtemp, writeFile, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { renderArtifactPreview } from "../src/preview-renderer.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderArtifactPreview, previewChromiumLaunchArgs } from "../src/preview-renderer.js";
 
 // 最小合法 1x1 PNG
 const DOT_PNG = Buffer.from(
@@ -62,4 +62,30 @@ describe("P3 renderArtifactPreview", () => {
     const { bundleDir, outDir } = await makeBundle("<html></html>");
     await expect(renderArtifactPreview({ bundleDir, outDir, entry: "nope.html" })).rejects.toThrow();
   }, 60000);
+});
+
+describe("preview chromium launch args (R11)", () => {
+  it("keeps the Chromium sandbox by default outside test/CI fallback", () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("CI", "");
+    vi.stubEnv("FORMA_PREVIEW_ALLOW_NO_SANDBOX", "");
+    try {
+      expect(previewChromiumLaunchArgs()).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("drops the sandbox only under the explicit fallback gates", () => {
+    vi.stubEnv("VITEST", "");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("CI", "");
+    vi.stubEnv("FORMA_PREVIEW_ALLOW_NO_SANDBOX", "1");
+    try {
+      expect(previewChromiumLaunchArgs()).toEqual(["--no-sandbox", "--disable-setuid-sandbox"]);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

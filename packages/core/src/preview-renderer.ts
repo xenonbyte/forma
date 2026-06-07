@@ -24,6 +24,22 @@ export interface RenderPreviewResult {
 const RELEVANT_RESOURCE_TYPES = new Set(["image", "stylesheet", "font", "media"]);
 
 /**
+ * R11: keep the Chromium OS sandbox by default — generated HTML is validated
+ * but still untrusted. Mirror the vzi-parser fallback gates so tests/CI (and
+ * an explicit local escape hatch) can run where the sandbox is unavailable.
+ * Preview failure is non-fatal: design saves complete with previewStatus
+ * "failed" (design-save.ts), so a sandbox-incompatible host degrades safely.
+ */
+export function previewChromiumLaunchArgs(): string[] {
+  const allowNoSandbox =
+    process.env.FORMA_PREVIEW_ALLOW_NO_SANDBOX === "1" ||
+    process.env.VITEST === "true" ||
+    process.env.NODE_ENV === "test" ||
+    process.env.CI === "true";
+  return allowNoSandbox ? ["--no-sandbox", "--disable-setuid-sandbox"] : [];
+}
+
+/**
  * 从已落盘 bundle 经 file:// 渲染（相对 assets 自然解析，非裸 setContent）。
  * 产出 1x/2x PNG。任一关键子资源（image/css/font/media）加载失败 → fail-loud 抛错。
  * 不写 manifest preview 状态（由 P4 接 save 时记录）。
@@ -37,7 +53,7 @@ export async function renderArtifactPreview(input: RenderPreviewInput): Promise<
   try {
     // Use 'shell' headless mode (chrome-headless-shell) which reliably supports
     // file:// URL navigation and screenshot in headless environments.
-    browser = await launch({ headless: "shell", args: ["--no-sandbox", "--disable-setuid-sandbox"] });
+    browser = await launch({ headless: "shell", args: previewChromiumLaunchArgs() });
     await mkdir(input.outDir, { recursive: true });
 
     const files: Record<"1x" | "2x", string> = { "1x": "", "2x": "" };
