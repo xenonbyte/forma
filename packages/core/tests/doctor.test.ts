@@ -6,6 +6,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createFormaStore } from "../src/store.js";
 import { diagnoseWorkspace } from "../src/doctor.js";
 
+function minimalRequirementYaml(id: string, productId: string): string {
+  const now = "2026-01-01T00:00:00.000Z";
+  return [
+    `id: ${id}`,
+    `product_id: ${productId}`,
+    `title: Test requirement`,
+    `status: empty`,
+    `ui_affected: true`,
+    `created_at: "${now}"`,
+    `updated_at: "${now}"`,
+    `pages: []`,
+    `navigation: []`,
+  ].join("\n");
+}
+
 const homes: string[] = [];
 
 afterEach(async () => {
@@ -86,5 +101,43 @@ describe("diagnoseWorkspace (F4)", () => {
 
     expect(diagnosis.findings.some((f) => f.kind === "index")).toBe(true);
     expect(diagnosis.products_checked).toBe(0);
+  });
+
+  it("reports REQUIREMENT_PRODUCT_MISMATCH when same requirement id exists under two products", async () => {
+    const home = await testHome();
+    const store = await createFormaStore({ home });
+    const productA = await store.products.createProduct({ name: "A", description: "a" });
+    const productB = await store.products.createProduct({ name: "B", description: "b" });
+
+    // Shared requirement id — both dirs exist but both YAML files claim product_id = B.
+    const requirementId = "R-aabbccdd";
+
+    // Place requirement under product A's directory — product_id points to B (the mismatch).
+    const dirA = join(home, "data", productA.id, requirementId);
+    await mkdir(dirA, { recursive: true });
+    await writeFile(join(dirA, "requirement.yaml"), minimalRequirementYaml(requirementId, productB.id), "utf8");
+
+    // Place a valid copy under product B's directory — product_id matches B.
+    const dirB = join(home, "data", productB.id, requirementId);
+    await mkdir(dirB, { recursive: true });
+    await writeFile(join(dirB, "requirement.yaml"), minimalRequirementYaml(requirementId, productB.id), "utf8");
+
+    const diagnosis = await diagnoseWorkspace({ home });
+
+    const mismatchFindings = diagnosis.findings.filter((f) => f.error_code === "REQUIREMENT_PRODUCT_MISMATCH");
+    // Must report exactly one mismatch — for product A's directory.
+    expect(mismatchFindings).toHaveLength(1);
+    expect(mismatchFindings[0]).toMatchObject({
+      kind: "schema",
+      product_id: productA.id,
+      requirement_id: requirementId,
+      error_code: "REQUIREMENT_PRODUCT_MISMATCH",
+    });
+
+    // Product B's copy is valid — must not be reported as a mismatch.
+    const mismatchForB = diagnosis.findings.filter(
+      (f) => f.error_code === "REQUIREMENT_PRODUCT_MISMATCH" && f.product_id === productB.id,
+    );
+    expect(mismatchForB).toHaveLength(0);
   });
 });

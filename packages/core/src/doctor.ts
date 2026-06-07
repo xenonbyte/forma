@@ -56,7 +56,18 @@ export async function diagnoseWorkspace(options: { home: string }): Promise<Work
     const requirementIds = await listRequirementIds(options.home, entry.id, findings);
     for (const requirementId of requirementIds) {
       try {
-        await store.requirements.getRequirement({ requirement_id: requirementId });
+        const requirement = await store.requirements.getRequirement({ requirement_id: requirementId });
+        if (requirement.product_id !== entry.id) {
+          findings.push({
+            kind: "schema",
+            product_id: entry.id,
+            requirement_id: requirementId,
+            file: `data/${entry.id}/${requirementId}/requirement.yaml`,
+            error_code: "REQUIREMENT_PRODUCT_MISMATCH",
+            message: `Requirement directory data/${entry.id}/${requirementId} resolved to product ${requirement.product_id}`,
+          });
+          continue; // do not check translations against the wrong product tree
+        }
       } catch (error) {
         findings.push(toFinding("schema", error, {
           product_id: entry.id,
@@ -96,8 +107,12 @@ export async function diagnoseWorkspace(options: { home: string }): Promise<Work
         });
       }
     }
-  } catch {
-    // data/ does not exist yet — an empty workspace has nothing to scan.
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      // data/ exists but cannot be scanned — report instead of faking a clean result.
+      findings.push(toFinding("index", error, { file: "data" }));
+    }
+    // ENOENT → data/ does not exist yet — an empty workspace has nothing to scan.
   }
 
   return { findings, products_checked: products.length };
