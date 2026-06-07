@@ -2,7 +2,7 @@
 
 - 日期：2026-06-07（v3：F3、F4 经产品决策立项）
 - 来源：外部代码审查报告 → 逐条源码核实 → 裁剪后的正向优化清单 → 独立缺口审计补充（R10、R11、F1–F4）→ F3/F4 立项
-- 状态：待实施
+- 状态：待实施（R8 已完成，本文保留验证记录）
 - 原则：保留现有架构，只在入口预算、token 管理、健壮性、边界测试上补薄薄一层。不引入数据库、用户系统、分布式锁、渲染微服务、插件系统。
 
 ## 背景与威胁模型前提
@@ -24,7 +24,7 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 
 ## 范围
 
-第一批 7 项（R1–R6、R10）+ 第二批 4 项（R7–R9、R11）+ 第三批已立项功能 2 项（F3、F4）+ 功能增强候选 2 项（F1、F2，仍需产品决策）。加固项预计涉及约 8 个源文件，每项改动 5–30 行；F3/F4 为功能开发，规模见各自小节。全部可被现有 Vitest 基础设施覆盖。
+第一批 7 项（R1–R6、R10）+ 第二批 4 项（R7–R9、R11，其中 R8 已完成、仅保留验证记录）+ 第三批已立项功能 2 项（F3、F4）+ 功能增强候选 2 项（F1、F2，仍需产品决策）。加固项预计涉及约 8 个源文件，每项改动 5–30 行；F3/F4 为功能开发，规模见各自小节。全部可被现有 Vitest 基础设施覆盖。
 
 ## 非范围（明确不做）
 
@@ -34,7 +34,7 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 | `forma doctor --repair` | repair 模式是膨胀斜坡；只读诊断已立项为 F4，repair 仍明确不做。 |
 | preview-renderer 浏览器实例复用/池化 | 本地工具、保存频率低；浏览器生命周期管理（僵尸进程、崩溃恢复）的复杂度高于每次冷启的代价。 |
 | `requirements.index.yaml` 缓存 | 新增需维护一致性的不变量，优化的是本地规模下测不出来的扫描。 |
-| 远程 Web UI token 输入 | 产品方向未定；先用 R8 一行文档收口。 |
+| 远程 Web UI token 输入 | 产品方向未定；已由 R8 文档收口，不在本轮新增 UI token 输入。 |
 | 跨包收敛路径边界 helper | 重构正在工作的安全代码，回归风险大于收益；只在顺手时做。 |
 | 数据库/ORM、RBAC、分布式锁、渲染微服务、插件系统 | 与 local-first 定位不匹配。 |
 
@@ -55,14 +55,15 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 1. 移除 `--serve-token` argv 传递，token 只通过 env（`FORMA_SERVE_TOKEN`）传给子进程。
 2. state/pid 文件写入加 `mode: 0o600`。
 3. `defaultVerifyServerProcess` 改为匹配 entrypoint + foreground marker + home + `started_at`，不再以 token 作为进程指纹。归属强校验依赖 state 文件中的 token（文件本身已 `0600`）。
-4. 不引入密钥管理系统、不改 daemon 协议。
+4. `FORMA_SERVE_TOKEN` 仅作为 CLI 托管 serve 进程的归属 token，不接入 API Bearer 认证；API Bearer 仍只由 `FORMA_SERVER_TOKEN` 控制。
+5. 不引入密钥管理系统、不改 daemon 协议。
 
 **验收标准**：
 
 - [ ] `ps` 输出（即子进程 argv）中不再出现 token。
 - [ ] state 文件权限为 `0600`（测试中断言 `stat.mode & 0o777`）。
 - [ ] `forma serve start/stop/status` 全链路行为不变（现有 `packages/cli/tests/cli.test.ts` 通过，并更新其中对 `--serve-token` 的断言）。
-- [ ] server 进程仍能通过 env 拿到 token 并启用 Bearer 校验。
+- [ ] 后台 server 子进程仍能通过 env 拿到 `FORMA_SERVE_TOKEN` 并写入/校验 serve metadata；API Bearer 校验仍只由 `FORMA_SERVER_TOKEN` 控制，R1 不改变该边界。
 
 ### R2 product ID 碰撞防护与孤儿清理
 
@@ -74,15 +75,16 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 
 **需求**：
 
-1. `createProductLocked` 生成 ID 后检查 index 成员与 `productFile(id)` 是否已存在；碰撞则重新生成，最多重试 5 次，仍碰撞则抛 `FormaError`（复用或新增合适的 code，不得静默覆盖）。
-2. index 写入失败时 best-effort 删除本次刚创建的 product 文件/目录（清理失败不掩盖原始错误）。
+1. `createProductLocked` 生成 ID 后检查 index 成员、`productFile(id)` 以及 `data/<productId>/` 目录是否已存在；任一命中均视为占用并重新生成，最多重试 5 次，仍碰撞则抛 `FormaError`（复用或新增合适的 code，不得静默覆盖或写入既有孤儿目录）。
+2. index 写入失败时 best-effort 删除本次刚写入的 `product.yaml`；仅当 product 目录由本次创建或删除文件后已空时才删除目录，清理失败不掩盖原始错误。
 3. 不拉长 ID、不改 ID 格式（避免破坏现有 schema/数据兼容）。
 
 **验收标准**：
 
 - [ ] 测试：mock `createId` 返回已存在 ID 时，新建产品拿到不同 ID，且原产品文件内容不变。
+- [ ] 测试：mock `createId` 命中已存在的孤儿 product 目录（尤其是非空目录）时，新建产品拿到不同 ID，孤儿目录内容不变。
 - [ ] 测试：连续碰撞超过重试上限时抛出明确 `FormaError`。
-- [ ] 测试：index 写入抛错时，本次创建的 product 文件被清理，错误向上抛出。
+- [ ] 测试：index 写入抛错时，本次创建的 product 文件被清理，既有孤儿目录或非本次创建的内容不被删除，错误向上抛出。
 - [ ] 现有 `product-*.test.ts` 全部通过。
 
 ### R3 core 单点资源预算（瘦身版：3 常量 + sharp 像素上限）
@@ -191,24 +193,25 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 - [ ] 上述每个向量都有独立用例；当前校验器若存在漏放，先修校验器再让用例转绿（修复属于本需求范围）。
 - [ ] 测试文件中注明：本组用例是 no-sandbox 渲染与无 CSP 嵌入的安全前提，删改需安全评审。
 
-### R8 README 注明远程模式边界
+### R8 README 注明远程模式边界（已完成，保留验证）
 
-**现状**：非 loopback 模式下 bundled Web UI 不附带 token，实际只能程序化 API 或反代注入 auth；README 未明确告知。
+**现状**：非 loopback 模式下 bundled Web UI 不附带 token，实际只能程序化 API 或反代注入 auth；README 的 "Network exposure & authentication" 段落已明确说明该边界。
 
-**需求**：README 认证段落加一行：远程（非 loopback + token）模式当前仅支持程序化 API 访问，bundled Web UI 不可用；如需远程 UI 请使用反向代理注入 `Authorization` 头。不写任何代码。
+**需求**：不再新增代码或重复修改 README；保留本项作为验收记录，确保远程（非 loopback + token）模式仅支持程序化 API 访问，bundled Web UI 不可用；如需远程 UI，请使用反向代理注入 `Authorization` 头。
 
 **验收标准**：
 
-- [ ] README 更新且表述与 `requireAuthTokenForHost` 实际行为一致。
+- [x] README 已更新，表述与 `requireAuthTokenForHost` 实际行为一致。
 
 ### R9 lint 转 blocking（既定计划确认）
 
-**现状**：CI 中 Biome lint step 带 `continue-on-error: true`（`.github/workflows/ci.yml:45-47`），注释已说明 backlog（约 33 条 recommended 规则，见 `docs/tech-debt.md`）。
+**现状**：CI 中 Biome lint step 带 `continue-on-error: true`（`.github/workflows/ci.yml:45-47`）。lint backlog 以当前 `pnpm lint` 输出为准；仓库内暂无单独的 `docs/tech-debt.md` 清单。
 
-**需求**：清完 lint backlog 后，移除 `continue-on-error: true`，lint 失败即红。这是确认既有计划并给出完成判据，不是新增工程。
+**需求**：清完 lint backlog 后，移除 `continue-on-error: true`，lint 失败即红。同时修正 `ci.yml:43` 注释中对不存在的 `docs/tech-debt.md` 的失效引用。这是确认既有计划并给出完成判据，不是新增工程。
 
 **验收标准**：
 
+- [ ] 执行并记录当前 `pnpm lint` 输出作为 backlog 来源（2026-06-07 实测：112 errors / 286 warnings）。
 - [ ] `pnpm lint` 在仓库根目录零报错。
 - [ ] CI lint step 不再有 `continue-on-error: true`。
 
@@ -288,7 +291,7 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 - [ ] `products.yaml` 损坏时 doctor 仍能运行并报告，不崩溃。
 - [ ] 孤儿 product 目录被报告且未被修改（前后目录内容一致）。
 - [ ] doctor 全程无写操作（测试断言 mtime/内容不变）。
-- [ ] `createFormaStore` 的 fail-fast 行为回归测试不变绿转红。
+- [ ] 新增 `packages/core/tests/doctor.test.ts` 覆盖 doctor 结构化诊断；`packages/core/tests/store-startup-validation.test.ts` 中的 `createFormaStore` fail-fast 回归测试继续通过，不应由绿转红。
 
 **规模**：core 一个新导出函数（~60-100 行，大部分复用既有校验逻辑）+ CLI 命令分发与输出（~40 行）+ 测试。
 
@@ -317,7 +320,7 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 1. R4 → R3（同文件，先小修再加预算，避免冲突）。
 2. R1、R2、R5、R6、R10 相互独立，可并行；R10 最小（删一行 + 守护），建议最先合入。
 3. R7 独立；若发现校验器漏放，修复合入同一变更。R11 与 R7 相邻（同一防线主题），可同批。
-4. R8 随 R5 或单独提交皆可。
+4. R8 已完成并验证，后续实施无需为 R8 再提交 README 变更。
 5. R9 依赖 lint backlog 清理完成，单独排期。
 6. F3 内部顺序：server 加 `versions` 字段 → web 对比视图（前者是后者的数据依赖）。与加固批次无依赖，可并行。
 7. F4 内部顺序：core `diagnoseWorkspace` → CLI `doctor` 命令。与 R2 有主题交集（孤儿检测）：若 R2 先合入，其 orphan 清理逻辑不变，F4 仍报告残余孤儿；无硬依赖。
@@ -328,6 +331,7 @@ Forma 是单用户 local-first 工具：server 默认绑定 `127.0.0.1`，非 lo
 ```bash
 pnpm typecheck
 pnpm test
+pnpm lint:changed   # 新改动必须 lint 干净；全量 pnpm lint 在 R9 完成后才作为门禁
 # 定点回归：
 npx vitest run packages/core/tests/design-save.test.ts
 npx vitest run packages/core/tests/artifact-asset-pipeline.test.ts
@@ -338,7 +342,8 @@ npx vitest run packages/cli/tests/cli.test.ts
 # F3/F4 定点回归：
 npx vitest run packages/web/src/pages/DesignView.test.tsx
 npx vitest run packages/web/src/routes.test.ts
-npx vitest run packages/core/tests/design.test.ts
+npx vitest run packages/core/tests/doctor.test.ts
+npx vitest run packages/core/tests/store-startup-validation.test.ts
 ```
 
 ## 回滚
