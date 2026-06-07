@@ -1802,6 +1802,41 @@ describe("artifact routes", () => {
   });
 });
 
+describe("artifact detail versions (F3)", () => {
+  it("returns the sorted version list and current_version", async () => {
+    const store = fakeStore();
+    (store.artifacts.listArtifactVersions as ReturnType<typeof vi.fn>).mockResolvedValue([3, 1, 2]);
+    const app = await buildServer({ store });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-0abc12/artifacts/A-abcdef1234567890",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.versions).toEqual([1, 2, 3]);
+    expect(body.current_version).toBe(3);
+  });
+
+  it("includes version_count in artifact list summaries", async () => {
+    const store = fakeStore();
+    (store.artifacts.listArtifactVersions as ReturnType<typeof vi.fn>).mockResolvedValue([1, 2]);
+    const app = await buildServer({ store });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/products/P-0abc12/artifacts",
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.artifacts[0]).toEqual(expect.objectContaining({ version_count: 2 }));
+  });
+});
+
 describe("baseline compatibility routes", () => {
   it("GET /api/products/:id/baseline returns a derived baseline for existing Web UI callers", async () => {
     const store = fakeStore({

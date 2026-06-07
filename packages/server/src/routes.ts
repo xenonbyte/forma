@@ -602,6 +602,7 @@ export function registerRoutes(
         const superseded = requirementId !== undefined && !currentPointerIds.has(artifactId);
         if (!includeSuperseded && superseded) continue;
         const forma = manifest.forma ? normalizeFormaExtension(manifest.forma) : undefined;
+        const versions = [...(await store.artifacts.listArtifactVersions(pid, artifactId))].sort((a, b) => a - b);
         artifacts.push({
           id: artifactId,
           kind: normalizeKind(manifest.kind),
@@ -613,6 +614,7 @@ export function registerRoutes(
           page_id: forma?.pageId,
           variant: forma?.variant,
           ...(typeof version === "number" ? { current_version: version } : {}),
+          ...(versions.length > 0 ? { version_count: versions.length } : {}),
           superseded,
         });
       }
@@ -625,12 +627,18 @@ export function registerRoutes(
     const { pid, aid } = request.params;
     const { pointerVersions } = await loadArtifactPointers(store, pid);
     const { manifest, etag } = await resolveCurrentArtifact(store, pid, aid, pointerVersions);
+    // F3: expose the immutable version list so the web compare view can pick
+    // any two versions; current_version mirrors the pointer (or latest).
+    const versions = [...(await store.artifacts.listArtifactVersions(pid, aid))].sort((a, b) => a - b);
+    const currentVersion = pointerVersions.get(aid) ?? (versions.length > 0 ? versions[versions.length - 1] : undefined);
     reply.header("ETag", etag);
     reply.header("Cache-Control", "private, max-age=300");
     return {
       manifest,
       supportingFiles: manifest.supportingFiles ?? [],
       preview_url: artifactPreviewUrl(pid, aid, "2x"),
+      versions,
+      ...(currentVersion !== undefined ? { current_version: currentVersion } : {}),
     };
   });
 
