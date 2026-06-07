@@ -37,9 +37,13 @@ export function VersionCompare({ client, params }: VersionCompareProps) {
           setState({ status: "empty", title: detail.manifest.title });
           return;
         }
-        const right = detail.current_version ?? versions[versions.length - 1];
-        const rightIndex = versions.indexOf(right);
-        const left = rightIndex > 0 ? versions[rightIndex - 1] : versions[versions.length - 2];
+        const current = detail.current_version ?? versions[versions.length - 1];
+        const currentIndex = versions.indexOf(current);
+        // Default pair: predecessor vs current. When current is the oldest
+        // version (e.g. after a rollback to v1), compare current vs the next
+        // version instead — the panes must never default to the same image.
+        const left = currentIndex > 0 ? versions[currentIndex - 1] : current;
+        const right = currentIndex > 0 ? current : versions[currentIndex + 1];
         setState({ status: "ready", title: detail.manifest.title, versions, left, right });
       })
       .catch((error: unknown) => {
@@ -104,7 +108,7 @@ export function VersionCompare({ client, params }: VersionCompareProps) {
         <ComparePane
           label={t("design.compareLeft")}
           missingText={t("design.comparePreviewMissing")}
-          onSelect={(version) => setState({ ...state, left: version })}
+          onSelect={(version) => setState((prev) => (prev.status === "ready" ? { ...prev, left: version } : prev))}
           previewUrl={client.getArtifactVersionPreviewUrl(productId, artifactId, state.left, "2x")}
           selected={state.left}
           versions={state.versions}
@@ -112,7 +116,7 @@ export function VersionCompare({ client, params }: VersionCompareProps) {
         <ComparePane
           label={t("design.compareRight")}
           missingText={t("design.comparePreviewMissing")}
-          onSelect={(version) => setState({ ...state, right: version })}
+          onSelect={(version) => setState((prev) => (prev.status === "ready" ? { ...prev, right: version } : prev))}
           previewUrl={client.getArtifactVersionPreviewUrl(productId, artifactId, state.right, "2x")}
           selected={state.right}
           versions={state.versions}

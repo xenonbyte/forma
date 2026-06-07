@@ -27,7 +27,7 @@ function previewUrl(productId: string, artifactId: string, version: number, reso
   return `/api/products/${productId}/artifacts/${artifactId}/versions/${version}/preview/${resolution}.png`;
 }
 
-function fakeClient(versions: number[]): VersionCompareClient {
+function fakeClient(versions: number[], currentVersion?: number): VersionCompareClient {
   return {
     getProductArtifact: async () => ({
       manifest: {
@@ -39,7 +39,7 @@ function fakeClient(versions: number[]): VersionCompareClient {
         exports: [],
       },
       versions,
-      current_version: versions[versions.length - 1],
+      current_version: currentVersion ?? versions[versions.length - 1],
     }),
     getArtifactVersionPreviewUrl: previewUrl,
   };
@@ -53,12 +53,14 @@ async function render(client: VersionCompareClient) {
   roots.push(root);
   await act(async () => {
     root.render(
-      createElement(LocaleProvider, {
-        children: createElement(VersionCompare, {
+      createElement(
+        LocaleProvider,
+        null,
+        createElement(VersionCompare, {
           client,
           params: { productId: "P-0abc12", artifactId: "A1" },
         }),
-      }),
+      ),
     );
   });
   return container;
@@ -84,6 +86,15 @@ describe("VersionCompare (F3)", () => {
     });
     const imgs = [...container.querySelectorAll("img")];
     expect(imgs[0].getAttribute("src")).toBe(previewUrl("P-0abc12", "A1", 1, "2x"));
+  });
+
+  it("defaults to current vs next when the pointer is rolled back to the oldest version", async () => {
+    const container = await render(fakeClient([1, 2, 3], 1));
+    const imgs = [...container.querySelectorAll("img")];
+    expect(imgs.map((img) => img.getAttribute("src"))).toEqual([
+      previewUrl("P-0abc12", "A1", 1, "2x"),
+      previewUrl("P-0abc12", "A1", 2, "2x"),
+    ]);
   });
 
   it("shows an empty state when fewer than two versions exist", async () => {

@@ -58,7 +58,11 @@ export function DesignView({ client, params }: DesignViewProps) {
         const compareTargets = requirementArtifacts
           .filter((artifact) => (artifact.version_count ?? 1) >= 2)
           .map((artifact) => ({ artifactId: artifact.id, title: artifact.title }));
-        setState({ status: "ready", model: buildViewerModel({ entry: "requirement", artifacts: inputs }), compareTargets });
+        setState({
+          status: "ready",
+          model: buildViewerModel({ entry: "requirement", artifacts: inputs }),
+          compareTargets,
+        });
       })
       .catch((error: unknown) => {
         if (!cancelled) {
@@ -107,7 +111,7 @@ export function DesignView({ client, params }: DesignViewProps) {
           <div className="flex items-center gap-2 overflow-x-auto text-sm">
             {state.compareTargets.map((target) => (
               <a
-                className="whitespace-nowrap rounded-md border border-zinc-200 px-2 py-1 text-zinc-600 transition hover:text-zinc-950"
+                className="whitespace-nowrap rounded-md border border-zinc-200 px-2 py-1 text-zinc-600 transition hover:text-zinc-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
                 href={`/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(target.artifactId)}/compare`}
                 key={target.artifactId}
               >
