@@ -40,4 +40,5 @@ export * from "./quality/index.js";
 export * from "./design-context.js";
 export * from "./artifact-urls.js";
 export * from "./requirement-handoff-content.js";
+export * from "./doctor.js";
 export { isSameOrChildPath } from "./path-boundary.js";

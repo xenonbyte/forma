@@ -112,7 +112,7 @@ export async function createFormaStore(options: FormaStoreOptions): Promise<Form
   return store;
 }
 
-function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
+export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   const productMutationLock = options.productMutationLock ?? getProductMutationLock(options.home);
   const onProductMutationWarning = options.onProductMutationWarning ?? defaultProductMutationWarningSink;
   const productMutationOptions = {
