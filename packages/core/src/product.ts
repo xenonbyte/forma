@@ -1,4 +1,4 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { FormaError } from "./errors.js";
@@ -162,19 +162,47 @@ export class ProductService {
   }
 
   async createProductLocked(input: { name: string; description: string }): Promise<Product> {
+    const index = await this.readProductIndex();
+    const id = await this.allocateProductId(index.products);
     const product = productSchema.parse({
-      id: createId("product"),
+      id,
       name: input.name,
       description: input.description,
     });
-    const index = await this.readProductIndex();
 
     await writeYamlAtomic(this.productFile(product.id), product);
-    await writeYamlAtomic(this.indexFile, {
-      products: [...index.products, productIndexEntrySchema.parse(product)],
-    });
+    try {
+      await writeYamlAtomic(this.indexFile, {
+        products: [...index.products, productIndexEntrySchema.parse(product)],
+      });
+    } catch (error) {
+      // Best-effort cleanup of the file written above. rmdir only removes the
+      // directory when it is empty, so pre-existing foreign content survives.
+      // Never mask the original error.
+      await rm(this.productFile(product.id), { force: true }).catch(() => undefined);
+      await rmdir(join(this.dataDir, product.id)).catch(() => undefined);
+      throw error;
+    }
 
     return product;
+  }
+
+  /**
+   * Allocate a product id that is free in the index AND on disk. A bare
+   * data/<id>/ directory (orphaned requirement data) also counts as occupied —
+   * writing into it would silently adopt foreign state.
+   */
+  private async allocateProductId(existing: ProductIndexEntry[]): Promise<string> {
+    const MAX_ATTEMPTS = 5;
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      const id = createId("product");
+      if (existing.some((product) => product.id === id)) continue;
+      if (await fileExists(join(this.dataDir, id))) continue;
+      return id;
+    }
+    throw new FormaError("PRODUCT_ID_ALLOCATION_FAILED", "Failed to allocate a unique product id", {
+      attempts: MAX_ATTEMPTS,
+    });
   }
 
   async initProductConfig(productId: string, config: ProductConfig): Promise<Product> {
