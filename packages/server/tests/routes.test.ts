@@ -2602,3 +2602,26 @@ describe("requireAuthTokenForHost / isLoopbackHost", () => {
     }
   });
 });
+
+describe("GET /api/health (R5)", () => {
+  it("returns ok without touching the store", async () => {
+    const app = await buildServer({ store: fakeStore() });
+    apps.push(app);
+    const response = await app.inject({ method: "GET", url: "/api/health" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: "ok" });
+  });
+
+  it("is bearer-protected like every other /api route when a token is set", async () => {
+    const app = await buildServer({ store: fakeStore(), authToken: "secret" });
+    apps.push(app);
+    const denied = await app.inject({ method: "GET", url: "/api/health" });
+    expect(denied.statusCode).toBe(401);
+    const allowed = await app.inject({
+      method: "GET",
+      url: "/api/health",
+      headers: { authorization: "Bearer secret" },
+    });
+    expect(allowed.statusCode).toBe(200);
+  });
+});

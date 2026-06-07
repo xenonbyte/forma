@@ -88,7 +88,7 @@ export function createFormaHttpClient(options: { baseUrl?: string; fetchFn?: typ
       getJson(`/api/products/${encodeURIComponent(productId)}/requirements/${encodeURIComponent(requirementId)}`),
     async serverStatus() {
       try {
-        const response = await fetchFn(`${baseUrl}/api/products`);
+        const response = await fetchFn(`${baseUrl}/api/health`);
         return response.ok;
       } catch {
         return false;

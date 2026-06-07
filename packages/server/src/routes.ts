@@ -222,6 +222,11 @@ export function registerRoutes(
 ): void {
   const authenticatedApi = options.authenticatedApi === true;
 
+  // ─── Health ────────────────────────────────────────────────────────────────
+  // Read-only liveness probe: no disk I/O, no store access. Sits under /api so
+  // the bearer-auth hook applies uniformly (no auth exception).
+  app.get("/api/health", async () => ({ status: "ok" }));
+
   // ─── Product routes ────────────────────────────────────────────────────────
 
   app.get("/api/products", async () => store.products.listProducts());

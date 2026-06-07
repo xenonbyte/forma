@@ -159,6 +159,17 @@ describe("createFormaHttpClient", () => {
     });
     expect(client.serverBaseUrl()).toBe("http://127.0.0.1:4567");
   });
+
+  it("serverStatus probes /api/health", async () => {
+    const fetchFn = vi.fn(
+      async () => new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+    );
+    const { createFormaHttpClient } = await import("./index.js");
+    const client = createFormaHttpClient({ baseUrl: "http://127.0.0.1:3000", fetchFn: fetchFn as typeof fetch });
+
+    await expect(client.serverStatus()).resolves.toBe(true);
+    expect(fetchFn).toHaveBeenCalledWith("http://127.0.0.1:3000/api/health");
+  });
 });
 
 describe("registerFormaIpcHandlers", () => {
