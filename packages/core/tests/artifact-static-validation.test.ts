@@ -434,6 +434,13 @@ describe("static validator security regressions (R7)", () => {
     expectRejected(result, "image-set");
   });
 
+  it("rejects remote image-set() candidates after a functional candidate (nested parens)", () => {
+    const result = validateStaticArtifact({
+      html: `<html><head><style>.x { background: image-set(linear-gradient(red, blue) 1x, "https://evil.example/a.png" 2x); }</style></head><body></body></html>`,
+    });
+    expectRejected(result, "image-set");
+  });
+
   it("rejects remote @font-face src (existing url() rule)", () => {
     const result = validateStaticArtifact({
       html: `<html><head><style>@font-face { font-family: x; src: url(https://evil.example/f.woff2); }</style></head><body></body></html>`,
