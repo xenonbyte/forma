@@ -15,5 +15,6 @@ packages/desktop/out/
 .drfx/
 .docs-review-fix/
 output/
-docs/
+docs/*
+!docs/forma-requirements-consolidated.md
 design-version/
