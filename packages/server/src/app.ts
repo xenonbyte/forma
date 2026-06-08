@@ -27,7 +27,7 @@ export interface FormaServerStore extends FormaRoutesStore {
 }
 
 export async function buildServer(options: BuildServerOptions = {}): Promise<FormaServer> {
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({ logger: options.logger ?? false, disableRequestLogging: true });
   const authToken = options.authToken?.trim();
   if (authToken) {
     registerApiBearerAuth(app, authToken);

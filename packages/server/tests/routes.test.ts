@@ -2148,6 +2148,29 @@ describe("audit log (SPEC-OBS-004)", () => {
       allowed: false,
     });
   });
+
+  it("does not enable Fastify default request logs when audit logger is configured", async () => {
+    const store = fakeStore();
+    const capture = captureLogStream();
+    const app = await buildServer({
+      store,
+      logger: { level: "info", stream: capture.stream },
+    });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/products?private_query=do-not-log",
+      payload: { name: "App", description: "Demo" },
+      headers: { Origin: "http://localhost:5173" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const entries = capture.lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(entries.find((entry) => entry.msg === "mutation origin check")).toBeDefined();
+    expect(entries.some((entry) => entry.msg === "incoming request" || entry.msg === "request completed")).toBe(false);
+    expect(JSON.stringify(entries)).not.toContain("private_query=do-not-log");
+  });
 });
 
 describe("SPEC-IF-HTTP-005: removed routes return 404", () => {

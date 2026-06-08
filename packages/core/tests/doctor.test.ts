@@ -76,6 +76,30 @@ describe("diagnoseWorkspace (F4)", () => {
     await expect(readFile(join(orphanDir, "stray.txt"), "utf8")).resolves.toBe("keep me");
   });
 
+  it("reports document read failures that would block startup validation", async () => {
+    const home = await testHome();
+    const store = await createFormaStore({ home });
+    const product = await store.products.createProduct({ name: "P", description: "d" });
+    const requirementId = "R-aabbccdd";
+    const requirementDir = join(home, "data", product.id, requirementId);
+    await mkdir(requirementDir, { recursive: true });
+    await writeFile(join(requirementDir, "requirement.yaml"), minimalRequirementYaml(requirementId, product.id), "utf8");
+    await mkdir(join(requirementDir, "document.md"));
+
+    await expect(createFormaStore({ home })).rejects.toThrow();
+
+    const diagnosis = await diagnoseWorkspace({ home });
+
+    expect(diagnosis.findings).toContainEqual(
+      expect.objectContaining({
+        kind: "schema",
+        product_id: product.id,
+        requirement_id: requirementId,
+        file: `data/${product.id}/${requirementId}/document.md`,
+      }),
+    );
+  });
+
   it("does not modify existing workspace files while diagnosing", async () => {
     const home = await testHome();
     const store = await createFormaStore({ home });

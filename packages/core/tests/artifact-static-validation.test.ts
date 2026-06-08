@@ -420,6 +420,27 @@ describe("static validator security regressions (R7)", () => {
     expectRejected(result, "javascript:");
   });
 
+  it("rejects foreignObject inside inline SVG", () => {
+    const result = validateStaticArtifact({
+      html: `<html><body><svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div>html island</div></foreignObject></svg></body></html>`,
+    });
+    expectRejected(result, "foreignobject");
+  });
+
+  it("rejects javascript: in inline SVG animate href values", () => {
+    const result = validateStaticArtifact({
+      html: `<html><body><svg xmlns="http://www.w3.org/2000/svg"><a><animate attributeName="href" values="#safe;javascript:alert(1)"/></a></svg></body></html>`,
+    });
+    expectRejected(result, "javascript:");
+  });
+
+  it("rejects remote and data: URLs in SVG animate href values", () => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg"><image href="#safe"><animate attributeName="href" values="#safe;https://evil.example/a.png;data:image/png;base64,AAAA"/></image></svg>`;
+    const result = validateStaticArtifact({ html: "<html><body></body></html>", svgFiles: new Map([["a.svg", svg]]) });
+    expectRejected(result, "Remote");
+    expectRejected(result, "data:");
+  });
+
   it("rejects remote URLs inside CSS image-set()", () => {
     const result = validateStaticArtifact({
       html: `<html><head><style>.x { background: image-set("https://evil.example/a.png" 1x); }</style></head><body></body></html>`,

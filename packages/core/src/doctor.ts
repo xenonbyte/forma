@@ -6,7 +6,7 @@
  * finding instead of failing fast, and additionally reports orphan product
  * directories. Strictly read-only: no locks, no writes, no repairs.
  */
-import { readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { FormaError } from "./errors.js";
 import { requirementSchema } from "./requirement.js";
@@ -80,6 +80,16 @@ export async function diagnoseWorkspace(options: { home: string }): Promise<Work
       }
 
       try {
+        await readRequirementDocumentAt(options.home, entry.id, requirementId);
+      } catch (error) {
+        findings.push(toFinding("schema", error, {
+          product_id: entry.id,
+          requirement_id: requirementId,
+          file: `data/${entry.id}/${requirementId}/document.md`,
+        }));
+      }
+
+      try {
         await store.copy.getTranslations(entry.id, requirementId);
       } catch (error) {
         findings.push(toFinding("schema", error, {
@@ -133,6 +143,17 @@ async function listRequirementIds(home: string, productId: string, findings: Wor
 
 async function readRequirementAt(home: string, productId: string, requirementId: string) {
   return readYamlAs(join(home, "data", productId, requirementId, "requirement.yaml"), requirementSchema);
+}
+
+async function readRequirementDocumentAt(home: string, productId: string, requirementId: string): Promise<void> {
+  try {
+    await readFile(join(home, "data", productId, requirementId, "document.md"), "utf8");
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
 }
 
 function toFinding(

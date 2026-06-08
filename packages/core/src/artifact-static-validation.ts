@@ -155,6 +155,72 @@ function scanResourceAttributes(el: HTMLElement, violations: string[]): void {
   }
 }
 
+function isInSvgTree(el: HTMLElement): boolean {
+  let current: HTMLElement | undefined = el;
+  while (current) {
+    if (current.tagName?.toLowerCase() === "svg") {
+      return true;
+    }
+    const parent = current.parentNode as HTMLElement | undefined;
+    current = parent?.tagName ? parent : undefined;
+  }
+  return false;
+}
+
+interface SvgElementScanOptions {
+  includeCommonChecks?: boolean;
+}
+
+function scanSvgElement(
+  el: HTMLElement,
+  source: string,
+  violations: string[],
+  options: SvgElementScanOptions = {},
+): void {
+  const { includeCommonChecks = true } = options;
+  const tag = el.tagName?.toLowerCase() ?? "";
+
+  // Embedded-content elements have no place in a localized or inline SVG.
+  if (tag === "iframe" || tag === "object" || tag === "embed" || tag === "foreignobject") {
+    violations.push(`<${tag}> element in ${source}`);
+  }
+
+  // SMIL animation can write href-class attributes — scan animation values.
+  if (tag === "animate" || tag === "set" || tag === "animatemotion" || tag === "animatetransform") {
+    for (const attr of ["to", "from", "by", "values"]) {
+      const val = el.getAttribute(attr);
+      if (!val) continue;
+      const candidates = attr === "values" ? val.split(";") : [val];
+      for (const candidate of candidates) {
+        scanSvgHref(candidate, attr, source, tag, violations);
+      }
+    }
+  }
+
+  if (!includeCommonChecks) {
+    return;
+  }
+
+  for (const [attrName] of Object.entries(el.attributes)) {
+    if (attrName.toLowerCase().startsWith("on")) {
+      violations.push(`Inline event handler attribute "${attrName}" on <${tag}> in ${source}`);
+    }
+  }
+
+  // href — reject remote, javascript:, and residual data: (no JS / no remote /
+  // no residual data: in localized SVG assets)
+  const href = el.getAttribute("href");
+  if (href) {
+    scanSvgHref(href, "href", source, tag, violations);
+  }
+
+  // xlink:href
+  const xlinkHref = el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
+  if (xlinkHref) {
+    scanSvgHref(xlinkHref, "xlink:href", source, tag, violations);
+  }
+}
+
 /** Scan all elements of a parsed tree and push violations. */
 function scanParsedTree(root: ReturnType<typeof parse>, violations: string[], context: string): void {
   // Rule 1: <script> elements
@@ -214,71 +280,38 @@ function scanParsedTree(root: ReturnType<typeof parse>, violations: string[], co
     if (tag === "style") {
       violations.push(...scanCssText(el.text, `<style> block in ${context}`));
     }
+
+    if (isInSvgTree(el)) {
+      scanSvgElement(el, `inline SVG in ${context}`, violations, { includeCommonChecks: false });
+    }
   }
 }
 
 /** Scan an SVG file string (rule 9). */
 export function scanSvg(path: string, svgText: string, violations: string[]): void {
   const root = parse(svgText, { comment: false });
+  const source = `SVG file "${path}"`;
 
   // <script> in SVG
   if (root.querySelectorAll("script").length > 0) {
-    violations.push(`<script> element in SVG file "${path}"`);
+    violations.push(`<script> element in ${source}`);
   }
 
   // on* event attributes and external href/xlink:href
   for (const el of root.querySelectorAll("*")) {
-    const tag = el.tagName?.toLowerCase() ?? "";
-
-    // Embedded-content elements have no place in a localized SVG asset.
-    if (tag === "iframe" || tag === "object" || tag === "embed" || tag === "foreignobject") {
-      violations.push(`<${tag}> element in SVG file "${path}"`);
-    }
-
-    // SMIL animation can write href-class attributes — scan animation values.
-    if (tag === "animate" || tag === "set" || tag === "animatemotion" || tag === "animatetransform") {
-      for (const attr of ["to", "from", "by", "values"]) {
-        const val = el.getAttribute(attr);
-        if (!val) continue;
-        const candidates = attr === "values" ? val.split(";") : [val];
-        for (const candidate of candidates) {
-          if (isJavascriptUrl(candidate.trim())) {
-            violations.push(`javascript: URL in ${attr} on <${tag}> in SVG file "${path}"`);
-          }
-        }
-      }
-    }
-
-    for (const [attrName] of Object.entries(el.attributes)) {
-      if (attrName.toLowerCase().startsWith("on")) {
-        violations.push(`Inline event handler attribute "${attrName}" on <${tag}> in SVG file "${path}"`);
-      }
-    }
-
-    // href — reject remote, javascript:, and residual data: (no JS / no remote /
-    // no residual data: in localized SVG assets)
-    const href = el.getAttribute("href");
-    if (href) {
-      scanSvgHref(href, "href", path, tag, violations);
-    }
-
-    // xlink:href
-    const xlinkHref = el.getAttribute("xlink:href") ?? el.rawAttributes["xlink:href"];
-    if (xlinkHref) {
-      scanSvgHref(xlinkHref, "xlink:href", path, tag, violations);
-    }
+    scanSvgElement(el, source, violations);
   }
 }
 
 /** Flag remote / javascript: / residual data: targets on an SVG href attribute. */
-function scanSvgHref(value: string, attr: string, path: string, tag: string, violations: string[]): void {
+function scanSvgHref(value: string, attr: string, source: string, tag: string, violations: string[]): void {
   const trimmed = value.trim();
   if (isRemoteUrl(trimmed)) {
-    violations.push(`Remote http(s) ${attr} on <${tag}> in SVG file "${path}": ${trimmed}`);
+    violations.push(`Remote http(s) ${attr} on <${tag}> in ${source}: ${trimmed}`);
   } else if (isJavascriptUrl(trimmed)) {
-    violations.push(`javascript: URL in ${attr} on <${tag}> in SVG file "${path}": ${trimmed}`);
+    violations.push(`javascript: URL in ${attr} on <${tag}> in ${source}: ${trimmed}`);
   } else if (isDataUrl(trimmed)) {
-    violations.push(`Residual data: URL in ${attr} on <${tag}> in SVG file "${path}": ${trimmed.slice(0, 64)}`);
+    violations.push(`Residual data: URL in ${attr} on <${tag}> in ${source}: ${trimmed.slice(0, 64)}`);
   }
 }
 
