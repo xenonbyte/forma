@@ -361,7 +361,9 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 7. **来源（数据驱动，见 B7）**：基线清单 + foundations/ICON 规格作为 **Forma 内置 core 数据**（`component-baseline.ts`，按 platform 键入），**不镜像**品牌 `components.html`。`fm-refine-components` 经新工具 `get_component_baseline(product_id)` 拿到该 platform 的规格再生成。
 8. **固定集，不自由发挥**：每个产品都生成**同一套**基线（按 platform 选变体），不让模型按需求随意增减，否则失去"通用"意义。本轮**不做**按产品域名补充专有组件（域内补充另列后续）。
 9. **平台感知**：按产品 `platform`（`get_product`）选 web 或 mobile 变体。
-10. **状态覆盖**：每个组件按 `craft/state-coverage` 覆盖适用状态（default/hover/focus/disabled/loading/empty/error）。**`brand_style` 决定长相（tokens），`system_style` 决定结构/交互约定（方法论，仅 name+description 元数据、无 tokens/组件），两者都不决定"有哪些"**（清单由固定基线决定，见 B7）。
+10. **状态覆盖**：每个组件按 `craft/state-coverage` 覆盖适用状态（default/hover/focus/disabled/loading/empty/error）。
+
+**优先级（brand_style / Forma 基线 / system_style 三方权威边界）**：① `brand_style` → 视觉 tokens + 组件长相（**权威**）；② Forma 固定基线（B2/B7）→ 组件清单 + 基础结构（**权威**）；③ `system_style`（"设计规范"，仅 name+description 元数据、无 tokens/组件）→ **可选软提示**，仅在 ①② 未规定处微调交互/约定，**永不覆盖** brand tokens 或基线结构，歧义时忽略。三者都不决定"有哪些"（由 ② 决定）。
 
 **基线清单（精选档 · Web · 约 28 件 · 6 组）**：
 
@@ -481,12 +483,12 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 **需求**：
 
 1. **新增 core 数据** `packages/core/src/component-baseline.ts`：按 `platform`（web/mobile）键入的结构化规格 `{ foundations 分类, productIcon 规格, components 清单 }`。单一事实源，测试可逐项断言齐全。
-2. **refine 侧（独立工具）**：新增 MCP 工具 `get_component_baseline(product_id)`——由产品 `platform` 解析，返回对应规格。`fm-refine-components` 据此生成设计系统（替代旧模板里"自由发挥/镜像 components.html"与错误的 `get_style(system_style)` 访问）。
+2. **refine 侧（独立工具）**：新增 MCP 工具 `get_component_baseline(product_id)`——由产品 `platform` 解析，返回对应规格。`fm-refine-components` 据此生成设计系统（替代旧模板里"自由发挥/镜像 components.html"的做法）。
 3. **design 侧（扩 `get_design_context`）**：`buildDesignContext` 返回新增两字段——
    - `componentBaseline`：同上规格（让 design 知道哪些是规范件）；
    - `componentLibrary`：由产品级当前组件库指针解析出的 `component-library` 工件引用/内容（至少包含 `artifact_id`、`version`、bundle/preview 引用、manifest `forma.productIcon`、可供模型参考的当前 HTML 内容或等价读取面），供 B6 复用真实 markup + 产品 ICON。
 4. **当前组件库指针（core / API 契约）**：新增或扩展产品级元数据记录当前 `component-library` 的 artifact id 与当前版本；`generate_components` 保存时负责创建/追加并更新该指针；`list_product_artifacts` / `get_product_artifact` / `get_design_context` 均以该指针作为“当前组件库”的唯一事实源，不按 `updated_at`、数组顺序或需求级 `superseded` 推断。
-5. **system_style 访问厘清（G2）**：system_style 经 `systemStyle` 元数据字段交付（name+description），**不经 `get_style`**；作为组件结构/交互约定的**方法论软指导**，不进 foundations、不改清单。
+5. **system_style 厘清（G2）**：system_style 是**元数据**（name+description+category+upstream，无 tokens/组件，真内容在 upstream）。`get_style(name)` 对 system style 名会**正常返回该元数据（非 bug，`tools.ts:1032-1043` 先查品牌索引、再查系统目录）**；B7 选择经 `get_design_context.systemStyle` 结构化字段交付，更清晰一致。它是组件结构/交互约定的**软指导**，不进 foundations、不改清单；与 brand_style/基线的优先级见 B2 item10（**system_style 永不覆盖前两者**）。
 
 **验收标准**：
 
@@ -495,7 +497,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 - [ ] 当前组件库指针有 core/API/MCP 测试：首次生成创建指针，重复生成追加同一 artifact 新版本，读取面返回同一当前组件库。
 - [ ] `get_design_context` 返回 `componentBaseline` + `componentLibrary`；`fm-design` 复用以 `componentLibrary` 为准。
 - [ ] `componentLibrary` 含可解析的 `forma.productIcon` primary / monochrome asset path。
-- [ ] 模板不再出现 `get_style(system_style)`；system_style 走元数据。
+- [ ] system_style 经结构化字段（`systemStyle`）交付；模板改走该字段、无需再单独 `get_style(system_style)`（该调用本身不算错，只是统一改走结构化字段）。
 - [ ] `pnpm typecheck` / `pnpm build` 通过；新增工具/字段有 MCP schema 与测试。
 
 ---
@@ -508,7 +510,8 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 - B4：`fm-design` 缺组件库 → 停下提示先精修组件（显式，两段式，无静默）。
 - B5：rule 1——样式/组件改动不回溯已生成设计。
 - B6（2026-06-09）：`fm-design` 按需复用基线组件**与产品 ICON**——需要才复用、同 tokens/状态、同一产品图标；不为复用而设计，沉浸式/定制页可省略或替代通用件，Scope fidelity 不削弱。
-- B7（2026-06-09）：数据驱动设计系统上下文——新增 core `component-baseline.ts` + `get_component_baseline`（refine）+ `get_design_context` 加 `componentBaseline`/`componentLibrary`（design）；system_style 走元数据、修正 `get_style(system_style)` 误用。
+- B7（2026-06-09）：数据驱动设计系统上下文——新增 core `component-baseline.ts` + `get_component_baseline`（refine）+ `get_design_context` 加 `componentBaseline`/`componentLibrary`（design）；system_style 经结构化字段交付（`get_style(system_style)` 本就返回元数据、非 bug，此处仅澄清）。
+- system_style 取留+降级（2026-06-09）：**留** system_style（web "设计规范"功能 + manifest 留存），但严格从属——brand_style 长相权威、Forma 基线结构权威、system_style 仅软提示**永不覆盖**（见 B2 item10、B7 item5）。B2 后其"结构方法论"作用已被固定基线大部分架空，故定位为锦上添花。
 - B8 取消（2026-06-09）：`fm-rollback-design` 改为**整体删除**而非规格化——agent/MCP 见清理批 R5、web 版本/回退 UI 见批次3、底层版本机制保留。
 - C3（2026-06-09）：后台创建/后台样式配置只设样式不生成设计系统；`fm-change-style` 是 agent 命令，多一步委托 refine 生成。
 - 既有不变量（2026-06-09 记录）：`fm-requirement` 改页 → 该页 `expired` → 需求退回 `submitted` → 不可归档；对 expired 页重跑 `fm-design` 置回 `done` 才能归档。判定改动由 agent（`change_type`）负责、core 执行状态机；R1–R7 不触碰（见 B1 末"既有不变量"）。
