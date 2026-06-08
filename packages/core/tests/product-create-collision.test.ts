@@ -61,9 +61,7 @@ describe("createProduct collision safety (R2)", () => {
     await writeFile(join(home, "data", orphanId, "stray.txt"), "do not touch", "utf8");
 
     const actualIds = await vi.importActual<typeof import("../src/ids.js")>("../src/ids.js");
-    vi.mocked(createId)
-      .mockReturnValueOnce(orphanId)
-      .mockImplementation(actualIds.createId);
+    vi.mocked(createId).mockReturnValueOnce(orphanId).mockImplementation(actualIds.createId);
 
     const created = await products.createProduct({ name: "P", description: "d" });
 

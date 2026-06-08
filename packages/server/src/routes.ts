@@ -630,7 +630,8 @@ export function registerRoutes(
     // F3: expose the immutable version list so the web compare view can pick
     // any two versions; current_version mirrors the pointer (or latest).
     const versions = [...(await store.artifacts.listArtifactVersions(pid, aid))].sort((a, b) => a - b);
-    const currentVersion = pointerVersions.get(aid) ?? (versions.length > 0 ? versions[versions.length - 1] : undefined);
+    const currentVersion =
+      pointerVersions.get(aid) ?? (versions.length > 0 ? versions[versions.length - 1] : undefined);
     reply.header("ETag", etag);
     reply.header("Cache-Control", "private, max-age=300");
     return {

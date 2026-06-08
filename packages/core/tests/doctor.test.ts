@@ -70,9 +70,7 @@ describe("diagnoseWorkspace (F4)", () => {
 
     const diagnosis = await diagnoseWorkspace({ home });
 
-    expect(diagnosis.findings).toContainEqual(
-      expect.objectContaining({ kind: "orphan", product_id: "P-0ffffe" }),
-    );
+    expect(diagnosis.findings).toContainEqual(expect.objectContaining({ kind: "orphan", product_id: "P-0ffffe" }));
     await expect(readFile(join(orphanDir, "stray.txt"), "utf8")).resolves.toBe("keep me");
   });
 
@@ -83,7 +81,11 @@ describe("diagnoseWorkspace (F4)", () => {
     const requirementId = "R-aabbccdd";
     const requirementDir = join(home, "data", product.id, requirementId);
     await mkdir(requirementDir, { recursive: true });
-    await writeFile(join(requirementDir, "requirement.yaml"), minimalRequirementYaml(requirementId, product.id), "utf8");
+    await writeFile(
+      join(requirementDir, "requirement.yaml"),
+      minimalRequirementYaml(requirementId, product.id),
+      "utf8",
+    );
     await mkdir(join(requirementDir, "document.md"));
 
     await expect(createFormaStore({ home })).rejects.toThrow();

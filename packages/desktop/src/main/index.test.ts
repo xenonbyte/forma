@@ -161,9 +161,7 @@ describe("createFormaHttpClient", () => {
   });
 
   it("serverStatus probes /api/health", async () => {
-    const fetchFn = vi.fn(
-      async () => new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
-    );
+    const fetchFn = vi.fn(async () => new Response(JSON.stringify({ status: "ok" }), { status: 200 }));
     const { createFormaHttpClient } = await import("./index.js");
     const client = createFormaHttpClient({ baseUrl: "http://127.0.0.1:3000", fetchFn: fetchFn as typeof fetch });
 

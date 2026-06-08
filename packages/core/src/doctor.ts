@@ -48,10 +48,12 @@ export async function diagnoseWorkspace(options: { home: string }): Promise<Work
     try {
       await store.products.getProduct(entry.id);
     } catch (error) {
-      findings.push(toFinding("schema", error, {
-        product_id: entry.id,
-        file: `data/${entry.id}/product.yaml`,
-      }));
+      findings.push(
+        toFinding("schema", error, {
+          product_id: entry.id,
+          file: `data/${entry.id}/product.yaml`,
+        }),
+      );
       continue;
     }
 
@@ -71,32 +73,38 @@ export async function diagnoseWorkspace(options: { home: string }): Promise<Work
           continue; // do not check translations against the wrong product tree
         }
       } catch (error) {
-        findings.push(toFinding("schema", error, {
-          product_id: entry.id,
-          requirement_id: requirementId,
-          file: `data/${entry.id}/${requirementId}/requirement.yaml`,
-        }));
+        findings.push(
+          toFinding("schema", error, {
+            product_id: entry.id,
+            requirement_id: requirementId,
+            file: `data/${entry.id}/${requirementId}/requirement.yaml`,
+          }),
+        );
         continue;
       }
 
       try {
         await readRequirementDocumentAt(options.home, entry.id, requirementId);
       } catch (error) {
-        findings.push(toFinding("schema", error, {
-          product_id: entry.id,
-          requirement_id: requirementId,
-          file: `data/${entry.id}/${requirementId}/document.md`,
-        }));
+        findings.push(
+          toFinding("schema", error, {
+            product_id: entry.id,
+            requirement_id: requirementId,
+            file: `data/${entry.id}/${requirementId}/document.md`,
+          }),
+        );
       }
 
       try {
         await store.copy.getTranslations(entry.id, requirementId);
       } catch (error) {
-        findings.push(toFinding("schema", error, {
-          product_id: entry.id,
-          requirement_id: requirementId,
-          file: `data/${entry.id}/${requirementId}/copy-translations.yaml`,
-        }));
+        findings.push(
+          toFinding("schema", error, {
+            product_id: entry.id,
+            requirement_id: requirementId,
+            file: `data/${entry.id}/${requirementId}/copy-translations.yaml`,
+          }),
+        );
       }
     }
   }
@@ -134,7 +142,9 @@ async function listRequirementIds(home: string, productId: string, findings: Wor
   const productDir = join(home, "data", productId);
   try {
     const entries = await readdir(productDir, { withFileTypes: true });
-    return entries.filter((entry) => entry.isDirectory() && /^R-[a-f0-9]{8}$/.test(entry.name)).map((entry) => entry.name);
+    return entries
+      .filter((entry) => entry.isDirectory() && /^R-[a-f0-9]{8}$/.test(entry.name))
+      .map((entry) => entry.name);
   } catch (error) {
     findings.push(toFinding("schema", error, { product_id: productId, file: `data/${productId}` }));
     return [];

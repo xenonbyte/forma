@@ -46,6 +46,52 @@ function safeCodePoint(code: number): string {
   return Number.isInteger(code) && code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
 }
 
+function findMatchingCssParen(cssText: string, openParenIndex: number): number | null {
+  let depth = 0;
+  let quote: "'" | '"' | null = null;
+  let escaped = false;
+
+  for (let i = openParenIndex; i < cssText.length; i++) {
+    const ch = cssText[i];
+
+    if (quote) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      continue;
+    }
+
+    if (ch === "/" && cssText[i + 1] === "*") {
+      const commentEnd = cssText.indexOf("*/", i + 2);
+      if (commentEnd === -1) {
+        return null;
+      }
+      i = commentEnd + 1;
+      continue;
+    }
+
+    if (ch === "(") {
+      depth += 1;
+    } else if (ch === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return i;
+      }
+    }
+  }
+
+  return null;
+}
+
 /**
  * Scan a CSS text string for:
  *  - url(https?://...) — remote resource reference
@@ -85,9 +131,15 @@ function scanCssText(cssText: string, source: string): string[] {
   // image-set("…") / -webkit-image-set("…") carry bare string URLs that the
   // url() pattern above never sees. Check every quoted candidate in the list,
   // not only the first one.
-  const imageSetPattern = /(?:-webkit-)?image-set\s*\(((?:[^()]|\([^()]*\))*)\)/gi;
+  const imageSetPattern = /(?:-webkit-)?image-set\s*\(/gi;
   while ((m = imageSetPattern.exec(cssText)) !== null) {
-    const imageSetBody = m[1];
+    const openParenIndex = imageSetPattern.lastIndex - 1;
+    const closeParenIndex = findMatchingCssParen(cssText, openParenIndex);
+    if (closeParenIndex === null) {
+      continue;
+    }
+
+    const imageSetBody = cssText.slice(openParenIndex + 1, closeParenIndex);
     const quotedUrlPattern = /(['"])((?:https?:|data:|\/\/)[^'"]+)\1/gi;
     let q: RegExpExecArray | null;
     while ((q = quotedUrlPattern.exec(imageSetBody)) !== null) {
@@ -98,6 +150,7 @@ function scanCssText(cssText: string, source: string): string[] {
         violations.push(`Residual data: image-set() in ${source}: ${inner.slice(0, 64)}`);
       }
     }
+    imageSetPattern.lastIndex = closeParenIndex + 1;
   }
 
   return violations;

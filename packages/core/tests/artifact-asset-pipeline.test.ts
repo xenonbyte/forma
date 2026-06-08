@@ -472,7 +472,11 @@ function makePngHeaderWithDimensions(width: number, height: number): Buffer {
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8; // bit depth
   ihdr[9] = 2; // truecolor
-  return Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), pngChunk("IHDR", ihdr), pngChunk("IEND", Buffer.alloc(0))]);
+  return Buffer.concat([
+    Buffer.from("89504e470d0a1a0a", "hex"),
+    pngChunk("IHDR", ihdr),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 // ─── R3: input budgets ────────────────────────────────────────────────────────
@@ -490,7 +494,8 @@ describe("input budgets (R3)", () => {
     // Each unique data URL becomes a distinct asset file (svg here → 1 file each).
     const imgs = Array.from(
       { length: MAX_ASSET_COUNT + 1 },
-      (_, i) => `<img src="data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg'><text>${i}</text></svg>`)}">`,
+      (_, i) =>
+        `<img src="data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg'><text>${i}</text></svg>`)}">`,
     ).join("");
     await expect(localizeArtifactAssets({ html: `<html><body>${imgs}</body></html>` })).rejects.toMatchObject({
       code: "ARTIFACT_INVALID_INPUT",
