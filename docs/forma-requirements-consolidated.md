@@ -37,7 +37,7 @@
 - **最终命令集（6）**：`fm-list-product`、`fm-status`、`fm-requirement`、`fm-design`、`fm-refine-components`、`fm-change-style`。
 - **MCP 工具净变化**：+1（`get_component_baseline` / B7）；−1（`change_artifact_style` / B3）；−1（`rollback_requirement_design` / R5）；−1（`delete_product` / R4）。
 - **web 链路（批次3+4）**：与 fm-* 解耦、可并行。`DesignView.tsx` 被批次3（删 compare 链接）与 BC2（增强画布）同改 → 同文件协调。
-- **跨批依赖**：BC3 依赖 B2（component-library 设计系统工件 + 产品 ICON）；B2 未落地时 BC3 先渲染现有组件库、ICON tile 待 B2 接入。
+- **跨批依赖**：BC3 依赖 B2/B7（component-library 当前指针 + 设计系统工件 + 产品 ICON manifest 契约）。B2/B7 未落地时，BC3 最多可原型化渲染现有组件库；不能把“按更新时间猜最新组件库”作为正式行为。
 - **既有不变量（不改）**：fm-requirement 改页 → 页 `expired` → 需求 `submitted` → 不可归档（重跑 fm-design 解除）；R/B 各项均不触碰该状态机。
 
 ---
@@ -346,21 +346,22 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 **需求（产出 = 产品设计系统：品牌资源 + 组件）**：
 
 3. `fm-refine-components` 产出一个产品级**设计系统**工件（artifact kind `component-library`），含两区：**品牌资源（Foundations）区** + **基线组件区**。它是产品"设计系统"的唯一生成器；`fm-change-style` 切换品牌时通过它整体重生成（见 B3）。
-4. **品牌资源（Foundations）区**，含两类：
+4. **当前组件库语义（必须新增明确数据契约）**：每个产品最多只有一个**当前** `component-library` artifact 指针。首次 `fm-refine-components` 创建 artifact 并记录为当前组件库；后续 `fm-refine-components` / `fm-change-style` 必须在这个 artifact 上追加不可变新版本并更新当前版本指针，而不是每次创建一个并列的新 artifact。不得用 `updated_at`、列表顺序或需求级 `superseded` 推断当前组件库；若保留旧组件库 artifact，读取面必须通过产品级组件库指针过滤或标记其非当前状态。
+5. **品牌资源（Foundations）区**，含两类：
    - **令牌可视化**（派生自所选 `brand_style` 的 `tokens.css`/`DESIGN.md`，模型不新决定、只呈现；产品只引用 `brand_style`、不覆写 token，`tools.ts:241-274`）：
      - 色彩：primary/accent、surface/bg、fg/text、border、semantic（success/warn/danger）、focus + 角色说明
      - 字体：字族 + 字阶（text-1..8）+ 行高/字距 specimen
      - 间距 / 圆角 / 高度（elev）/ 动效（motion·ease）：各刻度样例
      - 功能图标：仅**风格约定**（线性/填充、描边、尺寸网格），**不**附图标库
-   - **品牌资产（产品级生成）**：**产品 ICON（品牌标识 / mark）**——由**产品名 + brand_style**派生的**唯一** SVG mark；变体 **primary（彩色）+ monochrome（单色）**；形态体现产品身份、配色用品牌 token。`fm-design` 展示产品图标时复用这段 SVG（见 B6），保证全产品一致。换品牌时**形态稳定、只随 refine 级联重新套色**（不换 logo 形状）。favicon 由该 ICON 小尺寸渲染派生，不单独做。
-5. **不生成（out of scope）**：通用功能图标库/图标字体/图标资产包（功能图标按页内联 SVG、归档时导出）；wordmark/lockup（产品名直接用品牌字体排，不做单独资产）；完整品牌 VI 规范（多版 logo 制图、印刷物）。注：产品 ICON mark **在范围内**（见上 item 4 品牌资产）。
+   - **品牌资产（产品级生成）**：**产品 ICON（品牌标识 / mark）**——由**产品名 + brand_style**派生的**唯一** SVG mark；变体 **primary（彩色）+ monochrome（单色）**；形态体现产品身份、配色用品牌 token。`fm-design` 展示产品图标时复用这段 SVG（见 B6），保证全产品一致。换品牌时**形态稳定、只随 refine 级联重新套色**（不换 logo 形状）。favicon 由该 ICON 小尺寸渲染派生，不单独做。ICON 必须结构化落盘：组件库保存时把 primary / monochrome SVG 写入 bundle assets，并在 manifest `forma.productIcon` 中记录两个可解析 asset path；web 和 `get_design_context` 只能读该 manifest 字段，不得从 HTML 文本临时解析 logo。
+6. **不生成（out of scope）**：通用功能图标库/图标字体/图标资产包（功能图标按页内联 SVG、归档时导出）；wordmark/lockup（产品名直接用品牌字体排，不做单独资产）；完整品牌 VI 规范（多版 logo 制图、印刷物）。注：产品 ICON mark **在范围内**（见上 item 5 品牌资产）。
 
 **需求（基线组件区 = 固定基线组件集）**：
 
-6. **来源（数据驱动，见 B7）**：基线清单 + foundations/ICON 规格作为 **Forma 内置 core 数据**（`component-baseline.ts`，按 platform 键入），**不镜像**品牌 `components.html`。`fm-refine-components` 经新工具 `get_component_baseline(product_id)` 拿到该 platform 的规格再生成。
-7. **固定集，不自由发挥**：每个产品都生成**同一套**基线（按 platform 选变体），不让模型按需求随意增减，否则失去"通用"意义。本轮**不做**按产品域名补充专有组件（域内补充另列后续）。
-8. **平台感知**：按产品 `platform`（`get_product`）选 web 或 mobile 变体。
-9. **状态覆盖**：每个组件按 `craft/state-coverage` 覆盖适用状态（default/hover/focus/disabled/loading/empty/error）。**`brand_style` 决定长相（tokens），`system_style` 决定结构/交互约定（方法论，仅 name+description 元数据、无 tokens/组件），两者都不决定"有哪些"**（清单由固定基线决定，见 B7）。
+7. **来源（数据驱动，见 B7）**：基线清单 + foundations/ICON 规格作为 **Forma 内置 core 数据**（`component-baseline.ts`，按 platform 键入），**不镜像**品牌 `components.html`。`fm-refine-components` 经新工具 `get_component_baseline(product_id)` 拿到该 platform 的规格再生成。
+8. **固定集，不自由发挥**：每个产品都生成**同一套**基线（按 platform 选变体），不让模型按需求随意增减，否则失去"通用"意义。本轮**不做**按产品域名补充专有组件（域内补充另列后续）。
+9. **平台感知**：按产品 `platform`（`get_product`）选 web 或 mobile 变体。
+10. **状态覆盖**：每个组件按 `craft/state-coverage` 覆盖适用状态（default/hover/focus/disabled/loading/empty/error）。**`brand_style` 决定长相（tokens），`system_style` 决定结构/交互约定（方法论，仅 name+description 元数据、无 tokens/组件），两者都不决定"有哪些"**（清单由固定基线决定，见 B7）。
 
 **基线清单（精选档 · Web · 约 28 件 · 6 组）**：
 
@@ -379,6 +380,8 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 
 - [ ] `fm-refine-components` 模板不含任何需求门槛；最新需求已归档的产品上仍能精修设计系统。
 - [ ] 设计系统工件含 Foundations 区（令牌可视化：色/字/距/圆角/高度/动效）+ **产品 ICON**（mark，primary + monochrome，由产品名 + brand_style 派生）。
+- [ ] 产品有明确的当前 `component-library` 指针；重复 refine / change-style 会追加同一组件库 artifact 的新版本，不产生多个并列“当前组件库”。
+- [ ] manifest `forma.productIcon` 记录 primary / monochrome 两个 SVG asset path；web 与 `get_design_context` 可直接解析，不依赖 HTML 解析。
 - [ ] **不**生成通用功能图标库/图标字体/wordmark 资产；favicon 由产品 ICON 派生；换品牌时 ICON 形态不变、只套色。
 - [ ] 权威基线清单已沉淀（命令模板/shared），定义 web 与 mobile 两套固定集；命令按 `platform` 交付对应清单。
 - [ ] 同一产品生成的组件库覆盖清单上**全部**基线组件，不缺项、不随需求自由增减。
@@ -388,7 +391,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 
 **背景**：产品方明确——`fm-change-style` 应是**切换整个产品的样式**，而非给单个产物换肤；换样式后设计系统（含通用组件）也应随之刷新，否则旧页面用到的通用组件与新样式视觉冲突。
 
-**与后台"新建样式"的区别（C3 厘清）**：后台管理创建产品时的"新建样式"**只写 `brand_style`/`system_style` 配置、不生成设计系统**（后台走 HTTP/core，无 AI）。`fm-change-style` 比它**多一步**：设样式后**自动委托 `fm-refine-components` 重生成设计系统**。因此后台新建的产品**尚无设计系统**，首次 `fm-design` 会撞 B4 的"缺组件库"停下、提示先跑 refine。设计系统的实际生成始终归 `fm-refine-components`（见 B2）。
+**与后台"新建样式"的区别（C3 厘清）**：后台管理创建产品时的"新建样式"**只写 `brand_style`/`system_style` 配置、不生成设计系统**（后台走 HTTP/core，无 AI）。后台样式配置路径可以复用 `update_product_config` 这类配置写入能力，但**不得**执行 AI 生成或委托 refine。`fm-change-style` 是 agent 命令，比后台配置多一步：设样式后**自动委托 `fm-refine-components` 重生成设计系统**。因此后台新建的产品**尚无设计系统**，首次 `fm-design` 会撞 B4 的"缺组件库"停下、提示先跑 refine。设计系统的实际生成始终归 `fm-refine-components`（见 B2）。
 
 **现状**：
 
@@ -402,7 +405,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 1. **重定义 `fm-change-style` 命令**为产品级样式切换，流程：
    1. 确认新 `brand_style`/`system_style`（未选则 `list_styles` 让用户选）。
    2. `update_product_config(product_id, brand_style, system_style)` 落产品配置。
-   3. **级联：执行 `fm-refine-components` 的生成流程整体重生成产品设计系统**（Foundations + 产品 ICON + 基线组件）于新样式下——经 `get_component_baseline` 取规格、导出现有 `component-library` 源 HTML 为基线、套新 tokens 重生成（无则新建）；用 `generate_components` 保存 + self-review craftChecks 直到通过。fm-change-style 本身不另写生成逻辑，复用 refine 的流程（"命令不直接调命令"，指模板内执行同一套生成步骤）。
+   3. **级联：执行 `fm-refine-components` 的生成流程整体重生成产品设计系统**（Foundations + 产品 ICON + 基线组件）于新样式下——经 `get_component_baseline` 取规格、导出现有当前 `component-library` 源 HTML 为基线、套新 tokens 重生成（无当前指针则新建并记录当前组件库）；用 `generate_components` 保存为当前组件库的新版本 + self-review craftChecks 直到通过。fm-change-style 本身不另写生成逻辑，复用 refine 的流程（"命令不直接调命令"，指模板内执行同一套生成步骤）。
    4. **不触碰已有 design-page artifact**（rule 1）。
    5. **结束，无后续**：不重生成页面；用户若要某页采用新样式，后续自行 `fm-design`（Described 模式重生成该页）。
 2. **移除旧单产物 `change_artifact_style`**（产品级切换 + fm-design 已覆盖其用途）：
@@ -415,7 +418,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 **验收标准**：
 
 - [ ] `fm-change-style` 走 `update_product_config` + 调用 `fm-refine-components`（整体重生成设计系统），**不再调用** `change_artifact_style`。
-- [ ] 切换后：产品配置样式更新、组件库产生新版本、**已有 design-page artifact 一字不变**。
+- [ ] 切换后：产品配置样式更新、当前组件库 artifact 追加新版本并更新当前组件库版本指针、**已有 design-page artifact 一字不变**。
 - [ ] MCP 工具集不含 `change_artifact_style`；core 无 `changeArtifactStyle`/`changeArtifactStyleWithManifest`。
 - [ ] `store-design-mutations.test.ts` / `tools.test.ts` / `design-commands.test.ts` 更新后通过；`pnpm typecheck` / `pnpm build` 通过。
 
@@ -425,7 +428,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 
 **需求**：
 
-1. `fm-design` 生成前检查产品是否已有组件库（`list_product_artifacts(product_id, kind="component-library")` 非空）。**不存在 → 停**，提示用户先跑 `fm-refine-components`，**不自动生成**。
+1. `fm-design` 生成前检查产品是否已有**当前组件库指针**（不能只看 `list_product_artifacts(product_id, kind="component-library")` 非空）。**不存在 → 停**，提示用户先跑 `fm-refine-components`，**不自动生成**。
 2. `fm-refine-components` 生成完即结束（现状已是独立命令），用户审查/调整组件。
 3. 用户再次 `fm-design`，组件库已在 → 正常生成页面。
 4. 全程无静默级联：组件生成只在用户显式跑 `fm-refine-components` 时发生。
@@ -481,14 +484,17 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 2. **refine 侧（独立工具）**：新增 MCP 工具 `get_component_baseline(product_id)`——由产品 `platform` 解析，返回对应规格。`fm-refine-components` 据此生成设计系统（替代旧模板里"自由发挥/镜像 components.html"与错误的 `get_style(system_style)` 访问）。
 3. **design 侧（扩 `get_design_context`）**：`buildDesignContext` 返回新增两字段——
    - `componentBaseline`：同上规格（让 design 知道哪些是规范件）；
-   - `componentLibrary`：产品**当前** `component-library` 工件的引用/内容（供 B6 复用真实 markup + 产品 ICON）。
-4. **system_style 访问厘清（G2）**：system_style 经 `systemStyle` 元数据字段交付（name+description），**不经 `get_style`**；作为组件结构/交互约定的**方法论软指导**，不进 foundations、不改清单。
+   - `componentLibrary`：由产品级当前组件库指针解析出的 `component-library` 工件引用/内容（至少包含 `artifact_id`、`version`、bundle/preview 引用、manifest `forma.productIcon`、可供模型参考的当前 HTML 内容或等价读取面），供 B6 复用真实 markup + 产品 ICON。
+4. **当前组件库指针（core / API 契约）**：新增或扩展产品级元数据记录当前 `component-library` 的 artifact id 与当前版本；`generate_components` 保存时负责创建/追加并更新该指针；`list_product_artifacts` / `get_product_artifact` / `get_design_context` 均以该指针作为“当前组件库”的唯一事实源，不按 `updated_at`、数组顺序或需求级 `superseded` 推断。
+5. **system_style 访问厘清（G2）**：system_style 经 `systemStyle` 元数据字段交付（name+description），**不经 `get_style`**；作为组件结构/交互约定的**方法论软指导**，不进 foundations、不改清单。
 
 **验收标准**：
 
 - [ ] `component-baseline.ts` 定义 web/mobile 两套规格；单测断言清单 / foundations / ICON 项齐全。
 - [ ] `get_component_baseline(product_id)` 返回该 platform 规格；`fm-refine-components` 模板改为读它。
+- [ ] 当前组件库指针有 core/API/MCP 测试：首次生成创建指针，重复生成追加同一 artifact 新版本，读取面返回同一当前组件库。
 - [ ] `get_design_context` 返回 `componentBaseline` + `componentLibrary`；`fm-design` 复用以 `componentLibrary` 为准。
+- [ ] `componentLibrary` 含可解析的 `forma.productIcon` primary / monochrome asset path。
 - [ ] 模板不再出现 `get_style(system_style)`；system_style 走元数据。
 - [ ] `pnpm typecheck` / `pnpm build` 通过；新增工具/字段有 MCP schema 与测试。
 
@@ -497,14 +503,14 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 ### 决策记录（2026-06-08，B2 基线清单/B6 于 2026-06-09 补）
 
 - B1：门槛三档明确化（latest=非归档语义；缺需求→提示去后台页建）。
-- B2：`fm-refine-components` = 档1（产品级）+ 生成产品**设计系统** = 品牌资源区（令牌可视化 色/字/距/圆角/高度/动效 + **产品 ICON mark**：产品名+brand_style 派生、primary+mono、换品牌只套色不换形、favicon 由其派生；不生成通用功能图标库/wordmark/完整 VI）+ 固定基线组件集（web/mobile 变体、精选档约 28 件、状态覆盖；不镜像 components.html、不按需求自由增减）。**foundations 归 fm-refine-components，不归 fm-change-style**（2026-06-09：fm-change-style 本就委托 refine，且后台"新建样式"=fm-change-style，保持薄）。
-- B3：`fm-change-style` = 产品级样式切换（设定 style 配置 + **委托** `fm-refine-components` 整体重生成设计系统）；保持薄以便后台"新建样式"复用；**移除**旧单产物 `change_artifact_style`（MCP + core + 测试）。
+- B2：`fm-refine-components` = 档1（产品级）+ 生成产品**设计系统** = 品牌资源区（令牌可视化 色/字/距/圆角/高度/动效 + **产品 ICON mark**：产品名+brand_style 派生、primary+mono、换品牌只套色不换形、favicon 由其派生；不生成通用功能图标库/wordmark/完整 VI）+ 固定基线组件集（web/mobile 变体、精选档约 28 件、状态覆盖；不镜像 components.html、不按需求自由增减）。新增产品级当前组件库指针；重复 refine/change-style 追加同一 component-library artifact 的新版本。**foundations 归 fm-refine-components，不归 fm-change-style**。
+- B3：`fm-change-style` = 产品级样式切换（设定 style 配置 + **委托** `fm-refine-components` 整体重生成设计系统）；后台样式配置只写配置、不执行 AI/refine，不能等同于 fm-change-style；**移除**旧单产物 `change_artifact_style`（MCP + core + 测试）。
 - B4：`fm-design` 缺组件库 → 停下提示先精修组件（显式，两段式，无静默）。
 - B5：rule 1——样式/组件改动不回溯已生成设计。
 - B6（2026-06-09）：`fm-design` 按需复用基线组件**与产品 ICON**——需要才复用、同 tokens/状态、同一产品图标；不为复用而设计，沉浸式/定制页可省略或替代通用件，Scope fidelity 不削弱。
 - B7（2026-06-09）：数据驱动设计系统上下文——新增 core `component-baseline.ts` + `get_component_baseline`（refine）+ `get_design_context` 加 `componentBaseline`/`componentLibrary`（design）；system_style 走元数据、修正 `get_style(system_style)` 误用。
 - B8 取消（2026-06-09）：`fm-rollback-design` 改为**整体删除**而非规格化——agent/MCP 见清理批 R5、web 版本/回退 UI 见批次3、底层版本机制保留。
-- C3（2026-06-09）：后台创建只设样式不生成设计系统；`fm-change-style` 多一步委托 refine 生成。
+- C3（2026-06-09）：后台创建/后台样式配置只设样式不生成设计系统；`fm-change-style` 是 agent 命令，多一步委托 refine 生成。
 - 既有不变量（2026-06-09 记录）：`fm-requirement` 改页 → 该页 `expired` → 需求退回 `submitted` → 不可归档；对 expired 页重跑 `fm-design` 置回 `done` 才能归档。判定改动由 agent（`change_type`）负责、core 执行状态机；R1–R7 不触碰（见 B1 末"既有不变量"）。
 
 ### 与批次1的关系与统一排期
@@ -641,24 +647,26 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 
 ### BC3 产品页品牌资源入口 + 品牌资源画布
 
-**现状**：ProductDetail（`routes.tsx:65` → `pages/ProductDetail.tsx`）无品牌资源入口；component-library 设计系统工件由 `fm-refine-components` 产出（B2）；无渲染它的画布页。`DesignView` 已示范"`listProductArtifacts` → `mapArtifacts` → viewer `Canvas`"的渲染链。
+**现状**：ProductDetail（`routes.tsx:65` → `pages/ProductDetail.tsx`）无品牌资源入口；component-library 设计系统工件由 `fm-refine-components` 产出（B2）；无渲染它的画布页。`DesignView` 已示范"`listProductArtifacts` → viewer `Canvas`"的渲染链，但当前 `mapArtifactsToViewerInputs` 只接收 `design-page` 且要求 `page_id`/`variant`/`current_version`，不能直接用于 product-level `component-library`。
 
 **需求**：
 
 1. **入口**：`ProductDetail.tsx` 加"品牌资源"入口（卡片/链接）→ 新路由 `/products/:productId/brand`（`routes.tsx` 注册 + i18n 文案）。
-2. **新页 `BrandResources`**：取产品当前 `component-library` 工件（`listProductArtifacts(productId, kind="component-library")` 选当前非 superseded），经 `mapArtifacts` + web resolver 渲染其 HTML（设计元素 + 通用组件）于无限画布，**复用 BC2 增强后的 viewer `Canvas`**（mode="design" 或新增 mode）。
-3. **产品 ICON 图片 tile**：把设计系统的产品 ICON（B2 的 SVG mark）作为**单独的图片 tile** 摆上画布（直接图片展示，不嵌在组件 HTML 里）。
-4. **交互**：同标注 / 同 BC2 增强（白底 + 标题标签 + 选中框 + pan/zoom）。
-5. **空态**：产品无 component-library 工件时，空态提示去跑 `fm-refine-components`（呼应 B4“先有设计系统”）。
+2. **新页 `BrandResources`**：通过产品级当前组件库指针读取当前 `component-library` 工件（artifact id + current version + manifest），渲染其 HTML（设计元素 + 通用组件）于无限画布，**复用 BC2 增强后的 viewer `Canvas`**（mode="design" 或新增 mode）。不得用 `listProductArtifacts(... kind="component-library")` 的数组顺序、`updated_at` 或 `superseded` 推断当前组件库。
+3. **product-level mapper**：新增或扩展 viewer/web 映射函数来生成品牌资源 tile 输入；不要把现有 `mapArtifactsToViewerInputs` 的 design-page 前提硬套到 `component-library`。品牌资源 tile 的分组键可固定为 `brand-resources`，标题取组件库标题。
+4. **产品 ICON 图片 tile**：从当前组件库 manifest `forma.productIcon.primary`（必要时也可切换 monochrome）读取 SVG asset path，经 resolver 作为**单独图片 tile**摆上画布；不得从 HTML 文本解析 logo，也不得把 ICON 只嵌在组件库 HTML 里。
+5. **交互**：同标注 / 同 BC2 增强（白底 + 标题标签 + 选中框 + pan/zoom）。
+6. **空态**：产品无当前 component-library 指针时，空态提示去跑 `fm-refine-components`（呼应 B4“先有设计系统”）。
 
 **验收标准**：
 
 - [ ] ProductDetail 有"品牌资源"入口；新路由可达。
-- [ ] BrandResources 渲染 component-library HTML + 产品 ICON 图片 tile 于画布；交互与设计/标注一致。
-- [ ] 无组件库时显示空态提示。
+- [ ] BrandResources 通过当前组件库指针渲染 component-library HTML + 产品 ICON 图片 tile 于画布；交互与设计/标注一致。
+- [ ] 存在 product-level viewer mapper 或等价扩展；测试覆盖 component-library 不具备 page_id/variant 时仍能渲染。
+- [ ] 无当前组件库指针时显示空态提示。
 - [ ] 新增页有测试；路由/ i18n 同步。
 
-**依赖**：B2（component-library 含 foundations/组件/ICON）。B2 未落地时，本页可先渲染现有 component-library 工件；产品 ICON tile 待 B2 的 ICON 产出后接入（可作为本页的后续子项）。
+**依赖**：B2/B7（当前 component-library 指针 + foundations/组件/ICON + `forma.productIcon` asset path）。B2/B7 未落地时，本页可先做原型渲染，但正式验收必须走当前指针与 manifest ICON 契约。
 
 ---
 
