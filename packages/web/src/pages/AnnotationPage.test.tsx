@@ -195,10 +195,12 @@ describe("AnnotationPage", () => {
     // 2. Dot-grid must use dark dots (not white) on the light canvas.
     const dotGrid = canvasContainer!.querySelector<HTMLElement>(".pointer-events-none.absolute.inset-0.z-0");
     expect(dotGrid).not.toBeNull();
-    // The backgroundImage must NOT contain white dots (255,255,255) — it must use dark dots (rgb(0,0,0,...)).
+    // The backgroundImage must use dark dots (rgba(0,0,0,...)), not white dots (255,255,255).
+    expect(dotGrid!.style.backgroundImage).toMatch(/rgba\(0,\s*0,\s*0/i);
     expect(dotGrid!.style.backgroundImage).not.toMatch(/rgba\(255,\s*255,\s*255/i);
 
-    // 3. Container border should be light (border-zinc-200 or similar, not zinc-700).
+    // 3. Container border should be light (border-zinc-200), not the old dark zinc-700.
+    expect(canvasContainer!.className).toContain("border-zinc-200");
     expect(canvasContainer!.className).not.toContain("border-zinc-700");
 
     // 4. Behavior: surface still renders after resize (unchanged selection/hover/fit).

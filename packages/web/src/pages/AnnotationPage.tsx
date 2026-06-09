@@ -310,7 +310,7 @@ export function AnnotationPage({
           className="relative flex-1 overflow-hidden rounded-lg border border-zinc-200"
           style={{ background: "#ffffff" }}
         >
-          {/* z0: fixed dot-grid texture over the dark canvas. */}
+          {/* z0: fixed dot-grid texture over the light/white canvas. */}
           <div
             className="pointer-events-none absolute inset-0 z-0"
             style={{
@@ -326,7 +326,7 @@ export function AnnotationPage({
               ))
             : null}
           {/* z20: transparent CanvasKit canvas (backgroundColor "" → transparent clear) so the
-               dark dot grid and the frosted frame behind show through the empty areas. */}
+               light dot grid and the frosted frame behind show through the empty areas. */}
           <div className="absolute inset-0 z-20">
             {composed ? (
               <CanvasKitSurface
@@ -465,7 +465,7 @@ function PageFrameOverlays({
         const focused = f.status !== "error" && focusedKeys.has(frameKey(f));
         const left = (f.x * viewport.scale + viewport.offsetX) / dpr;
         // Focused: park the label inside the frosted panel's top band. Otherwise
-        // it floats just above the page in the dark canvas margin.
+        // it floats just above the page in the light canvas margin.
         const top = viewport.offsetY / dpr - (focused ? FOCUS_LABEL_TOP : 24);
         const suffix = f.variant && f.variant !== "default" ? ` · ${f.variant}` : "";
         if (f.status === "error") {
