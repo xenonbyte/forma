@@ -10,6 +10,10 @@ async function loadCommand(command: string): Promise<{ claude: string; codex: st
   return { claude, codex, gemini, blob: [claude, codex, gemini].join("\n").toLowerCase() };
 }
 
+async function loadShared(): Promise<string> {
+  return readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");
+}
+
 function expectOrder(text: string, before: string, after: string): void {
   const a = text.indexOf(before);
   const b = text.indexOf(after);
@@ -40,21 +44,34 @@ describe("fm-design template", () => {
     expect(t.blob).toContain("generate_requirement_design");
   });
 
-  it("enforces self-review via craftChecks read-back", async () => {
+  it("enforces self-review via craftChecks read-back (protocol in shared SKILL.md)", async () => {
     const t = await loadCommand("fm-design");
+    const shared = await loadShared();
+    // Each command must reference the shared self-review protocol
     for (const body of [t.claude, t.codex, t.gemini]) {
       const lc = body.toLowerCase();
-      expect(lc).toContain("get_product_artifact");
-      expect(lc).toContain("craftchecks");
       expect(lc).toContain("self-review");
+      expect(lc).toContain("self-review protocol");
     }
+    // The canonical craftChecks loop and get_product_artifact call live in shared SKILL.md (T010 sink)
+    const sharedLc = shared.toLowerCase();
+    expect(sharedLc).toContain("craftchecks");
+    expect(sharedLc).toContain("get_product_artifact");
+    expect(sharedLc).toContain("self-review protocol");
   });
 
-  it("documents both full and described modes and the static contract", async () => {
+  it("documents both full and described modes; pure-static contract lives in shared SKILL.md", async () => {
     const t = await loadCommand("fm-design");
+    const shared = await loadShared();
     expect(t.blob).toContain("full");
     expect(t.blob).toContain("single");
-    expect(t.blob).toContain("<script>");
+    // Commands reference the shared pure-static contract section
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body.toLowerCase()).toContain("pure-static contract");
+    }
+    // The canonical prohibition list lives in shared SKILL.md (T010 sink)
+    expect(shared).toContain("<script>");
+    expect(shared.toLowerCase()).toContain("pure-static contract");
   });
 });
 
@@ -83,14 +100,20 @@ describe("fm-refine-components template", () => {
     expect(t.blob).toContain("generate_components");
   });
 
-  it("enforces self-review via craftChecks read-back", async () => {
+  it("enforces self-review via craftChecks read-back (protocol in shared SKILL.md)", async () => {
     const t = await loadCommand("fm-refine-components");
+    const shared = await loadShared();
+    // Each command must reference the shared self-review protocol
     for (const body of [t.claude, t.codex, t.gemini]) {
       const lc = body.toLowerCase();
-      expect(lc).toContain("get_product_artifact");
-      expect(lc).toContain("craftchecks");
       expect(lc).toContain("self-review");
+      expect(lc).toContain("self-review protocol");
     }
+    // The canonical craftChecks loop and get_product_artifact call live in shared SKILL.md (T010 sink)
+    const sharedLc = shared.toLowerCase();
+    expect(sharedLc).toContain("craftchecks");
+    expect(sharedLc).toContain("get_product_artifact");
+    expect(sharedLc).toContain("self-review protocol");
   });
 
   it("loads the existing component library before refining it", async () => {
