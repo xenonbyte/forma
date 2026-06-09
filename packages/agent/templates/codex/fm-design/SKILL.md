@@ -12,9 +12,9 @@ Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 Generate the static-HTML design for a requirement's page(s). You write the HTML; Forma localizes its assets, validates it is pure-static, stores a versioned bundle, renders a preview, and runs the deterministic craft lint.
 
 Preconditions (tier 3 — strictest):
-- 档1: a product must exist and be selected.
-- 档2: the product must have at least one un-archived requirement.
-- 档3: the requirement must have content and pages.
+- Tier 1: a product must exist and be selected.
+- Tier 2: the product must have at least one un-archived requirement.
+- Tier 3: the requirement must have content and pages.
 If the core tool returns `REQUIREMENT_NOT_FOUND`: no un-archived requirement is available — report the error faithfully and direct the user to create or activate a requirement in the Forma backstage. The agent does NOT create requirements.
 If the core tool returns `REQUIREMENT_STATUS_INVALID`: the requirement is archived and cannot be used for design — report the error faithfully.
 

@@ -7,7 +7,7 @@ description: Report Forma product, requirement, and artifact status. Read-only.
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Preconditions (tier 1):
-- 档1: a product must exist and be selected. This is a read-only status command; no requirement is required.
+- Tier 1: a product must exist and be selected. This is a read-only status command; no requirement is required.
 If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID`, report the error faithfully.
 
 Cold path scenario:

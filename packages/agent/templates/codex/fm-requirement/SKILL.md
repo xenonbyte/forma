@@ -10,7 +10,7 @@ Codex route: `$fm-requirement`.
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Preconditions (tier 1):
-- 档1: a product must exist and be selected. This command is the path that creates or populates requirement content, so no un-archived requirement is required as a precondition.
+- Tier 1: a product must exist and be selected. This command is the path that creates or populates requirement content, so no un-archived requirement is required as a precondition.
 If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID`, report the error faithfully.
 
 Cold path scenario:
