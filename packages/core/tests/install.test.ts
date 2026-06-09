@@ -8,11 +8,9 @@ const commands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-rollback-design",
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff",
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;

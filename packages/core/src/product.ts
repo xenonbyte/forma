@@ -299,25 +299,6 @@ export class ProductService {
     return (await this.getProduct(productId)).designPointers ?? [];
   }
 
-  async rollbackDesignPointerLocked(
-    productId: string,
-    requirementId: string,
-    pageId: string,
-    variant: string,
-    targetVersion: number,
-  ): Promise<void> {
-    const current = await this.getDesignPointer(productId, requirementId, pageId, variant);
-    if (!current) {
-      throw new FormaError("ARTIFACT_NOT_FOUND", "Design pointer not found", {
-        productId,
-        requirementId,
-        pageId,
-        variant,
-      });
-    }
-    await this.setDesignPointerLocked(productId, { ...current, version: targetVersion });
-  }
-
   private async readProductIndex(): Promise<z.infer<typeof productIndexSchema>> {
     if (!(await fileExists(this.indexFile))) {
       return { products: [] };

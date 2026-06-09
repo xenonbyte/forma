@@ -50,25 +50,7 @@ describe("A5 design pointer index", () => {
     expect(all[0].version).toBe(2);
   });
 
-  it("rollback flips the pointer to an older version without deleting it", async () => {
-    const store = await makeStore();
-    const p = await store.products.createProduct({ name: "X", description: "y" });
-    await store.runProductMutation({ operation: "test", product_id: p.id }, () =>
-      store.products.setDesignPointerLocked(p.id, {
-        requirementId: "R-1234abcd",
-        pageId: "login",
-        variant: "default",
-        artifactId: "AbCdEfGhIjKlMnOp",
-        version: 3,
-        designStatus: "active",
-      }),
-    );
-    await store.runProductMutation({ operation: "test", product_id: p.id }, () =>
-      store.products.rollbackDesignPointerLocked(p.id, "R-1234abcd", "login", "default", 1),
-    );
-    const got = await store.products.getDesignPointer(p.id, "R-1234abcd", "login", "default");
-    expect(got?.version).toBe(1);
-  });
+  // rollbackDesignPointerLocked removed in R1/R4/R5 (PLAN-TASK-001); no test here
 
   it("schema rejects two pointers with identical (req,page,variant)", async () => {
     const store = await makeStore();

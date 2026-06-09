@@ -37,7 +37,6 @@ export const formaToolNames = [
   "list_products",
   "get_product",
   "confirm_product_id",
-  "delete_product",
   "get_product_baseline",
   "get_baseline_page",
   "get_baseline_image",
@@ -53,7 +52,6 @@ export const formaToolNames = [
   "list_product_artifacts",
   "get_product_artifact",
   "export_artifact",
-  "rollback_requirement_design",
   "generate_requirement_design",
   "generate_components",
   "change_artifact_style",
@@ -105,16 +103,6 @@ export interface FormaMcpServerLike {
 
 const emptySchema = z.object({}).strict();
 const productIdSchema = z.object({ product_id: z.string().min(1) }).strict();
-const deleteProductSchema = z
-  .object({
-    product_id: z.string().min(1),
-    confirm_product_id: z.string().min(1),
-  })
-  .strict()
-  .refine((input) => input.confirm_product_id === input.product_id, {
-    message: "confirm_product_id must match product_id",
-    path: ["confirm_product_id"],
-  });
 const baselinePageSchema = z.object({ product_id: z.string().min(1), page_id: z.string().min(1) }).strict();
 const copyItemSchema = z
   .object({
@@ -221,16 +209,6 @@ const exportArtifactSchema = z
   })
   .strict();
 
-const rollbackRequirementDesignSchema = z
-  .object({
-    product_id: z.string().min(1),
-    requirement_id: z.string().min(1),
-    page_id: z.string().min(1),
-    variant: z.string().min(1).optional(),
-    target_version: z.number().int().min(1),
-  })
-  .strict();
-
 const generateRequirementDesignSchema = z
   .object({
     product_id: z.string().min(1),
@@ -321,7 +299,6 @@ export const formaToolInputSchemas = {
   list_products: emptySchema,
   get_product: productIdSchema,
   confirm_product_id: confirmProductIdSchema,
-  delete_product: deleteProductSchema,
   get_product_baseline: productIdSchema,
   get_baseline_page: baselinePageSchema,
   get_baseline_image: productIdSchema,
@@ -337,7 +314,6 @@ export const formaToolInputSchemas = {
   list_product_artifacts: listProductArtifactsSchema,
   get_product_artifact: getProductArtifactSchema,
   export_artifact: exportArtifactSchema,
-  rollback_requirement_design: rollbackRequirementDesignSchema,
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
   change_artifact_style: changeArtifactStyleSchema,
@@ -353,7 +329,6 @@ const descriptions = {
   list_products: "List Forma products.",
   get_product: "Read a product.",
   confirm_product_id: "Confirm that a product id exists and optionally verify its name.",
-  delete_product: "Delete a product after explicit id confirmation.",
   get_product_baseline: "Read the current functional baseline pages and navigation for a product.",
   get_baseline_page: "Read one baseline page from the product's current baseline artifact.",
   get_baseline_image: "Get the preview image path for the product's current baseline artifact.",
@@ -370,8 +345,6 @@ const descriptions = {
   list_product_artifacts: "List open-design artifacts for a product.",
   get_product_artifact: "Read an open-design artifact manifest, bundle_url, per-asset urls, and versions.",
   export_artifact: "Export an open-design artifact to html, svg, png, zip (self-contained bundle), icons, or vzi.",
-  rollback_requirement_design:
-    "Roll back a page/variant's design to a previous version (flips the version pointer; older versions are kept).",
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   change_artifact_style:
@@ -416,7 +389,6 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_products: tool("list_products", async () => store.products.listProducts()),
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),
     confirm_product_id: tool("confirm_product_id", async (input) => confirmProductId(store, input)),
-    delete_product: tool("delete_product", async (input) => store.deleteProduct(input)),
     get_product_baseline: tool("get_product_baseline", async (input) => getProductBaseline(store, input.product_id)),
     get_baseline_page: tool("get_baseline_page", async (input) =>
       getBaselinePage(store, input.product_id, input.page_id),
@@ -442,9 +414,6 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_product_artifacts: tool("list_product_artifacts", async (input) => listProductArtifacts(store, input)),
     get_product_artifact: tool("get_product_artifact", async (input) => getProductArtifact(store, input)),
     export_artifact: tool("export_artifact", async (input) => exportArtifact(store, input)),
-    rollback_requirement_design: tool("rollback_requirement_design", async (input) =>
-      rollbackRequirementDesign(store, input),
-    ),
     generate_requirement_design: tool("generate_requirement_design", async (input) =>
       store.generateRequirementDesign(input.product_id, input.requirement_id, {
         html: input.html,
@@ -986,38 +955,6 @@ function addArtifactFileToZip(zip: AdmZip, artifactDir: string, relPath: string,
 
 function archiveDirname(relPath: string): string {
   return relPath.includes("/") ? relPath.substring(0, relPath.lastIndexOf("/")) : "";
-}
-
-async function rollbackRequirementDesign(
-  store: FormaStore,
-  input: z.infer<typeof rollbackRequirementDesignSchema>,
-): Promise<{ requirement_id: string; page_id: string; variant: string; version: number }> {
-  const { product_id, requirement_id, page_id, target_version } = input;
-  const variant = input.variant ?? "default";
-
-  const pointer = await store.products.getDesignPointer(product_id, requirement_id, page_id, variant);
-  if (!pointer) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "Design pointer not found", {
-      product_id,
-      requirement_id,
-      page_id,
-      variant,
-    });
-  }
-
-  const versions = await store.artifacts.listArtifactVersions(product_id, pointer.artifactId);
-  if (!versions.includes(target_version)) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "Target version not found", {
-      target_version,
-      available: versions,
-    });
-  }
-
-  await store.runProductMutation({ operation: "rollback_requirement_design", product_id }, () =>
-    store.products.rollbackDesignPointerLocked(product_id, requirement_id, page_id, variant, target_version),
-  );
-
-  return { requirement_id, page_id, variant, version: target_version };
 }
 
 // ─── Retained tool implementations ───────────────────────────────────────────

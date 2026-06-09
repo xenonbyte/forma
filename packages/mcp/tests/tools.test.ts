@@ -133,6 +133,14 @@ const removedLegacyToolNames = [
   "set_current_session",
 ] as const;
 
+// R1/R4/R5 guard: product create/delete and rollback write tools must not be in the MCP tool set.
+// change_artifact_style is removed in PLAN-TASK-008, not here.
+const removedProductWriteToolNames = [
+  "create_product",
+  "delete_product",
+  "rollback_requirement_design",
+] as const;
+
 const v6ToolNames = [
   "begin_requirement_design_session",
   "apply_requirement_design_operations",
@@ -147,8 +155,7 @@ const v6ToolNames = [
   "index_requirement_design_canvas",
   "get_requirement_design_scene",
   "get_requirement_design_history",
-  // rollback_requirement_design is intentionally NOT listed here:
-  // it was a v6 legacy name but is re-added as a C-03 artifact tool
+  // rollback_requirement_design removed from MCP in R1/R4/R5 (PLAN-TASK-001)
   "diff_requirement_design_versions",
   "export_requirement_design_asset",
   "get_product_component_library",
@@ -270,7 +277,6 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         designStatus: "active" as const,
       })),
       listDesignPointers: vi.fn(async () => []),
-      rollbackDesignPointerLocked: vi.fn(async () => undefined),
     },
     recoverPendingProductDeletes: vi.fn(async () => ({ warnings: [], recovered: [] })),
     requirements: {
@@ -341,12 +347,16 @@ describe("MCP forma tools", () => {
       expect(formaToolNames).not.toContain(v6ToolName);
       expect(Object.keys(tools)).not.toContain(v6ToolName);
     }
+    // R1/R4/R5 guard: product create/delete and rollback write tools excluded
+    for (const removedWriteToolName of removedProductWriteToolNames) {
+      expect(formaToolNames).not.toContain(removedWriteToolName);
+      expect(Object.keys(tools)).not.toContain(removedWriteToolName);
+    }
     expect(formaToolNames).toEqual(
       expect.arrayContaining([
         "save_requirement",
         "get_product_rules",
         "get_page_copy",
-        "delete_product",
         "confirm_product_id",
         "generate_requirement_design",
         "generate_components",
@@ -357,6 +367,13 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).not.toContain("change_style");
     expect(formaToolNames).not.toContain("refine_requirement_design");
     expect(formaToolNames).not.toContain("update_page_copy");
+  });
+
+  it("tool set excludes product create/delete and rollback write tool (R1/R4/R5 guard)", () => {
+    const names = new Set(formaToolNames as readonly string[]);
+    for (const n of removedProductWriteToolNames) {
+      expect(names.has(n), `${n} must not be in formaToolNames`).toBe(false);
+    }
   });
 
   it("help output excludes removed legacy page-level design tools and session tools", async () => {
@@ -481,126 +498,6 @@ describe("MCP forma tools", () => {
     expect(store.products.getProduct).toHaveBeenCalledWith("P-123abc");
     expect(store.requirements.getProductRules).toHaveBeenCalledWith("P-123abc");
     expect(store.copy.getTranslations).toHaveBeenCalledWith("P-123abc", "R-12345678");
-  });
-
-  it("delete_product returns the core result and delegates to store.deleteProduct", async () => {
-    const deleted = {
-      product_id: "P-123abc",
-      deleted: true,
-      session_cleared: true,
-      cleanup_pending: false,
-      recovery_warnings: [],
-    };
-    const store = fakeStore({
-      deleteProduct: vi.fn(async () => deleted),
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toEqual(deleted);
-    expect(store.deleteProduct).toHaveBeenCalledWith({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
-  });
-
-  it("delete_product rejects missing or mismatched confirmation without calling the store", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const missing = await tools.delete_product({ product_id: "P-123abc" });
-    const mismatch = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-other" });
-
-    expect(missing.isError).toBe(true);
-    expect(textPayload(missing)).toMatchObject({ error_code: "VALIDATION_ERROR" });
-    expect(mismatch.isError).toBe(true);
-    expect(textPayload(mismatch)).toMatchObject({
-      error_code: "VALIDATION_ERROR",
-      details: { issues: expect.arrayContaining([expect.objectContaining({ path: ["confirm_product_id"] })]) },
-    });
-    expect(store.deleteProduct).not.toHaveBeenCalled();
-  });
-
-  it("delete_product passes through core product mutation lock errors", async () => {
-    const store = fakeStore({
-      deleteProduct: vi.fn(async () => {
-        throw new FormaError("PRODUCT_MUTATION_LOCKED", "Product mutation lock is held", {
-          operation: "delete_product",
-          product_id: "P-123abc",
-        });
-      }),
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toEqual({
-      error_code: "PRODUCT_MUTATION_LOCKED",
-      message: "Product mutation lock is held",
-      details: { operation: "delete_product", product_id: "P-123abc" },
-    });
-  });
-
-  it("delete_product preserves recovery warnings in successful responses", async () => {
-    const store = fakeStore({
-      deleteProduct: vi.fn(async () => ({
-        product_id: "P-123abc",
-        deleted: true,
-        session_cleared: false,
-        cleanup_pending: true,
-        recovery_warnings: ["cleanup was deferred"],
-      })),
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.delete_product({ product_id: "P-123abc", confirm_product_id: "P-123abc" });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({
-      cleanup_pending: true,
-      recovery_warnings: ["cleanup was deferred"],
-    });
-  });
-
-  it("sessions.getCurrentSession never points to a product while delete_product is clearing or removing it", async () => {
-    const home = await mkdtemp(join(tmpdir(), "forma-mcp-delete-session-"));
-    const observations: Array<{ phase: string; current_product: string | null }> = [];
-    let store: Awaited<ReturnType<typeof createFormaStore>>;
-    const productDeletionHooks: NonNullable<Parameters<typeof createFormaStore>[0]["productDeletionHooks"]> = {
-      afterPhasePersisted: async (state) => {
-        if (["session_written", "index_written", "moved"].includes(state.phase)) {
-          const session = (await store.sessions.getCurrentSession()) as { current_product: string | null };
-          expect(session.current_product).not.toBe(state.product_id);
-          observations.push({ phase: state.phase, current_product: session.current_product });
-        }
-      },
-    };
-    store = await createFormaStore({
-      home,
-      bundledStylesDir: resolve("styles"),
-      productDeletionHooks,
-    });
-    const tools = createFormaTools(store);
-    const product = await store.products.createProduct({ name: "Delete Me", description: "Temporary" });
-    await store.products.initProductConfig(product.id, {
-      platform: "web",
-      brand_style: "linear",
-      languages: ["en"],
-      default_language: "en",
-    });
-    await store.sessions.setCurrentProduct(product.id);
-
-    const result = await tools.delete_product({ product_id: product.id, confirm_product_id: product.id });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({ product_id: product.id, session_cleared: true });
-    const finalSession = (await store.sessions.getCurrentSession()) as { current_product: string | null };
-    expect(finalSession).toEqual({ current_product: null });
-    expect(observations).toEqual([
-      { phase: "session_written", current_product: null },
-      { phase: "index_written", current_product: null },
-      { phase: "moved", current_product: null },
-    ]);
   });
 
   it("init_product_config updates config for an existing product and does not create products", async () => {
@@ -1002,7 +899,8 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).toContain("list_product_artifacts");
     expect(formaToolNames).toContain("get_product_artifact");
     expect(formaToolNames).toContain("export_artifact");
-    expect(formaToolNames).toContain("rollback_requirement_design");
+    // rollback_requirement_design removed in R1/R4/R5 (PLAN-TASK-001)
+    expect(formaToolNames).not.toContain("rollback_requirement_design");
     expect(formaToolNames).toContain("generate_requirement_design");
     expect(formaToolNames).toContain("generate_components");
     expect(formaToolNames).toContain("change_artifact_style");
@@ -1812,122 +1710,7 @@ describe("artifact tools (C-03)", () => {
     expect(textPayload(pdfResult)).toMatchObject({ error_code: "VALIDATION_ERROR" });
   });
 
-  // ─── rollback_requirement_design ─────────────────────────────────────────
-
-  it("rollback_requirement_design flips the version pointer to the target version", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
-
-    const result = await tools.rollback_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "page-home",
-      target_version: 1,
-    });
-    const payload = textPayload(result);
-
-    expect(result.isError).toBeUndefined();
-    expect(payload).toEqual({
-      requirement_id: "R-12345678",
-      page_id: "page-home",
-      variant: "default",
-      version: 1,
-    });
-    expect(store.products.rollbackDesignPointerLocked).toHaveBeenCalledWith(
-      "P-123abc",
-      "R-12345678",
-      "page-home",
-      "default",
-      1,
-    );
-  });
-
-  it("rollback_requirement_design uses the provided variant", async () => {
-    const store = fakeStore({
-      products: {
-        ...fakeStore().products,
-        getDesignPointer: vi.fn(async () => ({
-          requirementId: "R-12345678",
-          pageId: "page-home",
-          variant: "dark",
-          artifactId: "ABCDEFGHIJ123456",
-          version: 2,
-          designStatus: "active" as const,
-        })),
-      },
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.rollback_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "page-home",
-      variant: "dark",
-      target_version: 1,
-    });
-    const payload = textPayload(result);
-
-    expect(result.isError).toBeUndefined();
-    expect(payload).toMatchObject({ variant: "dark", version: 1 });
-  });
-
-  it("rollback_requirement_design returns ARTIFACT_NOT_FOUND when design pointer is missing", async () => {
-    const store = fakeStore({
-      products: {
-        ...fakeStore().products,
-        getDesignPointer: vi.fn(async () => undefined),
-      },
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.rollback_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "page-missing",
-      target_version: 1,
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
-  });
-
-  it("rollback_requirement_design returns ARTIFACT_NOT_FOUND when target version is not on disk", async () => {
-    const store = fakeStore({
-      artifacts: {
-        ...fakeStore().artifacts,
-        listArtifactVersions: vi.fn(async () => [1, 2]),
-      },
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.rollback_requirement_design({
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "page-home",
-      target_version: 99,
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
-  });
-
-  it("rollback_requirement_design fails schema validation when target_version is missing", async () => {
-    expectSchemaFailure("rollback_requirement_design", {
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "page-home",
-    });
-  });
-
-  it("rollback_requirement_design fails schema validation for old target_artifact_id field", async () => {
-    expectSchemaFailure("rollback_requirement_design", {
-      product_id: "P-123abc",
-      requirement_id: "R-12345678",
-      page_id: "page-home",
-      target_artifact_id: "ABCDEFGHIJ123456",
-      target_version: 1,
-    });
-  });
+  // rollback_requirement_design removed in R1/R4/R5 (PLAN-TASK-001); no tests here
 });
 
 describe("C-04 retained tools", () => {

@@ -12,11 +12,9 @@ export const formaInstallCommands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-rollback-design",
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff",
 ] as const;
 
 export type FormaInstallCommand = (typeof formaInstallCommands)[number];

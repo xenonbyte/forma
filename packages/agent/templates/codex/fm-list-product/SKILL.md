@@ -1,6 +1,6 @@
 ---
 name: fm-list-product
-description: List and select Forma products, or delete a product on explicit request.
+description: List and select Forma products.
 ---
 
 # Forma route: fm-list-product
@@ -20,8 +20,4 @@ Execution:
 5. On success, call `get_requirement` with product_id and summarize the latest requirement.
 6. Report stable error codes when returned.
 
-Deletion branch:
-- Only when the user explicitly asks to delete a product, call `confirm_product_id` first, repeat the product name and product ID, describe deletion scope, and state that the user must type the exact product ID.
-- For confirmed deletion, call `delete_product` with the selected product_id. Do not auto-fill confirmation from context or treat a generic yes as confirmation.
-- After deletion, if `recovery_warnings` is non-empty, summarize them. Tell the user to run `$fm-list-product` again to select a different product.
 - Do not expose or suggest requirement deletion tools.

@@ -15,11 +15,9 @@ const formaCommands = [
   "fm-list-product",
   "fm-status",
   "fm-requirement",
-  "fm-rollback-design",
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
-  "fm-develop-design-handoff",
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
@@ -35,15 +33,13 @@ const removedLegacyDesignTools = [
 ] as const;
 
 const codexSkillDescriptions = {
-  "fm-list-product": "List and select Forma products, or delete a product on explicit request.",
+  "fm-list-product": "List and select Forma products.",
   "fm-status": "Report Forma product, requirement, and artifact status. Read-only.",
   "fm-requirement": "Add or update a Forma requirement from any granularity of product input.",
-  "fm-rollback-design": "Roll back a Forma design artifact to a previous version.",
   "fm-design": "Generate a static-HTML page design for a Forma requirement via MCP, then self-review.",
   "fm-refine-components":
     "Generate or refine a Forma product component library (static HTML) via MCP, then self-review.",
   "fm-change-style": "Re-skin a Forma artifact under a new brand and system style via MCP, then self-review.",
-  "fm-develop-design-handoff": "Read an archived Forma design handoff and its page UI trees to implement the frontend.",
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";
@@ -186,44 +182,34 @@ describe("agent template inventory", () => {
     expect(shared).toContain("ui_affected=false");
     expect(shared).toContain("stable MCP usage");
     expect(shared).toContain("confirm_product_id");
-    expect(shared).toContain("recovery_warnings");
+    // recovery_warnings (product-delete guidance) removed in R1/R4/R5
+    expect(shared).not.toContain("recovery_warnings");
     expect(shared).not.toContain("generate_components");
     expect(shared).not.toContain("set_current_session");
   });
 
-  it("documents v8 design artifact workflows and rejects legacy design routes", async () => {
+  it("documents v8 design artifact workflows and rejects legacy design routes (R1/R4/R5: fm-rollback-design removed)", async () => {
+    // fm-rollback-design template deleted in R1/R4/R5; verify it no longer exists
     for (const platform of ["claude", "codex", "gemini"] as const) {
-      const rollback = await readFile(templateUrl(platform, "fm-rollback-design"), "utf8");
+      await expect(pathExists(templateUrl(platform, "fm-rollback-design"))).resolves.toBe(false);
+
       const requirement = await readFile(templateUrl(platform, "fm-requirement"), "utf8");
-      const allTemplateText = [rollback, requirement].join("\n");
-
       for (const removedToolName of removedLegacyDesignTools) {
-        expect(allTemplateText).not.toContain(removedToolName);
+        expect(requirement).not.toContain(removedToolName);
       }
-
-      expect(allTemplateText).not.toContain("generate_requirement_design");
-      expect(allTemplateText).not.toContain("refine_requirement_design");
-      expect(allTemplateText).not.toContain("change_style");
-
-      expect(rollback).toContain("rollback_requirement_design");
-      expect(rollback).toContain("list_product_artifacts");
-      expect(rollback).toContain("include_superseded");
-      expect(rollback).toContain("page_id");
-      expect(rollback).toContain("variant");
-      expect(rollback).toContain("target_version");
-      expect(rollback).toContain("current_version");
-      expect(rollback).toContain("versions");
-      expect(rollback).not.toContain("target_artifact_id");
+      expect(requirement).not.toContain("refine_requirement_design");
+      expect(requirement).not.toContain("change_style");
     }
 
     const shared = await readFile(new URL("shared/SKILL.md", agentTemplatesDir), "utf8");
     expect(shared).toContain("list_products");
     expect(shared).toContain("confirm_product_id");
-    expect(shared).toContain("recovery_warnings");
+    // recovery_warnings (product-delete guidance) removed in R1/R4/R5
+    expect(shared).not.toContain("recovery_warnings");
     expect(shared).not.toContain("begin_product_component_session");
   });
 
-  it("copies v8 agent guidance for product selection and deletion", async () => {
+  it("copies v8 agent guidance for product selection (R1/R4/R5: deletion guidance removed)", async () => {
     const cliAssetsDir = fileURLToPath(new URL("../../../packages/cli/dist/assets/", import.meta.url));
     await mkdir(cliAssetsDir, { recursive: true });
     const copiedAssetsRoot = await mkdtemp(join(cliAssetsDir, "agent-test-v8-"));
@@ -241,26 +227,21 @@ describe("agent template inventory", () => {
       const shared = await readFile(join(copiedTemplatesDir, "shared", "SKILL.md"), "utf8");
       expect(shared).not.toContain("complete_product_init");
       expect(shared).not.toContain("generate_components");
-      expect(shared).toContain("Only when the user explicitly asks to delete a product");
-      expect(shared).toContain("repeat the product name and product ID");
-      expect(shared).toContain("describe deletion scope");
-      expect(shared).toContain("user must type the exact product ID");
-      expect(shared).toContain("Do not auto-fill confirmation from context");
-      expect(shared).toContain("confirm_product_id");
-      expect(shared).toContain("recovery_warnings");
+      // Product-delete guidance removed in R1/R4/R5
+      expect(shared).not.toContain("delete_product");
+      expect(shared).not.toContain("delete a product");
+      // Requirement-delete constraint must remain
       expect(shared).not.toContain("delete_requirement");
+      expect(shared).toContain("confirm_product_id");
+      expect(shared).toContain("stable MCP usage");
 
       for (const platform of ["claude", "codex", "gemini"] as const) {
         const listProduct = await readCopiedTemplate(copiedTemplatesDir, platform, "fm-list-product");
-        expect(listProduct).toContain("Deletion branch");
-        expect(listProduct).toContain("Only when the user explicitly asks");
-        expect(listProduct).toContain("repeat the product name and product ID");
-        expect(listProduct).toContain("describe deletion scope");
-        expect(listProduct).toContain("user must type the exact product ID");
-        expect(listProduct).toContain("Do not auto-fill confirmation from context");
-        expect(listProduct).toContain("recovery_warnings");
+        // Product-delete guidance removed in R1/R4/R5
+        expect(listProduct).not.toContain("Deletion branch");
+        expect(listProduct).not.toContain("delete_product");
+        // Requirement-delete constraint must remain
         expect(listProduct).not.toContain("delete_requirement");
-        expect(listProduct).not.toContain("session_cleared");
       }
     } finally {
       await rm(copiedAssetsRoot, { recursive: true, force: true });
