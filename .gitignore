@@ -9,6 +9,10 @@ coverage/
 *.tsbuildinfo
 .codegraph
 .req-to-plan/
+
+# Vitest browser-mode debug artifacts (failure screenshots + attachments, not baselines)
+.vitest-attachments/
+**/__screenshots__/
 packages/desktop/out/
 
 # Tool/workflow state and scratch output (not project sources)
