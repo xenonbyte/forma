@@ -28,11 +28,11 @@ All AI-generated design HTML (page designs and component libraries) must be pure
 - Inline images as `data:` URLs — Forma extracts and localizes them; do not reference external image URLs.
 - No remote URLs anywhere: not in HTML attributes, CSS `url()`/`@import`, `srcset`, or SVG `href`/`xlink:href`.
 
-This contract applies to every `generate_requirement_design` and `generate_components` call.
+This contract applies to all AI-generated design HTML — both page designs and component libraries.
 
 ## Self-review protocol
 
-After every save, self-review is MANDATORY. The protocol is the same for both fm-design (uses `generate_requirement_design`) and fm-refine-components (uses `generate_components`):
+After every save, self-review is MANDATORY. The protocol is the same for both fm-design and fm-refine-components (each command names its own save tool):
 
 1. Read the saved artifact back: `get_product_artifact(product_id, artifact_id)`.
 2. Inspect `manifest.forma.quality.craftChecks`. For any check with `passed:false` (e.g. `contrast-aa`, `type-scale`, `color-palette`, `font-families`): fix that specific violation in the HTML, call the appropriate save tool again — Forma points the artifact to the corrected design and supersedes the old version. Repeat until all checks pass.
