@@ -45,11 +45,11 @@ function deshell(raw: string, platform: "claude" | "codex" | "gemini"): string {
     case "markdown-frontmatter": {
       // Strip the leading YAML frontmatter: starts with "---\n", ends after second "---\n"
       const fmEnd = text.indexOf("\n---\n", 3); // skip past opening ---
-      if (fmEnd === -1) throw new Error(`No closing --- found in claude/${platform} template`);
+      if (fmEnd === -1) throw new Error(`No closing --- found in ${platform} template`);
       const afterFm = text.slice(fmEnd + 5); // skip "\n---\n"
       // afterFm may start with a blank line; find the body starting at "# Forma route:"
       const bodyStart = afterFm.indexOf("# Forma route:");
-      if (bodyStart === -1) throw new Error(`No "# Forma route:" found in claude template`);
+      if (bodyStart === -1) throw new Error(`No "# Forma route:" found in ${platform} template`);
       return afterFm.slice(bodyStart).trimEnd();
     }
 
@@ -65,8 +65,11 @@ function deshell(raw: string, platform: "claude" | "codex" | "gemini"): string {
       let body = afterFm.slice(bodyStart);
 
       // Remove the "Codex route: `$<command>`." line and its following blank line.
-      // Pattern: "Codex route: `$...\`.\n\n"
-      body = body.replace(/^Codex route: `\$[^`]+`\.\n\n/m, "");
+      // Guard it exists first (symmetric with the "# Forma route:" anchor check): if the
+      // line were silently dropped or its format drifted, no-op removal could mask drift.
+      const codexRouteLine = /^Codex route: `\$[^`]+`\.\n\n/m;
+      if (!codexRouteLine.test(body)) throw new Error(`No "Codex route: \`$...\`." line found in codex template`);
+      body = body.replace(codexRouteLine, "");
 
       // Replace all `$fm-` occurrences with `fm-` (only fm-* command references are $-prefixed in codex)
       body = body.replace(/\$fm-/g, "fm-");
@@ -83,6 +86,9 @@ function deshell(raw: string, platform: "claude" | "codex" | "gemini"): string {
       const promptEnd = text.indexOf('\n"""', bodyStart);
       if (promptEnd === -1) throw new Error(`No closing '"""' found in gemini template`);
       const body = text.slice(bodyStart, promptEnd);
+      if (!body.startsWith("# Forma route:")) {
+        throw new Error(`No "# Forma route:" at start of gemini prompt body`);
+      }
       return body.trimEnd();
     }
   }
