@@ -38,6 +38,7 @@ export * from "./archive-asset-export.js";
 export * from "./design-save.js";
 export * from "./quality/index.js";
 export * from "./design-context.js";
+export * from "./component-baseline.js";
 export * from "./artifact-urls.js";
 export * from "./requirement-handoff-content.js";
 export * from "./doctor.js";
