@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiClient } from "./api.js";
 import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
 import { BaselineView } from "./pages/BaselineView.js";
+import { BrandResources } from "./pages/BrandResources.js";
 import { ProductDetail, type ProductDeleteNavigationState } from "./pages/ProductDetail.js";
 import { ProductList } from "./pages/ProductList.js";
 import { ProductNew } from "./pages/ProductNew.js";
@@ -73,6 +74,13 @@ export const routeTable: RouteDefinition[] = [
     navGroup: "products",
     path: "/products/:productId/baseline",
     title: ({ productId }) => `${productId} baseline`,
+  },
+  {
+    component: BrandResourcesRoute,
+    context: "Brand",
+    navGroup: "products",
+    path: "/products/:productId/brand",
+    title: ({ productId }) => `${productId} brand`,
   },
   {
     component: DesignViewRoute,
@@ -207,6 +215,10 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
 
 function AnnotationPageRoute(props: RoutePageProps) {
   return <AnnotationPage client={apiClient} params={props.params as { productId: string; reqId: string }} />;
+}
+
+function BrandResourcesRoute(props: RoutePageProps) {
+  return <BrandResources client={apiClient} params={props.params} />;
 }
 
 function DesignViewRoute(props: RoutePageProps) {

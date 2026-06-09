@@ -453,6 +453,7 @@ export function ProductDetailSummaryPanels({
             )}
           </div>
           <PrimaryActionLink href={`/products/${productId}/baseline`}>{t("action.baseline")}</PrimaryActionLink>
+          <PrimaryActionLink href={`/products/${productId}/brand`}>{t("action.brandResources")}</PrimaryActionLink>
         </div>
         {baselineState.status === "ready" ? (
           <p className="mt-2 text-sm text-zinc-600">

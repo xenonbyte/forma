@@ -18,7 +18,8 @@ import {
   type StyleMetadata,
 } from "../api.js";
 import { LocaleProvider, useLocale } from "../LocaleContext.js";
-import { localeStorageKey, setLocale as setAppLocale } from "../i18n.js";
+import { localeStorageKey, messages, setLocale as setAppLocale } from "../i18n.js";
+import { routeTable } from "../routes.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -522,6 +523,30 @@ describe("ProductDetail", () => {
 
     expect(container.textContent).toContain("DELETE_FAILED - Deletion denied");
     expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("links ProductDetail to the brand resources route", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    // The brand resources link must be present with the correct href
+    const brandLinks = Array.from(container.querySelectorAll<HTMLAnchorElement>("a[href]")).filter((a) =>
+      /品牌资源|Brand resources/i.test(a.textContent ?? ""),
+    );
+    expect(brandLinks.length).toBeGreaterThan(0);
+    expect(brandLinks[0].getAttribute("href")).toBe("/products/P-123abc/brand");
+
+    // The route table must contain the brand route
+    expect(routeTable.some((r) => r.path === "/products/:productId/brand")).toBe(true);
+
+    // Both en and zh i18n labels must be defined
+    expect(messages.en["action.brandResources"]).toBe("Brand resources");
+    expect(messages.zh["action.brandResources"]).toBe("品牌资源");
   });
 });
 
