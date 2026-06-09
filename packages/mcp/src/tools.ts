@@ -2,6 +2,7 @@ import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  COMPONENT_BASELINES,
   FormaError,
   artifactBundleUrl,
   artifactPreviewUrl,
@@ -13,6 +14,7 @@ import {
   getArtifactVersionPreviewPath,
   getFormaPaths,
   languages,
+  mapToComponentPlatform,
   normalizeFormaExtension,
   normalizeKind,
   platforms,
@@ -38,6 +40,7 @@ export const formaToolNames = [
   "get_product",
   "confirm_product_id",
   "get_product_baseline",
+  "get_component_baseline",
   "get_baseline_page",
   "get_baseline_image",
   "get_requirement_history",
@@ -343,6 +346,7 @@ export const formaToolInputSchemas = {
   get_product: productIdSchema,
   confirm_product_id: confirmProductIdSchema,
   get_product_baseline: productIdSchema,
+  get_component_baseline: productIdSchema,
   get_baseline_page: baselinePageSchema,
   get_baseline_image: productIdSchema,
   get_requirement_history: productIdSchema,
@@ -373,6 +377,8 @@ const descriptions = {
   get_product: "Read a product.",
   confirm_product_id: "Confirm that a product id exists and optionally verify its name.",
   get_product_baseline: "Read the current functional baseline pages and navigation for a product.",
+  get_component_baseline:
+    "Read the component baseline spec (foundations, productIcon spec, component list with states/variants) for a product's platform. Use before generate_components to know what to build.",
   get_baseline_page: "Read one baseline page from the product's current baseline artifact.",
   get_baseline_image: "Get the preview image path for the product's current baseline artifact.",
   get_requirement_history: "List product requirement history.",
@@ -433,6 +439,11 @@ export function createFormaTools(store: FormaStore): FormaTools {
     get_product: tool("get_product", async (input) => store.products.getProduct(input.product_id)),
     confirm_product_id: tool("confirm_product_id", async (input) => confirmProductId(store, input)),
     get_product_baseline: tool("get_product_baseline", async (input) => getProductBaseline(store, input.product_id)),
+    get_component_baseline: tool("get_component_baseline", async (input) => {
+      const product = await store.products.getProduct(input.product_id);
+      const componentPlatform = mapToComponentPlatform(product.platform);
+      return { platform: componentPlatform, baseline: COMPONENT_BASELINES[componentPlatform] };
+    }),
     get_baseline_page: tool("get_baseline_page", async (input) =>
       getBaselinePage(store, input.product_id, input.page_id),
     ),
@@ -505,9 +516,14 @@ export function createFormaTools(store: FormaStore): FormaTools {
         systemStyle: input.system_style,
       }),
     ),
-    get_design_context: tool("get_design_context", async (input) =>
-      buildDesignContext(
-        { styles: store.styles, requirements: store.requirements, products: store.products },
+    get_design_context: tool("get_design_context", async (input) => {
+      const ctx = await buildDesignContext(
+        {
+          styles: store.styles,
+          requirements: store.requirements,
+          products: store.products,
+          artifacts: store.artifacts,
+        },
         {
           productId: input.product_id,
           requirementId: input.requirement_id,
@@ -516,8 +532,31 @@ export function createFormaTools(store: FormaStore): FormaTools {
           systemStyle: input.system_style,
           craftSlugs: input.craft_slugs,
         },
-      ),
-    ),
+      );
+
+      // Enrich componentLibrary with MCP-layer URL helpers (bundleUrl/previewUrl)
+      // Core returns only the core-resolvable parts; URLs are MCP concerns.
+      if (ctx.componentLibrary !== undefined) {
+        const { artifactId, version } = ctx.componentLibrary;
+        const manifest = await store.artifacts
+          .readArtifactVersion(input.product_id, artifactId, version)
+          .then(({ manifest }) => manifest)
+          .catch(() => undefined);
+        return {
+          ...ctx,
+          componentLibrary: {
+            ...ctx.componentLibrary,
+            bundleUrl:
+              manifest !== undefined
+                ? artifactBundleUrl(input.product_id, artifactId, version, manifest.entry)
+                : undefined,
+            previewUrl: artifactPreviewUrl(input.product_id, artifactId, version, "2x"),
+          },
+        };
+      }
+
+      return ctx;
+    }),
     get_design_handoff: tool("get_design_handoff", async (input) => toolGetDesignHandoff(store, input)),
     get_page_ui: tool("get_page_ui", async (input) => toolGetPageUi(store, input)),
     get_ui_node: tool("get_ui_node", async (input) => toolGetUiNode(store, input)),
@@ -580,6 +619,10 @@ async function listProductArtifacts(store: FormaStore, input: z.infer<typeof lis
     currentPointerIds.add(ptr.artifactId);
   }
 
+  // SPEC-BEHAVIOR-008 (B7): component-library current resolution is SOLELY via
+  // designSystemArtifactId pointer. Do NOT use updated_at, array order, or superseded flag.
+  const dsArtifactId = product.designSystemArtifactId;
+
   const entries = await store.artifacts.listArtifacts(product_id);
   const artifacts = [];
 
@@ -617,9 +660,16 @@ async function listProductArtifacts(store: FormaStore, input: z.infer<typeof lis
 
     const formaExt = manifest.forma ? normalizeFormaExtension(manifest.forma) : undefined;
 
-    const hasRequirementId = manifest.requirementId !== undefined || formaExt?.requirementId !== undefined;
-    const isCurrentPointer = currentPointerIds.has(artifactId);
-    const superseded = hasRequirementId && !isCurrentPointer;
+    let superseded: boolean;
+    if (normalizedKind === "component-library") {
+      // SPEC-BEHAVIOR-008: component-library current = id matches designSystemArtifactId pointer.
+      // When pointer is unset or this artifact ≠ pointer → superseded (hidden by default).
+      superseded = artifactId !== dsArtifactId;
+    } else {
+      const hasRequirementId = manifest.requirementId !== undefined || formaExt?.requirementId !== undefined;
+      const isCurrentPointer = currentPointerIds.has(artifactId);
+      superseded = hasRequirementId && !isCurrentPointer;
+    }
 
     if (!include_superseded && superseded) {
       continue;

@@ -1152,6 +1152,130 @@ describe("artifact tools (C-03)", () => {
     expect(parsed3.success).toBe(false);
   });
 
+  // ─── list_product_artifacts component-library pointer (B7/SPEC-BEHAVIOR-008) ──
+
+  it("list_product_artifacts: component-library whose id===designSystemArtifactId is current (superseded=false)", async () => {
+    // SPEC-BEHAVIOR-008: component-library current resolution is SOLELY via designSystemArtifactId pointer
+    const manifest = {
+      ...fakeManifest(),
+      id: "DS_ARTIFACT123456",
+      kind: "component-library" as const,
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "DS_ARTIFACT123456", etag: "sha256:abc" }]),
+        listArtifactVersions: vi.fn(async () => [1, 2]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          designSystemArtifactId: "DS_ARTIFACT123456",
+          requirements: {},
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts).toHaveLength(1);
+    expect(payload.artifacts[0]).toMatchObject({
+      id: "DS_ARTIFACT123456",
+      kind: "component-library",
+      superseded: false,
+    });
+  });
+
+  it("list_product_artifacts: component-library NOT matching pointer is superseded (not shown by default)", async () => {
+    // SPEC-BEHAVIOR-008: non-pointer component-library is treated as superseded
+    const manifest = {
+      ...fakeManifest(),
+      id: "OLD_DS_ARTIFACT1234",
+      kind: "component-library" as const,
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "OLD_DS_ARTIFACT1234", etag: "sha256:old" }]),
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:old" })),
+      },
+      products: {
+        ...fakeStore().products,
+        // designSystemArtifactId points to a DIFFERENT artifact
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          designSystemArtifactId: "DS_ARTIFACT123456",
+          requirements: {},
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    // Without include_superseded: non-pointer component-library is hidden
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+    const payload = textPayload(result);
+
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts).toHaveLength(0);
+
+    // With include_superseded=true: it appears and is flagged superseded
+    const resultAll = await tools.list_product_artifacts({ product_id: "P-123abc", include_superseded: true });
+    const payloadAll = textPayload(resultAll);
+    expect(payloadAll.artifacts).toHaveLength(1);
+    expect(payloadAll.artifacts[0]).toMatchObject({
+      id: "OLD_DS_ARTIFACT1234",
+      superseded: true,
+    });
+  });
+
+  it("list_product_artifacts: component-library with no pointer set → all component-libraries are superseded", async () => {
+    // SPEC-BEHAVIOR-008: when designSystemArtifactId is unset, no component-library is current
+    const manifest = {
+      ...fakeManifest(),
+      id: "DS_ARTIFACT123456",
+      kind: "component-library" as const,
+    };
+    const store = fakeStore({
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: "DS_ARTIFACT123456", etag: "sha256:abc" }]),
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
+      products: {
+        ...fakeStore().products,
+        // No designSystemArtifactId
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          requirements: {},
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_product_artifacts({ product_id: "P-123abc" });
+    const payload = textPayload(result);
+
+    // No pointer → component-library is superseded → hidden by default
+    expect(result.isError).toBeUndefined();
+    expect(payload.artifacts).toHaveLength(0);
+  });
+
   // ─── get_product_artifact ─────────────────────────────────────────────────
 
   it("get_product_artifact returns versioned manifest, bundle_url, preview_url, assets, versions, current_version", async () => {
@@ -2043,6 +2167,36 @@ describe("C-04 retained tools", () => {
       expect(result.isError).toBe(true);
       expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
     });
+
+    it("SUCCESS PATH (T006 B7): returns page after designSystemArtifactId pointer is set", async () => {
+      // After Task 5 sets the pointer, get_baseline_page must succeed (not always throw ARTIFACT_NOT_FOUND)
+      const store = fakeStore({
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            designSystemArtifactId: "DS_ARTIFACT123456",
+          })),
+        },
+        artifacts: {
+          ...fakeStore().artifacts,
+          readArtifact: vi.fn(async () => ({
+            manifest: {
+              ...fakeManifest(),
+              metadata: { pages: [{ id: "home", name: "Home" }, { id: "settings", name: "Settings" }] },
+            },
+            etag: "sha256:abc",
+          })),
+        },
+      });
+      const tools = createFormaTools(store);
+      const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "settings" });
+      expect(result.isError).toBeFalsy();
+      const payload = textPayload(result);
+      expect(payload).toMatchObject({ id: "settings", name: "Settings" });
+    });
   });
 });
 
@@ -2624,6 +2778,259 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
 
     expect(result.isError).toBe(true);
     expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
+  });
+
+  // ─── Task 6: componentBaseline + componentLibrary (SPEC-BEHAVIOR-010 / SPEC-DATA-004) ───
+
+  it("get_design_context returns componentBaseline (always defined for any product)", async () => {
+    const store = fakeStoreWithDesignContext();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    // componentBaseline must be defined: web platform → web baseline
+    expect(payload.componentBaseline).toBeDefined();
+    expect(Array.isArray(payload.componentBaseline.components)).toBe(true);
+    expect(payload.componentBaseline.components.length).toBeGreaterThan(0);
+    expect(payload.componentBaseline.foundations).toBeDefined();
+    expect(payload.componentBaseline.productIcon).toBeDefined();
+  });
+
+  it("get_design_context returns componentLibrary resolved via designSystemArtifactId pointer (not updated_at/order)", async () => {
+    // The component library must be resolved via the pointer, and current version = max version
+    const componentLibManifest = {
+      ...fakeManifest(),
+      id: "DS_ARTIFACT123456",
+      kind: "component-library" as const,
+      forma: {
+        productIcon: {
+          primary: "icons/primary.svg",
+          monochrome: "icons/mono.svg",
+          shape: { shapeId: "shape-1", geometry: "<path/>", sourceVersion: "v3" },
+        },
+      },
+    };
+    const store = fakeStoreWithDesignContext({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          brand_style: "linear",
+          system_style: "material",
+          languages: ["en"],
+          default_language: "en",
+          requirements: {},
+          designSystemArtifactId: "DS_ARTIFACT123456",
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1, 2, 3]),
+        readArtifactVersion: vi.fn(async () => ({ manifest: componentLibManifest, etag: "sha256:abc" })),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+
+    // componentLibrary must be resolved via pointer, version = max(1,2,3) = 3
+    expect(payload.componentLibrary).toBeDefined();
+    expect(payload.componentLibrary.artifactId).toBe("DS_ARTIFACT123456");
+    expect(payload.componentLibrary.version).toBe(3);
+    // Must include productIcon from manifest
+    expect(payload.componentLibrary.productIcon).toBeDefined();
+    expect(payload.componentLibrary.productIcon.primary).toBe("icons/primary.svg");
+    // bundleUrl/previewUrl should be present (MCP layer enriches them)
+    expect(typeof payload.componentLibrary.bundleUrl).toBe("string");
+    expect(typeof payload.componentLibrary.previewUrl).toBe("string");
+    // MUST NOT inline HTML
+    expect(payload.componentLibrary.html).toBeUndefined();
+  });
+
+  it("get_design_context returns componentLibrary=undefined when designSystemArtifactId not set", async () => {
+    const store = fakeStoreWithDesignContext({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          brand_style: "linear",
+          languages: ["en"],
+          default_language: "en",
+          requirements: {},
+          // No designSystemArtifactId
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.componentLibrary).toBeUndefined();
+  });
+
+  it("get_design_context maps desktop platform to web ComponentPlatform for componentBaseline", async () => {
+    // desktop/tablet → "web" baseline (SPEC-DATA-005 decision)
+    const store = fakeStoreWithDesignContext({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "desktop",
+          brand_style: "linear",
+          languages: ["en"],
+          default_language: "en",
+          requirements: {},
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_design_context({
+      product_id: "P-123abc",
+      requirement_id: "R-12345678",
+    });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    // Desktop falls back to web baseline — components list must be the web one (29 entries)
+    expect(payload.componentBaseline).toBeDefined();
+    expect(payload.componentBaseline.components.length).toBe(29);
+  });
+});
+
+// ─── get_component_baseline (Task 6 / SPEC-DATA-005) ───────────────────────
+
+describe("get_component_baseline (T006 SPEC-DATA-005)", () => {
+  it("get_component_baseline appears in formaToolNames", () => {
+    expect(formaToolNames).toContain("get_component_baseline");
+  });
+
+  it("get_component_baseline schema accepts product_id", () => {
+    expectSchemaSuccess("get_component_baseline", { product_id: "P-123abc" });
+    expectSchemaFailure("get_component_baseline", {});
+    expectSchemaFailure("get_component_baseline", { product_id: "P-123abc", extra: "field" });
+  });
+
+  it("get_component_baseline returns web baseline for web product (components.length > 0)", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_component_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.platform).toBe("web");
+    expect(payload.baseline).toBeDefined();
+    expect(Array.isArray(payload.baseline.components)).toBe(true);
+    expect(payload.baseline.components.length).toBeGreaterThan(0);
+    expect(payload.baseline.foundations).toBeDefined();
+    expect(payload.baseline.productIcon).toBeDefined();
+  });
+
+  it("get_component_baseline returns mobile baseline for mobile product", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "mobile",
+          requirements: {},
+        })),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_component_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.platform).toBe("mobile");
+    expect(payload.baseline.components.length).toBeGreaterThan(0);
+  });
+
+  it("get_component_baseline maps desktop platform to web baseline (SPEC-DATA-005 fallback)", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "desktop",
+          requirements: {},
+        })),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_component_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    // desktop → web default
+    expect(payload.platform).toBe("web");
+    expect(payload.baseline).toBeDefined();
+    // Web baseline has 29 components
+    expect(payload.baseline.components.length).toBe(29);
+  });
+
+  it("get_component_baseline returns PRODUCT_NOT_FOUND for unknown product", async () => {
+    const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => {
+          throw new ActualFormaError("PRODUCT_NOT_FOUND", "Product not found");
+        }),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_component_baseline({ product_id: "P-missing" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
+  });
+
+  it("get_component_baseline is distinct from get_product_baseline (both coexist in formaToolNames)", () => {
+    expect(formaToolNames).toContain("get_component_baseline");
+    expect(formaToolNames).toContain("get_product_baseline");
+    // They must be different tools
+    const names = formaToolNames as readonly string[];
+    const compIdx = names.indexOf("get_component_baseline");
+    const prodIdx = names.indexOf("get_product_baseline");
+    expect(compIdx).not.toBe(prodIdx);
+    expect(compIdx).toBeGreaterThan(-1);
+    expect(prodIdx).toBeGreaterThan(-1);
   });
 });
 
