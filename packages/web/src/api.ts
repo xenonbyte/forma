@@ -64,6 +64,8 @@ export interface Product extends ProductIndexEntry {
   platform?: Platform;
   brand_style?: string;
   system_style?: string;
+  /** BC3: current component-library artifact pointer (SPEC-BEHAVIOR-015). */
+  designSystemArtifactId?: string;
 }
 
 export interface DeleteProductResult {
@@ -250,6 +252,46 @@ export interface ArtifactSummary {
   superseded: boolean;
 }
 
+/** BC3: product icon asset metadata from the component-library manifest (mirrors core ArtifactProductIcon). */
+export interface ArtifactProductIconWeb {
+  /** Bundle-relative SVG asset path for the primary colour variant. */
+  primary: string;
+  /** Bundle-relative SVG asset path for the monochrome variant. */
+  monochrome: string;
+  /** Reusable geometry body — allows "reuse geometry, recolor only" restoration. */
+  shape: {
+    shapeId: string;
+    geometry: string;
+    sourceVersion: string;
+  };
+}
+
+/** BC3: asset entry in manifest.forma.assets (mirrors core ArtifactAssetEntry). */
+export interface ArtifactAssetEntryWeb {
+  /** Bundle-relative path (⊆ supportingFiles). */
+  path: string;
+  density: number[];
+  role: string;
+  degraded?: boolean;
+}
+
+/** BC3: forma extension namespace in the artifact manifest (mirrors core ArtifactFormaExtension). */
+export interface ArtifactFormaExtensionWeb {
+  requirementId?: string;
+  pageId?: string;
+  variant?: string;
+  brandStyle?: string;
+  systemStyle?: string;
+  platform?: string;
+  language?: string;
+  provenance?: { model?: string; sourceSkillId?: string; generatedAt?: string; promptDigest?: string };
+  quality?: { craftChecks?: Array<{ id: string; passed: boolean; detail?: string }> };
+  preview?: { status: "ready" | "failed"; generatedAt?: string; error?: string };
+  assets?: ArtifactAssetEntryWeb[];
+  /** Present only for component-library artifacts (SPEC-DATA-001). */
+  productIcon?: ArtifactProductIconWeb;
+}
+
 export interface ArtifactDetail {
   manifest: {
     id: string;
@@ -260,6 +302,8 @@ export interface ArtifactDetail {
     status: string;
     exports: string[];
     requirementId?: string;
+    /** BC3: forma extension namespace; present for design-page and component-library artifacts. */
+    forma?: ArtifactFormaExtensionWeb;
   };
   preview_url?: string;
   /** F3: immutable version numbers, ascending. */
@@ -424,6 +468,8 @@ export interface FormaApiClient {
   ): Promise<RequirementDesignAssetExport>;
   getArtifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string;
   getArtifactVersionPreviewUrl(productId: string, artifactId: string, version: number, resolution: "1x" | "2x"): string;
+  /** BC3: resolve a bundle-relative asset path (e.g. manifest.forma.productIcon.primary) to a served URL. Pure URL builder — no fetch. */
+  getArtifactVersionBundleAssetUrl(productId: string, artifactId: string, version: number, relativePath: string): string;
   getBaseline(productId: string): Promise<ProductBaseline>;
   getPageCopy(productId: string, pageId: string, requirementId?: string): Promise<PageCopyPayload>;
   getProduct(productId: string): Promise<Product>;
@@ -664,6 +710,8 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
       `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/preview/${resolution}`,
     getArtifactVersionPreviewUrl: (productId, artifactId, version, resolution) =>
       `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/preview/${resolution}.png`,
+    getArtifactVersionBundleAssetUrl: (productId, artifactId, version, relativePath) =>
+      `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/bundle/${relativePath}`,
     getBaseline: (productId) =>
       apiRecord<ProductBaseline>(`/api/products/${encodeURIComponent(productId)}/baseline`, requestOptions(fetcher)),
     getPageCopy: (productId, pageId, requirementId) => {
