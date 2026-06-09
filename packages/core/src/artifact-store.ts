@@ -329,12 +329,16 @@ class ArtifactStoreImpl implements ArtifactStore {
           // First-create rollback: if this was the only version, drop the now-empty
           // artifact dir too so a failed first-create leaves no on-disk trace.
           // Append rollback: prior versions remain, so the artifact dir stays.
-          if ((await this.listArtifactVersions(productId, artifactId)).length === 0) {
+          if ((await this.listArtifactVersions(productId, artifactId).catch(() => [] as number[])).length === 0) {
             await rm(getArtifactDir(this.productsRoot, productId, artifactId), {
               recursive: true,
               force: true,
             }).catch(() => undefined);
           }
+          console.warn(
+            `[forma] artifact-store: commit hook failed, rolled back ${artifactId} v${version} (product=${productId}):`,
+            hookErr,
+          );
           throw hookErr;
         }
         return { version, etag };
