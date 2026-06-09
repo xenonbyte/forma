@@ -29,16 +29,19 @@ Files:
 - packages/core/src/product.ts
 - packages/agent/templates/shared/SKILL.md
 - packages/agent/templates/claude/fm-list-product.md
+- packages/agent/templates/codex/fm-list-product/SKILL.md
+- packages/agent/templates/gemini/fm-list-product.toml
 - packages/cli/tests/copy-assets.test.ts
 - packages/cli/tests/design-commands.test.ts
 - packages/core/tests/install.test.ts
 - packages/mcp/tests/tools.test.ts
 Skeleton:
 ```ts
-// mcp/tests/tools.test.ts — 守卫：工具集既无 create_product 也无 delete_product，且无回退/换肤写工具
-it("tool set excludes product create/delete and removed write tools", () => {
+// mcp/tests/tools.test.ts — T001 守卫：工具集既无 create_product/delete_product，也无回退写工具
+// change_artifact_style 随 fm-change-style 重定义在 PLAN-TASK-008 同批删除。
+it("tool set excludes product create/delete and rollback write tool", () => {
   const names = new Set(listToolNames());
-  for (const n of ["create_product", "delete_product", "rollback_requirement_design", "change_artifact_style"]) {
+  for (const n of ["create_product", "delete_product", "rollback_requirement_design"]) {
     expect(names.has(n)).toBe(false);
   }
 });
@@ -48,10 +51,10 @@ expect(installedCommandNames().sort()).toEqual(
 ```
 Steps:
 - [ ] 删 3 平台 fm-develop-design-handoff 与 fm-rollback-design 模板文件；从 formaAgentCommands(agent/src/index.ts) 与 install.ts 列表移除两命令（两处一致为 6）。
-- [ ] mcp/src/tools.ts 移除 delete_product / rollback_requirement_design / change_artifact_style 的 const 名单/schema/映射/描述/handler；rollback 另删实现。
+- [ ] mcp/src/tools.ts 移除 delete_product / rollback_requirement_design 的 const 名单/schema/映射/描述/handler；rollback 另删实现。`change_artifact_style` 保留到 PLAN-TASK-008 与 `fm-change-style` 语义重定义同批删除。
 - [ ] core/src/product.ts 删 rollbackDesignPointerLocked（先 grep 复核唯一调用者为已删 handler）；不触底层版本机制。
 - [ ] fm-list-product 三平台模板删"删除分支"，shared/SKILL.md 删产品删除指引（保留需求删除约束）。
-- [ ] 更新 copy-assets/design-commands/install/tools 测试；新增上述工具集守卫。store.deleteProduct、HTTP DELETE、web ConfirmDeleteDialog 一字不动。
+- [ ] 更新 copy-assets/design-commands/install/tools 测试；新增上述工具集守卫（不在本任务断言 `change_artifact_style` 缺失）。store.deleteProduct、HTTP DELETE、web ConfirmDeleteDialog 一字不动。
 - [ ] 关闭 SCOPE-IN-001、SCOPE-IN-004、SCOPE-IN-005。
 Verification: npx vitest run packages/cli/tests/copy-assets.test.ts packages/cli/tests/design-commands.test.ts packages/core/tests/install.test.ts packages/mcp/tests/tools.test.ts && pnpm typecheck
 
@@ -69,6 +72,12 @@ Files:
 - packages/agent/templates/claude/fm-change-style.md
 - packages/agent/templates/codex/fm-change-style/SKILL.md
 - packages/agent/templates/gemini/fm-change-style.toml
+- packages/agent/templates/claude/fm-requirement.md
+- packages/agent/templates/codex/fm-requirement/SKILL.md
+- packages/agent/templates/gemini/fm-requirement.toml
+- packages/agent/templates/claude/fm-status.md
+- packages/agent/templates/codex/fm-status/SKILL.md
+- packages/agent/templates/gemini/fm-status.toml
 - packages/agent/templates/shared/SKILL.md
 Skeleton:
 ```ts
@@ -199,7 +208,7 @@ Steps:
 Verification: pnpm build && npx vitest run packages/cli/tests/design-commands.test.ts
 
 ### PLAN-TASK-008 fm-change-style 产品级委托并移除 change_artifact_style（B3）
-Spec References: SPEC-BEHAVIOR-011
+Spec References: SPEC-BEHAVIOR-011, SPEC-BEHAVIOR-002
 Change Type: modify
 TDD Applicable: yes
 Files:
@@ -209,6 +218,7 @@ Files:
 - packages/mcp/src/tools.ts
 - packages/core/src/store.ts
 - packages/core/tests/store-design-mutations.test.ts
+- packages/mcp/tests/tools.test.ts
 - packages/cli/tests/design-commands.test.ts
 Skeleton:
 ```ts
@@ -219,7 +229,7 @@ it("change_artifact_style removed from core and MCP", () => {
 ```
 Steps:
 - [ ] 模板：update_product_config 落配置 → 委托 fm-refine-components 同一生成流程整体重生成设计系统（ICON 复用 shape 只套色，经 PLAN-TASK-005 追加版本+指针，self-review 至通过）；不触 design-page；结束无后续。三平台同改。
-- [ ] 删 change_artifact_style：MCP 名单/schema/映射/描述/handler + core changeArtifactStyle/changeArtifactStyleWithManifest/接口/导出；grep 复核无其它调用者；更新相关测试。
+- [ ] 在同一改动批删 change_artifact_style：MCP 名单/schema/映射/描述/handler + core changeArtifactStyle/changeArtifactStyleWithManifest/接口/导出；grep 复核无其它调用者；更新相关测试与工具集守卫，确保命令模板不再引用已删除工具。
 - [ ] 关闭 SCOPE-IN-008。
 Verification: npx vitest run packages/core/tests/store-design-mutations.test.ts packages/mcp/tests/tools.test.ts packages/cli/tests/design-commands.test.ts && pnpm typecheck
 
@@ -404,19 +414,27 @@ Verification: npx vitest run packages/web/src/pages/BrandResources.test.tsx && p
 ### PLAN-TASK-017 品牌资源入口与路由接线（BC3）
 Spec References: SPEC-BEHAVIOR-015
 Change Type: modify
-TDD Applicable: no
+TDD Applicable: yes
 Files:
 - packages/web/src/pages/ProductDetail.tsx
 - packages/web/src/routes.tsx
 - packages/web/src/i18n.ts
+- packages/web/src/pages/ProductDetail.test.tsx
 Skeleton:
 ```ts
 // ProductDetail 加"品牌资源"入口卡片/链接 → 新路由 /products/:productId/brand → BrandResources；i18n 文案 en+zh。
+it("links ProductDetail to the brand resources route", async () => {
+  renderProductDetail(product);
+  const link = screen.getByRole("link", { name: /品牌资源|Brand resources/i });
+  expect(link).toHaveAttribute("href", `/products/${product.id}/brand`);
+  expect(routePaths()).toContain("/products/:productId/brand");
+});
 ```
 Steps:
 - [ ] ProductDetail.tsx 加品牌资源入口；routes.tsx 注册 /products/:productId/brand → BrandResources；i18n 增对应文案。
+- [ ] ProductDetail.test.tsx 覆盖入口链接可见、href 指向 `/products/:productId/brand`、路由表包含 brand route，并断言 en/zh i18n label 可解析；build 只作为补充检查。
 - [ ] 关闭 SCOPE-IN-016（入口/路由部分）。
-Verification: pnpm --filter @xenonbyte/forma-web build
+Verification: npx vitest run packages/web/src/pages/ProductDetail.test.tsx && pnpm --filter @xenonbyte/forma-web build
 
 ## Trace
 <!-- Map this stage's IDs to upstream/downstream. R3 derives & checks closure. -->
@@ -429,7 +447,7 @@ Verification: pnpm --filter @xenonbyte/forma-web build
 | PLAN-TASK-005 | SPEC-BEHAVIOR-008, SPEC-DATA-002 | covered |
 | PLAN-TASK-006 | SPEC-BEHAVIOR-009, SPEC-BEHAVIOR-010, SPEC-DATA-004, SPEC-DATA-005 | covered |
 | PLAN-TASK-007 | SPEC-BEHAVIOR-007 | covered |
-| PLAN-TASK-008 | SPEC-BEHAVIOR-011 | covered |
+| PLAN-TASK-008 | SPEC-BEHAVIOR-011, SPEC-BEHAVIOR-002 | covered |
 | PLAN-TASK-009 | SPEC-BEHAVIOR-012, SPEC-BEHAVIOR-013 | covered |
 | PLAN-TASK-010 | SPEC-BEHAVIOR-005 | covered |
 | PLAN-TASK-011 | SPEC-BEHAVIOR-004 | covered |
