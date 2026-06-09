@@ -32,11 +32,14 @@ describe("design save when preview rendering fails (R11)", () => {
     const home = await mkdtemp(join(tmpdir(), "forma-preview-fail-"));
     homes.push(home);
     const store = await createFormaStore({ home });
+    // A component-library save activates the designSystemArtifactId pointer, which
+    // requires the product to exist — seed it like the real generateComponents path.
+    const product = await store.products.createProduct({ name: "Preview Fail", description: "d" });
 
     const result = await saveDesignArtifact(
       { artifacts: store.artifacts, products: store.products, productsRoot: getFormaPaths(home).productsDir },
       {
-        productId: "P-0abc12",
+        productId: product.id,
         kind: "component-library",
         html: "<html><body><p>ok</p></body></html>",
         title: "Components",
