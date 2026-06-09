@@ -524,6 +524,71 @@ describe("saveDesignArtifact", () => {
     );
   }, 30000);
 
+  it("supportingFile exceeding the 256KB size cap → throws INVALID_INPUT", async () => {
+    const html = `<!doctype html><html><body><p>comp</p></body></html>`;
+    const deps = makeDeps();
+    // 256KB cap is on decoded bytes; build an SVG payload just over the limit.
+    const oversized = `<svg>${"a".repeat(256 * 1024 + 1)}</svg>`;
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Oversized icon",
+      forma: {
+        productIcon: {
+          primary: "assets/icon.svg",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(oversized).toString("base64") },
+        {
+          path: "assets/icon-mono.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile with empty/garbage content_base64 → throws INVALID_INPUT (no silent empty asset)", async () => {
+    const html = `<!doctype html><html><body><p>comp</p></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Empty icon content",
+      forma: {
+        productIcon: {
+          primary: "assets/icon.svg",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [
+        // "!!!" decodes to zero bytes via Buffer.from(...,"base64"); must be rejected, not written empty.
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: "!!!" },
+        {
+          path: "assets/icon-mono.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
   // TEST-CORE-003: mobile product → 390×884 render viewport (NOT the 390×844 web canvas tile) + active screen-edge-radius
   it("mobile product → renders at 390×884 viewport and screen-edge-radius check is active (not skipped)", async () => {
     await store.products.initProductConfig(productId, {

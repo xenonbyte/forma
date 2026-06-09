@@ -225,6 +225,7 @@ const generateRequirementDesignSchema = z
 /** Validate a relative bundle path (no absolute, no traversal) for MCP supporting_files. */
 function isValidSupportingPath(value: string): boolean {
   if (value.length === 0) return false;
+  if (value.includes("\x00")) return false;
   if (/^[a-zA-Z]:[/\\]/.test(value)) return false;
   if (/^[/\\]{2}/.test(value)) return false;
   if (value.startsWith("/")) return false;

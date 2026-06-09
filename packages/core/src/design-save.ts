@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { VIEWPORT_PRESETS } from "@vzi-core/parser";
 import type { ArtifactStore } from "./artifact-store.js";
 import type {
+  ArtifactAssetEntry,
   ArtifactCraftCheck,
   ArtifactFormaExtension,
   ArtifactManifest,
@@ -144,12 +145,11 @@ function validateAndDecodeSupportingFiles(
         { path: sf.path, contentType: sf.contentType },
       );
     }
-    // Decode base64
-    let buf: Buffer;
-    try {
-      buf = Buffer.from(sf.contentBase64, "base64");
-    } catch {
-      throw new FormaError("INVALID_INPUT", `supportingFiles content_base64 is not valid base64: ${sf.path}`, {
+    // Decode base64. Buffer.from never throws — it silently drops invalid chars —
+    // so reject input that decodes to nothing rather than persisting an empty asset.
+    const buf = Buffer.from(sf.contentBase64, "base64");
+    if (buf.byteLength === 0) {
+      throw new FormaError("INVALID_INPUT", `supportingFiles content_base64 is empty or not valid base64: ${sf.path}`, {
         path: sf.path,
       });
     }
@@ -317,7 +317,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   const supportingFiles = Array.from(finalFiles.keys());
 
   // Build icon assets from productIcon SVG paths (role: "icon") — SPEC-DATA-001
-  const iconAssets: import("./artifact-manifest.js").ArtifactAssetEntry[] = [];
+  const iconAssets: ArtifactAssetEntry[] = [];
   if (forma.productIcon !== undefined) {
     const { primary, monochrome } = forma.productIcon;
     iconAssets.push({ path: primary, density: [1], role: "icon" });
