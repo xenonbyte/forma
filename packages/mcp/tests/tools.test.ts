@@ -1,6 +1,5 @@
 import {
   FormaError,
-  createFormaStore,
   getArtifactIconsDir,
   getArtifactVziPath,
   getArtifactVersionDir,
@@ -9,7 +8,7 @@ import {
 } from "@xenonbyte/forma-core";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import AdmZip from "adm-zip";
 import { describe, expect, it, vi } from "vitest";
