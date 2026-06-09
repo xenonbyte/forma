@@ -174,18 +174,24 @@ describe("fm-design component-library gate and reuse rules (T009)", () => {
 
   it("documents on-demand reuse of baseline components and product ICON SVG on every platform", async () => {
     const t = await loadCommand("fm-design");
-    // Must mention baseline component reuse (same tokens/states)
-    expect(t.blob).toMatch(/componentbaseline|componentlibrary|baseline component|按需复用|on-demand reuse/i);
-    // Must mention product icon reuse
-    expect(t.blob).toMatch(/icon svg|producticon|product icon/i);
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      // Must mention baseline component reuse (same tokens/states)
+      expect(lc).toMatch(/componentbaseline|componentlibrary|baseline component|按需复用|on-demand reuse/i);
+      // Must mention product icon reuse
+      expect(lc).toMatch(/icon svg|producticon|product icon/i);
+    }
   });
 
   it("states rule 1: fm-change-style and fm-refine-components do NOT retroactively regenerate existing pages", async () => {
     const t = await loadCommand("fm-design");
-    // rule 1: style/component changes do not retroactively regenerate existing design pages
-    expect(t.blob).toMatch(/rule 1|不回溯|retroactively|not retroactively/i);
-    // References fm-change-style and fm-refine-components in the context of rule 1
-    expect(t.blob).toContain("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      // rule 1: style/component changes do not retroactively regenerate existing design pages
+      expect(lc).toMatch(/rule 1|不回溯|retroactively|not retroactively/i);
+      // References fm-change-style in the context of rule 1
+      expect(lc).toContain("fm-change-style");
+    }
   });
 });
 
