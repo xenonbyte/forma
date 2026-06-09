@@ -534,22 +534,15 @@ export function createFormaTools(store: FormaStore): FormaTools {
         },
       );
 
-      // Enrich componentLibrary with MCP-layer URL helpers (bundleUrl/previewUrl)
-      // Core returns only the core-resolvable parts; URLs are MCP concerns.
+      // Enrich componentLibrary with MCP-layer URL helpers (bundleUrl/previewUrl).
+      // Core returns only the core-resolvable parts (incl. the bundle entry); URLs are MCP concerns.
       if (ctx.componentLibrary !== undefined) {
-        const { artifactId, version } = ctx.componentLibrary;
-        const manifest = await store.artifacts
-          .readArtifactVersion(input.product_id, artifactId, version)
-          .then(({ manifest }) => manifest)
-          .catch(() => undefined);
+        const { artifactId, version, entry } = ctx.componentLibrary;
         return {
           ...ctx,
           componentLibrary: {
             ...ctx.componentLibrary,
-            bundleUrl:
-              manifest !== undefined
-                ? artifactBundleUrl(input.product_id, artifactId, version, manifest.entry)
-                : undefined,
+            bundleUrl: artifactBundleUrl(input.product_id, artifactId, version, entry),
             previewUrl: artifactPreviewUrl(input.product_id, artifactId, version, "2x"),
           },
         };

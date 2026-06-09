@@ -26,6 +26,8 @@ export interface DesignContextInput {
 export interface ComponentLibraryRef {
   artifactId: string;
   version: number;
+  /** Bundle entry file (e.g. index.html) — lets the MCP layer build bundleUrl without re-reading the manifest. */
+  entry: string;
   productIcon?: ArtifactProductIcon;
 }
 
@@ -38,7 +40,7 @@ export interface DesignContextResult {
   platform?: string;
   language?: string;
   /** Platform-spec from COMPONENT_BASELINES. Always defined (falls back to "web" for desktop/tablet). */
-  componentBaseline?: ComponentBaselineSpec;
+  componentBaseline: ComponentBaselineSpec;
   /**
    * Structured reference to the current component library.
    * Resolved via product.designSystemArtifactId + max version.
@@ -113,6 +115,7 @@ export async function buildDesignContext(
       componentLibrary = {
         artifactId: dsArtifactId,
         version,
+        entry: manifest.entry,
         ...(manifest.forma?.productIcon !== undefined ? { productIcon: manifest.forma.productIcon } : {}),
       };
     }
