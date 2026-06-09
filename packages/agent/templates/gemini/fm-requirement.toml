@@ -4,6 +4,10 @@ prompt = """
 
 Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
+Preconditions (tier 1):
+- 档1: a product must exist and be selected. This command is the path that creates or populates requirement content, so no un-archived requirement is required as a precondition.
+If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID`, report the error faithfully.
+
 Cold path scenario:
 The user describes a new feature or change. The agent reads the current requirement, product baseline, language config, and product rules, merges the user input into the requirement document, validates the result, then saves it with one call to `save_requirement`.
 

@@ -11,6 +11,10 @@ Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Generate or refine a product's static-HTML component library. You write the HTML; Forma localizes assets, validates it is pure-static, stores a versioned bundle, renders a preview, and runs the deterministic craft lint. A component library is product-level — it has no requirement or page.
 
+Preconditions (tier 1):
+- 档1: a product must exist and be selected. No requirement is needed for this command.
+If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID` in an unexpected context, report the error faithfully.
+
 Execution:
 1. Require product_id from context or ask the user to run `$fm-list-product` first.
 2. Determine whether this is initial generation or refinement:

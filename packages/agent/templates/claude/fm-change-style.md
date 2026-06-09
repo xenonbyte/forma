@@ -8,6 +8,10 @@ Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Re-skin an existing artifact under a new `brand_style` / `system_style`. You regenerate the HTML in the new style; Forma localizes assets, validates pure-static, stores it as a new version of the same artifact, renders a preview, and runs the craft lint.
 
+Preconditions (tier 1):
+- 档1: a product must exist and be selected. No un-archived requirement is required; this command operates on existing artifacts.
+If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID` in an unexpected context, report the error faithfully.
+
 Execution:
 1. Require product_id from context or ask the user to run `fm-list-product` first.
 2. Pick the source artifact: `list_product_artifacts(product_id)` then choose the target; `get_product_artifact(product_id, artifact_id)` to read its `manifest` (its `kind`, and for a `design-page` its `forma.requirementId` / `forma.pageId` / `forma.variant`).
