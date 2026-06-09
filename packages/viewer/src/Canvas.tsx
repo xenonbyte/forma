@@ -22,6 +22,8 @@ export interface CanvasProps {
   locateTileId?: string | null;
   /** 定位请求序号;同一 tile 重复定位时递增以强制重新居中。 */
   locateRequestId?: number;
+  /** 初始选中的 tile id;用于测试及外部预选定(BC3 等)。设置后该 tile 以 selected 状态初始渲染。 */
+  defaultSelectedTileId?: string | null;
 }
 
 /** 自定义节点 data 载荷。 */
@@ -32,18 +34,66 @@ interface TileNodeData extends Record<string, unknown> {
 }
 type TileNode = Node<TileNodeData, "tile">;
 
-/** React Flow 自定义节点:按模式选渲染器。 */
-function TileNodeComponent({ data }: NodeProps<TileNode>): React.ReactElement {
-  return data.mode === "design" ? (
-    <DesignTile tile={data.tile} resolver={data.resolver} />
-  ) : (
-    <AnnotationTile tile={data.tile} resolver={data.resolver} />
+/**
+ * 选中框:选中 tile 时渲染在 tile 之上,对齐 annotation FocusFrame 的视觉风格。
+ * 使用 pointer-events:none 避免遮挡点击。
+ */
+function SelectionFrame(): React.ReactElement {
+  return (
+    <div
+      data-testid="selection-frame"
+      style={{
+        position: "absolute",
+        inset: -6,
+        borderRadius: 8,
+        border: "2px solid #1d4ed8",
+        background: "rgba(219,234,254,0.15)",
+        pointerEvents: "none",
+        boxShadow: "0 0 0 1px rgba(29,78,216,0.12)",
+      }}
+    />
   );
+}
+
+/** React Flow 自定义节点:按模式选渲染器;设计模式附加 title 标签 + 选中框。*/
+function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.ReactElement {
+  if (data.mode === "design") {
+    return (
+      <div style={{ position: "relative" }}>
+        {/* 每 tile 标题标签:左对齐,浮于 tile 顶边上方 — 对齐 PageFrameOverlays 风格。
+            focused → blue-700 (#1d4ed8);默认 → zinc-600 (#52525b),与 annotation AA palette 一致。*/}
+        <div
+          data-testid="tile-title"
+          style={{
+            position: "absolute",
+            bottom: "100%",
+            left: 0,
+            marginBottom: 6,
+            fontSize: 12,
+            fontWeight: 500,
+            lineHeight: "1.4",
+            color: selected ? "#1d4ed8" : "#52525b",
+            maxWidth: 240,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        >
+          {data.tile.title}
+        </div>
+        <DesignTile tile={data.tile} resolver={data.resolver} />
+        {selected && <SelectionFrame />}
+      </div>
+    );
+  }
+  return <AnnotationTile tile={data.tile} resolver={data.resolver} />;
 }
 
 const nodeTypes: NodeTypes = { tile: TileNodeComponent };
 
-function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: CanvasProps): React.ReactElement {
+function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, defaultSelectedTileId }: CanvasProps): React.ReactElement {
   const rf = useReactFlow();
   const nodes = useMemo<TileNode[]>(
     () =>
@@ -57,8 +107,11 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: C
         draggable: false,
         selectable: true,
         connectable: false,
+        // defaultSelectedTileId 为 seed 值:只控制初始 selected 态,后续由 React Flow 自己维护。
+        selected: defaultSelectedTileId != null ? tile.id === defaultSelectedTileId : undefined,
       })),
-    [model.tiles, mode, resolver],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [model.tiles, mode, resolver, defaultSelectedTileId],
   );
 
   useEffect(() => {
@@ -70,6 +123,7 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: C
   }, [locateRequestId, locateTileId, model.tiles, rf]);
 
   // 只渲视口内 tile;不要默认 fitView,否则全图缩进视口会破坏离屏卸载验收。
+  // pan/zoom feel 与 annotation canvas 对齐:滚轮缩放 + 左键拖拽平移。
   return (
     <ReactFlow
       nodes={nodes}
@@ -79,6 +133,11 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId }: C
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable
+      panOnDrag
+      zoomOnScroll
+      panOnScroll={false}
+      minZoom={0.1}
+      maxZoom={4}
       proOptions={{ hideAttribution: false }}
     >
       <Background />

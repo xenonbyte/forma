@@ -74,4 +74,45 @@ describe("Canvas", () => {
     expect(container.querySelector("img")).not.toBeNull();
     expect(container.querySelector("iframe")).toBeNull();
   });
+
+  it("design canvas shows per-tile title label and selection frame", async () => {
+    const model = buildViewerModel({ entry: "requirement", artifacts });
+    // 不带 defaultSelectedTileId:初始无选中
+    const container = render(<Canvas model={model} mode="design" resolver={resolver} />);
+    await act(async () => {
+      await sleep(50);
+    });
+    // 每个可见的 tile 应有一个 tile-title 标签
+    const titleLabels = container.querySelectorAll("[data-testid='tile-title']");
+    expect(titleLabels.length).toBeGreaterThanOrEqual(1);
+
+    // 初始无选中态,不应出现 selection-frame
+    expect(container.querySelector("[data-testid='selection-frame']")).toBeNull();
+  });
+
+  it("design canvas shows selection-frame when defaultSelectedTileId is set", async () => {
+    const model = buildViewerModel({ entry: "requirement", artifacts });
+    // defaultSelectedTileId 预选第一个 tile — 确定性地断言选中框出现
+    const firstTile = model.tiles[0]!;
+    const container = render(
+      <Canvas model={model} mode="design" resolver={resolver} defaultSelectedTileId={firstTile.id} />,
+    );
+    await act(async () => {
+      await sleep(50);
+    });
+
+    // 选中态下应出现 selection-frame
+    expect(container.querySelector("[data-testid='selection-frame']")).not.toBeNull();
+  });
+
+  it("annotation mode does not show design tile-title labels", async () => {
+    const model = buildViewerModel({ entry: "requirement", artifacts });
+    const container = render(<Canvas model={model} mode="annotation" resolver={resolver} />);
+    await act(async () => {
+      await sleep(50);
+    });
+    // 标注模式 tile-title 不要求存在(spec scope 是 design canvas)
+    // 但不应出现 selection-frame
+    expect(container.querySelector("[data-testid='selection-frame']")).toBeNull();
+  });
 });
