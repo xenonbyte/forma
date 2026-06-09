@@ -3,10 +3,10 @@
  *
  *   #4: generateRequirementDesign validates requirement ownership + page existence
  *       before writing an artifact / design pointer.
- *   #5: changeArtifactStyle rejects source artifacts whose kind does not support
- *       style changes (markdown-document / svg / image / preview-only).
+ *   #5 (PLAN-TASK-008): changeArtifactStyle removed from core — store no longer
+ *       exposes the method.
  *
- * Both guards run before the save pipeline, so these tests never start a browser.
+ * Guard #4 runs before the save pipeline, so those tests never start a browser.
  */
 
 import { mkdtemp } from "node:fs/promises";

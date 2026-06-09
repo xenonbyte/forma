@@ -18,7 +18,7 @@ If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID`
 Execution:
 1. Require product_id from context or ask the user to run `$fm-list-product` first.
 2. Confirm the new `brand_style` and optional `system_style`. If not already chosen, call `list_styles` and confirm with the user.
-3. Persist the style config: call `update_product_config(product_id, platform, brand_style, system_style, languages, default_language)` using the product's existing platform and language config. This is the authoritative config write. If this step fails, stop and report the error — do not continue.
+3. Persist the style config: first call `get_product(product_id)` to read the existing `platform`, `languages`, and `default_language`; then call `update_product_config(product_id, platform, brand_style, system_style, languages, default_language)` carrying those existing values forward with the new style. This is the authoritative config write. If this step fails, stop and report the error — do not continue.
 
    **Partial-failure boundary**: if `update_product_config` succeeds but any subsequent step (export, generation, save, or self-review) fails, STOP immediately and report:
    > "产品配置已更新但当前组件库可能仍是旧版本/未刷新（partial update: product config saved but component library may be stale）。请重跑 fm-refine-components 或 fm-change-style 以刷新组件库指针版本。"
