@@ -149,4 +149,44 @@ describe("fm-change-style template", () => {
   });
 });
 
+// PLAN-TASK-009: fm-design two-stage component-library gate (B4/B6/B5)
+describe("fm-design component-library gate and reuse rules (T009)", () => {
+  it("gates on designSystemArtifactId pointer (not list-non-empty) and references fm-refine-components", async () => {
+    const t = await loadCommand("fm-design");
+    // Must check the pointer, not list non-empty
+    expect(t.blob).toContain("designsystemartifactid");
+    // Must reference fm-refine-components as the remedy
+    expect(t.blob).toContain("fm-refine-components");
+  });
+
+  it("distinguishes never-refined vs legacy in the stop message on every platform", async () => {
+    const t = await loadCommand("fm-design");
+    // Legacy wording: 已检测到旧组件库 or the word 'legacy' (case-insensitive)
+    expect(t.blob).toMatch(/已检测到旧组件库|legacy/i);
+    // Must appear in each platform individually
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      const lc = body.toLowerCase();
+      expect(lc).toContain("designsystemartifactid");
+      expect(lc).toContain("fm-refine-components");
+      expect(body).toMatch(/已检测到旧组件库|legacy/i);
+    }
+  });
+
+  it("documents on-demand reuse of baseline components and product ICON SVG on every platform", async () => {
+    const t = await loadCommand("fm-design");
+    // Must mention baseline component reuse (same tokens/states)
+    expect(t.blob).toMatch(/componentbaseline|componentlibrary|baseline component|按需复用|on-demand reuse/i);
+    // Must mention product icon reuse
+    expect(t.blob).toMatch(/icon svg|producticon|product icon/i);
+  });
+
+  it("states rule 1: fm-change-style and fm-refine-components do NOT retroactively regenerate existing pages", async () => {
+    const t = await loadCommand("fm-design");
+    // rule 1: style/component changes do not retroactively regenerate existing design pages
+    expect(t.blob).toMatch(/rule 1|不回溯|retroactively|not retroactively/i);
+    // References fm-change-style and fm-refine-components in the context of rule 1
+    expect(t.blob).toContain("fm-change-style");
+  });
+});
+
 // fm-rollback-design and fm-develop-design-handoff templates deleted in R1/R4/R5 (PLAN-TASK-001)

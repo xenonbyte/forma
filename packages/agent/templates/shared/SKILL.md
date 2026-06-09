@@ -16,3 +16,4 @@ Core rules:
 - Do not expose or suggest requirement deletion tools.
 - The agent does NOT create requirements. When a core tool returns `REQUIREMENT_NOT_FOUND`, report the error faithfully and direct the user to create or activate a requirement in the Forma backstage. When a core tool returns `REQUIREMENT_STATUS_INVALID`, report the error faithfully (the requirement is archived and cannot be used). Do not build your own status determination logic in the agent layer.
 - Keep stable MCP usage: read fresh state, validate before saving, call the intended mutation once.
+- Rule 1 (style/component changes are not retroactive): `fm-change-style` and `fm-refine-components` do NOT retroactively regenerate already-produced design pages. Existing page versions remain immutable until the page is explicitly re-run via `fm-design`.
