@@ -349,6 +349,8 @@ describe("MCP forma tools", () => {
     // PLAN-TASK-008 guard: change_artifact_style removed from MCP tool set
     expect(formaToolNames).not.toContain("change_artifact_style");
     expect(Object.keys(tools)).not.toContain("change_artifact_style");
+    // SPEC-BEHAVIOR-002 net change (+1/−3): get_component_baseline added; the three
+    // write tools removed are asserted absent above. Pin presence + absence together.
     expect(formaToolNames).toEqual(
       expect.arrayContaining([
         "save_requirement",
@@ -358,6 +360,7 @@ describe("MCP forma tools", () => {
         "generate_requirement_design",
         "generate_components",
         "get_design_context",
+        "get_component_baseline",
       ]),
     );
     expect(formaToolNames).not.toContain("change_style");
@@ -4999,8 +5002,8 @@ describe("design-handoff tools (Task 8)", () => {
 //
 // These tests prove that existing design tools (get_product_artifact,
 // export_artifact with all formats including the new icons/vzi,
-// get_design_context, generate_requirement_design, generate_components,
-// change_artifact_style) do NOT gate on requirement.status.
+// get_design_context, generate_requirement_design, generate_components)
+// do NOT gate on requirement.status.
 // They must succeed (or fail for a non-gate reason) for a non-archived
 // (active/submitted) requirement.
 //
