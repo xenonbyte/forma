@@ -671,6 +671,14 @@ describe("apiRequest", () => {
       "/api/products/P-123abc/artifacts/A-abc123/preview/2x",
     );
 
+    // BC3: bundle asset URL builder — per-segment encoding mirrors core artifactBundleUrl
+    expect(client.getArtifactVersionBundleAssetUrl("P-123abc", "A-abc123", 3, "assets/icon.svg")).toBe(
+      "/api/products/P-123abc/artifacts/A-abc123/versions/3/bundle/assets/icon.svg",
+    );
+    expect(client.getArtifactVersionBundleAssetUrl("P id", "A id", 1, "seg a/seg b")).toBe(
+      "/api/products/P%20id/artifacts/A%20id/versions/1/bundle/seg%20a/seg%20b",
+    );
+
     expect(requests[0]).toMatchObject({ input: "/api/products/P-123abc/artifacts", method: undefined });
     expect(requests[1]?.input.toString()).toContain("kind=page_design");
     expect(requests[2]).toMatchObject({ input: "/api/products/P-123abc/artifacts/A-abc123", method: undefined });

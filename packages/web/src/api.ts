@@ -252,7 +252,11 @@ export interface ArtifactSummary {
   superseded: boolean;
 }
 
-/** BC3: product icon asset metadata from the component-library manifest (mirrors core ArtifactProductIcon). */
+/**
+ * BC3: product icon asset metadata from the component-library manifest.
+ * Mirrors core `ArtifactProductIcon` (packages/core/src/artifact-manifest.ts).
+ * Keep in sync when that interface changes.
+ */
 export interface ArtifactProductIconWeb {
   /** Bundle-relative SVG asset path for the primary colour variant. */
   primary: string;
@@ -266,7 +270,11 @@ export interface ArtifactProductIconWeb {
   };
 }
 
-/** BC3: asset entry in manifest.forma.assets (mirrors core ArtifactAssetEntry). */
+/**
+ * BC3: asset entry in manifest.forma.assets.
+ * Mirrors core `ArtifactAssetEntry` (packages/core/src/artifact-manifest.ts).
+ * Keep in sync when that interface changes.
+ */
 export interface ArtifactAssetEntryWeb {
   /** Bundle-relative path (⊆ supportingFiles). */
   path: string;
@@ -275,7 +283,11 @@ export interface ArtifactAssetEntryWeb {
   degraded?: boolean;
 }
 
-/** BC3: forma extension namespace in the artifact manifest (mirrors core ArtifactFormaExtension). */
+/**
+ * BC3: forma extension namespace in the artifact manifest.
+ * Mirrors core `ArtifactFormaExtension` (packages/core/src/artifact-manifest.ts).
+ * Keep in sync when that interface changes.
+ */
 export interface ArtifactFormaExtensionWeb {
   requirementId?: string;
   pageId?: string;
@@ -468,7 +480,12 @@ export interface FormaApiClient {
   ): Promise<RequirementDesignAssetExport>;
   getArtifactPreviewUrl(productId: string, artifactId: string, resolution: "1x" | "2x"): string;
   getArtifactVersionPreviewUrl(productId: string, artifactId: string, version: number, resolution: "1x" | "2x"): string;
-  /** BC3: resolve a bundle-relative asset path (e.g. manifest.forma.productIcon.primary) to a served URL. Pure URL builder — no fetch. */
+  /**
+   * BC3: resolve a bundle-relative asset path (e.g. `manifest.forma.productIcon.primary`) to a
+   * served URL. Pure URL builder — no fetch. Each path segment is percent-encoded individually
+   * (mirrors `artifactBundleUrl` in core/artifact-urls.ts). Pass a clean, slash-separated
+   * bundle-relative path as stored in the manifest; do not pre-encode it.
+   */
   getArtifactVersionBundleAssetUrl(productId: string, artifactId: string, version: number, relativePath: string): string;
   getBaseline(productId: string): Promise<ProductBaseline>;
   getPageCopy(productId: string, pageId: string, requirementId?: string): Promise<PageCopyPayload>;
@@ -711,7 +728,7 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     getArtifactVersionPreviewUrl: (productId, artifactId, version, resolution) =>
       `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/preview/${resolution}.png`,
     getArtifactVersionBundleAssetUrl: (productId, artifactId, version, relativePath) =>
-      `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/bundle/${relativePath}`,
+      `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/versions/${version}/bundle/${relativePath.split("/").map(encodeURIComponent).join("/")}`,
     getBaseline: (productId) =>
       apiRecord<ProductBaseline>(`/api/products/${encodeURIComponent(productId)}/baseline`, requestOptions(fetcher)),
     getPageCopy: (productId, pageId, requirementId) => {
