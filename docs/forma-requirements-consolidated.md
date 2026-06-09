@@ -47,7 +47,7 @@
 - 日期：2026-06-08
 - 来源：对 `packages/agent/templates/` 下 8 个 `fm-*` agent 命令的整体审查（本轮对话）→ 逐条源码核实 → 结合产品边界裁剪
 - 状态：方向已定，待实施。R1 删 fm-develop-design-handoff；R2 方案 B；R3 下沉 pure-static + self-review；R4 移除 agent/MCP 产品删除；R5 删 fm-rollback-design（2026-06-09 追加）
-- 原则：只动 agent 命令模板层与其安装/注册/测试，**不动底层 MCP 工具与 core 业务逻辑**。不引入新的命令分档、代码生成框架等重抽象，除非问题确实需要。
+- 原则：默认只动 agent 命令模板层与其安装/注册/测试；**R4/R5 是已确认的 MCP/core 例外**（R4 移除产品删除写工具但保留后台删除路径，R5 移除设计回退写工具与对应死 core）。不引入新的命令分档、代码生成框架等重抽象，除非问题确实需要。
 
 ### 背景与产品边界前提
 
@@ -77,7 +77,7 @@ Forma 的产品边界（产品方本轮明确）：
 - R4：产品删除收口到后台管理页面——移除 agent/MCP 层删除能力（`fm-list-product` 删除分支 + shared 删除指引 + MCP `delete_product` 工具）；创建侧确认已满足并加守卫。**已定（依据本轮产品规则，取代旧"强化 description"方案）。**
 - R5：删除 `fm-rollback-design` agent 命令 + MCP `rollback_requirement_design` 工具 + 死掉的 core `rollbackDesignPointerLocked`（不提供设计回退；web 版本/回退 UI 见批次3；底层版本机制保留）。**已定（2026-06-09 追加）。**
 
-预计涉及：agent 模板 3 个文件 + 注册/安装 2 处 + 相关测试若干（R1）；新增 1 个守卫测试或 1 个生成脚本（R2）；shared 指南 1 处 + 命令模板若干（R3）。全部可被现有 Vitest 覆盖。
+预计涉及：agent 模板 3 个文件 + 注册/安装 2 处 + 相关测试若干（R1）；新增 1 个守卫测试或 1 个生成脚本（R2）；shared 指南 1 处 + 命令模板若干（R3）；MCP/core/tests 的删除面以 R4/R5 各自小节为准。全部可被现有 Vitest 覆盖。
 
 ### 非范围（明确不做）
 
@@ -86,7 +86,7 @@ Forma 的产品边界（产品方本轮明确）：
 | 删除/改动 `get_design_handoff` 等 4 个 MCP 工具、`design-handoff.ts`、`vzi-read-layer.ts` | 它们是"通过 MCP 提供 UI 信息"的产品能力，保留不动。 |
 | 新增"内部/dev-only 命令"分档 | 为一个无消费者的命令引入新抽象；"内部使用"已由直接调 MCP 工具覆盖。 |
 | 给 `fm-develop-design-handoff` 重新设计消费侧 agent 工作流 | 消费侧不在 Forma 命令范围内。 |
-| 改 MCP **读取**工具行为、core 持久化、产品/需求数据模型 | 本轮只清理命令模板层（例外：R4 按产品规则移除 MCP `delete_product` **写**工具，但 core 删除逻辑与 HTTP 删除路由保留）。 |
+| 改 MCP **读取**工具行为、core 持久化、产品/需求数据模型 | 本轮默认只清理命令模板层；明确例外仅限 R4 移除 MCP `delete_product` **写**工具、R5 移除 MCP `rollback_requirement_design` **写**工具与其唯一调用的死 core。core 删除逻辑、HTTP 删除路由、底层版本机制均保留。 |
 
 ---
 
@@ -224,7 +224,7 @@ Forma 的产品边界（产品方本轮明确）：
 - 测试：`packages/cli/tests/copy-assets.test.ts:18`（列表）+ `:41`（描述）+ `:196`（模板读取）、`packages/cli/tests/design-commands.test.ts:155`（`describe` 块）、`packages/core/tests/install.test.ts:11`
 - MCP 工具 `rollback_requirement_design`：`packages/mcp/src/tools.ts:56`（名单）、`:224`（schema）、`:340`（映射）、`:373`（描述）、`:445-446`（handler）、`:991-1017`（实现 `rollbackRequirementDesign`）
 - core：`packages/core/src/product.ts:302 rollbackDesignPointerLocked`——删 MCP 工具后唯一调用者（`tools.ts:1017`）消失，变**死代码** → 一并删 + 其测试
-- **保留**：web 的 `/rollback/plan`（走另一套，不经 `rollbackDesignPointerLocked`）、底层版本机制
+- **保留**：底层版本机制。`packages/web/src/api.ts` 中仍有设计会话 `/rollback/plan` URL 构造，但当前 server 无对应路由（removed design session routes 返回 404），它不是可用回退路径，也不作为 R5 验收对象。
 
 **需求**：
 
@@ -232,14 +232,14 @@ Forma 的产品边界（产品方本轮明确）：
 2. 删 MCP 工具 `rollback_requirement_design`（名单/schema/映射/描述/handler/实现 六处）。
 3. 删 core `rollbackDesignPointerLocked` + 其测试；实施前 grep 复核无其它调用者。
 4. 同步 `copy-assets`/`design-commands`/`install` 测试与 `mcp/tests/tools.test.ts`。
-5. 不碰 web `/rollback/plan`、不碰底层版本机制。
+5. 不碰底层版本机制；不把 `api.ts` 的 `/rollback/plan` 客户端残留当作可用回退路径或验收对象。
 
 **验收标准**：
 
 - [ ] `formaAgentCommands` 与 `install.ts` 列表不含 `fm-rollback-design`；**R1+R5 后命令为 6**（list/status/requirement/design/refine-components/change-style）。
 - [ ] MCP 工具集不含 `rollback_requirement_design`；core 无 `rollbackDesignPointerLocked`。
 - [ ] `pnpm typecheck` / `pnpm build` 通过；相关 vitest 通过。
-- [ ] web `/rollback/plan` 与底层版本机制零改动。
+- [ ] 底层版本机制零改动；文档和测试不要求存在 server `/rollback/plan` 回退路由。
 
 ---
 
@@ -251,11 +251,10 @@ Forma 的产品边界（产品方本轮明确）：
 - R4：依据产品规则（创建/删除只在后台管理页），移除 agent/MCP 层产品删除能力（命令删除分支 + shared 删除指引 + MCP `delete_product` 工具），创建侧加守卫。取代旧"强化 description"方案。
 - R5（2026-06-09）：删除 `fm-rollback-design` 命令 + MCP `rollback_requirement_design` 工具 + 死掉的 core `rollbackDesignPointerLocked`；web 版本/回退 UI 见批次3；底层版本机制保留。命令数连 R1 共 8→6。
 
-### 待定（实施前确认）
+### 实施备注（已确认）
 
 - R4 的 MCP 删除范围（连同 `delete_product` 工具一并移除，而非只删命令分支）**已于 2026-06-08 确认**。
 - 实施顺序（统一排期见本文件顶部"统一排期与依赖"）：**R1/R4/R5 → B1–B7 → R3 → R2**。R3 必须在 B 批**之后**——它下沉的正是被 B3/B1/B4 改动后的命令正文；R2 守卫最后锁住改完的最终 **6** 命令集。批次3（web 版本 UI 下线）与 fm-* 解耦、可并行。
-- 是否把 R1–R5 落到 `CONTINUITY.md` 的 working set。
 
 
 ---
@@ -273,7 +272,7 @@ Forma 的产品边界（产品方本轮明确）：
 经源码核实，Forma 的职责切分（见记忆 `forma-product-lifecycle-rule` 与批次1背景）：
 
 - **生命周期归后台管理页**：建产品（HTTP `POST /api/products`）、建需求（HTTP `POST /api/products/:id/requirements` → `createEmptyRequirement`，`packages/server/src/routes.ts:277,281`）、删产品。**MCP 无产品/需求的创建工具。**
-- **agent/MCP 只做内容**：选产品、填需求、出设计、组件、换肤、回退。
+- **agent/MCP 只做内容**：选产品、填需求、出设计、组件、换肤；回退路径按批次1 R5 删除。
 - **"最新需求"语义**：`getLatestRequirement`（`packages/core/src/requirement.ts:511`）只返回最近的**非归档**需求，全归档或无需求则抛 `REQUIREMENT_NOT_FOUND`。即系统里"最新需求"天然非归档；归档的进历史。
 
 由此，命令的前置门槛、级联与设计系统上下文按下面 B1–B7 明确。
@@ -353,7 +352,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
      - 字体：字族 + 字阶（text-1..8）+ 行高/字距 specimen
      - 间距 / 圆角 / 高度（elev）/ 动效（motion·ease）：各刻度样例
      - 功能图标：仅**风格约定**（线性/填充、描边、尺寸网格），**不**附图标库
-   - **品牌资产（产品级生成）**：**产品 ICON（品牌标识 / mark）**——由**产品名 + brand_style**派生的**唯一** SVG mark；变体 **primary（彩色）+ monochrome（单色）**；形态体现产品身份、配色用品牌 token。`fm-design` 展示产品图标时复用这段 SVG（见 B6），保证全产品一致。换品牌时**形态稳定、只随 refine 级联重新套色**（不换 logo 形状）。favicon 由该 ICON 小尺寸渲染派生，不单独做。ICON 必须结构化落盘：组件库保存时把 primary / monochrome SVG 写入 bundle assets，并在 manifest `forma.productIcon` 中记录两个可解析 asset path；web 和 `get_design_context` 只能读该 manifest 字段，不得从 HTML 文本临时解析 logo。
+   - **品牌资产（产品级生成）**：**产品 ICON（品牌标识 / mark）**——首次生成时由**产品名 + brand_style**派生一个唯一 SVG mark；变体 **primary（彩色）+ monochrome（单色）**；形态体现产品身份、配色用品牌 token。`fm-design` 展示产品图标时复用这段 SVG（见 B6），保证全产品一致。ICON 必须结构化落盘：组件库保存时把 primary / monochrome SVG 写入 bundle assets，并在 manifest `forma.productIcon` 中记录两个可解析 asset path 和稳定 shape 元数据（如 geometry/shape id/source version）；web 和 `get_design_context` 只能读该 manifest 字段，不得从 HTML 文本临时解析 logo。后续 `fm-refine-components` / `fm-change-style` 若已有当前产品 ICON，必须复用既有 SVG geometry/shape，只按新 tokens 重新着色；只有无当前 ICON 时才创建新形态。favicon 由该 ICON 小尺寸渲染派生，不单独做。
 6. **不生成（out of scope）**：通用功能图标库/图标字体/图标资产包（功能图标按页内联 SVG、归档时导出）；wordmark/lockup（产品名直接用品牌字体排，不做单独资产）；完整品牌 VI 规范（多版 logo 制图、印刷物）。注：产品 ICON mark **在范围内**（见上 item 5 品牌资产）。
 
 **需求（基线组件区 = 固定基线组件集）**：
@@ -383,9 +382,9 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 - [ ] `fm-refine-components` 模板不含任何需求门槛；最新需求已归档的产品上仍能精修设计系统。
 - [ ] 设计系统工件含 Foundations 区（令牌可视化：色/字/距/圆角/高度/动效）+ **产品 ICON**（mark，primary + monochrome，由产品名 + brand_style 派生）。
 - [ ] 产品有明确的当前 `component-library` 指针；重复 refine / change-style 会追加同一组件库 artifact 的新版本，不产生多个并列“当前组件库”。
-- [ ] manifest `forma.productIcon` 记录 primary / monochrome 两个 SVG asset path；web 与 `get_design_context` 可直接解析，不依赖 HTML 解析。
-- [ ] **不**生成通用功能图标库/图标字体/wordmark 资产；favicon 由产品 ICON 派生；换品牌时 ICON 形态不变、只套色。
-- [ ] 权威基线清单已沉淀（命令模板/shared），定义 web 与 mobile 两套固定集；命令按 `platform` 交付对应清单。
+- [ ] manifest `forma.productIcon` 记录 primary / monochrome 两个 SVG asset path + 稳定 shape 元数据；web 与 `get_design_context` 可直接解析，不依赖 HTML 解析。
+- [ ] **不**生成通用功能图标库/图标字体/wordmark 资产；favicon 由产品 ICON 派生；换品牌时 ICON 复用既有 geometry/shape，只套色。
+- [ ] 权威基线清单已沉淀在 `packages/core/src/component-baseline.ts`，定义 web 与 mobile 两套固定集；命令模板/shared 只引用 `get_component_baseline` 返回值，不复制清单正文；命令按 `platform` 交付对应清单。
 - [ ] 同一产品生成的组件库覆盖清单上**全部**基线组件，不缺项、不随需求自由增减。
 - [ ] 每个组件覆盖 `state-coverage` 的适用状态；样式仅由 tokens 决定，组件集不随品牌样式改变。
 
@@ -407,7 +406,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 1. **重定义 `fm-change-style` 命令**为产品级样式切换，流程：
    1. 确认新 `brand_style`/`system_style`（未选则 `list_styles` 让用户选）。
    2. `update_product_config(product_id, brand_style, system_style)` 落产品配置。
-   3. **级联：执行 `fm-refine-components` 的生成流程整体重生成产品设计系统**（Foundations + 产品 ICON + 基线组件）于新样式下——经 `get_component_baseline` 取规格、导出现有当前 `component-library` 源 HTML 为基线、套新 tokens 重生成（无当前指针则新建并记录当前组件库）；用 `generate_components` 保存为当前组件库的新版本 + self-review craftChecks 直到通过。fm-change-style 本身不另写生成逻辑，复用 refine 的流程（"命令不直接调命令"，指模板内执行同一套生成步骤）。
+   3. **级联：执行 `fm-refine-components` 的生成流程整体重生成产品设计系统**（Foundations + 产品 ICON + 基线组件）于新样式下——经 `get_component_baseline` 取规格、导出现有当前 `component-library` 源 HTML 为基线、套新 tokens 重生成（无当前指针则新建并记录当前组件库）；产品 ICON 若已存在，必须复用 manifest 中的稳定 geometry/shape，只重新套色；用 `generate_components` 保存为当前组件库的新版本 + self-review craftChecks 直到通过。fm-change-style 本身不另写生成逻辑，复用 refine 的流程（"命令不直接调命令"，指模板内执行同一套生成步骤）。
    4. **不触碰已有 design-page artifact**（rule 1）。
    5. **结束，无后续**：不重生成页面；用户若要某页采用新样式，后续自行 `fm-design`（Described 模式重生成该页）。
 2. **移除旧单产物 `change_artifact_style`**（产品级切换 + fm-design 已覆盖其用途）：
@@ -424,7 +423,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 - [ ] MCP 工具集不含 `change_artifact_style`；core 无 `changeArtifactStyle`/`changeArtifactStyleWithManifest`。
 - [ ] `store-design-mutations.test.ts` / `tools.test.ts` / `design-commands.test.ts` 更新后通过；`pnpm typecheck` / `pnpm build` 通过。
 
-### B4 `fm-design` 缺组件库两段式停下（显式，无静默级联）
+### B4 `fm-design` 缺组件库两段式停下（`fm-design` 内显式，无静默）
 
 **现状**：`design-save` 不检查组件库是否存在，也无"先精修组件"的提示。原 rule 3 设想"自动补组件"，本批改为**显式停下**。
 
@@ -433,7 +432,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 1. `fm-design` 生成前检查产品是否已有**当前组件库指针**（不能只看 `list_product_artifacts(product_id, kind="component-library")` 非空）。**不存在 → 停**，提示用户先跑 `fm-refine-components`，**不自动生成**。
 2. `fm-refine-components` 生成完即结束（现状已是独立命令），用户审查/调整组件。
 3. 用户再次 `fm-design`，组件库已在 → 正常生成页面。
-4. 全程无静默级联：组件生成只在用户显式跑 `fm-refine-components` 时发生。
+4. `fm-design` 流程内无静默级联：缺组件库时只停下提示，不自动生成组件。组件生成只在用户显式跑 `fm-refine-components`，或显式跑 `fm-change-style` 后由其复用 refine 流程时发生。
 
 **验收标准**：
 
@@ -483,10 +482,10 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 **需求**：
 
 1. **新增 core 数据** `packages/core/src/component-baseline.ts`：按 `platform`（web/mobile）键入的结构化规格 `{ foundations 分类, productIcon 规格, components 清单 }`。单一事实源，测试可逐项断言齐全。
-2. **refine 侧（独立工具）**：新增 MCP 工具 `get_component_baseline(product_id)`——由产品 `platform` 解析，返回对应规格。`fm-refine-components` 据此生成设计系统（替代旧模板里"自由发挥/镜像 components.html"的做法）。
+2. **refine 侧（独立工具）**：新增 MCP 工具 `get_component_baseline(product_id)`——由产品 `platform` 解析，返回对应规格。`fm-refine-components` 据此生成设计系统（替代旧模板里"自由发挥/镜像 components.html"的做法）；命令模板/shared 只引用该工具返回值，不复制基线清单正文。
 3. **design 侧（扩 `get_design_context`）**：`buildDesignContext` 返回新增两字段——
    - `componentBaseline`：同上规格（让 design 知道哪些是规范件）；
-   - `componentLibrary`：由产品级当前组件库指针解析出的 `component-library` 工件引用/内容（至少包含 `artifact_id`、`version`、bundle/preview 引用、manifest `forma.productIcon`、可供模型参考的当前 HTML 内容或等价读取面），供 B6 复用真实 markup + 产品 ICON。
+   - `componentLibrary`：由产品级当前组件库指针解析出的 `component-library` 工件引用/内容（至少包含 `artifact_id`、`version`、bundle/preview 引用、manifest `forma.productIcon` 的 asset path 与稳定 shape 元数据、可供模型参考的当前 HTML 内容或等价读取面），供 B6 复用真实 markup + 产品 ICON。
 4. **当前组件库指针（core / API 契约）**：新增或扩展产品级元数据记录当前 `component-library` 的 artifact id 与当前版本；`generate_components` 保存时负责创建/追加并更新该指针；`list_product_artifacts` / `get_product_artifact` / `get_design_context` 均以该指针作为“当前组件库”的唯一事实源，不按 `updated_at`、数组顺序或需求级 `superseded` 推断。
 5. **system_style 厘清（G2）**：system_style 是**元数据**（name+description+category+upstream，无 tokens/组件，真内容在 upstream）。`get_style(name)` 对 system style 名会**正常返回该元数据（非 bug，`tools.ts:1032-1043` 先查品牌索引、再查系统目录）**；B7 选择经 `get_design_context.systemStyle` 结构化字段交付，更清晰一致。它是组件结构/交互约定的**软指导**，不进 foundations、不改清单；与 brand_style/基线的优先级见 B2 item10（**system_style 永不覆盖前两者**）。
 
@@ -496,7 +495,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 - [ ] `get_component_baseline(product_id)` 返回该 platform 规格；`fm-refine-components` 模板改为读它。
 - [ ] 当前组件库指针有 core/API/MCP 测试：首次生成创建指针，重复生成追加同一 artifact 新版本，读取面返回同一当前组件库。
 - [ ] `get_design_context` 返回 `componentBaseline` + `componentLibrary`；`fm-design` 复用以 `componentLibrary` 为准。
-- [ ] `componentLibrary` 含可解析的 `forma.productIcon` primary / monochrome asset path。
+- [ ] `componentLibrary` 含可解析的 `forma.productIcon` primary / monochrome asset path 与稳定 shape 元数据。
 - [ ] system_style 经结构化字段（`systemStyle`）交付；模板改走该字段、无需再单独 `get_style(system_style)`（该调用本身不算错，只是统一改走结构化字段）。
 - [ ] `pnpm typecheck` / `pnpm build` 通过；新增工具/字段有 MCP schema 与测试。
 
@@ -505,23 +504,23 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 ### 决策记录（2026-06-08，B2 基线清单/B6 于 2026-06-09 补）
 
 - B1：门槛三档明确化（latest=非归档语义；缺需求→提示去后台页建）。
-- B2：`fm-refine-components` = 档1（产品级）+ 生成产品**设计系统** = 品牌资源区（令牌可视化 色/字/距/圆角/高度/动效 + **产品 ICON mark**：产品名+brand_style 派生、primary+mono、换品牌只套色不换形、favicon 由其派生；不生成通用功能图标库/wordmark/完整 VI）+ 固定基线组件集（web/mobile 变体、精选档约 28 件、状态覆盖；不镜像 components.html、不按需求自由增减）。新增产品级当前组件库指针；重复 refine/change-style 追加同一 component-library artifact 的新版本。**foundations 归 fm-refine-components，不归 fm-change-style**。
+- B2：`fm-refine-components` = 档1（产品级）+ 生成产品**设计系统** = 品牌资源区（令牌可视化 色/字/距/圆角/高度/动效 + **产品 ICON mark**：首次由产品名+brand_style 派生、primary+mono，manifest 记录 asset path 与稳定 shape 元数据；后续 refine/change-style 复用 geometry/shape、只重新套色；favicon 由其派生；不生成通用功能图标库/wordmark/完整 VI）+ 固定基线组件集（web/mobile 变体、精选档约 28 件、状态覆盖；不镜像 components.html、不按需求自由增减）。新增产品级当前组件库指针；重复 refine/change-style 追加同一 component-library artifact 的新版本。**foundations 归 fm-refine-components，不归 fm-change-style**。
 - B3：`fm-change-style` = 产品级样式切换（设定 style 配置 + **委托** `fm-refine-components` 整体重生成设计系统）；后台样式配置只写配置、不执行 AI/refine，不能等同于 fm-change-style；**移除**旧单产物 `change_artifact_style`（MCP + core + 测试）。
-- B4：`fm-design` 缺组件库 → 停下提示先精修组件（显式，两段式，无静默）。
+- B4：`fm-design` 缺组件库 → 停下提示先精修组件（显式，两段式；`fm-design` 流程内无静默生成组件）。
 - B5：rule 1——样式/组件改动不回溯已生成设计。
 - B6（2026-06-09）：`fm-design` 按需复用基线组件**与产品 ICON**——需要才复用、同 tokens/状态、同一产品图标；不为复用而设计，沉浸式/定制页可省略或替代通用件，Scope fidelity 不削弱。
 - B7（2026-06-09）：数据驱动设计系统上下文——新增 core `component-baseline.ts` + `get_component_baseline`（refine）+ `get_design_context` 加 `componentBaseline`/`componentLibrary`（design）；system_style 经结构化字段交付（`get_style(system_style)` 本就返回元数据、非 bug，此处仅澄清）。
 - system_style 取留+降级（2026-06-09）：**留** system_style（web "设计规范"功能 + manifest 留存），但严格从属——brand_style 长相权威、Forma 基线结构权威、system_style 仅软提示**永不覆盖**（见 B2 item10、B7 item5）。B2 后其"结构方法论"作用已被固定基线大部分架空，故定位为锦上添花。
 - B8 取消（2026-06-09）：`fm-rollback-design` 改为**整体删除**而非规格化——agent/MCP 见清理批 R5、web 版本/回退 UI 见批次3、底层版本机制保留。
 - C3（2026-06-09）：后台创建/后台样式配置只设样式不生成设计系统；`fm-change-style` 是 agent 命令，多一步委托 refine 生成。
-- 既有不变量（2026-06-09 记录）：`fm-requirement` 改页 → 该页 `expired` → 需求退回 `submitted` → 不可归档；对 expired 页重跑 `fm-design` 置回 `done` 才能归档。判定改动由 agent（`change_type`）负责、core 执行状态机；R1–R7 不触碰（见 B1 末"既有不变量"）。
+- 既有不变量（2026-06-09 记录）：`fm-requirement` 改页 → 该页 `expired` → 需求退回 `submitted` → 不可归档；对 expired 页重跑 `fm-design` 置回 `done` 才能归档。判定改动由 agent（`change_type`）负责、core 执行状态机；R1–R5、B1–B7 不触碰（见 B1 末"既有不变量"）。
 
 ### 与批次1的关系与统一排期
 
 - `fm-change-style` 同时被批次1 **R3**（样板下沉）与本批 **B3**（重写为产品级）触及。**B3 是该命令的最终形态**，R3 的 shared 下沉作用在 B3 之后；且 B3 后 `fm-change-style` 是薄委托、不再带 pure-static/self-review，R3 的下沉对象只剩 `fm-design`/`fm-refine-components` 两命令。
 - `fm-design` 被本批 **B1/B4/B6/B7** 改动，`fm-refine-components` 被 **B2/B7** 改动，模板正文都会变；批次1 **R2 守卫**应在这些语义改完后再锁三平台正文。
 - **统一排期**：批次1 **R1/R4/R5**（删命令、移除产品删除、删回退）→ 本批 **B1–B7**（语义重写 + core 数据驱动）→ 批次1 **R3**（样板下沉）→ **R2**（一致性守卫）覆盖最终命令集。批次3（web 版本 UI 下线）与本链路解耦、可并行。
-- 命令数：本批不增删命令；命令总数由批次1 R1+R5 决定（删 `fm-develop-design-handoff`、`fm-rollback-design` 后为 **6**）。MCP 工具：B7 新增 1 个（`get_component_baseline`）；B3、R5 各移除 1 个（`change_artifact_style`、`rollback_requirement_design`）。
+- 命令数：本批不增删命令；命令总数由批次1 R1+R5 决定（删 `fm-develop-design-handoff`、`fm-rollback-design` 后为 **6**）。MCP 工具：B7 新增 1 个（`get_component_baseline`）；R4、B3、R5 各移除 1 个（`delete_product`、`change_artifact_style`、`rollback_requirement_design`）。
 
 
 ---
@@ -536,39 +535,39 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 ### 边界（方案甲，关键）
 
 - **只去 web 的版本/回退用户可见面**；**底层版本机制不改**——design-save 仍生成不可变 `v{n}`、`current_version` 指针、supersede、按版本服务 artifact 全部保留。
-- **web 底层不改**——`api.ts` 方法、server 的 `/api/products/:pid/artifacts/:aid/versions/:v/*` 与设计会话 `/rollback/plan` 路由、core 版本机制，**一律保留不动**，只删/改 UI 组件与文案。
-- 经核实：web **没有**显式"回退"按钮（i18n 无 rollback 文案键），回退仅存在于 api/session 层；故"不显示回退"主要体现为**不渲染版本对比入口**，回退路径留在底层不暴露。
+- **web 底层不改**——`api.ts` 方法、server 的 `/api/products/:pid/artifacts/:aid/versions/:v/*`、core 版本机制，**一律保留不动**，只删/改 UI 组件与文案。当前 server 无设计会话 `/rollback/plan` 路由；`api.ts` 中的 rollback URL 构造视为未暴露的客户端残留，不作为可用回退路径或验收对象。
+- 经核实：web **没有**显式"回退"按钮（i18n 无 rollback 文案键），回退不在渲染层暴露；故"不显示回退"主要体现为**不渲染版本对比入口**。
 
 ### 现状（用户可见的版本面）
 
 - `pages/VersionCompare.tsx`：版本对比页（用 `getProductArtifact` + `getArtifactVersionPreviewUrl`）。
 - `routes.tsx:10/86/89/216-217`：路由 `/products/:productId/artifacts/:artifactId/compare` → `VersionCompareRoute` → `VersionCompare`。
 - `pages/DesignView.tsx:59`：`version_count >= 2` 过滤；`:115/:118`：渲染"对比版本"链接（`design.compareVersions`）指向 compare 页。
-- `pages/RequirementDetail.tsx:131`：展示 `current_version`。
+- `pages/RequirementDetail.tsx:131`：`current_version` 仅用于 `isRenderableDesignArtifact` 内部判定，不是用户可见版本号展示。
 - i18n（en+zh 各 6 键）：`design.compareEmpty / compareLeft / comparePreviewMissing / compareRight / compareTitle / compareVersions`。
 
 ### 范围
 
 - W1：删 `VersionCompare.tsx` 页与其路由（`routes.tsx` 的 import、route 定义、`VersionCompareRoute`）。
 - W2：删 `DesignView.tsx` 的"对比版本"入口（`:115-118`）与 `version_count >= 2` 过滤逻辑（`:59`）。
-- W3：去掉面向用户的**版本号展示**（`RequirementDetail.tsx:131`、`DesignView.tsx` 任何版本标签）。**保留** `current_version` 作为内部"活跃指针"用途（DesignView 用它选当前设计，不是展示），只删"给用户看版本"的部分。
+- W3：去掉面向用户的**版本号展示**（`DesignView.tsx` 任何版本标签，以及其它实际渲染给用户看的版本文本）。**保留** `current_version` 作为内部"活跃指针"用途（DesignView 用它选当前设计，`RequirementDetail.tsx` 用它判定 artifact 可渲染），只删"给用户看版本"的部分。
 - W4：删上述 6 个版本对比 i18n 键（en + zh，共 12 条）及任何悬挂引用。
-- W5：回退——web 无显式控件，无 UI 可删；确认渲染层不暴露回退即可。`api.ts` 的 `rollback` 操作类型与 `/rollback/plan` **保留不动**。
+- W5：回退——web 无显式控件，无 UI 可删；确认渲染层不暴露回退即可。`api.ts` 的 `rollback` 操作类型与 `/rollback/plan` URL 构造作为未暴露客户端残留**保留不动**；不得把它描述为 server 已有路由或可用用户路径。
 
 ### 非范围（明确不做 / 保留）
 
 | 项 | 处置 |
 |---|---|
 | 底层版本机制（不可变 `v{n}`、`current_version`、supersede、按版本服务） | **保留不改** |
-| `api.ts` 的 `getArtifactVersionPreviewUrl`、`getProductArtifact`（返回 versions/current_version）、`rollback` 操作类型 | **保留**（web 底层不改；UI 不再调用对比相关的而已） |
-| server `/versions/:v/bundle`、`/versions/:v/preview`、`/rollback/plan` 路由 | **保留不改** |
+| `api.ts` 的 `getArtifactVersionPreviewUrl`、`getProductArtifact`（返回 versions/current_version）、`rollback` 操作类型与 `/rollback/plan` URL 构造 | **保留**（web 底层不改；rollback URL 是未暴露客户端残留，当前 server 无对应路由） |
+| server `/versions/:v/bundle`、`/versions/:v/preview` 路由 | **保留不改** |
 | core / mcp 版本与回退（mcp 回退删除属清理批 R5，与本批独立） | 本批不碰 |
 
 ### 验收标准
 
 - [ ] web 不再有版本对比页/路由/入口；后台只展示"当前设计"。
 - [ ] 移除版本对比 i18n 键后无悬挂引用；`pnpm --filter @xenonbyte/forma-web build` 通过。
-- [ ] `current_version` 作为内部活跃指针的逻辑不受影响（当前设计仍正确渲染，含回退后 current_version 为 v1 的情况）。
+- [ ] `current_version` 作为内部活跃指针的逻辑不受影响（当前设计仍正确渲染，包括 current_version 不是最高版本号的情况）。
 - [ ] `api.ts`、server 路由、core 版本机制零改动（diff 仅在 web 组件/路由/i18n）。
 
 ### 决策记录（2026-06-09）
@@ -627,7 +626,7 @@ fm-design 出稿后页面为 `done`、需求为 `active`；之后 `fm-requiremen
 
 **验收标准**：
 
-- [ ] 标注画布为白底；点网、选中/focus 框、标题标签在白底清晰可见（WCAG AA 对比）。
+- [ ] 标注画布为白底；标题标签与选中/focus 等交互指示在白底清晰可见并满足 WCAG AA 对比；装饰性点网在白底可辨但保持低干扰。
 - [ ] 选中/hover/聚焦/fit-to-content 行为不变；`AnnotationPage.test.tsx` 通过（更新涉及颜色的断言）。
 
 ### BC2 需求设计画布增强：标题标签 + 选中框 + 交互对齐标注
