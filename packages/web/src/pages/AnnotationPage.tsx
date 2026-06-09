@@ -307,14 +307,14 @@ export function AnnotationPage({
       ) : (
         <div
           ref={containerRef}
-          className="relative flex-1 overflow-hidden rounded-lg border border-zinc-700"
-          style={{ background: "#2b2b2b" }}
+          className="relative flex-1 overflow-hidden rounded-lg border border-zinc-200"
+          style={{ background: "#ffffff" }}
         >
           {/* z0: fixed dot-grid texture over the dark canvas. */}
           <div
             className="pointer-events-none absolute inset-0 z-0"
             style={{
-              backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.12) 1px, transparent 1.5px)",
+              backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1.5px)",
               backgroundSize: "22px 22px",
             }}
           />
@@ -425,14 +425,14 @@ function FocusFrame({ frame, viewport, dpr }: { frame: PageFrame; viewport: Canv
   const pageHeight = (frame.height * viewport.scale) / dpr;
   return (
     <div
-      className="pointer-events-none absolute z-10 border border-white/15 shadow-lg"
+      className="pointer-events-none absolute z-10 border border-zinc-200/80 shadow-lg"
       style={{
         left: pageLeft - FOCUS_PAD_X,
         top: pageTop - FOCUS_PAD_TOP,
         width: pageWidth + FOCUS_PAD_X * 2,
         height: pageHeight + FOCUS_PAD_TOP + FOCUS_PAD_BOTTOM,
         borderRadius: FOCUS_RADIUS,
-        background: "rgba(255,255,255,0.06)",
+        background: "rgba(241,245,249,0.85)",
         backdropFilter: "blur(6px)",
         WebkitBackdropFilter: "blur(6px)",
       }}
@@ -485,7 +485,7 @@ function PageFrameOverlays({
           <div
             key={`${f.artifactId}-${f.pageId}`}
             className={`pointer-events-none absolute z-30 truncate text-xs font-medium ${
-              focused ? "text-sky-400" : "text-zinc-300"
+              focused ? "text-blue-700" : "text-zinc-600"
             }`}
             style={{ left, top, maxWidth: 240 }}
           >

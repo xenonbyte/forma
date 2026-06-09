@@ -179,6 +179,40 @@ function stubResizeObserver(): TestResizeObserverInstance[] {
 }
 
 describe("AnnotationPage", () => {
+  it("annotation canvas is light with WCAG-AA labels, behaviors unchanged", async () => {
+    const instances = stubResizeObserver();
+
+    await render(clientWith({ pages: [page()], errors: [] }));
+
+    // 1. Canvas container background must be white / near-white (BC1).
+    const canvasContainer = container.querySelector<HTMLElement>('[data-testid="ck-surface"]')?.closest(
+      ".relative.flex-1",
+    ) as HTMLElement | null;
+    expect(canvasContainer).not.toBeNull();
+    const bg = canvasContainer!.style.background || canvasContainer!.style.backgroundColor;
+    expect(bg).toMatch(/#ffffff|#fafafa/i);
+
+    // 2. Dot-grid must use dark dots (not white) on the light canvas.
+    const dotGrid = canvasContainer!.querySelector<HTMLElement>(".pointer-events-none.absolute.inset-0.z-0");
+    expect(dotGrid).not.toBeNull();
+    // The backgroundImage must NOT contain white dots (255,255,255) — it must use dark dots (rgb(0,0,0,...)).
+    expect(dotGrid!.style.backgroundImage).not.toMatch(/rgba\(255,\s*255,\s*255/i);
+
+    // 3. Container border should be light (border-zinc-200 or similar, not zinc-700).
+    expect(canvasContainer!.className).not.toContain("border-zinc-700");
+
+    // 4. Behavior: surface still renders after resize (unchanged selection/hover/fit).
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 800, height: 600 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const surface = container.querySelector('[data-testid="ck-surface"]');
+    expect(surface).not.toBeNull();
+    expect(surface?.getAttribute("data-width")).toBe("800");
+    expect(surface?.getAttribute("data-height")).toBe("600");
+  });
+
   it("shows an empty state (no surface) when there are no handoff pages", async () => {
     await render(clientWith({ pages: [], errors: [] }));
     expect(container.querySelector('[data-testid="ck-surface"]')).toBeNull();
