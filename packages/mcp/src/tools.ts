@@ -57,7 +57,6 @@ export const formaToolNames = [
   "export_artifact",
   "generate_requirement_design",
   "generate_components",
-  "change_artifact_style",
   "get_design_context",
   "get_design_handoff",
   "get_page_ui",
@@ -278,17 +277,6 @@ const generateComponentsSchema = z
   })
   .strict();
 
-const changeArtifactStyleSchema = z
-  .object({
-    product_id: z.string().min(1),
-    artifact_id: z.string().min(1),
-    html: z.string().min(1),
-    title: z.string().min(1),
-    brand_style: z.string().min(1),
-    system_style: z.string().min(1).optional(),
-  })
-  .strict();
-
 const getDesignContextSchema = z
   .object({
     product_id: z.string().min(1),
@@ -363,7 +351,6 @@ export const formaToolInputSchemas = {
   export_artifact: exportArtifactSchema,
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
-  change_artifact_style: changeArtifactStyleSchema,
   get_design_context: getDesignContextSchema,
   get_design_handoff: mcpGetDesignHandoffSchema,
   get_page_ui: mcpGetPageUiSchema,
@@ -396,8 +383,6 @@ const descriptions = {
   export_artifact: "Export an open-design artifact to html, svg, png, zip (self-contained bundle), icons, or vzi.",
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
-  change_artifact_style:
-    "Save an AI-generated static HTML artifact as a new version of an existing artifact with a new style applied.",
   get_design_context:
     "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
   get_design_handoff:
@@ -506,14 +491,6 @@ export function createFormaTools(store: FormaStore): FormaTools {
               })),
             }
           : {}),
-      }),
-    ),
-    change_artifact_style: tool("change_artifact_style", async (input) =>
-      store.changeArtifactStyle(input.product_id, input.artifact_id, {
-        html: input.html,
-        title: input.title,
-        brandStyle: input.brand_style,
-        systemStyle: input.system_style,
       }),
     ),
     get_design_context: tool("get_design_context", async (input) => {

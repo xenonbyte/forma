@@ -16,7 +16,6 @@ import { describe, expect, it } from "vitest";
 import { createFormaStore } from "../src/store.js";
 import { createArtifactStore, type ArtifactStore } from "../src/artifact-store.js";
 import { FormaError } from "../src/errors.js";
-import type { ArtifactManifest } from "../src/artifact-manifest.js";
 import { getFormaPaths } from "../src/paths.js";
 import { getProductMutationLock } from "../src/product-mutation-lock.js";
 
@@ -663,38 +662,9 @@ describe("SPEC-BEHAVIOR-008 / SPEC-DATA-002: component-library pointer activatio
   });
 });
 
-describe("Review #5: changeArtifactStyle rejects unsupported source kinds", () => {
-  it("throws ARTIFACT_INVALID_INPUT for a markdown-document source artifact", async () => {
+describe("Review #5 (PLAN-TASK-008): changeArtifactStyle removed from core", () => {
+  it("change_artifact_style removed from core — store.changeArtifactStyle is undefined", async () => {
     const store = await createTestStore();
-    const product = await store.products.createProduct({ name: "P", description: "d" });
-
-    const manifest: ArtifactManifest = {
-      version: 1,
-      id: "MarkdownDoc1234A",
-      kind: "markdown-document",
-      renderer: "markdown",
-      title: "Doc",
-      entry: "index.md",
-      status: "complete",
-      exports: ["index.md"],
-      createdAt: "2026-05-30T00:00:00.000Z",
-      updatedAt: "2026-05-30T00:00:00.000Z",
-    };
-    const { artifactId } = await store.artifacts.writeArtifact({
-      productId: product.id,
-      manifest,
-      files: new Map([["index.md", Buffer.from("# Doc")]]),
-    });
-
-    await expect(
-      store.changeArtifactStyle(product.id, artifactId, {
-        html: DESIGN_HTML,
-        title: "Restyled",
-        brandStyle: "ant",
-      }),
-    ).rejects.toSatisfy((e: unknown) => e instanceof FormaError && e.code === "ARTIFACT_INVALID_INPUT");
-
-    // No new version was appended to the markdown artifact
-    expect(await store.artifacts.listArtifactVersions(product.id, artifactId)).toEqual([]);
+    expect(typeof (store as unknown as Record<string, unknown>).changeArtifactStyle).toBe("undefined");
   });
 });

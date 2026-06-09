@@ -240,11 +240,6 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       version: 1,
       preview_status: "pending",
     })),
-    changeArtifactStyle: vi.fn(async () => ({
-      artifact_id: "ABCDEFGHIJ123456",
-      version: 1,
-      preview_status: "pending",
-    })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
       getProduct: vi.fn(async () => ({
@@ -351,6 +346,9 @@ describe("MCP forma tools", () => {
       expect(formaToolNames).not.toContain(removedWriteToolName);
       expect(Object.keys(tools)).not.toContain(removedWriteToolName);
     }
+    // PLAN-TASK-008 guard: change_artifact_style removed from MCP tool set
+    expect(formaToolNames).not.toContain("change_artifact_style");
+    expect(Object.keys(tools)).not.toContain("change_artifact_style");
     expect(formaToolNames).toEqual(
       expect.arrayContaining([
         "save_requirement",
@@ -359,7 +357,6 @@ describe("MCP forma tools", () => {
         "confirm_product_id",
         "generate_requirement_design",
         "generate_components",
-        "change_artifact_style",
         "get_design_context",
       ]),
     );
@@ -902,7 +899,8 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).not.toContain("rollback_requirement_design");
     expect(formaToolNames).toContain("generate_requirement_design");
     expect(formaToolNames).toContain("generate_components");
-    expect(formaToolNames).toContain("change_artifact_style");
+    // change_artifact_style removed in PLAN-TASK-008
+    expect(formaToolNames).not.toContain("change_artifact_style");
     expect(formaToolNames).not.toContain("refine_requirement_design");
     expect(formaToolNames).not.toContain("change_style");
   });
@@ -2496,106 +2494,6 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
     });
   });
 
-  // ─── change_artifact_style ───────────────────────────────────────────────
-
-  it("change_artifact_style schema accepts valid input", () => {
-    expectSchemaSuccess("change_artifact_style", {
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      html: "<main>Restyled</main>",
-      title: "Checkout (Dark)",
-      brand_style: "dark",
-    });
-    expectSchemaSuccess("change_artifact_style", {
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      html: "<main>Restyled</main>",
-      title: "Checkout (Linear)",
-      brand_style: "linear",
-      system_style: "material",
-    });
-  });
-
-  it("change_artifact_style schema rejects missing required fields", () => {
-    // missing html
-    expectSchemaFailure("change_artifact_style", {
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      title: "Checkout",
-      brand_style: "dark",
-    });
-    // missing brand_style
-    expectSchemaFailure("change_artifact_style", {
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      html: "<main/>",
-      title: "Checkout",
-    });
-    // missing artifact_id
-    expectSchemaFailure("change_artifact_style", {
-      product_id: "P-123abc",
-      html: "<main/>",
-      title: "Checkout",
-      brand_style: "dark",
-    });
-    // missing product_id
-    expectSchemaFailure("change_artifact_style", {
-      artifact_id: "ABCDEFGHIJ123456",
-      html: "<main/>",
-      title: "Checkout",
-      brand_style: "dark",
-    });
-  });
-
-  it("change_artifact_style delegates to store with mapped camelCase fields and returns {artifact_id, version, preview_status}", async () => {
-    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 2, preview_status: "pending" };
-    const store = fakeStore({
-      changeArtifactStyle: vi.fn(async () => fakeResult),
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.change_artifact_style({
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      html: "<main>Restyled</main>",
-      title: "Checkout (Dark)",
-      brand_style: "dark",
-      system_style: "material",
-    });
-
-    expect(result.isError).toBeUndefined();
-    const payload = textPayload(result);
-    expect(payload).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 2, preview_status: "pending" });
-    expect(
-      (store as unknown as { changeArtifactStyle: ReturnType<typeof vi.fn> }).changeArtifactStyle,
-    ).toHaveBeenCalledWith("P-123abc", "ABCDEFGHIJ123456", {
-      html: "<main>Restyled</main>",
-      title: "Checkout (Dark)",
-      brandStyle: "dark",
-      systemStyle: "material",
-    });
-  });
-
-  it("change_artifact_style passes through store errors as MCP error results", async () => {
-    const { FormaError: ActualFormaError } = await import("@xenonbyte/forma-core");
-    const store = fakeStore({
-      changeArtifactStyle: vi.fn(async () => {
-        throw new ActualFormaError("ARTIFACT_NOT_FOUND", "Artifact not found");
-      }),
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.change_artifact_style({
-      product_id: "P-123abc",
-      artifact_id: "MISSING12345678",
-      html: "<main/>",
-      title: "Checkout",
-      brand_style: "dark",
-    });
-
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({ error_code: "ARTIFACT_NOT_FOUND" });
-  });
 });
 
 describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
@@ -5447,32 +5345,6 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
     expect(result.isError).toBeUndefined();
     expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 1 });
     // generate_components must NOT call getRequirement (no archive check)
-    expect(
-      (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
-    ).not.toHaveBeenCalled();
-  });
-
-  it("change_artifact_style succeeds (no REQUIREMENT_NOT_FINALIZED) for an active-status product", async () => {
-    const store = activeRequirementStore({
-      changeArtifactStyle: vi.fn(async () => ({
-        artifact_id: "ABCDEFGHIJ123456",
-        version: 2,
-        preview_status: "pending",
-      })),
-    });
-    const tools = createFormaTools(store);
-
-    const result = await tools.change_artifact_style({
-      product_id: "P-123abc",
-      artifact_id: "ABCDEFGHIJ123456",
-      html: "<main>Restyled</main>",
-      title: "Checkout (Dark)",
-      brand_style: "dark",
-    });
-
-    expect(result.isError).toBeUndefined();
-    expect(textPayload(result)).toMatchObject({ artifact_id: "ABCDEFGHIJ123456", version: 2 });
-    // change_artifact_style must NOT call getRequirement (no archive check)
     expect(
       (store.requirements as unknown as { getRequirement: ReturnType<typeof vi.fn> }).getRequirement,
     ).not.toHaveBeenCalled();

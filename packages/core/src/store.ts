@@ -61,16 +61,6 @@ export interface GenerateComponentsInput {
   supportingFiles?: import("./design-save.js").SupportingFileInput[];
 }
 
-export interface ChangeArtifactStyleInput {
-  html: string;
-  title: string;
-  brandStyle?: string;
-  systemStyle?: string;
-  platform?: string;
-  language?: string;
-  provenance?: import("./artifact-manifest.js").ArtifactProvenance;
-}
-
 export interface FormaStore {
   home: string;
   artifacts: ArtifactStore;
@@ -84,11 +74,6 @@ export interface FormaStore {
   generateComponents(
     productId: string,
     input: GenerateComponentsInput,
-  ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
-  changeArtifactStyle(
-    productId: string,
-    artifactId: string,
-    input: ChangeArtifactStyleInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   products: ProductService;
   recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
@@ -250,66 +235,6 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
   }
 
-  async function changeArtifactStyle(
-    productId: string,
-    artifactId: string,
-    input: ChangeArtifactStyleInput,
-  ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
-    // Read source artifact's latest version manifest to recover kind/forma
-    const versions = await artifacts.listArtifactVersions(productId, artifactId);
-    if (versions.length === 0) {
-      // Fall back to flat artifact read for legacy artifacts
-      const { manifest: sourceManifest } = await artifacts.readArtifact(productId, artifactId);
-      return changeArtifactStyleWithManifest(productId, artifactId, input, sourceManifest);
-    }
-    const latestVersion = Math.max(...versions);
-    const { manifest: sourceManifest } = await artifacts.readArtifactVersion(productId, artifactId, latestVersion);
-    return changeArtifactStyleWithManifest(productId, artifactId, input, sourceManifest);
-  }
-
-  async function changeArtifactStyleWithManifest(
-    productId: string,
-    artifactId: string,
-    input: ChangeArtifactStyleInput,
-    sourceManifest: import("./artifact-manifest.js").ArtifactManifest,
-  ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
-    // Determine kind: only design-page / component-library (and their legacy
-    // aliases html / design-system) support style changes. Reject other kinds
-    // (markdown-document, svg, image, preview-only) so unrelated artifact kinds
-    // never get a component-library version mixed into their history.
-    let kind: "design-page" | "component-library";
-    if (sourceManifest.kind === "design-page" || sourceManifest.kind === "html") {
-      kind = "design-page";
-    } else if (sourceManifest.kind === "component-library" || sourceManifest.kind === "design-system") {
-      kind = "component-library";
-    } else {
-      throw new FormaError("ARTIFACT_INVALID_INPUT", `Cannot change style of a ${sourceManifest.kind} artifact`, {
-        artifactId,
-        kind: sourceManifest.kind,
-      });
-    }
-
-    const sourceForma = sourceManifest.forma ?? {};
-    const result = await saveDesignArtifact(saveDesignDeps, {
-      productId,
-      kind,
-      html: input.html,
-      title: input.title,
-      artifactId, // same artifactId → new version
-      forma: {
-        requirementId: sourceForma.requirementId ?? sourceManifest.requirementId,
-        pageId: sourceForma.pageId,
-        variant: sourceForma.variant,
-        brandStyle: input.brandStyle ?? sourceForma.brandStyle,
-        systemStyle: input.systemStyle ?? sourceForma.systemStyle,
-        platform: input.platform ?? sourceForma.platform,
-        language: input.language ?? sourceForma.language,
-        provenance: input.provenance,
-      },
-    });
-    return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
-  }
-
   return {
     home: options.home,
     artifacts,
@@ -317,7 +242,6 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     deleteProduct,
     generateRequirementDesign,
     generateComponents,
-    changeArtifactStyle,
     products,
     recoverPendingProductDeletes,
     requirements,

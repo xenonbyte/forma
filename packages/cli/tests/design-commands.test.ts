@@ -111,24 +111,20 @@ describe("fm-change-style template", () => {
     expect(t.gemini).toContain("# Forma route: fm-change-style");
   });
 
-  it("selects the source artifact then changes style with brand_style + system_style", async () => {
+  // PLAN-TASK-008: fm-change-style is now a product-level delegate (config → refine flow)
+  // change_artifact_style is removed; update_product_config + fm-refine-components flow is used instead
+  it("delegates to update_product_config then inlines fm-refine-components generation flow", async () => {
     const t = await loadCommand("fm-change-style");
-    expect(t.blob).toContain("list_product_artifacts");
-    expect(t.blob).toContain("artifact_id");
-    expect(t.blob).toContain("brand_style");
-    expect(t.blob).toContain("system_style");
-    expect(t.blob).toContain("change_artifact_style");
+    expect(t.blob).toContain("update_product_config");
+    expect(t.blob).toContain("fm-refine-components");
+    // Must NOT reference the removed change_artifact_style tool
+    expect(t.blob).not.toContain("change_artifact_style");
   });
 
-  it("fetches context before the change save tool on every platform", async () => {
+  it("persists style config before generation on every platform", async () => {
     const t = await loadCommand("fm-change-style");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      const lc = body.toLowerCase();
-      const ctxIdx = [lc.indexOf("get_design_context"), lc.indexOf("get_style")].filter((i) => i >= 0);
-      expect(ctxIdx.length).toBeGreaterThan(0);
-      const ctx = Math.min(...ctxIdx);
-      const save = lc.indexOf("change_artifact_style");
-      expect(save).toBeGreaterThan(ctx);
+      expectOrder(body.toLowerCase(), "update_product_config", "generate_components");
     }
   });
 
@@ -142,13 +138,14 @@ describe("fm-change-style template", () => {
     }
   });
 
-  it("loads the current artifact HTML before saving a restyled version", async () => {
+  it("surfaces partial-failure recovery wording when config saved but generation fails", async () => {
     const t = await loadCommand("fm-change-style");
-    for (const body of [t.claude, t.codex, t.gemini]) {
-      const lc = body.toLowerCase();
-      expectOrder(lc, "get_product_artifact", "export_artifact");
-      expectOrder(lc, "export_artifact", "change_artifact_style");
-    }
+    // Template must warn that config is updated but component library may be stale
+    // and give recovery instructions (re-run fm-refine-components or fm-change-style)
+    const lc = t.blob;
+    expect(lc).toMatch(/partial|部分|stale|未刷新|重跑/);
+    // Must reference fm-refine-components as the recovery action
+    expect(lc).toContain("fm-refine-components");
   });
 });
 
