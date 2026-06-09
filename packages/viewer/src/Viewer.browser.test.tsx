@@ -15,6 +15,10 @@ vi.mock("@xyflow/react", async () => {
     ReactFlowProvider: ({ children }: { children: React.ReactNode }) =>
       React.createElement(React.Fragment, null, children),
     useReactFlow: () => ({ setCenter: flowMocks.setCenter }),
+    useNodesState: (initialNodes: unknown) => {
+      const [nodes, setNodes] = React.useState(initialNodes);
+      return [nodes, setNodes, () => {}];
+    },
     ReactFlow: ({
       children,
       nodeTypes,
