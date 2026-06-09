@@ -482,6 +482,187 @@ describe("SPEC-DATA-001: generateComponents with productIcon (store-level)", () 
   });
 });
 
+describe("SPEC-BEHAVIOR-008 / SPEC-DATA-002: component-library pointer activation (B2/B7)", () => {
+  const COMPONENT_HTML_V1 = "<!doctype html><html><body><h2>Buttons v1</h2></body></html>";
+  const COMPONENT_HTML_V2 = "<!doctype html><html><body><h2>Buttons v2</h2></body></html>";
+
+  /**
+   * Build a store whose component-library pointer commit (the afterWriteLocked
+   * hook that runs INSIDE writeArtifactVersion's lock) is forced to throw, so we
+   * can verify the just-written version dir is genuinely rolled back on disk.
+   *
+   * The failing hook throws BEFORE delegating to the real hook, so the real
+   * pointer write never runs — modelling "pointer commit failed".
+   */
+  async function createPointerFailingStore() {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-mut-ptr-fail-"));
+    const lock = getProductMutationLock(home);
+    const realArtifacts = createArtifactStore(getFormaPaths(home).productsDir, lock);
+    const artifactStore: ArtifactStore = {
+      writeArtifact: realArtifacts.writeArtifact.bind(realArtifacts),
+      readArtifact: realArtifacts.readArtifact.bind(realArtifacts),
+      listArtifacts: realArtifacts.listArtifacts.bind(realArtifacts),
+      deleteArtifact: realArtifacts.deleteArtifact.bind(realArtifacts),
+      readArtifactVersion: realArtifacts.readArtifactVersion.bind(realArtifacts),
+      listArtifactVersions: realArtifacts.listArtifactVersions.bind(realArtifacts),
+      async writeArtifactVersion(input) {
+        // Only sabotage the pointer commit for component libraries.
+        if (input.manifest.kind !== "component-library") {
+          return realArtifacts.writeArtifactVersion(input);
+        }
+        return realArtifacts.writeArtifactVersion({
+          ...input,
+          afterWriteLocked: async () => {
+            throw new FormaError("ARTIFACT_WRITE_FAIL", "injected pointer commit failure", {});
+          },
+        });
+      },
+    };
+    const store = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      artifactStore,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+    return store;
+  }
+
+  async function listComponentLibraries(
+    store: Awaited<ReturnType<typeof createTestStore>>,
+    productId: string,
+  ): Promise<string[]> {
+    const all = await store.artifacts.listArtifacts(productId);
+    const libs: string[] = [];
+    for (const { artifactId } of all) {
+      const versions = await store.artifacts.listArtifactVersions(productId, artifactId);
+      if (versions.length === 0) continue;
+      const { manifest } = await store.artifacts.readArtifactVersion(productId, artifactId, Math.max(...versions));
+      if (manifest.kind === "component-library") libs.push(artifactId);
+    }
+    return libs;
+  }
+
+  async function currentComponentLibrary(
+    store: Awaited<ReturnType<typeof createTestStore>>,
+    productId: string,
+  ): Promise<{ artifactId: string; version: number } | undefined> {
+    const product = await store.products.getProduct(productId);
+    const artifactId = product.designSystemArtifactId;
+    if (artifactId === undefined) return undefined;
+    const versions = await store.artifacts.listArtifactVersions(productId, artifactId);
+    if (versions.length === 0) return undefined;
+    return { artifactId, version: Math.max(...versions) };
+  }
+
+  it("first refine sets pointer; subsequent appends same artifact version", async () => {
+    const store = await createTestStore();
+    const product = await store.products.createProduct({ name: "CompApp", description: "d" });
+
+    const a = await store.generateComponents(product.id, {
+      html: COMPONENT_HTML_V1,
+      title: "Component Library",
+      brandStyle: "ant",
+    });
+    const p1 = await store.products.getProduct(product.id);
+    expect(p1.designSystemArtifactId).toBe(a.artifact_id);
+
+    const b = await store.generateComponents(product.id, {
+      html: COMPONENT_HTML_V2,
+      title: "Component Library",
+      brandStyle: "ant",
+    });
+    expect(b.artifact_id).toBe(a.artifact_id); // same artifact
+    expect(b.version).toBe(a.version + 1); // appended version
+
+    // Pointer unchanged; current = max(listArtifactVersions)
+    const p2 = await store.products.getProduct(product.id);
+    expect(p2.designSystemArtifactId).toBe(a.artifact_id);
+    await expect(store.artifacts.listArtifactVersions(product.id, a.artifact_id)).resolves.toEqual([1, 2]);
+  });
+
+  it("does not leave a component-library without a current pointer when pointer commit fails", async () => {
+    const store = await createPointerFailingStore();
+    const product = await store.products.createProduct({ name: "CompFail", description: "d" });
+
+    await expect(
+      store.generateComponents(product.id, {
+        html: COMPONENT_HTML_V1,
+        title: "Component Library",
+        brandStyle: "ant",
+      }),
+    ).rejects.toBeDefined();
+
+    expect(await listComponentLibraries(store, product.id)).toHaveLength(0);
+    expect((await store.products.getProduct(product.id)).designSystemArtifactId).toBeUndefined();
+  });
+
+  it("does not expose an unintended latest component-library version when append pointer commit fails", async () => {
+    // First create succeeds with a real store, then the SAME home is reopened
+    // with a pointer-failing store to sabotage the append's pointer commit.
+    const home = await mkdtemp(join(tmpdir(), "forma-store-mut-ptr-append-"));
+    const lock = getProductMutationLock(home);
+    const realArtifacts = createArtifactStore(getFormaPaths(home).productsDir, lock);
+
+    const goodStore = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+    const product = await goodStore.products.createProduct({ name: "CompAppend", description: "d" });
+    const first = await goodStore.generateComponents(product.id, {
+      html: COMPONENT_HTML_V1,
+      title: "Component Library",
+      brandStyle: "ant",
+    });
+
+    let sabotage = false;
+    const artifactStore: ArtifactStore = {
+      writeArtifact: realArtifacts.writeArtifact.bind(realArtifacts),
+      readArtifact: realArtifacts.readArtifact.bind(realArtifacts),
+      listArtifacts: realArtifacts.listArtifacts.bind(realArtifacts),
+      deleteArtifact: realArtifacts.deleteArtifact.bind(realArtifacts),
+      readArtifactVersion: realArtifacts.readArtifactVersion.bind(realArtifacts),
+      listArtifactVersions: realArtifacts.listArtifactVersions.bind(realArtifacts),
+      async writeArtifactVersion(input) {
+        if (!sabotage || input.manifest.kind !== "component-library") {
+          return realArtifacts.writeArtifactVersion(input);
+        }
+        return realArtifacts.writeArtifactVersion({
+          ...input,
+          afterWriteLocked: async () => {
+            throw new FormaError("ARTIFACT_WRITE_FAIL", "injected append pointer commit failure", {});
+          },
+        });
+      },
+    };
+    const failStore = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      artifactStore,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+
+    sabotage = true;
+    await expect(
+      failStore.generateComponents(product.id, {
+        html: COMPONENT_HTML_V2,
+        title: "Component Library",
+        brandStyle: "ant",
+      }),
+    ).rejects.toBeDefined();
+
+    // The failed append did not become max/current; pointer still resolves v1.
+    await expect(failStore.artifacts.listArtifactVersions(product.id, first.artifact_id)).resolves.toEqual([1]);
+    expect(await currentComponentLibrary(failStore, product.id)).toMatchObject({
+      artifactId: first.artifact_id,
+      version: first.version,
+    });
+  });
+});
+
 describe("Review #5: changeArtifactStyle rejects unsupported source kinds", () => {
   it("throws ARTIFACT_INVALID_INPUT for a markdown-document source artifact", async () => {
     const store = await createTestStore();

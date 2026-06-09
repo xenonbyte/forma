@@ -225,11 +225,18 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     productId: string,
     input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
+    // Pointer is the single source of truth for the current component library.
+    // When set, append a new immutable version to the SAME artifact; the pointer
+    // (set inside saveDesignArtifact's commit hook) is unchanged. When unset,
+    // this is the first refine — omit artifactId so a fresh v1 artifact is created
+    // and the commit hook activates the pointer transactionally.
+    const existingArtifactId = (await products.getProduct(productId)).designSystemArtifactId;
     const result = await saveDesignArtifact(saveDesignDeps, {
       productId,
       kind: "component-library",
       html: input.html,
       title: input.title,
+      ...(existingArtifactId !== undefined ? { artifactId: existingArtifactId } : {}),
       forma: {
         brandStyle: input.brandStyle,
         systemStyle: input.systemStyle,

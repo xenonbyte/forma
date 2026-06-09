@@ -362,6 +362,19 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     files: finalFiles,
     ...(input.commitHooks?.beforeWriteLocked ? { beforeWriteLocked: input.commitHooks.beforeWriteLocked } : {}),
     afterWriteLocked: async ({ version: writtenVersion }) => {
+      if (kind === "component-library") {
+        // Single source of truth for "current component library" is the product
+        // pointer. First create writes it; append re-asserts the same artifactId
+        // (idempotent). The pointer write runs INSIDE the artifact write lock, so a
+        // failure here rolls back the just-written version (artifact-store cleanup)
+        // — never leaving an orphan library nor exposing a failed version as max.
+        await products.setDesignSystemArtifactPointerLocked(productId, artifactId);
+        // Observable pointer-activation log (matches existing [forma] console.warn usage).
+        console.warn(
+          `[forma] component-library pointer activated: product=${productId} artifact=${artifactId} version=${writtenVersion}`,
+        );
+        return;
+      }
       if (kind !== "design-page" || !forma.requirementId || !forma.pageId) {
         return;
       }

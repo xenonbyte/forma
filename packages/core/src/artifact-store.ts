@@ -315,7 +315,28 @@ class ArtifactStoreImpl implements ArtifactStore {
             cause: String(err),
           });
         }
-        await afterWriteLocked?.({ productId, artifactId, version, etag });
+        // Commit hook (e.g. activating a pointer) runs INSIDE this lock, AFTER the
+        // version dir is published. If it throws, the just-published version must
+        // not survive: otherwise a failed commit would expose this version as the
+        // artifact's max/current. Roll back the version dir, then re-throw so the
+        // caller never observes a half-committed state. The v{n} immutability
+        // guarantee holds — the dir is only removed when its own commit failed and
+        // it was never observed as committed.
+        try {
+          await afterWriteLocked?.({ productId, artifactId, version, etag });
+        } catch (hookErr) {
+          await rm(versionDir, { recursive: true, force: true }).catch(() => undefined);
+          // First-create rollback: if this was the only version, drop the now-empty
+          // artifact dir too so a failed first-create leaves no on-disk trace.
+          // Append rollback: prior versions remain, so the artifact dir stays.
+          if ((await this.listArtifactVersions(productId, artifactId)).length === 0) {
+            await rm(getArtifactDir(this.productsRoot, productId, artifactId), {
+              recursive: true,
+              force: true,
+            }).catch(() => undefined);
+          }
+          throw hookErr;
+        }
         return { version, etag };
       } catch (err) {
         await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
