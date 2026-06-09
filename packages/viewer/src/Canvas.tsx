@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
   Background,
   useReactFlow,
+  useNodesState,
   type Node,
   type NodeProps,
   type NodeTypes,
@@ -93,26 +94,41 @@ function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.React
 
 const nodeTypes: NodeTypes = { tile: TileNodeComponent };
 
+/** 由 tile 数据派生节点(不含选中态 — 选中态由 React Flow store 拥有)。 */
+function buildTileNodes(tiles: PositionedTile[], mode: CanvasMode, resolver: ResourceResolver): TileNode[] {
+  return tiles.map((tile) => ({
+    id: tile.id,
+    type: "tile",
+    position: { x: tile.x, y: tile.y },
+    data: { tile, mode, resolver },
+    width: tile.width,
+    height: tile.height,
+    draggable: false,
+    selectable: true,
+    connectable: false,
+  }));
+}
+
 function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, defaultSelectedTileId }: CanvasProps): React.ReactElement {
   const rf = useReactFlow();
-  const nodes = useMemo<TileNode[]>(
-    () =>
-      model.tiles.map((tile) => ({
-        id: tile.id,
-        type: "tile",
-        position: { x: tile.x, y: tile.y },
-        data: { tile, mode, resolver },
-        width: tile.width,
-        height: tile.height,
-        draggable: false,
-        selectable: true,
-        connectable: false,
-        // defaultSelectedTileId 为 seed 值:只控制初始 selected 态,后续由 React Flow 自己维护。
-        selected: defaultSelectedTileId != null ? tile.id === defaultSelectedTileId : undefined,
-      })),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model.tiles, mode, resolver, defaultSelectedTileId],
+  // React Flow owns selection (via onNodesChange). defaultSelectedTileId only SEEDS the
+  // initial state once; click-selection thereafter flows through onNodesChange and is
+  // preserved across model refreshes below — it is never re-applied from the prop.
+  const [nodes, setNodes, onNodesChange] = useNodesState<TileNode>(
+    buildTileNodes(model.tiles, mode, resolver).map((n) => ({
+      ...n,
+      selected: defaultSelectedTileId != null && n.id === defaultSelectedTileId,
+    })),
   );
+
+  // Re-derive nodes when the underlying tile data changes, preserving the live
+  // selection so a model refresh never clobbers the user's current selection.
+  useEffect(() => {
+    setNodes((prev) => {
+      const selectedIds = new Set(prev.filter((n) => n.selected).map((n) => n.id));
+      return buildTileNodes(model.tiles, mode, resolver).map((n) => ({ ...n, selected: selectedIds.has(n.id) }));
+    });
+  }, [model.tiles, mode, resolver, setNodes]);
 
   useEffect(() => {
     if (!locateTileId) return;
@@ -127,6 +143,7 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, def
   return (
     <ReactFlow
       nodes={nodes}
+      onNodesChange={onNodesChange}
       edges={[]}
       nodeTypes={nodeTypes}
       onlyRenderVisibleElements

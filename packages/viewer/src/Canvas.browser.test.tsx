@@ -82,9 +82,12 @@ describe("Canvas", () => {
     await act(async () => {
       await sleep(50);
     });
-    // 每个可见的 tile 应有一个 tile-title 标签
+    // 不变量:每个渲染出的设计 tile 恰有一个 tile-title 标签。Canvas 只渲视口内 tile
+    // (onlyRenderVisibleElements),故断言 title 数 == 渲染出的 tile(iframe)数,而非 model.tiles 总数。
     const titleLabels = container.querySelectorAll("[data-testid='tile-title']");
+    const renderedTiles = container.querySelectorAll("iframe");
     expect(titleLabels.length).toBeGreaterThanOrEqual(1);
+    expect(titleLabels.length).toBe(renderedTiles.length);
 
     // 初始无选中态,不应出现 selection-frame
     expect(container.querySelector("[data-testid='selection-frame']")).toBeNull();
