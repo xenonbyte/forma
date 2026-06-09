@@ -421,6 +421,67 @@ describe("Review #4: generateRequirementDesign validates requirement + page", ()
   }, 90000);
 });
 
+describe("SPEC-DATA-001: generateComponents with productIcon (store-level)", () => {
+  const COMPONENT_HTML = "<!doctype html><html><body><h2>Buttons</h2></body></html>";
+
+  it("generateComponents with productIcon → manifest has productIcon and assets with role icon; bundle has SVG files", async () => {
+    const store = await createTestStore();
+    const product = await store.products.createProduct({ name: "IconApp", description: "d" });
+
+    const svgText = `<svg xmlns="http://www.w3.org/2000/svg"><rect width="8" height="8"/></svg>`;
+    const monoText = `<svg xmlns="http://www.w3.org/2000/svg"><rect width="8" height="8" fill="currentColor"/></svg>`;
+
+    const result = await store.generateComponents(product.id, {
+      html: COMPONENT_HTML,
+      title: "Icon Library",
+      brandStyle: "ant",
+      productIcon: {
+        primary: "assets/icon.svg",
+        monochrome: "assets/icon-mono.svg",
+        shape: { shapeId: "s1", geometry: "<path d='M0 0h8v8H0z'/>", sourceVersion: "1" },
+      },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(svgText).toString("base64") },
+        { path: "assets/icon-mono.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(monoText).toString("base64") },
+      ],
+    });
+
+    expect(result.artifact_id).toBeTruthy();
+    expect(result.version).toBe(1);
+
+    // Read the manifest from disk
+    const paths = getFormaPaths(store.home);
+    const versionDir = join(paths.productsDir, product.id, "od-project", "artifacts", result.artifact_id, `v${result.version}`);
+    const manifestRaw = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(versionDir, "manifest.json"), "utf8"),
+    );
+    const manifest = JSON.parse(manifestRaw);
+
+    // productIcon fields
+    expect(manifest.forma.productIcon?.primary).toBe("assets/icon.svg");
+    expect(manifest.forma.productIcon?.monochrome).toBe("assets/icon-mono.svg");
+    expect(manifest.forma.productIcon?.shape?.shapeId).toBe("s1");
+    expect(manifest.forma.productIcon?.shape?.geometry).toBe("<path d='M0 0h8v8H0z'/>");
+
+    // assets: both SVG files registered with role "icon"
+    const assets = manifest.forma.assets as Array<{ path: string; role: string }>;
+    const iconAsset = assets.find((a) => a.path === "assets/icon.svg");
+    expect(iconAsset?.role).toBe("icon");
+    const monoAsset = assets.find((a) => a.path === "assets/icon-mono.svg");
+    expect(monoAsset?.role).toBe("icon");
+
+    // Bundle files: SVG content matches input
+    const primaryContent = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(versionDir, "assets", "icon.svg"), "utf8"),
+    );
+    expect(primaryContent).toBe(svgText);
+    const monoContent = await import("node:fs/promises").then((fs) =>
+      fs.readFile(join(versionDir, "assets", "icon-mono.svg"), "utf8"),
+    );
+    expect(monoContent).toBe(monoText);
+  });
+});
+
 describe("Review #5: changeArtifactStyle rejects unsupported source kinds", () => {
   it("throws ARTIFACT_INVALID_INPUT for a markdown-document source artifact", async () => {
     const store = await createTestStore();

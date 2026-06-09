@@ -55,6 +55,10 @@ export interface GenerateComponentsInput {
   platform?: string;
   language?: string;
   provenance?: import("./artifact-manifest.js").ArtifactProvenance;
+  /** Product icon metadata (SPEC-DATA-001). When provided, supportingFiles must include the referenced SVG assets. */
+  productIcon?: import("./artifact-manifest.js").ArtifactProductIcon;
+  /** Caller-supplied supporting files (e.g. product icon SVGs) mapped into the artifact bundle. */
+  supportingFiles?: import("./design-save.js").SupportingFileInput[];
 }
 
 export interface ChangeArtifactStyleInput {
@@ -232,7 +236,9 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
         platform: input.platform,
         language: input.language,
         provenance: input.provenance,
+        ...(input.productIcon !== undefined ? { productIcon: input.productIcon } : {}),
       },
+      ...(input.supportingFiles !== undefined ? { supportingFiles: input.supportingFiles } : {}),
     });
     return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
   }

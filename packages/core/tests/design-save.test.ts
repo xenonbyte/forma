@@ -378,6 +378,152 @@ describe("saveDesignArtifact", () => {
     expect(check.detail).toContain("skipped (platform=undefined)");
   }, 90000);
 
+  // SPEC-DATA-001: productIcon SVG supporting files persist into bundle + manifest
+  it("component-library with productIcon → bundle has SVG files + manifest has forma.productIcon + assets with role icon", async () => {
+    const svgText = `<svg xmlns="http://www.w3.org/2000/svg"><rect width="8" height="8"/></svg>`;
+    const monoText = `<svg xmlns="http://www.w3.org/2000/svg"><rect width="8" height="8" fill="currentColor"/></svg>`;
+    const svgBase64 = Buffer.from(svgText).toString("base64");
+    const monoBase64 = Buffer.from(monoText).toString("base64");
+
+    const dataPng = await makeDataPng();
+    const html = `<!doctype html><html><body><img src="${dataPng}" alt="comp"></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Icon Library",
+      forma: {
+        brandStyle: "ant",
+        productIcon: {
+          primary: "assets/icon.svg",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path d='M0 0h8v8H0z'/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: svgBase64 },
+        { path: "assets/icon-mono.svg", contentType: "image/svg+xml", contentBase64: monoBase64 },
+      ],
+    };
+
+    const result = await saveDesignArtifact(deps, input);
+    expect(result.artifactId).toBeTruthy();
+    expect(result.version).toBe(1);
+
+    // Bundle files: SVG files must be present with matching content
+    const { productsRoot } = deps;
+    const versionDir = join(productsRoot, productId, "od-project", "artifacts", result.artifactId, "v1");
+    const primaryContent = await readFile(join(versionDir, "assets", "icon.svg"), "utf8");
+    expect(primaryContent).toBe(svgText);
+    const monoContent = await readFile(join(versionDir, "assets", "icon-mono.svg"), "utf8");
+    expect(monoContent).toBe(monoText);
+
+    // Manifest: productIcon fields set, assets registered with role "icon"
+    const manifestJson = await readFile(join(versionDir, "manifest.json"), "utf8");
+    const manifest = JSON.parse(manifestJson);
+    expect(manifest.forma.productIcon?.primary).toBe("assets/icon.svg");
+    expect(manifest.forma.productIcon?.monochrome).toBe("assets/icon-mono.svg");
+    expect(manifest.forma.productIcon?.shape?.shapeId).toBe("s1");
+    expect(manifest.forma.productIcon?.shape?.geometry).toBe("<path d='M0 0h8v8H0z'/>");
+    expect(manifest.forma.productIcon?.shape?.sourceVersion).toBe("1");
+
+    // assets array must contain both icon entries with role "icon"
+    const assets = manifest.forma.assets as Array<{ path: string; role: string; density: number[] }>;
+    expect(Array.isArray(assets)).toBe(true);
+    const iconAsset = assets.find((a) => a.path === "assets/icon.svg");
+    expect(iconAsset).toBeTruthy();
+    expect(iconAsset!.role).toBe("icon");
+    expect(iconAsset!.density).toEqual([1]);
+    const monoAsset = assets.find((a) => a.path === "assets/icon-mono.svg");
+    expect(monoAsset).toBeTruthy();
+    expect(monoAsset!.role).toBe("icon");
+  }, 90000);
+
+  it("productIcon with absolute path in supportingFiles.path → throws INVALID_INPUT", async () => {
+    const svgBase64 = Buffer.from("<svg/>").toString("base64");
+    const dataPng = await makeDataPng();
+    const html = `<!doctype html><html><body><img src="${dataPng}" alt="comp"></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Bad Path",
+      forma: {
+        productIcon: {
+          primary: "/abs/icon.svg",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [{ path: "/abs/icon.svg", contentType: "image/svg+xml", contentBase64: svgBase64 }],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("productIcon references path not in supportingFiles → throws INVALID_INPUT", async () => {
+    const dataPng = await makeDataPng();
+    const html = `<!doctype html><html><body><img src="${dataPng}" alt="comp"></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Missing File",
+      forma: {
+        productIcon: {
+          primary: "assets/icon.svg",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      // supportingFiles entirely absent
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile with non-SVG content_type → throws INVALID_INPUT", async () => {
+    const dataPng = await makeDataPng();
+    const html = `<!doctype html><html><body><img src="${dataPng}" alt="comp"></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Non-SVG",
+      forma: {
+        productIcon: {
+          primary: "assets/icon.png",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [
+        { path: "assets/icon.png", contentType: "image/png", contentBase64: Buffer.from("x").toString("base64") },
+        {
+          path: "assets/icon-mono.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
   // TEST-CORE-003: mobile product → 390×884 render viewport (NOT the 390×844 web canvas tile) + active screen-edge-radius
   it("mobile product → renders at 390×884 viewport and screen-edge-radius check is active (not skipped)", async () => {
     await store.products.initProductConfig(productId, {

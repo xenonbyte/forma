@@ -223,6 +223,79 @@ describe("validateSupportingPath", () => {
   });
 });
 
+describe("SPEC-DATA-001: validateFormaExtension productIcon", () => {
+  const validProductIcon = {
+    primary: "assets/icon.svg",
+    monochrome: "assets/icon-mono.svg",
+    shape: { shapeId: "s1", geometry: "<path d='M0 0h8v8H0z'/>", sourceVersion: "1" },
+  };
+
+  it("accepts a valid productIcon", () => {
+    const r = validateFormaExtension({ productIcon: validProductIcon });
+    expect(r.ok).toBe(true);
+  });
+
+  it("tolerates absence of productIcon (no throw, ok:true)", () => {
+    expect(validateFormaExtension({}).ok).toBe(true);
+    expect(validateFormaExtension({ brandStyle: "ant" }).ok).toBe(true);
+  });
+
+  it("rejects absolute path in productIcon.primary", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, primary: "/abs/icon.svg" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/productIcon\.primary/);
+  });
+
+  it("rejects path traversal in productIcon.monochrome", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, monochrome: "../escape.svg" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/productIcon\.monochrome/);
+  });
+
+  it("rejects empty shapeId", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, shape: { shapeId: "", geometry: "<path/>", sourceVersion: "1" } },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/shapeId/);
+  });
+
+  it("rejects empty geometry", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, shape: { shapeId: "s1", geometry: "", sourceVersion: "1" } },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/geometry/);
+  });
+
+  it("rejects empty sourceVersion", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "" } },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/sourceVersion/);
+  });
+
+  it("rejects missing shape object", () => {
+    const { shape: _s, ...noShape } = validProductIcon;
+    const r = validateFormaExtension({ productIcon: noShape });
+    expect(r.ok).toBe(false);
+  });
+
+  it("accepts productIcon alongside other valid forma fields", () => {
+    const r = validateFormaExtension({
+      brandStyle: "ant",
+      productIcon: validProductIcon,
+      assets: [{ path: "assets/bg.png", density: [1], role: "image" }],
+    });
+    expect(r.ok).toBe(true);
+  });
+});
+
 describe("A1 manifest.forma extension + kind migration", () => {
   it("accepts new kinds design-page and component-library", () => {
     expect(ALLOWED_KINDS).toContain("design-page");

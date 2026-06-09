@@ -70,6 +70,21 @@ export interface ArtifactPreview {
   error?: string;
 }
 
+/** Product icon metadata embedded in the component-library manifest (SPEC-DATA-001) */
+export interface ArtifactProductIcon {
+  /** Bundle-relative SVG asset path (⊆ supportingFiles, validated via validateSupportingPath) */
+  primary: string;
+  /** Bundle-relative SVG asset path for monochrome variant */
+  monochrome: string;
+  /** Reusable geometry body so "reuse geometry, only recolor" can be restored from the manifest */
+  shape: {
+    shapeId: string;
+    /** SVG inner markup / path-data string — the reusable geometry body */
+    geometry: string;
+    sourceVersion: string;
+  };
+}
+
 export interface ArtifactFormaExtension {
   requirementId?: string;
   pageId?: string;
@@ -82,6 +97,8 @@ export interface ArtifactFormaExtension {
   quality?: { craftChecks?: ArtifactCraftCheck[] };
   preview?: ArtifactPreview;
   assets?: ArtifactAssetEntry[];
+  /** Product icon metadata — present only for component-library artifacts (SPEC-DATA-001) */
+  productIcon?: ArtifactProductIcon;
 }
 
 const LEGACY_KIND_MAP: Record<string, ArtifactKind> = {
@@ -147,6 +164,35 @@ export function validateFormaExtension(forma: unknown): FormaValidationResult {
       if (typeof entry["role"] !== "string" || entry["role"].length === 0) {
         return { ok: false, error: "forma.assets role must be a non-empty string" };
       }
+    }
+  }
+
+  // productIcon (SPEC-DATA-001): optional; when present, primary/monochrome must be valid supporting paths,
+  // shape.shapeId/geometry/sourceVersion must be non-empty strings.
+  if (f["productIcon"] !== undefined) {
+    const pi = f["productIcon"];
+    if (typeof pi !== "object" || pi === null || Array.isArray(pi)) {
+      return { ok: false, error: "forma.productIcon must be a non-null object" };
+    }
+    const icon = pi as Record<string, unknown>;
+    if (validateSupportingPath(icon["primary"]) === null) {
+      return { ok: false, error: `forma.productIcon.primary invalid: ${String(icon["primary"])}` };
+    }
+    if (validateSupportingPath(icon["monochrome"]) === null) {
+      return { ok: false, error: `forma.productIcon.monochrome invalid: ${String(icon["monochrome"])}` };
+    }
+    if (typeof icon["shape"] !== "object" || icon["shape"] === null || Array.isArray(icon["shape"])) {
+      return { ok: false, error: "forma.productIcon.shape must be a non-null object" };
+    }
+    const shape = icon["shape"] as Record<string, unknown>;
+    if (typeof shape["shapeId"] !== "string" || shape["shapeId"].length === 0) {
+      return { ok: false, error: "forma.productIcon.shape.shapeId must be a non-empty string" };
+    }
+    if (typeof shape["geometry"] !== "string" || shape["geometry"].length === 0) {
+      return { ok: false, error: "forma.productIcon.shape.geometry must be a non-empty string" };
+    }
+    if (typeof shape["sourceVersion"] !== "string" || shape["sourceVersion"].length === 0) {
+      return { ok: false, error: "forma.productIcon.shape.sourceVersion must be a non-empty string" };
     }
   }
 

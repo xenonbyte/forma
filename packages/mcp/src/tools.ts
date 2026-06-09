@@ -222,6 +222,46 @@ const generateRequirementDesignSchema = z
   })
   .strict();
 
+/** Validate a relative bundle path (no absolute, no traversal) for MCP supporting_files. */
+function isValidSupportingPath(value: string): boolean {
+  if (value.length === 0) return false;
+  if (/^[a-zA-Z]:[/\\]/.test(value)) return false;
+  if (/^[/\\]{2}/.test(value)) return false;
+  if (value.startsWith("/")) return false;
+  const segs = value.split(/[/\\]/);
+  return !segs.some((s) => s === "..");
+}
+
+const supportingFileSchema = z
+  .object({
+    path: z.string().min(1).refine(isValidSupportingPath, {
+      message: "supporting_files path must be a relative bundle path (no absolute, no traversal)",
+    }),
+    content_type: z.literal("image/svg+xml"),
+    content_base64: z.string().min(1),
+  })
+  .strict();
+
+const productIconShapeSchema = z
+  .object({
+    shape_id: z.string().min(1),
+    geometry: z.string().min(1),
+    source_version: z.string().min(1),
+  })
+  .strict();
+
+const productIconSchema = z
+  .object({
+    primary: z.string().min(1).refine(isValidSupportingPath, {
+      message: "product_icon.primary must be a relative bundle path (no absolute, no traversal)",
+    }),
+    monochrome: z.string().min(1).refine(isValidSupportingPath, {
+      message: "product_icon.monochrome must be a relative bundle path (no absolute, no traversal)",
+    }),
+    shape: productIconShapeSchema,
+  })
+  .strict();
+
 const generateComponentsSchema = z
   .object({
     product_id: z.string().min(1),
@@ -229,6 +269,8 @@ const generateComponentsSchema = z
     title: z.string().min(1),
     brand_style: z.string().min(1),
     system_style: z.string().min(1).optional(),
+    product_icon: productIconSchema.optional(),
+    supporting_files: z.array(supportingFileSchema).optional(),
   })
   .strict();
 
@@ -430,6 +472,28 @@ export function createFormaTools(store: FormaStore): FormaTools {
         title: input.title,
         brandStyle: input.brand_style,
         systemStyle: input.system_style,
+        ...(input.product_icon !== undefined
+          ? {
+              productIcon: {
+                primary: input.product_icon.primary,
+                monochrome: input.product_icon.monochrome,
+                shape: {
+                  shapeId: input.product_icon.shape.shape_id,
+                  geometry: input.product_icon.shape.geometry,
+                  sourceVersion: input.product_icon.shape.source_version,
+                },
+              },
+            }
+          : {}),
+        ...(input.supporting_files !== undefined
+          ? {
+              supportingFiles: (input.supporting_files as Array<{ path: string; content_type: string; content_base64: string }>).map((sf) => ({
+                path: sf.path,
+                contentType: sf.content_type,
+                contentBase64: sf.content_base64,
+              })),
+            }
+          : {}),
       }),
     ),
     change_artifact_style: tool("change_artifact_style", async (input) =>

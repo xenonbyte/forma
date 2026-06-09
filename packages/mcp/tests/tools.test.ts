@@ -2235,6 +2235,113 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
     expect(textPayload(result)).toMatchObject({ error_code: "PRODUCT_NOT_FOUND" });
   });
 
+  // ─── generate_components + productIcon (SPEC-DATA-001) ──────────────────
+
+  it("generate_components schema accepts product_icon + supporting_files", () => {
+    expectSchemaSuccess("generate_components", {
+      product_id: "P-123abc",
+      html: "<section>Button</section>",
+      title: "Icon Library",
+      brand_style: "linear",
+      product_icon: {
+        primary: "assets/icon.svg",
+        monochrome: "assets/icon-mono.svg",
+        shape: { shape_id: "s1", geometry: "<path d='M0 0h8v8H0z'/>", source_version: "1" },
+      },
+      supporting_files: [
+        {
+          path: "assets/icon.svg",
+          content_type: "image/svg+xml",
+          content_base64: Buffer.from("<svg/>").toString("base64"),
+        },
+        {
+          path: "assets/icon-mono.svg",
+          content_type: "image/svg+xml",
+          content_base64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    });
+  });
+
+  it("generate_components schema rejects absolute path in supporting_files", () => {
+    expectSchemaFailure("generate_components", {
+      product_id: "P-123abc",
+      html: "<section/>",
+      title: "Library",
+      brand_style: "linear",
+      supporting_files: [
+        { path: "/abs/icon.svg", content_type: "image/svg+xml", content_base64: "abc" },
+      ],
+    });
+  });
+
+  it("generate_components schema rejects path traversal in supporting_files", () => {
+    expectSchemaFailure("generate_components", {
+      product_id: "P-123abc",
+      html: "<section/>",
+      title: "Library",
+      brand_style: "linear",
+      supporting_files: [
+        { path: "../escape.svg", content_type: "image/svg+xml", content_base64: "abc" },
+      ],
+    });
+  });
+
+  it("generate_components schema rejects non-SVG content_type in supporting_files", () => {
+    expectSchemaFailure("generate_components", {
+      product_id: "P-123abc",
+      html: "<section/>",
+      title: "Library",
+      brand_style: "linear",
+      supporting_files: [
+        { path: "assets/icon.png", content_type: "image/png", content_base64: "abc" },
+      ],
+    });
+  });
+
+  it("generate_components delegates productIcon and supportingFiles to store in camelCase", async () => {
+    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
+    const store = fakeStore({
+      generateComponents: vi.fn(async () => fakeResult),
+    });
+    const tools = createFormaTools(store);
+    const svgB64 = Buffer.from("<svg/>").toString("base64");
+
+    const result = await tools.generate_components({
+      product_id: "P-123abc",
+      html: "<section/>",
+      title: "Icon Library",
+      brand_style: "linear",
+      product_icon: {
+        primary: "assets/icon.svg",
+        monochrome: "assets/icon-mono.svg",
+        shape: { shape_id: "s1", geometry: "<path d='M0 0h8v8H0z'/>", source_version: "1" },
+      },
+      supporting_files: [
+        { path: "assets/icon.svg", content_type: "image/svg+xml", content_base64: svgB64 },
+        { path: "assets/icon-mono.svg", content_type: "image/svg+xml", content_base64: svgB64 },
+      ],
+    });
+
+    expect(result.isError).toBeUndefined();
+    const genCall = (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents;
+    expect(genCall).toHaveBeenCalledWith("P-123abc", {
+      html: "<section/>",
+      title: "Icon Library",
+      brandStyle: "linear",
+      systemStyle: undefined,
+      productIcon: {
+        primary: "assets/icon.svg",
+        monochrome: "assets/icon-mono.svg",
+        shape: { shapeId: "s1", geometry: "<path d='M0 0h8v8H0z'/>", sourceVersion: "1" },
+      },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: svgB64 },
+        { path: "assets/icon-mono.svg", contentType: "image/svg+xml", contentBase64: svgB64 },
+      ],
+    });
+  });
+
   // ─── change_artifact_style ───────────────────────────────────────────────
 
   it("change_artifact_style schema accepts valid input", () => {

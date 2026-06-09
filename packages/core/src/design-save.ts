@@ -26,8 +26,10 @@ import type {
   ArtifactCraftCheck,
   ArtifactFormaExtension,
   ArtifactManifest,
+  ArtifactProductIcon,
   ArtifactProvenance,
 } from "./artifact-manifest.js";
+import { validateSupportingPath } from "./artifact-manifest.js";
 import { localizeArtifactAssets } from "./artifact-asset-pipeline.js";
 import { validateStaticArtifact } from "./artifact-static-validation.js";
 import { renderArtifactPreview } from "./preview-renderer.js";
@@ -36,6 +38,19 @@ import type { ProductService } from "./product.js";
 import { FormaError } from "./errors.js";
 
 // ─── Public types ──────────────────────────────────────────────────────────────
+
+/** A supporting file submitted by the caller (e.g. product icon SVG assets). */
+export interface SupportingFileInput {
+  /** Bundle-relative path — must pass validateSupportingPath (no absolute, no traversal). */
+  path: string;
+  /** MIME type — only "image/svg+xml" accepted for icon assets. */
+  contentType: string;
+  /** Base64-encoded file content. */
+  contentBase64: string;
+}
+
+/** Max per-file size for caller-supplied supporting files (256 KB). */
+const MAX_SUPPORTING_FILE_BYTES = 256 * 1024;
 
 export interface SaveDesignInput {
   productId: string;
@@ -51,7 +66,15 @@ export interface SaveDesignInput {
     platform?: string;
     language?: string;
     provenance?: ArtifactProvenance;
+    /** Product icon metadata — when present, primary/monochrome must be in supportingFiles (SPEC-DATA-001). */
+    productIcon?: ArtifactProductIcon;
   };
+  /**
+   * Caller-supplied supporting files (e.g. product icon SVGs).
+   * Each file is validated and written into the artifact bundle verbatim.
+   * Only "image/svg+xml" content_type is accepted; files must not exceed 256 KB.
+   */
+  supportingFiles?: SupportingFileInput[];
   /** Pass to add a new version to an existing artifact; omit to create a new artifact (v1). */
   artifactId?: string;
   commitHooks?: {
@@ -97,9 +120,77 @@ function decodeUtf8(buf: Buffer, path: string): string {
 
 // ─── Main export ──────────────────────────────────────────────────────────────
 
+/**
+ * Validate and decode caller-supplied supporting files (SPEC-DATA-001).
+ * Returns a Map<path, Buffer> ready to be merged into finalFiles.
+ * Throws FormaError("INVALID_INPUT") on any violation.
+ */
+function validateAndDecodeSupportingFiles(
+  supportingFiles: SupportingFileInput[] | undefined,
+): Map<string, Buffer> {
+  const result = new Map<string, Buffer>();
+  if (!supportingFiles || supportingFiles.length === 0) return result;
+
+  for (const sf of supportingFiles) {
+    // Path must be valid (no absolute, no traversal)
+    if (validateSupportingPath(sf.path) === null) {
+      throw new FormaError("INVALID_INPUT", `supportingFiles path invalid: ${sf.path}`, { path: sf.path });
+    }
+    // Only SVG content type accepted for icon assets
+    if (sf.contentType !== "image/svg+xml") {
+      throw new FormaError(
+        "INVALID_INPUT",
+        `supportingFiles content_type must be image/svg+xml, got: ${sf.contentType}`,
+        { path: sf.path, contentType: sf.contentType },
+      );
+    }
+    // Decode base64
+    let buf: Buffer;
+    try {
+      buf = Buffer.from(sf.contentBase64, "base64");
+    } catch {
+      throw new FormaError("INVALID_INPUT", `supportingFiles content_base64 is not valid base64: ${sf.path}`, {
+        path: sf.path,
+      });
+    }
+    // Size cap
+    if (buf.byteLength > MAX_SUPPORTING_FILE_BYTES) {
+      throw new FormaError(
+        "INVALID_INPUT",
+        `supportingFiles file exceeds max size (${MAX_SUPPORTING_FILE_BYTES} bytes): ${sf.path}`,
+        { path: sf.path, size: buf.byteLength },
+      );
+    }
+    result.set(sf.path, buf);
+  }
+  return result;
+}
+
 export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesignInput): Promise<SaveDesignResult> {
   const { artifacts, products } = deps;
   const { productId, kind, html, title, forma } = input;
+
+  // ── Step 0: Validate and decode caller-supplied supporting files (SPEC-DATA-001) ──
+  const callerFiles = validateAndDecodeSupportingFiles(input.supportingFiles);
+
+  // Validate productIcon: primary/monochrome must be in callerFiles (⊆ supportingFiles)
+  if (forma.productIcon !== undefined) {
+    const { primary, monochrome } = forma.productIcon;
+    if (!callerFiles.has(primary)) {
+      throw new FormaError(
+        "INVALID_INPUT",
+        `forma.productIcon.primary "${primary}" is not present in supportingFiles`,
+        { path: primary },
+      );
+    }
+    if (!callerFiles.has(monochrome)) {
+      throw new FormaError(
+        "INVALID_INPUT",
+        `forma.productIcon.monochrome "${monochrome}" is not present in supportingFiles`,
+        { path: monochrome },
+      );
+    }
+  }
 
   // ── Step 1: localizeArtifactAssets (pure, no lock) ───────────────────────────
   const { html: localizedHtml, files, assets } = await localizeArtifactAssets({ html });
@@ -212,6 +303,10 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   for (const [path, buf] of files) {
     finalFiles.set(path, buf);
   }
+  // Merge caller-supplied supporting files (e.g. product icon SVGs) — SPEC-DATA-001
+  for (const [path, buf] of callerFiles) {
+    finalFiles.set(path, buf);
+  }
   if (finalPreviewStatus === "ready" && finalPreview1x && finalPreview2x) {
     finalFiles.set("preview/1x.png", finalPreview1x);
     finalFiles.set("preview/2x.png", finalPreview2x);
@@ -221,11 +316,21 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   const now = new Date().toISOString();
   const supportingFiles = Array.from(finalFiles.keys());
 
+  // Build icon assets from productIcon SVG paths (role: "icon") — SPEC-DATA-001
+  const iconAssets: import("./artifact-manifest.js").ArtifactAssetEntry[] = [];
+  if (forma.productIcon !== undefined) {
+    const { primary, monochrome } = forma.productIcon;
+    iconAssets.push({ path: primary, density: [1], role: "icon" });
+    if (monochrome !== primary) {
+      iconAssets.push({ path: monochrome, density: [1], role: "icon" });
+    }
+  }
+
   const formaExtension: ArtifactFormaExtension = {
     ...forma,
     ...(platform !== undefined ? { platform } : {}),
     ...(kind === "design-page" ? { variant: forma.variant ?? "default" } : {}),
-    assets,
+    assets: [...assets, ...iconAssets],
     preview: {
       status: finalPreviewStatus,
       generatedAt: now,
