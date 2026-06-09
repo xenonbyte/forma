@@ -55,7 +55,6 @@ const INTERACTIVE: string[] = ["default", "hover", "focus", "disabled"];
 const INTERACTIVE_LOADING: string[] = ["default", "hover", "focus", "disabled", "loading"];
 const FORM_INPUT: string[] = ["default", "hover", "focus", "disabled", "error"];
 const FEEDBACK: string[] = ["default"];
-const STATE_ONLY: string[] = ["default"]; // for 通用三态 components
 
 // ---------------------------------------------------------------------------
 // Web — 精选档 · 29 件 · 6 组
