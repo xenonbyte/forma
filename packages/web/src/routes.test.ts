@@ -69,9 +69,9 @@ describe("matchRoute", () => {
     expect(match.pathname).toBe("/settings");
   });
 
-  it("matches the version compare route (F3)", () => {
+  it("does not match the removed version compare route (F3 removed)", () => {
     const match = matchRoute("/products/P-0abc12/artifacts/A1/compare");
-    expect(match.found).toBe(true);
-    expect(match.params).toEqual({ productId: "P-0abc12", artifactId: "A1" });
+    expect(match.found).toBe(false);
+    expect(match.route.path).toBe("*");
   });
 });

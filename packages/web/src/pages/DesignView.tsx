@@ -19,7 +19,7 @@ type ViewState =
   | { status: "loading" }
   | { status: "error"; error: ApiErrorInfo }
   | { status: "empty"; uiAffected: boolean }
-  | { status: "ready"; model: ViewerModel; compareTargets: Array<{ artifactId: string; title: string }> };
+  | { status: "ready"; model: ViewerModel };
 
 export function DesignView({ client, params }: DesignViewProps) {
   const t = useT();
@@ -53,15 +53,9 @@ export function DesignView({ client, params }: DesignViewProps) {
           setState({ status: "empty", uiAffected: requirement.ui_affected !== false });
           return;
         }
-        // F3: artifacts with 2+ immutable versions get a compare entry. Do not
-        // use current_version here; it is the active pointer and can be v1 after rollback.
-        const compareTargets = requirementArtifacts
-          .filter((artifact) => (artifact.version_count ?? 1) >= 2)
-          .map((artifact) => ({ artifactId: artifact.id, title: artifact.title }));
         setState({
           status: "ready",
           model: buildViewerModel({ entry: "requirement", artifacts: inputs }),
-          compareTargets,
         });
       })
       .catch((error: unknown) => {
@@ -107,19 +101,6 @@ export function DesignView({ client, params }: DesignViewProps) {
         >
           ← {t("action.backToRequirement")}
         </a>
-        {state.status === "ready" && state.compareTargets.length > 0 && (
-          <div className="flex items-center gap-2 overflow-x-auto text-sm">
-            {state.compareTargets.map((target) => (
-              <a
-                className="whitespace-nowrap rounded-md border border-zinc-200 px-2 py-1 text-zinc-600 transition hover:text-zinc-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-                href={`/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(target.artifactId)}/compare`}
-                key={target.artifactId}
-              >
-                {t("design.compareVersions")} · {target.title}
-              </a>
-            ))}
-          </div>
-        )}
         <h2 className="truncate text-sm font-semibold tracking-normal text-zinc-950">{requirementId}</h2>
       </div>
 

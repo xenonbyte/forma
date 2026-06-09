@@ -270,16 +270,46 @@ describe("DesignView", () => {
     expect(container.textContent).toContain("boom");
   });
 
-  it("shows a compare entry for artifacts with 2+ versions (F3)", async () => {
+  // RISK-REG-002: current_version 内部活跃指针被保留 — 当 current_version 不是最高版本时
+  // (例如回滚后 current_version=2 而 versions=[1,2,3])，Canvas 仍应渲染，不显示对比链接。
+  it("no compare route/link; current design renders when current_version is not max", async () => {
+    // Fixture: artifact "d" has versions [1,2,3] but current_version=2 (simulates rollback)
+    const client = fakeClient({
+      listProductArtifacts: (async () => ({
+        artifacts: [
+          {
+            id: "a",
+            kind: "design-page",
+            title: "登录页",
+            updated_at: "",
+            superseded: false,
+            requirement_id: "r1",
+            page_id: "login",
+            variant: "default",
+            current_version: 2, // not the max version (3)
+            version_count: 3,
+          },
+        ],
+      })) as DesignViewClient["listProductArtifacts"],
+    });
     const { container, root } = createTestRoot();
 
     await act(async () => {
-      root.render(<DesignView client={fakeClient()} params={{ productId: "p1", reqId: "r1" }} />);
+      root.render(<DesignView client={client} params={{ productId: "p1", reqId: "r1" }} />);
       await flushPromises();
     });
 
-    const link = container.querySelector('a[href="/products/p1/artifacts/d/compare"]');
-    expect(link).not.toBeNull();
-    expect(link?.textContent).toContain("登录页 宽屏");
+    // Canvas renders (the active pointer is preserved)
+    expect(container.querySelector("[data-testid='canvas']")).toBeTruthy();
+    expect(canvasSpy).toHaveBeenCalled();
+
+    // The active version in the model tile is current_version=2, not the max (3)
+    const props = canvasSpy.mock.calls.at(-1)?.[0] as CanvasCallProps;
+    const tileIds = props.model.tiles.map((tile) => tile.id);
+    expect(tileIds).toContain("a:2:default"); // current_version is the active pointer
+
+    // No compare link anywhere in the document
+    const compareLinks = container.querySelectorAll('a[href*="/compare"]');
+    expect(compareLinks.length).toBe(0);
   });
 });
