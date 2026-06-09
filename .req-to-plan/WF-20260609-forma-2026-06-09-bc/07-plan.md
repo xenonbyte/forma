@@ -226,9 +226,16 @@ it("change_artifact_style removed from core and MCP", () => {
   expect(typeof (store as any).changeArtifactStyle).toBe("undefined");
   expect(listToolNames()).not.toContain("change_artifact_style");
 });
+it("fm-change-style surfaces partial style-change recovery", () => {
+  const t = readTemplate("fm-change-style");
+  expect(t).toMatch(/update_product_config/);
+  expect(t).toMatch(/fm-refine-components/);
+  expect(t).toMatch(/partial|部分|stale|未刷新|重跑/);
+});
 ```
 Steps:
-- [ ] 模板：update_product_config 落配置 → 委托 fm-refine-components 同一生成流程整体重生成设计系统（ICON 复用 shape 只套色，经 PLAN-TASK-005 追加版本+指针，self-review 至通过）；不触 design-page；结束无后续。三平台同改。
+- [ ] 模板：update_product_config 落配置 → 委托 fm-refine-components 同一生成流程整体重生成设计系统（ICON 复用 shape 只套色，经 PLAN-TASK-005 追加版本+指针，self-review 至通过）；不触 design-page；成功后结束无后续。三平台同改。
+- [ ] 失败处理：若 update_product_config 已成功但后续生成/保存/self-review 任一步失败，模板必须停线并显式报告“产品配置已更新但当前组件库可能仍是旧版本/未刷新”，不得继续触发 fm-design 或宣称样式完全生效；给出恢复动作（重跑 fm-refine-components 或重跑 fm-change-style 以刷新指针版本），并由 design-commands 测试守卫该部分状态文案。
 - [ ] 在同一改动批删 change_artifact_style：MCP 名单/schema/映射/描述/handler + core changeArtifactStyle/changeArtifactStyleWithManifest/接口/导出；grep 复核无其它调用者；更新相关测试与工具集守卫，确保命令模板不再引用已删除工具。
 - [ ] 关闭 SCOPE-IN-008。
 Verification: npx vitest run packages/core/tests/store-design-mutations.test.ts packages/mcp/tests/tools.test.ts packages/cli/tests/design-commands.test.ts && pnpm typecheck
