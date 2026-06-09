@@ -8,7 +8,7 @@ r2p_updated_at: 2026-06-09T03:40:39.093927+00:00
 
 # Plan
 
-> 执行顺序遵循 spec 排期：T001(删除批) → T002–T009(B 批语义+core) → T010(R3 下沉) → T011/T012(R2 一致守卫最后锁) → T013–T017(web/viewer，与 fm-* 解耦可并行；T013/T015 同改 DesignView.tsx 须串行/合并)。
+> 执行顺序遵循 spec 排期：T001(删除批) → T002–T009(B 批语义+core) → T010(R3 下沉) → T011/T012(R2 一致守卫最后锁) → T013–T018(web/viewer，与 fm-* 解耦可并行；T013/T015 同改 DesignView.tsx 须串行/合并；T016 web API 类型须先于 T017 BrandResources)。
 
 ## Tasks
 
@@ -96,7 +96,13 @@ Change Type: modify
 TDD Applicable: yes
 Files:
 - packages/core/src/artifact-manifest.ts
+- packages/core/src/design-save.ts
+- packages/core/src/store.ts
+- packages/mcp/src/tools.ts
 - packages/core/tests/artifact-manifest.test.ts
+- packages/core/tests/design-save.test.ts
+- packages/core/tests/store-design-mutations.test.ts
+- packages/mcp/tests/tools.test.ts
 Skeleton:
 ```ts
 // ArtifactFormaExtension 增 productIcon?: { primary; monochrome; shape:{ shapeId; geometry; sourceVersion } }
@@ -107,12 +113,26 @@ it("validates productIcon paths and tolerates absence", () => {
     shape: { shapeId: "s", geometry: "<g/>", sourceVersion: "1" } } }).ok).toBe(false); // abs path rejected
   expect(validateFormaExtension({}).ok).toBe(true); // 缺字段容错
 });
+it("generate_components persists productIcon and icon assets into the component-library manifest", async () => {
+  const result = await callGenerateComponents({ product_id: pid, html,
+    product_icon: { primary: "assets/icon.svg", monochrome: "assets/icon-mono.svg",
+      shape: { shapeId: "s1", geometry: "<path d='M0 0h8v8H0z'/>", sourceVersion: "1" } },
+    supporting_files: [{ path: "assets/icon.svg", content_type: "image/svg+xml", content_base64: svgBase64 },
+      { path: "assets/icon-mono.svg", content_type: "image/svg+xml", content_base64: monoSvgBase64 }] });
+  const manifest = await readArtifactManifest(result.artifact_id, result.version);
+  expect(manifest.forma.productIcon?.primary).toBe("assets/icon.svg");
+  expect(manifest.forma.assets).toContainEqual(expect.objectContaining({ path: "assets/icon.svg", role: "icon" }));
+  expect(await readBundleFile(result.artifact_id, result.version, "assets/icon.svg")).toBe(svgText);
+});
 ```
 Steps:
 - [ ] 扩 ArtifactFormaExtension 加可选 productIcon；primary/monochrome 经 validateSupportingPath，shape 三字段非空串；geometry 携带可复用 SVG 本体。
 - [ ] validateFormaExtension 增分支；缺字段读取面返回"无 ICON"不抛错。asset 登记 forma.assets(role icon)。
+- [ ] 定义 `supporting_files` 端到端 schema：`path`（relative supporting path）、`content_type`、`content_base64`（或等价明确内容字段，二选一并在 schema 固化）；限制 SVG 静态内容、大小上限、禁止绝对/穿越路径，并映射 through MCP `generate_components` → core `GenerateComponentsInput` → `SaveDesignInput`。
+- [ ] 扩 `generate_components` schema/handler、core `GenerateComponentsInput`/`generateComponents` 与 `SaveDesignInput.forma` 保存链：模板提交的 primary/monochrome SVG supporting files 内容 + shape 元数据必须写入 bundle 文件与 manifest `forma.productIcon`；对应 `forma.assets` role 必须为 `icon`，不得沿用 data URL 默认 `image` role，也不得只把 ICON 嵌进 HTML。
+- [ ] 补 design-save/store/MCP 测试守卫：合法 productIcon 随 component-library 保存成功且 bundle 内 SVG 内容与输入一致；非法路径、缺失 content/content_base64、缺失 supporting file、asset role 不匹配时失败或走明确缺字段容错；B7/BC3 读取面不需要从 HTML 解析 logo。
 - [ ] 关闭 SCOPE-IN-007（manifest 契约部分）。
-Verification: npx vitest run packages/core/tests/artifact-manifest.test.ts && pnpm typecheck
+Verification: npx vitest run packages/core/tests/artifact-manifest.test.ts packages/core/tests/design-save.test.ts packages/core/tests/store-design-mutations.test.ts packages/mcp/tests/tools.test.ts && pnpm typecheck
 
 ### PLAN-TASK-004 component-baseline.ts 单一事实源数据（B7 数据）
 Spec References: SPEC-BEHAVIOR-009, SPEC-DATA-003
@@ -143,6 +163,8 @@ Spec References: SPEC-BEHAVIOR-008, SPEC-DATA-002
 Change Type: modify
 TDD Applicable: yes
 Files:
+- packages/core/src/artifact-store.ts
+- packages/core/src/design-save.ts
 - packages/core/src/store.ts
 - packages/core/tests/store-design-mutations.test.ts
 Skeleton:
@@ -155,9 +177,21 @@ it("first refine sets pointer; subsequent appends same artifact version", async 
   expect(b.artifact_id).toBe(a.artifact_id);   // 同一 artifact
   expect(b.version).toBe(a.version + 1);        // 追加版本
 });
+it("does not leave a component-library without a current pointer when pointer commit fails", async () => {
+  await expect(generateComponentsWithFailingPointerCommit(pid, html)).rejects.toBeDefined();
+  expect(await listComponentLibraries(pid)).toHaveLength(0);
+  expect((await store.products.getProduct(pid)).designSystemArtifactId).toBeUndefined();
+});
+it("does not expose an unintended latest component-library version when append pointer commit fails", async () => {
+  const first = await store.generateComponents(pid, htmlV1);
+  await expect(generateComponentsWithFailingPointerCommit(pid, htmlV2)).rejects.toBeDefined();
+  expect(await currentComponentLibrary(pid)).toMatchObject({ artifactId: first.artifact_id, version: first.version });
+});
 ```
 Steps:
-- [ ] generateComponents：首次新建后 setDesignSystemArtifactPointerLocked；后续读 product.designSystemArtifactId 作为 saveDesignArtifact 的 input.artifactId 传入追加版本。
+- [ ] generateComponents：首次新建 component-library 与 `setDesignSystemArtifactPointerLocked` 必须在 artifact-store/product mutation lock 的同一 commit hook/事务语义内完成；后续读 product.designSystemArtifactId 作为 saveDesignArtifact 的 input.artifactId 传入追加版本。
+- [ ] 明确 storage-level 回滚/cleanup 策略：若 `writeArtifactVersion` 已写出版本目录但指针 commit hook 失败，必须删除/隐藏该新版本并恢复 artifact metadata，或先写 staging 目录、指针成功后再原子发布；实现落在 `packages/core/src/artifact-store.ts` 或等价 cleanup API。
+- [ ] 指针写入失败必须停线并回滚/不暴露半状态：首次创建失败不得留下无当前指针的孤儿 component-library；追加失败不得让失败版本成为 max/current version，也不得推进 stale pointer；补失败注入测试覆盖 first-create 与 append 两条路径。
 - [ ] 当前版本 = listArtifactVersions 的 max；新增可观察日志 productId+artifactId+version。
 - [ ] 关闭 SCOPE-IN-007（指针写入部分）。
 Verification: npx vitest run packages/core/tests/store-design-mutations.test.ts && pnpm typecheck
@@ -203,6 +237,7 @@ Skeleton:
 ```
 Steps:
 - [ ] 模板改为档1（不读需求）；产出含令牌可视化 Foundations + 产品 ICON（产品名+brand_style 派生，复用 shape 只套色）+ 按 platform 固定基线组件集（state-coverage）。
+- [ ] 调用 `generate_components` 时提交结构化 `product_icon` payload 与对应 SVG supporting files；primary/monochrome 路径、shape geometry/sourceVersion 必须进入 manifest `forma.productIcon`，不得只嵌入组件库 HTML。
 - [ ] 不生成通用图标库/wordmark/完整 VI；favicon 由 ICON 派生；清单来自 get_component_baseline，不抄清单正文。三平台（claude/codex/gemini）同改。
 - [ ] 关闭 SCOPE-IN-007（生成模板部分）。
 Verification: pnpm build && npx vitest run packages/cli/tests/design-commands.test.ts
@@ -335,7 +370,9 @@ Files:
 - packages/web/src/routes.tsx
 - packages/web/src/pages/DesignView.tsx
 - packages/web/src/i18n.ts
+- packages/web/src/pages/VersionCompare.test.tsx
 - packages/web/src/pages/DesignView.test.tsx
+- packages/web/src/routes.test.ts
 Skeleton:
 ```ts
 it("no compare route/link; current design renders when current_version is not max", () => {
@@ -346,9 +383,10 @@ it("no compare route/link; current design renders when current_version is not ma
 ```
 Steps:
 - [ ] 删 VersionCompare.tsx 页 + routes.tsx 的 compare import/route/VersionCompareRoute；删 DesignView 对比链接与 version_count>=2 过滤、用户可见版本号；删 6 个对比 i18n 键(en+zh 12 条)与悬挂引用。
+- [ ] 删除/更新 VersionCompare.test.tsx；routes.test.ts 反向守卫 compare route 不存在，确保不再断言 compare route 可达。
 - [ ] 保留 current_version 内部活跃指针；api.ts/server/core/底层版本机制零改动；/rollback/plan 残留不动。与 PLAN-TASK-015 同改 DesignView.tsx → 串行/合并为一个改动批。
 - [ ] 关闭 SCOPE-IN-013。
-Verification: npx vitest run packages/web/src/pages/DesignView.test.tsx && pnpm --filter @xenonbyte/forma-web build
+Verification: npx vitest run packages/web/src/pages/DesignView.test.tsx packages/web/src/pages/VersionCompare.test.tsx packages/web/src/routes.test.ts && pnpm --filter @xenonbyte/forma-web build
 
 ### PLAN-TASK-014 标注画布改白底（BC1）
 Spec References: SPEC-BEHAVIOR-015
@@ -393,7 +431,26 @@ Steps:
 - [ ] 关闭 SCOPE-IN-015。
 Verification: npx vitest run packages/viewer/src/Canvas.browser.test.tsx && pnpm --filter @xenonbyte/forma-web build
 
-### PLAN-TASK-016 品牌资源页与 product-level mapper（BC3 新建）
+### PLAN-TASK-016 web API 类型暴露当前组件库指针与 productIcon（BC3 plumbing）
+Spec References: SPEC-BEHAVIOR-015
+Change Type: modify
+TDD Applicable: no
+Files:
+- packages/web/src/api.ts
+Skeleton:
+```ts
+// api.ts：Product 类型暴露 designSystemArtifactId?: string；ArtifactDetail/相关响应类型
+// 暴露 manifest.forma.productIcon 与可解析 asset URL/路径，使 BrandResources(PLAN-TASK-017)
+// 可在 TypeScript 下按指针 + manifest 读取，不用 ad hoc any。纯前端类型/数据投影，
+// 由 pnpm typecheck + web build 守卫，消费侧断言在 BrandResources.test.tsx。
+```
+Steps:
+- [ ] 更新 web API 类型/数据契约：`Product` 暴露 `designSystemArtifactId`；`ArtifactDetail`/相关响应类型暴露 `manifest.forma.productIcon` 与可解析 asset URL/路径数据，使 BrandResources 可在 TypeScript 下按指针和 manifest 读取，不依赖 ad hoc any。
+- [ ] 仅前端类型/数据投影：不改 api.ts 的 version/rollback 客户端残留方法、不改 server 版本路由与 core 运行时；version 机制零改动。
+- [ ] 关闭 SCOPE-IN-016（API 类型部分）。
+Verification: pnpm typecheck && pnpm --filter @xenonbyte/forma-web build
+
+### PLAN-TASK-017 品牌资源页与 product-level mapper（BC3 新建）
 Spec References: SPEC-BEHAVIOR-015
 Change Type: create
 TDD Applicable: yes
@@ -413,12 +470,12 @@ it("renders component-library via pointer + productIcon tile; empty state when n
 });
 ```
 Steps:
-- [ ] 新建 BrandResources 页：经 designSystemArtifactId 指针读当前 component-library，渲染 HTML + 由 manifest forma.productIcon 解析的 ICON 图片 tile；复用 PLAN-TASK-015 增强后的 viewer Canvas。
-- [ ] 新建 product-level mapper（分组键 brand-resources，不需 page_id/variant）；无指针时空态提示去 fm-refine-components。
+- [ ] 新建 BrandResources 页：经 designSystemArtifactId 指针读当前 component-library，渲染 HTML + 由 manifest forma.productIcon 解析的 ICON 图片 tile；复用 PLAN-TASK-015 增强后的 viewer Canvas；依赖 PLAN-TASK-016 暴露的 web API 类型。
+- [ ] 新建 product-level mapper（分组键 brand-resources，不需 page_id/variant）；测试覆盖 typed `designSystemArtifactId`、`manifest.forma.productIcon`、asset URL 解析，以及无指针时空态提示去 fm-refine-components。
 - [ ] 关闭 SCOPE-IN-016（页面/mapper 部分）。
 Verification: npx vitest run packages/web/src/pages/BrandResources.test.tsx && pnpm --filter @xenonbyte/forma-web build
 
-### PLAN-TASK-017 品牌资源入口与路由接线（BC3）
+### PLAN-TASK-018 品牌资源入口与路由接线（BC3）
 Spec References: SPEC-BEHAVIOR-015
 Change Type: modify
 TDD Applicable: yes
@@ -464,6 +521,7 @@ Verification: npx vitest run packages/web/src/pages/ProductDetail.test.tsx && pn
 | PLAN-TASK-015 | SPEC-BEHAVIOR-015 | covered |
 | PLAN-TASK-016 | SPEC-BEHAVIOR-015 | covered |
 | PLAN-TASK-017 | SPEC-BEHAVIOR-015 | covered |
+| PLAN-TASK-018 | SPEC-BEHAVIOR-015 | covered |
 
 ## Upstream Summary (read-only)
 # Spec
