@@ -19,7 +19,6 @@ vi.mock("@xenonbyte/forma-viewer", async (importOriginal) => {
 });
 
 import { BrandResources, type BrandResourcesClient } from "./BrandResources.js";
-import { mapBrandResourcesArtifact } from "../viewer/brandResourcesMapper.js";
 import type { ArtifactDetail, Product } from "../api.js";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -54,6 +53,14 @@ const productWithPointer: Product = {
   designSystemArtifactId: ARTIFACT_ID,
 };
 
+const productMobile: Product = {
+  id: PRODUCT_ID,
+  name: "计算器",
+  description: "desc",
+  platform: "mobile",
+  designSystemArtifactId: "lib",
+};
+
 const productNoPointer: Product = {
   id: PRODUCT_ID,
   name: "My Product",
@@ -61,7 +68,8 @@ const productNoPointer: Product = {
   platform: "web",
 };
 
-const artifactDetail: ArtifactDetail = {
+/** Artifact with two units — used by E2 unit-rendering tests. */
+const artifactDetailWithUnits: ArtifactDetail = {
   manifest: {
     id: ARTIFACT_ID,
     kind: "component-library",
@@ -70,16 +78,27 @@ const artifactDetail: ArtifactDetail = {
     status: "done",
     exports: [],
     forma: {
-      productIcon: {
-        primary: "assets/icon.svg",
-        monochrome: "assets/icon-mono.svg",
-        shape: {
-          shapeId: "sh1",
-          geometry: "<path/>",
-          sourceVersion: "1",
-        },
-      },
+      platform: "mobile",
+      units: [
+        { id: "foundations", title: "Foundations", role: "foundations", entry: "unit-foundations.html" },
+        { id: "button", title: "Button", role: "component", entry: "unit-button.html" },
+      ],
     },
+  },
+  current_version: CURRENT_VERSION,
+  versions: [1, 2, 3],
+};
+
+/** Artifact with no units — library exists but forma.units is absent. */
+const artifactDetailNoUnits: ArtifactDetail = {
+  manifest: {
+    id: ARTIFACT_ID,
+    kind: "component-library",
+    title: "Component Library",
+    entry: "index.html",
+    status: "done",
+    exports: [],
+    forma: {},
   },
   current_version: CURRENT_VERSION,
   versions: [1, 2, 3],
@@ -93,6 +112,11 @@ const artifactDetailNoIcon: ArtifactDetail = {
     entry: "index.html",
     status: "done",
     exports: [],
+    forma: {
+      units: [
+        { id: "foundations", title: "Foundations", role: "foundations", entry: "unit-foundations.html" },
+      ],
+    },
   },
   current_version: CURRENT_VERSION,
 };
@@ -102,7 +126,7 @@ const artifactDetailNoIcon: ArtifactDetail = {
 function fakeClient(overrides: Partial<BrandResourcesClient> = {}): BrandResourcesClient {
   return {
     getProduct: async () => productWithPointer,
-    getProductArtifact: async () => artifactDetail,
+    getProductArtifact: async () => artifactDetailWithUnits,
     getArtifactVersionBundleAssetUrl: (productId, artifactId, version, relativePath) =>
       `/api/products/${productId}/artifacts/${artifactId}/versions/${version}/bundle/${relativePath}`,
     ...overrides,
@@ -130,8 +154,55 @@ async function flushPromises() {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 describe("BrandResources", () => {
-  // TEST-BC3-001: with-pointer → brand-tile (Canvas) + product-icon-tile (img from manifest) present.
-  it("renders component-library Canvas and product-icon tile when designSystemArtifactId is set", async () => {
+  // E2: renders one tile (iframe) per component-library unit.
+  it("renders one tile per component-library unit", async () => {
+    const client = fakeClient({
+      getProduct: async () => productMobile,
+      getProductArtifact: async () => artifactDetailWithUnits,
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<BrandResources client={client} params={{ productId: PRODUCT_ID }} />);
+      await flushPromises();
+    });
+
+    // Canvas stub must be rendered (ready state)
+    expect(canvasSpy).toHaveBeenCalled();
+    const brandTile = container.querySelector("[data-testid='brand-tile']");
+    expect(brandTile).not.toBeNull();
+
+    // The viewer model passed to Canvas must have 2 tiles (one per unit)
+    const props = canvasSpy.mock.calls.at(-1)?.[0] as {
+      model: { groups: Array<{ tileIds: string[] }> };
+    };
+    expect(props.model.groups[0].tileIds.length).toBe(2);
+  });
+
+  // E2: shows explicit empty state when library has no units.
+  it("shows an empty state when the library has no units", async () => {
+    const client = fakeClient({
+      getProductArtifact: async () => artifactDetailNoUnits,
+    });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<BrandResources client={client} params={{ productId: PRODUCT_ID }} />);
+      await flushPromises();
+    });
+
+    // No Canvas rendered
+    expect(canvasSpy).not.toHaveBeenCalled();
+    expect(container.querySelector("[data-testid='canvas']")).toBeNull();
+
+    // Must show the no-units help message
+    expect(container.textContent).toContain(
+      "This component library has no units yet. Run fm-refine-components to regenerate it.",
+    );
+  });
+
+  // TEST-BC3-001: with-pointer + units → brand-tile (Canvas) present; standalone icon img removed in B4.
+  it("renders component-library Canvas when designSystemArtifactId is set", async () => {
     const { container, root } = createTestRoot();
 
     await act(async () => {
@@ -147,12 +218,8 @@ describe("BrandResources", () => {
     expect(brandTile?.querySelector("[data-testid='canvas']") ?? container.querySelector("[data-testid='canvas']")).not.toBeNull();
     expect(canvasSpy).toHaveBeenCalled();
 
-    // ICON tile: <img data-testid="product-icon-tile"> from manifest.forma.productIcon, NOT HTML parsing
-    const iconTile = container.querySelector("[data-testid='product-icon-tile']") as HTMLImageElement | null;
-    expect(iconTile).not.toBeNull();
-    expect(iconTile?.tagName.toLowerCase()).toBe("img");
-    // URL must include the bundle-relative path from manifest.forma.productIcon.primary
-    expect(iconTile?.src).toContain("assets/icon.svg");
+    // B4: standalone product-icon-tile img removed; it becomes a canvas tile in E2.
+    expect(container.querySelector("[data-testid='product-icon-tile']")).toBeNull();
   });
 
   // TEST-BC3-002: no-pointer → empty state mentioning fm-refine-components; no Canvas.
@@ -226,6 +293,59 @@ describe("BrandResources", () => {
     expect(container.textContent).toContain("network error");
   });
 
+  // B4: reports the product name via onBreadcrumbLabel; no standalone icon img.
+  it("reports the product name for the canvas shell and renders no standalone icon img", async () => {
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const { container: _c, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <BrandResources
+          client={fakeClient()}
+          onBreadcrumbLabel={onBreadcrumbLabel}
+          params={{ productId: PRODUCT_ID }}
+        />,
+      );
+      await flushPromises();
+    });
+
+    expect(labels[`product:${PRODUCT_ID}`]).toBe("My Product");
+    // Standalone product-icon tile removed in B4 (becomes canvas tile in E2).
+    expect(_c.querySelector("[data-testid='product-icon-tile']")).toBeNull();
+  });
+
+  // B4: on getProduct failure, console.warn + reports canvas.productUnavailable label.
+  it("warns and reports productUnavailable label when getProduct rejects", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const client = fakeClient({
+      getProduct: async () => {
+        throw new Error("product fetch failed");
+      },
+    });
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <BrandResources
+          client={client}
+          onBreadcrumbLabel={onBreadcrumbLabel}
+          params={{ productId: PRODUCT_ID }}
+        />,
+      );
+      await flushPromises();
+    });
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(labels[`product:${PRODUCT_ID}`]).toBe("Product unavailable");
+  });
+
   // TEST-BC3-006: viewer model entry is "page" and group key is "brand-resources".
   it("passes a viewer model with group pageId brand-resources to Canvas", async () => {
     const { container: _c, root } = createTestRoot();
@@ -242,41 +362,3 @@ describe("BrandResources", () => {
   });
 });
 
-// ── mapper unit tests ─────────────────────────────────────────────────────────
-
-describe("mapBrandResourcesArtifact", () => {
-  it("produces a NormalizeArtifactInput with group key brand-resources and kind component-library", () => {
-    const input = mapBrandResourcesArtifact({
-      artifactId: ARTIFACT_ID,
-      title: "Component Library",
-      version: CURRENT_VERSION,
-      platform: "web",
-    });
-
-    expect(input.kind).toBe("component-library");
-    expect(input.pageId).toBe("brand-resources");
-    expect(input.pageName).toBe("brand-resources");
-    expect(input.variant).toBe("default");
-    expect(input.artifactId).toBe(ARTIFACT_ID);
-    expect(input.version).toBe(CURRENT_VERSION);
-    expect(typeof input.width).toBe("number");
-    expect(typeof input.height).toBe("number");
-    expect(input.width).toBeGreaterThan(0);
-    expect(input.height).toBeGreaterThan(0);
-  });
-
-  it("uses canvasSizeForPlatform to derive width/height consistently", () => {
-    const web = mapBrandResourcesArtifact({ artifactId: "a", title: "T", version: 1, platform: "web" });
-    const mobile = mapBrandResourcesArtifact({ artifactId: "a", title: "T", version: 1, platform: "mobile" });
-
-    // mobile platform should have a narrower width than web/desktop
-    expect(mobile.width).toBeLessThan(web.width);
-  });
-
-  it("falls back to web dimensions when platform is undefined", () => {
-    const fallback = mapBrandResourcesArtifact({ artifactId: "a", title: "T", version: 1, platform: undefined });
-    const web = mapBrandResourcesArtifact({ artifactId: "a", title: "T", version: 1, platform: "web" });
-    expect(fallback.width).toBe(web.width);
-    expect(fallback.height).toBe(web.height);
-  });
-});

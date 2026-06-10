@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, buildViewerModel } from "@xenonbyte/forma-viewer";
 import type { ViewerModel } from "@xenonbyte/forma-viewer";
 
 import { formatApiError, type ApiErrorInfo, type FormaApiClient, type Product, type ArtifactDetail } from "../api.js";
 import { useT } from "../LocaleContext.js";
 import { StatePanel } from "../components/Layout.js";
-import { mapBrandResourcesArtifact } from "../viewer/brandResourcesMapper.js";
+import { mapComponentLibraryUnits, type ComponentLibraryUnit } from "../viewer/componentLibraryMapper.js";
 import { createWebResourceResolver } from "../viewer/resolver.js";
 
 // ── client shape ──────────────────────────────────────────────────────────────
@@ -21,6 +21,7 @@ export type BrandResourcesClient = Pick<
 
 export interface BrandResourcesProps {
   client: BrandResourcesClient;
+  onBreadcrumbLabel?: (key: string, label: string) => void;
   params: Record<string, string>;
 }
 
@@ -30,20 +31,21 @@ type ViewState =
   | { status: "loading" }
   | { status: "error"; error: ApiErrorInfo }
   | { status: "empty" }
-  | {
-      status: "ready";
-      model: ViewerModel;
-      /** Served URL for the product icon; undefined when manifest.forma.productIcon is absent. */
-      iconUrl: string | undefined;
-    };
+  | { status: "no-units" }
+  | { status: "ready"; model: ViewerModel };
 
 // ── component ──────────────────────────────────────────────────────────────────
 
-export function BrandResources({ client, params }: BrandResourcesProps) {
+export function BrandResources({ client, onBreadcrumbLabel, params }: BrandResourcesProps) {
   const t = useT();
   const productId = params.productId ?? "";
   const [state, setState] = useState<ViewState>({ status: "loading" });
   const resolver = useMemo(() => createWebResourceResolver(productId), [productId]);
+  // Stable refs so the effect closure can read latest values without re-triggering.
+  const tRef = useRef(t);
+  tRef.current = t;
+  const onBreadcrumbLabelRef = useRef(onBreadcrumbLabel);
+  onBreadcrumbLabelRef.current = onBreadcrumbLabel;
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +53,7 @@ export function BrandResources({ client, params }: BrandResourcesProps) {
 
     async function load() {
       const product: Product = await client.getProduct(productId);
+      onBreadcrumbLabelRef.current?.(`product:${productId}`, product.name);
 
       if (!product.designSystemArtifactId) {
         if (!cancelled) {
@@ -71,28 +74,26 @@ export function BrandResources({ client, params }: BrandResourcesProps) {
         return;
       }
 
-      const input = mapBrandResourcesArtifact({
-        artifactId,
-        title: detail.manifest.title,
-        version,
-        platform: product.platform,
-      });
+      const units = (detail.manifest.forma?.units ?? []) as ComponentLibraryUnit[];
+      if (units.length === 0) {
+        if (!cancelled) {
+          setState({ status: "no-units" });
+        }
+        return;
+      }
 
-      const model = buildViewerModel({ entry: "page", artifacts: [input] });
-
-      // Resolve product icon from manifest.forma.productIcon (RISK-MIG-003 tolerance: optional).
-      const primaryPath = detail.manifest.forma?.productIcon?.primary;
-      const iconUrl = primaryPath
-        ? client.getArtifactVersionBundleAssetUrl(productId, artifactId, version, primaryPath)
-        : undefined;
+      const inputs = mapComponentLibraryUnits({ artifactId, version, platform: product.platform, units });
+      const model = buildViewerModel({ entry: "page", artifacts: inputs });
 
       if (!cancelled) {
-        setState({ status: "ready", model, iconUrl });
+        setState({ status: "ready", model });
       }
     }
 
     load().catch((error: unknown) => {
       if (!cancelled) {
+        console.warn("failed to load product label for brand canvas shell", formatApiError(error));
+        onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
         setState({ status: "error", error: formatApiError(error) });
       }
     });
@@ -132,29 +133,21 @@ export function BrandResources({ client, params }: BrandResourcesProps) {
     );
   }
 
+  // ── no-units: library exists but has no units — prompt regeneration ──
+
+  if (state.status === "no-units") {
+    return (
+      <StatePanel state="empty" title={t("brand.resources")}>
+        {t("brand.noUnitsHelp")}
+      </StatePanel>
+    );
+  }
+
   // ── ready ──
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-4">
-      {/* Product icon tile: page-level img from manifest.forma.productIcon — NOT parsed from HTML */}
-      {state.iconUrl !== undefined ? (
-        <div className="flex items-center gap-3">
-          <img
-            alt={t("brand.productIcon")}
-            className="h-12 w-12 rounded-lg border border-zinc-200 object-contain bg-white p-1 shadow-sm"
-            data-testid="product-icon-tile"
-            src={state.iconUrl}
-          />
-        </div>
-      ) : null}
-
-      {/* Component-library canvas: brand-tile wraps the Canvas */}
-      <div
-        className="relative flex-1 overflow-hidden rounded-lg border border-zinc-200 bg-white"
-        data-testid="brand-tile"
-      >
-        <Canvas model={state.model} mode="design" resolver={resolver} />
-      </div>
+    <div className="relative h-full w-full overflow-hidden bg-white" data-testid="brand-tile">
+      <Canvas model={state.model} mode="design" resolver={resolver} />
     </div>
   );
 }
