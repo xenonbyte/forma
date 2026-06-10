@@ -1332,12 +1332,23 @@ async function getBaselineImage(store: FormaStore, productId: string) {
     }
     const versions = await store.artifacts.listArtifactVersions(productId, candidate.artifactId);
     if (versions.length > 0) {
-      return {
-        path: getArtifactVersionPreviewPath(productsDir, productId, candidate.artifactId, Math.max(...versions), "2x"),
-      };
+      const previewPath = getArtifactVersionPreviewPath(
+        productsDir,
+        productId,
+        candidate.artifactId,
+        Math.max(...versions),
+        "2x",
+      );
+      if (await fileExists(previewPath)) {
+        return { path: previewPath };
+      }
+      continue;
     }
     const artifactDir = getArtifactDir(productsDir, productId, candidate.artifactId);
-    return { path: join(artifactDir, "preview", "2x.png") };
+    const previewPath = join(artifactDir, "preview", "2x.png");
+    if (await fileExists(previewPath)) {
+      return { path: previewPath };
+    }
   }
 
   throw new FormaError("ARTIFACT_NOT_FOUND", "No baseline image for this product", { product_id: productId });

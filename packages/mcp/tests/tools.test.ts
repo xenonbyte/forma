@@ -1,5 +1,6 @@
 import {
   FormaError,
+  getArtifactDir,
   getArtifactIconsDir,
   getArtifactVziPath,
   getArtifactVersionDir,
@@ -321,6 +322,13 @@ async function writeVersionPreview(home: string, productId: string, artifactId: 
     version,
     "2x",
   );
+  await mkdir(dirname(previewPath), { recursive: true });
+  await writeFile(previewPath, "png", "utf8");
+  return previewPath;
+}
+
+async function writeFlatPreview(home: string, productId: string, artifactId: string) {
+  const previewPath = join(getArtifactDir(getFormaPaths(home).productsDir, productId, artifactId), "preview", "2x.png");
   await mkdir(dirname(previewPath), { recursive: true });
   await writeFile(previewPath, "png", "utf8");
   return previewPath;
@@ -877,16 +885,22 @@ describe("MCP forma tools", () => {
   });
 
   it("get_baseline_image returns path pointing to the latest requirement design preview PNG", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-latest-preview-"));
+    try {
+      await writeVersionPreview(home, "P-123abc", "OLDARTIFACT12345", 2);
+      const store = fakeStore({ home });
+      const tools = createFormaTools(store);
 
-    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+      const result = await tools.get_baseline_image({ product_id: "P-123abc" });
 
-    expect(result.isError).toBeUndefined();
-    const payload = textPayload(result);
-    // Path should include the requirement's latest artifact id and point to versioned preview/2x.png.
-    expect(payload.path).toMatch(/OLDARTIFACT12345/);
-    expect(payload.path).toMatch(/v2[/\\]preview[/\\]2x\.png$/);
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      // Path should include the requirement's latest artifact id and point to versioned preview/2x.png.
+      expect(payload.path).toMatch(/OLDARTIFACT12345/);
+      expect(payload.path).toMatch(/v2[/\\]preview[/\\]2x\.png$/);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("get_baseline_image uses active design pointer version before legacy requirement pointer", async () => {
@@ -1003,35 +1017,167 @@ describe("MCP forma tools", () => {
     }
   });
 
+  it("get_baseline_image skips legacy versioned artifacts without preview files", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-legacy-missing-preview-"));
+    try {
+      await writeVersionPreview(home, "P-123abc", "READYARTIFACT123", 2);
+      const store = fakeStore({
+        home,
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            platform: "web",
+            requirements: {
+              "R-missing1": { latestArtifactId: "MISSINGARTIFACT1" },
+              "R-ready1": { latestArtifactId: "READYARTIFACT123" },
+            },
+          })),
+          listDesignPointers: vi.fn(async () => []),
+        },
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [
+            {
+              id: "R-missing1",
+              product_id: "P-123abc",
+              status: "active",
+              updated_at: "2026-06-02T00:00:00.000Z",
+              pages: [],
+            },
+            {
+              id: "R-ready1",
+              product_id: "P-123abc",
+              status: "active",
+              updated_at: "2026-06-01T00:00:00.000Z",
+              pages: [],
+            },
+          ]),
+        },
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async (_productId: string, artifactId: string) => {
+            if (artifactId === "MISSINGARTIFACT1") return [5];
+            if (artifactId === "READYARTIFACT123") return [2];
+            return [];
+          }),
+        },
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.path).toContain("READYARTIFACT123");
+      expect(payload.path).not.toContain("MISSINGARTIFACT1");
+      expect(payload.path).toMatch(/v2[/\\]preview[/\\]2x\.png$/);
+      expect(store.artifacts.listArtifactVersions).toHaveBeenCalledWith("P-123abc", "MISSINGARTIFACT1");
+      expect(store.artifacts.listArtifactVersions).toHaveBeenCalledWith("P-123abc", "READYARTIFACT123");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
+  it("get_baseline_image skips legacy flat artifacts without preview files", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-legacy-flat-missing-preview-"));
+    try {
+      await writeFlatPreview(home, "P-123abc", "READYFLATARTIFACT");
+      const store = fakeStore({
+        home,
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            platform: "web",
+            requirements: {
+              "R-missing1": { latestArtifactId: "MISSINGFLATARTF" },
+              "R-ready1": { latestArtifactId: "READYFLATARTIFACT" },
+            },
+          })),
+          listDesignPointers: vi.fn(async () => []),
+        },
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [
+            {
+              id: "R-missing1",
+              product_id: "P-123abc",
+              status: "active",
+              updated_at: "2026-06-02T00:00:00.000Z",
+              pages: [],
+            },
+            {
+              id: "R-ready1",
+              product_id: "P-123abc",
+              status: "active",
+              updated_at: "2026-06-01T00:00:00.000Z",
+              pages: [],
+            },
+          ]),
+        },
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => []),
+        },
+      });
+      const tools = createFormaTools(store);
+
+      const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.path).toContain("READYFLATARTIFACT");
+      expect(payload.path).not.toContain("MISSINGFLATARTF");
+      expect(payload.path).toMatch(/preview[/\\]2x\.png$/);
+      expect(payload.path).not.toMatch(/v\\d+[/\\]preview[/\\]2x\.png$/);
+      expect(store.artifacts.listArtifactVersions).toHaveBeenCalledWith("P-123abc", "MISSINGFLATARTF");
+      expect(store.artifacts.listArtifactVersions).toHaveBeenCalledWith("P-123abc", "READYFLATARTIFACT");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  });
+
   it("get_baseline_image does not use designSystemArtifactId as the functional baseline source", async () => {
-    const store = fakeStore({
-      products: {
-        ...fakeStore().products,
-        getProduct: vi.fn(async () => ({
-          id: "P-123abc",
-          name: "App",
-          description: "Demo",
-          platform: "web",
-          designSystemArtifactId: "DS_ARTIFACT123456",
-          requirements: {
-            "R-12345678": { latestArtifactId: "DesignArtifact01" },
-          },
-        })),
-      },
-      artifacts: {
-        ...fakeStore().artifacts,
-        listArtifactVersions: vi.fn(async () => [1]),
-      },
-    });
-    const tools = createFormaTools(store);
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-design-system-ignored-"));
+    try {
+      await writeVersionPreview(home, "P-123abc", "DesignArtifact01", 1);
+      const store = fakeStore({
+        home,
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            platform: "web",
+            designSystemArtifactId: "DS_ARTIFACT123456",
+            requirements: {
+              "R-12345678": { latestArtifactId: "DesignArtifact01" },
+            },
+          })),
+        },
+        artifacts: {
+          ...fakeStore().artifacts,
+          listArtifactVersions: vi.fn(async () => [1]),
+        },
+      });
+      const tools = createFormaTools(store);
 
-    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+      const result = await tools.get_baseline_image({ product_id: "P-123abc" });
 
-    expect(result.isError).toBeUndefined();
-    const payload = textPayload(result);
-    expect(payload.path).toContain("DesignArtifact01");
-    expect(payload.path).not.toContain("DS_ARTIFACT123456");
-    expect(payload.path).toMatch(/preview[/\\]2x\.png$/);
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.path).toContain("DesignArtifact01");
+      expect(payload.path).not.toContain("DS_ARTIFACT123456");
+      expect(payload.path).toMatch(/preview[/\\]2x\.png$/);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("get_baseline_image returns only product_id in schema (no page_id parameter)", () => {
@@ -1041,17 +1187,23 @@ describe("MCP forma tools", () => {
   });
 
   it("get_baseline_image returns preview path for product with a requirement artifact pointer", async () => {
-    const store = fakeStore();
-    const tools = createFormaTools(store);
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-requirement-pointer-"));
+    try {
+      await writeVersionPreview(home, "P-123abc", "OLDARTIFACT12345", 2);
+      const store = fakeStore({ home });
+      const tools = createFormaTools(store);
 
-    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+      const result = await tools.get_baseline_image({ product_id: "P-123abc" });
 
-    expect(result.isError).toBeUndefined();
-    const payload = textPayload(result);
-    expect(typeof payload.path).toBe("string");
-    expect(payload.path).toContain("OLDARTIFACT12345");
-    expect(payload.path).toContain("preview");
-    expect(payload.path).toContain("2x.png");
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(typeof payload.path).toBe("string");
+      expect(payload.path).toContain("OLDARTIFACT12345");
+      expect(payload.path).toContain("preview");
+      expect(payload.path).toContain("2x.png");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 
   it("artifact tools appear in formaToolNames", () => {
