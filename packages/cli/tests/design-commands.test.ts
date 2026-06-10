@@ -131,6 +131,16 @@ describe("fm-refine-components template", () => {
       expect(body).toContain('list_product_artifacts(product_id, kind="component-library", include_superseded=true)');
     }
   });
+
+  it("reads persisted productIcon shape fields from manifest as camelCase", async () => {
+    const t = await loadCommand("fm-refine-components");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toContain("shapeId");
+      expect(body).toContain("sourceVersion");
+      expect(body).toContain("shape_id");
+      expect(body).toContain("source_version");
+    }
+  });
 });
 
 describe("fm-change-style template", () => {
@@ -155,6 +165,16 @@ describe("fm-change-style template", () => {
     const t = await loadCommand("fm-change-style");
     for (const body of [t.claude, t.codex, t.gemini]) {
       expect(body).toContain('list_product_artifacts(product_id, kind="component-library", include_superseded=true)');
+    }
+  });
+
+  it("reads persisted productIcon shape fields from manifest as camelCase", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toContain("shapeId");
+      expect(body).toContain("sourceVersion");
+      expect(body).toContain("shape_id");
+      expect(body).toContain("source_version");
     }
   });
 

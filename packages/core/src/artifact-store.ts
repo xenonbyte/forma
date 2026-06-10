@@ -283,6 +283,8 @@ class ArtifactStoreImpl implements ArtifactStore {
       const version = input.version ?? (await this.nextArtifactVersion(productId, artifactId));
       const versionDir = getArtifactVersionDir(this.productsRoot, productId, artifactId, version);
       const normalized = normalizeAndValidateManifest(manifest, artifactId);
+      const artifactDir = getArtifactDir(this.productsRoot, productId, artifactId);
+      const artifactDirExistedBeforeWrite = await dirExists(artifactDir);
 
       if (await dirExists(versionDir)) {
         throw new FormaError("ARTIFACT_ALREADY_EXISTS", `Artifact version already exists: ${artifactId} v${version}`, {
@@ -291,7 +293,7 @@ class ArtifactStoreImpl implements ArtifactStore {
           version,
         });
       }
-      await mkdir(getArtifactDir(this.productsRoot, productId, artifactId), { recursive: true });
+      await mkdir(artifactDir, { recursive: true });
 
       const tmpDir = getArtifactTmpDir(this.productsRoot, productId);
       await mkdir(tmpDir, { recursive: true });
@@ -326,11 +328,15 @@ class ArtifactStoreImpl implements ArtifactStore {
           await afterWriteLocked?.({ productId, artifactId, version, etag });
         } catch (hookErr) {
           await rm(versionDir, { recursive: true, force: true }).catch(() => undefined);
-          // First-create rollback: if this was the only version, drop the now-empty
-          // artifact dir too so a failed first-create leaves no on-disk trace.
-          // Append rollback: prior versions remain, so the artifact dir stays.
-          if ((await this.listArtifactVersions(productId, artifactId).catch(() => [] as number[])).length === 0) {
-            await rm(getArtifactDir(this.productsRoot, productId, artifactId), {
+          // First-create rollback: if this call created the artifact dir and this
+          // was the only version, drop the now-empty dir too so a failed
+          // first-create leaves no on-disk trace. Existing flat legacy artifacts
+          // and append rollbacks keep the artifact dir.
+          if (
+            !artifactDirExistedBeforeWrite &&
+            (await this.listArtifactVersions(productId, artifactId).catch(() => [] as number[])).length === 0
+          ) {
+            await rm(artifactDir, {
               recursive: true,
               force: true,
             }).catch(() => undefined);

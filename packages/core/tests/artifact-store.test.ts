@@ -622,6 +622,47 @@ describe("A3 versioned artifact read/write", () => {
     await expect(store.writeArtifactVersion(input)).rejects.toThrow(/already exists/i);
   });
 
+  it("preserves an existing flat legacy artifact when first version commit hook fails", async () => {
+    const lock = getProductMutationLock(testRoot);
+    const store = createArtifactStore(productsRoot, lock);
+    const aid = "LgcyFlatAbCd1234";
+
+    await store.writeArtifact({
+      productId,
+      manifest: makeManifest({ id: aid, title: "Legacy Flat Artifact" }),
+      files: new Map([["index.html", Buffer.from("<h1>legacy flat</h1>")]]),
+      __forceNanoid: aid,
+    });
+
+    await expect(
+      store.writeArtifactVersion({
+        productId,
+        artifactId: aid,
+        version: 1,
+        manifest: makeManifest({
+          id: aid,
+          kind: "design-page",
+          title: "Failed v1",
+          forma: { requirementId: "R-1234abcd", pageId: "home", variant: "default" },
+        }),
+        files: new Map([["index.html", Buffer.from("<h1>failed v1</h1>")]]),
+        afterWriteLocked: () => {
+          throw new Error("injected commit failure");
+        },
+      }),
+    ).rejects.toThrow("injected commit failure");
+
+    await expect(store.listArtifactVersions(productId, aid)).resolves.toEqual([]);
+    await expect(store.readArtifactVersion(productId, aid, 1)).rejects.toMatchObject({ code: "ARTIFACT_NOT_FOUND" });
+
+    const artifactDir = join(productsRoot, productId, "od-project", "artifacts", aid);
+    await expect(readFile(join(artifactDir, "index.html"), "utf8")).resolves.toBe("<h1>legacy flat</h1>");
+    await expect(readFile(join(artifactDir, "manifest.json"), "utf8")).resolves.toContain("Legacy Flat Artifact");
+    await expect(store.readArtifact(productId, aid)).resolves.toMatchObject({
+      manifest: { id: aid, title: "Legacy Flat Artifact" },
+    });
+  });
+
   it("readArtifactVersion throws ARTIFACT_NOT_FOUND for missing version", async () => {
     const lock = getProductMutationLock(testRoot);
     const store = createArtifactStore(productsRoot, lock);

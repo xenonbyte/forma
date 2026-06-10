@@ -25,7 +25,7 @@ Execution:
    b. **Product ICON** — primary (full-color) and monochrome variants, derived from the product name and brand_style. ICON rules:
       - Do NOT generate a generic functional icon library, wordmark, or full brand VI.
       - Favicon is derived from the ICON; do not create a separate favicon design.
-      - For REFINEMENT: read `manifest.forma.productIcon` (already fetched in step 2) to recover the existing `shape` (`shape_id` + `geometry`). Reuse that geometry exactly and only recolor per new brand tokens. Keep `shape_id` stable. Do NOT redraw the mark from scratch on a re-skin.
+      - For REFINEMENT: read `manifest.forma.productIcon` (already fetched in step 2) to recover the existing persisted `shape` (`shapeId` + `geometry` + `sourceVersion`). Reuse that geometry exactly and only recolor per new brand tokens. Keep `shapeId` stable. When saving with `generate_components`, convert the persisted camelCase fields to the tool's snake_case input fields. Do NOT redraw the mark from scratch on a re-skin.
       - For INITIAL generation: create a new SVG mark; assign a stable `shape_id` (a short slug, e.g. `<productName>-mark`).
       - Render both variants inline in the HTML AND prepare them as separate SVG files for `supporting_files` (see step 7).
    c. **Baseline component set** — every component in `baseline.components` for the product's platform, with all listed states and variants. Cover state-coverage (default/hover/focus/disabled/loading/empty/error as applicable per component). When `source_html` exists, modify that HTML in place, preserving existing components, states, content, and layout unless the user explicitly asked to change them.
