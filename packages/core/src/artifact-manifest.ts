@@ -118,6 +118,10 @@ export function normalizeFormaExtension(forma: ArtifactFormaExtension): Artifact
 
 type FormaValidationResult = { ok: true; value: ArtifactFormaExtension } | { ok: false; error: string };
 
+function isSvgBundlePath(path: string): boolean {
+  return path.toLowerCase().endsWith(".svg");
+}
+
 export function validateFormaExtension(forma: unknown): FormaValidationResult {
   if (typeof forma !== "object" || forma === null || Array.isArray(forma)) {
     return { ok: false, error: "forma must be a non-null object" };
@@ -178,8 +182,14 @@ export function validateFormaExtension(forma: unknown): FormaValidationResult {
     if (validateSupportingPath(icon["primary"]) === null) {
       return { ok: false, error: `forma.productIcon.primary invalid: ${String(icon["primary"])}` };
     }
+    if (!isSvgBundlePath(icon["primary"] as string)) {
+      return { ok: false, error: `forma.productIcon.primary must be an SVG path: ${String(icon["primary"])}` };
+    }
     if (validateSupportingPath(icon["monochrome"]) === null) {
       return { ok: false, error: `forma.productIcon.monochrome invalid: ${String(icon["monochrome"])}` };
+    }
+    if (!isSvgBundlePath(icon["monochrome"] as string)) {
+      return { ok: false, error: `forma.productIcon.monochrome must be an SVG path: ${String(icon["monochrome"])}` };
     }
     if (typeof icon["shape"] !== "object" || icon["shape"] === null || Array.isArray(icon["shape"])) {
       return { ok: false, error: "forma.productIcon.shape must be a non-null object" };
@@ -369,6 +379,7 @@ export function validateArtifactManifest(manifest: unknown): ValidationResult {
       }
     }
   }
+  const supportingFileIndex = new Set((m["supportingFiles"] as string[] | undefined) ?? []);
 
   // requirementId — optional, max 128 bytes
   if (m["requirementId"] !== undefined) {
@@ -407,6 +418,18 @@ export function validateArtifactManifest(manifest: unknown): ValidationResult {
     formaResult = validateFormaExtension(m["forma"]);
     if (!formaResult.ok) {
       return { ok: false, error: formaResult.error };
+    }
+    const productIcon = formaResult.value.productIcon;
+    if (productIcon !== undefined) {
+      if (!supportingFileIndex.has(productIcon.primary)) {
+        return { ok: false, error: `forma.productIcon.primary missing from supportingFiles: ${productIcon.primary}` };
+      }
+      if (!supportingFileIndex.has(productIcon.monochrome)) {
+        return {
+          ok: false,
+          error: `forma.productIcon.monochrome missing from supportingFiles: ${productIcon.monochrome}`,
+        };
+      }
     }
   }
   // design-page：forma + forma.variant 必填（写入期强制；旧 html 读取兼容仍靠 normalize/backfill）

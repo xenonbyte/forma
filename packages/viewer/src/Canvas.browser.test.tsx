@@ -88,6 +88,9 @@ describe("Canvas", () => {
     const renderedTiles = container.querySelectorAll("iframe");
     expect(titleLabels.length).toBeGreaterThanOrEqual(1);
     expect(titleLabels.length).toBe(renderedTiles.length);
+    for (const iframe of renderedTiles) {
+      expect((iframe as HTMLIFrameElement).style.pointerEvents).toBe("none");
+    }
 
     // 初始无选中态,不应出现 selection-frame
     expect(container.querySelector("[data-testid='selection-frame']")).toBeNull();

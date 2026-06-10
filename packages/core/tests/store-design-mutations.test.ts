@@ -527,6 +527,42 @@ describe("SPEC-BEHAVIOR-008 / SPEC-DATA-002: component-library pointer activatio
     return store;
   }
 
+  async function createComponentWriteBarrierStore() {
+    const home = await mkdtemp(join(tmpdir(), "forma-store-mut-ptr-race-"));
+    const lock = getProductMutationLock(home);
+    const realArtifacts = createArtifactStore(getFormaPaths(home).productsDir, lock);
+    const firstTwoWritesReady = createDeferred();
+    let componentWrites = 0;
+    const artifactStore: ArtifactStore = {
+      writeArtifact: realArtifacts.writeArtifact.bind(realArtifacts),
+      readArtifact: realArtifacts.readArtifact.bind(realArtifacts),
+      listArtifacts: realArtifacts.listArtifacts.bind(realArtifacts),
+      deleteArtifact: realArtifacts.deleteArtifact.bind(realArtifacts),
+      readArtifactVersion: realArtifacts.readArtifactVersion.bind(realArtifacts),
+      listArtifactVersions: realArtifacts.listArtifactVersions.bind(realArtifacts),
+      async writeArtifactVersion(input) {
+        if (input.manifest.kind === "component-library") {
+          componentWrites += 1;
+          if (componentWrites === 2) {
+            firstTwoWritesReady.resolve();
+          }
+          if (componentWrites <= 2) {
+            await firstTwoWritesReady.promise;
+          }
+        }
+        return realArtifacts.writeArtifactVersion(input);
+      },
+    };
+    const store = await createFormaStore({
+      home,
+      productMutationLock: lock,
+      artifactStore,
+      bundledStylesDir: resolve("styles"),
+      bundledCraftDir: resolve("craft"),
+    });
+    return store;
+  }
+
   async function listComponentLibraries(
     store: Awaited<ReturnType<typeof createTestStore>>,
     productId: string,
@@ -577,6 +613,30 @@ describe("SPEC-BEHAVIOR-008 / SPEC-DATA-002: component-library pointer activatio
     // Pointer unchanged; current = max(listArtifactVersions)
     const p2 = await store.products.getProduct(product.id);
     expect(p2.designSystemArtifactId).toBe(a.artifact_id);
+    await expect(store.artifacts.listArtifactVersions(product.id, a.artifact_id)).resolves.toEqual([1, 2]);
+  });
+
+  it("concurrent first refines converge on one current component-library artifact", async () => {
+    const store = await createComponentWriteBarrierStore();
+    const product = await store.products.createProduct({ name: "CompRace", description: "d" });
+
+    const [a, b] = await Promise.all([
+      store.generateComponents(product.id, {
+        html: COMPONENT_HTML_V1,
+        title: "Component Library",
+        brandStyle: "ant",
+      }),
+      store.generateComponents(product.id, {
+        html: COMPONENT_HTML_V2,
+        title: "Component Library",
+        brandStyle: "ant",
+      }),
+    ]);
+
+    expect(b.artifact_id).toBe(a.artifact_id);
+    expect([a.version, b.version].sort((left, right) => left - right)).toEqual([1, 2]);
+    expect((await store.products.getProduct(product.id)).designSystemArtifactId).toBe(a.artifact_id);
+    expect(await listComponentLibraries(store, product.id)).toEqual([a.artifact_id]);
     await expect(store.artifacts.listArtifactVersions(product.id, a.artifact_id)).resolves.toEqual([1, 2]);
   });
 

@@ -84,7 +84,7 @@ function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.React
         >
           {data.tile.title}
         </div>
-        <DesignTile tile={data.tile} resolver={data.resolver} />
+        <DesignTile tile={data.tile} resolver={data.resolver} interactive={false} />
         {selected && <SelectionFrame />}
       </div>
     );

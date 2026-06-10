@@ -69,4 +69,9 @@ describe("DesignTile", () => {
     expect(iframe.getAttribute("width")).toBe("800");
     expect(iframe.getAttribute("height")).toBe("600");
   });
+
+  it("can disable iframe pointer events when embedded in the selectable canvas", () => {
+    const container = render(<DesignTile tile={tile} resolver={resolver} interactive={false} />);
+    expect(container.querySelector("iframe")!.style.pointerEvents).toBe("none");
+  });
 });

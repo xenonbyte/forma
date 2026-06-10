@@ -1398,6 +1398,66 @@ describe("artifact routes", () => {
     expect(body.artifacts[0].id).toBe("A-abcdef1234567890");
   });
 
+  it("GET /api/products/:pid/artifacts mirrors designSystemArtifactId semantics for component-library", async () => {
+    const currentId = "CURARTIFACT12345";
+    const oldId = "OLDARTIFACT12345";
+    const base = fakeStore();
+    const manifestFor = (artifactId: string): ArtifactManifest => ({
+      version: 1,
+      id: artifactId,
+      kind: "component-library",
+      renderer: "design-system",
+      title: artifactId === currentId ? "Current Components" : "Old Components",
+      entry: "index.html",
+      status: "complete",
+      exports: ["index.html"],
+      supportingFiles: ["index.html"],
+      createdAt: "2026-05-17T00:00:00.000Z",
+      updatedAt: "2026-05-17T00:00:00.000Z",
+    });
+    const store = fakeStore({
+      artifacts: {
+        ...base.artifacts,
+        listArtifacts: vi.fn(async () => [{ artifactId: currentId }, { artifactId: oldId }]),
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async (_productId: string, artifactId: string, version: number) => ({
+          manifest: manifestFor(artifactId),
+          etag: `"${artifactId}-v${version}"`,
+        })),
+      },
+      products: {
+        ...base.products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          designSystemArtifactId: currentId,
+          requirements: {},
+        })),
+      },
+    });
+    const app = await appWith(store);
+
+    const currentOnly = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts?kind=component-library",
+    });
+    expect(currentOnly.statusCode).toBe(200);
+    expect(currentOnly.json().artifacts).toEqual([
+      expect.objectContaining({ id: currentId, kind: "component-library", superseded: false }),
+    ]);
+
+    const withSuperseded = await app.inject({
+      method: "GET",
+      url: "/api/products/P-123abc/artifacts?kind=component-library&include_superseded=true",
+    });
+    expect(withSuperseded.statusCode).toBe(200);
+    expect(withSuperseded.json().artifacts).toEqual([
+      expect.objectContaining({ id: currentId, superseded: false }),
+      expect.objectContaining({ id: oldId, superseded: true }),
+    ]);
+  });
+
   it("GET /api/products/:pid/artifacts/:aid returns the current version manifest for a versioned-only artifact", async () => {
     const app = await appWith(versionedOnlyStore());
 

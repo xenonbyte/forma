@@ -235,6 +235,41 @@ describe("SPEC-DATA-001: validateFormaExtension productIcon", () => {
     expect(r.ok).toBe(true);
   });
 
+  it("accepts a manifest whose productIcon paths are listed in supportingFiles", () => {
+    const r = validateArtifactManifest({
+      ...validManifest,
+      kind: "component-library",
+      renderer: "design-system",
+      supportingFiles: ["index.html", "assets/icon.svg", "assets/icon-mono.svg"],
+      forma: { productIcon: validProductIcon },
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects a manifest whose productIcon.primary is missing from supportingFiles", () => {
+    const r = validateArtifactManifest({
+      ...validManifest,
+      kind: "component-library",
+      renderer: "design-system",
+      supportingFiles: ["index.html", "assets/icon-mono.svg"],
+      forma: { productIcon: validProductIcon },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/productIcon\.primary.*supportingFiles/);
+  });
+
+  it("rejects a manifest whose productIcon.monochrome is missing from supportingFiles", () => {
+    const r = validateArtifactManifest({
+      ...validManifest,
+      kind: "component-library",
+      renderer: "design-system",
+      supportingFiles: ["index.html", "assets/icon.svg"],
+      forma: { productIcon: validProductIcon },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/productIcon\.monochrome.*supportingFiles/);
+  });
+
   it("tolerates absence of productIcon (no throw, ok:true)", () => {
     expect(validateFormaExtension({}).ok).toBe(true);
     expect(validateFormaExtension({ brandStyle: "ant" }).ok).toBe(true);
@@ -254,6 +289,22 @@ describe("SPEC-DATA-001: validateFormaExtension productIcon", () => {
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toMatch(/productIcon\.monochrome/);
+  });
+
+  it("rejects non-SVG path in productIcon.primary", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, primary: "assets/icon.png" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/productIcon\.primary.*SVG/);
+  });
+
+  it("rejects non-SVG path in productIcon.monochrome", () => {
+    const r = validateFormaExtension({
+      productIcon: { ...validProductIcon, monochrome: "assets/icon-mono.png" },
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/productIcon\.monochrome.*SVG/);
   });
 
   it("rejects empty shapeId", () => {

@@ -211,28 +211,47 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }> {
     // Pointer is the single source of truth for the current component library.
-    // When set, append a new immutable version to the SAME artifact; the pointer
-    // (set inside saveDesignArtifact's commit hook) is unchanged. When unset,
-    // this is the first refine — omit artifactId so a fresh v1 artifact is created
-    // and the commit hook activates the pointer transactionally.
-    const existingArtifactId = (await products.getProduct(productId)).designSystemArtifactId;
-    const result = await saveDesignArtifact(saveDesignDeps, {
-      productId,
-      kind: "component-library",
-      html: input.html,
-      title: input.title,
-      ...(existingArtifactId !== undefined ? { artifactId: existingArtifactId } : {}),
-      forma: {
-        brandStyle: input.brandStyle,
-        systemStyle: input.systemStyle,
-        platform: input.platform,
-        language: input.language,
-        provenance: input.provenance,
-        ...(input.productIcon !== undefined ? { productIcon: input.productIcon } : {}),
-      },
-      ...(input.supportingFiles !== undefined ? { supportingFiles: input.supportingFiles } : {}),
+    // Re-check it inside the artifact write lock so concurrent first refines do
+    // not each create their own v1 artifact. If the pointer changed while this
+    // save rendered its preview, retry against the current pointer.
+    let expectedArtifactId = (await products.getProduct(productId)).designSystemArtifactId;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const result = await saveDesignArtifact(saveDesignDeps, {
+          productId,
+          kind: "component-library",
+          html: input.html,
+          title: input.title,
+          ...(expectedArtifactId !== undefined ? { artifactId: expectedArtifactId } : {}),
+          forma: {
+            brandStyle: input.brandStyle,
+            systemStyle: input.systemStyle,
+            platform: input.platform,
+            language: input.language,
+            provenance: input.provenance,
+            ...(input.productIcon !== undefined ? { productIcon: input.productIcon } : {}),
+          },
+          ...(input.supportingFiles !== undefined ? { supportingFiles: input.supportingFiles } : {}),
+          commitHooks: {
+            beforeWriteLocked: async () => {
+              const currentArtifactId = (await products.getProduct(productId)).designSystemArtifactId;
+              if (currentArtifactId !== expectedArtifactId) {
+                throw new ComponentLibraryPointerChanged(currentArtifactId);
+              }
+            },
+          },
+        });
+        return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
+      } catch (error) {
+        if (!(error instanceof ComponentLibraryPointerChanged)) {
+          throw error;
+        }
+        expectedArtifactId = error.artifactId;
+      }
+    }
+    throw new FormaError("ARTIFACT_WRITE_FAIL", "Component library pointer changed too many times", {
+      product_id: productId,
     });
-    return { artifact_id: result.artifactId, version: result.version, preview_status: result.previewStatus };
   }
 
   return {
@@ -249,6 +268,12 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     sessions,
     styles,
   };
+}
+
+class ComponentLibraryPointerChanged extends Error {
+  constructor(readonly artifactId: string | undefined) {
+    super("Component library pointer changed during artifact write");
+  }
 }
 
 function assertRequirementAcceptsDesignCommit(requirement: RequirementWithDocument): void {

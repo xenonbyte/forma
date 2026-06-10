@@ -582,7 +582,7 @@ export function registerRoutes(
     "/api/products/:pid/artifacts",
     async (request) => {
       const pid = request.params.pid;
-      const { currentPointerIds, pointerVersions } = await loadArtifactPointers(store, pid);
+      const { currentPointerIds, designSystemArtifactId, pointerVersions } = await loadArtifactPointers(store, pid);
       const includeSuperseded = request.query.include_superseded === "true";
       const kindFilter = request.query.kind;
 
@@ -596,16 +596,20 @@ export function registerRoutes(
         } catch {
           continue; // unreadable artifact — skip rather than fail the whole listing
         }
+        const normalizedKind = normalizeKind(manifest.kind);
         // Match legacy and new kind aliases (html↔design-page, design-system↔component-library)
-        if (kindFilter && normalizeKind(manifest.kind) !== normalizeKind(kindFilter)) continue;
+        if (kindFilter && normalizedKind !== normalizeKind(kindFilter)) continue;
         const requirementId = manifest.requirementId ?? manifest.forma?.requirementId;
-        const superseded = requirementId !== undefined && !currentPointerIds.has(artifactId);
+        const superseded =
+          normalizedKind === "component-library"
+            ? artifactId !== designSystemArtifactId
+            : requirementId !== undefined && !currentPointerIds.has(artifactId);
         if (!includeSuperseded && superseded) continue;
         const forma = manifest.forma ? normalizeFormaExtension(manifest.forma) : undefined;
         const versions = [...(await store.artifacts.listArtifactVersions(pid, artifactId))].sort((a, b) => a - b);
         artifacts.push({
           id: artifactId,
-          kind: normalizeKind(manifest.kind),
+          kind: normalizedKind,
           title: manifest.title,
           preview_url: artifactPreviewUrl(pid, artifactId, "2x"),
           updated_at: manifest.updatedAt,
@@ -1104,7 +1108,7 @@ const ICON_ALLOWED_CONTENT_TYPES = new Map<string, string>([
 async function loadArtifactPointers(
   store: FormaRoutesStore,
   productId: string,
-): Promise<{ currentPointerIds: Set<string>; pointerVersions: Map<string, number> }> {
+): Promise<{ currentPointerIds: Set<string>; designSystemArtifactId?: string; pointerVersions: Map<string, number> }> {
   const product = await store.products.getProduct(productId);
   const requirementPointers = (product.requirements ?? {}) as Record<string, { latestArtifactId?: string }>;
   const currentPointerIds = new Set(
@@ -1117,7 +1121,7 @@ async function loadArtifactPointers(
     pointerVersions.set(pointer.artifactId, pointer.version);
     currentPointerIds.add(pointer.artifactId);
   }
-  return { currentPointerIds, pointerVersions };
+  return { currentPointerIds, designSystemArtifactId: product.designSystemArtifactId, pointerVersions };
 }
 
 /**

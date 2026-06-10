@@ -125,10 +125,12 @@ describe("fm-refine-components template", () => {
     }
   });
 
-  it("includes superseded component libraries when finding an existing library", async () => {
+  it("uses only the current component library when finding an existing library", async () => {
     const t = await loadCommand("fm-refine-components");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      expect(body).toContain('list_product_artifacts(product_id, kind="component-library", include_superseded=true)');
+      expect(body).toContain('list_product_artifacts(product_id, kind="component-library")');
+      expect(body).not.toContain("include_superseded=true");
+      expect(body).toMatch(/current non-superseded component library/i);
     }
   });
 
@@ -161,10 +163,13 @@ describe("fm-change-style template", () => {
     expect(t.blob).not.toContain("change_artifact_style");
   });
 
-  it("includes superseded component libraries when loading the current library", async () => {
+  it("loads only the current component library and supports first-time generation", async () => {
     const t = await loadCommand("fm-change-style");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      expect(body).toContain('list_product_artifacts(product_id, kind="component-library", include_superseded=true)');
+      expect(body).toContain('list_product_artifacts(product_id, kind="component-library")');
+      expect(body).not.toContain("include_superseded=true");
+      expect(body).toMatch(/no current component library is returned, continue with initial generation/i);
+      expect(body).toMatch(/not a partial failure/i);
     }
   });
 

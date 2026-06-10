@@ -20,6 +20,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { TextDecoder } from "node:util";
 import { VIEWPORT_PRESETS } from "@vzi-core/parser";
 import type { ArtifactStore } from "./artifact-store.js";
 import type {
@@ -53,6 +54,7 @@ export interface SupportingFileInput {
 /** Max per-file size for caller-supplied supporting files (256 KB). */
 const MAX_SUPPORTING_FILE_BYTES = 256 * 1024;
 const RESERVED_SUPPORTING_FILE_PATHS = new Set(["index.html", "manifest.json"]);
+const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 export interface SaveDesignInput {
   productId: string;
@@ -114,9 +116,61 @@ function generateArtifactId(): string {
 /** Safely decode a Buffer as UTF-8; throw a clear error if invalid. */
 function decodeUtf8(buf: Buffer, path: string): string {
   try {
-    return buf.toString("utf8");
+    return UTF8_DECODER.decode(buf);
   } catch (err) {
     throw new FormaError("ARTIFACT_INVALID_INPUT", `Failed to decode ${path} as UTF-8`, { path, cause: String(err) });
+  }
+}
+
+function isSvgBundlePath(path: string): boolean {
+  return path.toLowerCase().endsWith(".svg");
+}
+
+function assertSvgBundlePath(path: string, label: string): void {
+  if (!isSvgBundlePath(path)) {
+    throw new FormaError("INVALID_INPUT", `${label} must end with .svg: ${path}`, { path });
+  }
+}
+
+function stripSvgProlog(svgText: string): string | null {
+  let remaining = svgText.replace(/^\uFEFF/, "").trimStart();
+
+  for (;;) {
+    if (remaining.startsWith("<?xml")) {
+      const end = remaining.indexOf("?>");
+      if (end === -1) return null;
+      remaining = remaining.slice(end + 2).trimStart();
+      continue;
+    }
+    if (remaining.startsWith("<!--")) {
+      const end = remaining.indexOf("-->");
+      if (end === -1) return null;
+      remaining = remaining.slice(end + 3).trimStart();
+      continue;
+    }
+    if (/^<!doctype\s+svg\b/i.test(remaining)) {
+      const end = remaining.indexOf(">");
+      if (end === -1) return null;
+      remaining = remaining.slice(end + 1).trimStart();
+      continue;
+    }
+    return remaining;
+  }
+}
+
+function assertSvgContent(path: string, buf: Buffer): void {
+  let svgText: string;
+  try {
+    svgText = decodeUtf8(buf, path);
+  } catch (err) {
+    throw new FormaError("INVALID_INPUT", `supportingFiles SVG content must be valid UTF-8: ${path}`, {
+      path,
+      cause: err instanceof Error ? err.message : String(err),
+    });
+  }
+  const body = stripSvgProlog(svgText);
+  if (body === null || !/^<svg(?:[\s>/]|$)/i.test(body)) {
+    throw new FormaError("INVALID_INPUT", `supportingFiles SVG content must have an <svg> root: ${path}`, { path });
   }
 }
 
@@ -165,6 +219,7 @@ function validateAndDecodeSupportingFiles(
         { path: sf.path, contentType: sf.contentType },
       );
     }
+    assertSvgBundlePath(normalizedPath, "supportingFiles path");
     // Decode base64. Buffer.from never throws — it silently drops invalid chars —
     // so reject input that decodes to nothing rather than persisting an empty asset.
     const buf = Buffer.from(sf.contentBase64, "base64");
@@ -181,6 +236,7 @@ function validateAndDecodeSupportingFiles(
         { path: sf.path, size: buf.byteLength },
       );
     }
+    assertSvgContent(normalizedPath, buf);
     result.set(normalizedPath, buf);
   }
   return result;
@@ -222,6 +278,8 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   // Validate productIcon: primary/monochrome must be in callerFiles (⊆ supportingFiles)
   if (productIcon !== undefined) {
     const { primary, monochrome } = productIcon;
+    assertSvgBundlePath(primary, "forma.productIcon.primary");
+    assertSvgBundlePath(monochrome, "forma.productIcon.monochrome");
     if (!callerFiles.has(primary)) {
       throw new FormaError(
         "INVALID_INPUT",

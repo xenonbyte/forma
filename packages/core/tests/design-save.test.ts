@@ -588,6 +588,66 @@ describe("saveDesignArtifact", () => {
     );
   }, 30000);
 
+  it("supportingFile with SVG content_type but non-.svg path → throws INVALID_INPUT", async () => {
+    const dataPng = await makeDataPng();
+    const html = `<!doctype html><html><body><img src="${dataPng}" alt="comp"></body></html>`;
+    const deps = makeDeps();
+    const svgBase64 = Buffer.from("<svg/>").toString("base64");
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Wrong Extension",
+      forma: {
+        productIcon: {
+          primary: "assets/icon.png",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [
+        { path: "assets/icon.png", contentType: "image/svg+xml", contentBase64: svgBase64 },
+        { path: "assets/icon-mono.svg", contentType: "image/svg+xml", contentBase64: svgBase64 },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile with SVG content_type but non-SVG text → throws INVALID_INPUT", async () => {
+    const html = `<!doctype html><html><body><p>comp</p></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Not SVG",
+      forma: {
+        productIcon: {
+          primary: "assets/icon.svg",
+          monochrome: "assets/icon-mono.svg",
+          shape: { shapeId: "s1", geometry: "<path/>", sourceVersion: "1" },
+        },
+      },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from("not svg").toString("base64") },
+        {
+          path: "assets/icon-mono.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
   it("supportingFile exceeding the 256KB size cap → throws INVALID_INPUT", async () => {
     const html = `<!doctype html><html><body><p>comp</p></body></html>`;
     const deps = makeDeps();
