@@ -1,5 +1,6 @@
 import {
   FormaError,
+  MAX_TOKENS_CSS_BYTES,
   getArtifactDir,
   getArtifactIconsDir,
   getArtifactVziPath,
@@ -2944,6 +2945,26 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
 
     expect(res.isError).toBe(true);
     expect(textPayload(res)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+  });
+
+  it("generate_components rejects over-budget tokens_css", async () => {
+    const store = fakeStore({
+      generateComponents: vi.fn(),
+    });
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({
+      product_id: "P-123abc",
+      title: "Lib",
+      brand_style: "apple",
+      tokens_css: "a".repeat(MAX_TOKENS_CSS_BYTES + 1),
+      units: [{ id: "button", title: "Button", role: "component", body_html: "<section>Button</section>" }],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(textPayload(res)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+    const genCall = (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents;
+    expect(genCall).not.toHaveBeenCalled();
   });
 
 });

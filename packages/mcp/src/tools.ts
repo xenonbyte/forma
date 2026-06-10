@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import {
   COMPONENT_BASELINES,
   FormaError,
+  MAX_TOKENS_CSS_BYTES,
   artifactBundleUrl,
   artifactPreviewUrl,
   assetDensityPath,
@@ -283,7 +284,13 @@ const generateComponentsSchema = z
     brand_style: z.string().min(1),
     system_style: z.string().min(1).optional(),
     html: z.string().min(1).optional(),
-    tokens_css: z.string().min(1).optional(),
+    tokens_css: z
+      .string()
+      .min(1)
+      .refine((value) => Buffer.byteLength(value, "utf8") <= MAX_TOKENS_CSS_BYTES, {
+        message: `tokens_css exceeds the ${MAX_TOKENS_CSS_BYTES}-byte budget`,
+      })
+      .optional(),
     units: z.array(componentUnitSchema).min(1).optional(),
     product_icon: productIconSchema.optional(),
     supporting_files: z.array(supportingFileSchema).optional(),

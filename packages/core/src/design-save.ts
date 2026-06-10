@@ -53,6 +53,8 @@ export interface SupportingFileInput {
 
 /** Max per-file size for caller-supplied supporting files (256 KB). */
 const MAX_SUPPORTING_FILE_BYTES = 256 * 1024;
+/** Max shared CSS size for decomposed component libraries. Mirrors the generated HTML budget. */
+export const MAX_TOKENS_CSS_BYTES = 4 * 1024 * 1024;
 const RESERVED_SUPPORTING_FILE_PATHS = new Set(["index.html", "manifest.json"]);
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
@@ -308,6 +310,14 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     }
     if (input.tokensCss === undefined) {
       throw new FormaError("INVALID_INPUT", "units requires tokensCss", {});
+    }
+    const tokensCssBytes = Buffer.byteLength(input.tokensCss, "utf8");
+    if (tokensCssBytes > MAX_TOKENS_CSS_BYTES) {
+      throw new FormaError("ARTIFACT_INVALID_INPUT", `tokensCss exceeds the ${MAX_TOKENS_CSS_BYTES}-byte budget`, {
+        budget: "MAX_TOKENS_CSS_BYTES",
+        limit: MAX_TOKENS_CSS_BYTES,
+        actual: tokensCssBytes,
+      });
     }
     const seen = new Set<string>();
     for (const u of input.units) {

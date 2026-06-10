@@ -24,6 +24,7 @@ vi.mock("@xenonbyte/forma-core", () => {
 
   return {
     FormaError,
+    MAX_TOKENS_CSS_BYTES: 4 * 1024 * 1024,
     PencilService: class {
       generatePageDesign = vi.fn();
     },

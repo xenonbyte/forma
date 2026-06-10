@@ -12,7 +12,7 @@ import { randomBytes } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
 import { createFormaStore } from "../src/store.js";
-import { saveDesignArtifact, type SaveDesignInput } from "../src/design-save.js";
+import { MAX_TOKENS_CSS_BYTES, saveDesignArtifact, type SaveDesignInput } from "../src/design-save.js";
 import { FormaError } from "../src/errors.js";
 import { getFormaPaths } from "../src/paths.js";
 import { validateStaticArtifact } from "../src/artifact-static-validation.js";
@@ -888,6 +888,23 @@ describe("saveDesignArtifact", () => {
         forma: { brandStyle: "apple", platform: "mobile" },
       }),
     ).rejects.toMatchObject({ code: "ARTIFACT_NOT_STATIC" });
+  }, 30000);
+
+  it("rejects over-budget tokensCss before writing unit files", async () => {
+    const deps = makeDeps();
+    await expect(
+      saveDesignArtifact(deps, {
+        productId,
+        kind: "component-library",
+        title: "Lib",
+        tokensCss: "a".repeat(MAX_TOKENS_CSS_BYTES + 1),
+        units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section>Button</section>" }],
+        forma: { brandStyle: "apple", platform: "mobile" },
+      }),
+    ).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: { budget: "MAX_TOKENS_CSS_BYTES", limit: MAX_TOKENS_CSS_BYTES },
+    });
   }, 30000);
 
   it("localizes data assets inside each generated unit document", async () => {
