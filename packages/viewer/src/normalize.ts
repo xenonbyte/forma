@@ -12,6 +12,10 @@ export interface NormalizeArtifactInput {
   version: number;
   width: number;
   height: number;
+  /** 设备平台(可选);透传到 tile 用于平台图标。 */
+  platform?: string;
+  /** bundle 内子文档相对路径;设了则 htmlBundle 解析为该 asset 而非 bundle 入口。 */
+  bundlePath?: string;
 }
 
 export interface BuildViewerModelInput {
@@ -40,7 +44,11 @@ export function buildViewerModel(input: BuildViewerModelInput): ViewerModel {
     version: a.version,
     width: a.width,
     height: a.height,
-    htmlBundle: { artifactId: a.artifactId, version: a.version, kind: "bundle" },
+    ...(a.platform !== undefined ? { platform: a.platform } : {}),
+    htmlBundle:
+      a.bundlePath !== undefined
+        ? { artifactId: a.artifactId, version: a.version, kind: "asset" as const, path: a.bundlePath }
+        : { artifactId: a.artifactId, version: a.version, kind: "bundle" as const },
     previewImages: buildPreviewRefs(a),
   }));
 

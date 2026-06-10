@@ -28,3 +28,4 @@ export type { DesignListProps } from "./DesignList.js";
 export { AnnotationSlot } from "./AnnotationSlot.js";
 export { Viewer } from "./Viewer.js";
 export type { ViewerProps } from "./Viewer.js";
+export { PlatformIcon } from "./tiles/PlatformIcon.js";

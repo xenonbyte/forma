@@ -111,16 +111,16 @@ describe("Canvas", () => {
     expect(container.querySelector("[data-testid='selection-frame']")).not.toBeNull();
   });
 
-  // 回归 (d8205ab): design-page tile 关 iframe 指针事件交画布平移,但 component-library 是长文档,
-  // 必须保留内部滚动,否则品牌资源画布只剩顶部一截(Color/Typography)可见、下面滚不到。
-  it("keeps component-library tiles interactive (scrollable) while design pages are not", async () => {
+  // per-unit 改造后:组件库不再是单张长文档,而是一组设备尺寸的独立 per-unit tile。
+  // 它们与设计页一样关掉 iframe 指针事件,否则点击会落进 iframe(选不中 tile)、双指平移被吞掉。
+  it("renders component-library tiles non-interactive so they stay selectable and pannable", async () => {
     const componentLibrary: NormalizeArtifactInput = {
       artifactId: "lib",
       kind: "component-library",
       pageId: "brand-resources",
       pageName: "brand-resources",
-      variant: "default",
-      title: "组件库",
+      variant: "000-button",
+      title: "Button",
       version: 1,
       width: 390,
       height: 844,
@@ -132,7 +132,25 @@ describe("Canvas", () => {
     });
     const iframe = container.querySelector("iframe") as HTMLIFrameElement | null;
     expect(iframe).not.toBeNull();
-    expect(iframe!.style.pointerEvents).not.toBe("none");
+    expect(iframe!.style.pointerEvents).toBe("none");
+  });
+
+  it("tile header shows a platform icon and selection frame uses the theme color", async () => {
+    const model = buildViewerModel({
+      entry: "page",
+      artifacts: [
+        { artifactId: "a", kind: "design-page", pageId: "p", pageName: "P", variant: "default",
+          title: "登录页", version: 1, width: 390, height: 844, platform: "mobile" },
+      ],
+    });
+    const first = model.tiles[0]!;
+    const container = render(<Canvas model={model} mode="design" resolver={resolver} defaultSelectedTileId={first.id} />);
+    await act(async () => { await sleep(50); });
+    const title = container.querySelector("[data-testid='tile-title']")!;
+    expect(title.querySelector("svg[data-platform='mobile']")).not.toBeNull();
+    expect(title.textContent).toContain("登录页");
+    const frame = container.querySelector("[data-testid='selection-frame']") as HTMLElement;
+    expect(frame.style.borderColor).toBe("rgb(79, 70, 229)"); // #4f46e5
   });
 
   it("annotation mode does not show design tile-title labels", async () => {
