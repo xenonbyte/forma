@@ -323,6 +323,24 @@ describe("AnnotationPage", () => {
     expect(labels["product:P-abc123"]).toBe("My Annotation Product");
   });
 
+  it("reports the product name for the canvas shell when the handoff has no pages", async () => {
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const getProduct: FormaApiClient["getProduct"] = async () => ({
+      id: "P-abc123",
+      name: "Empty Annotation Product",
+      description: "",
+      platform: "web",
+    });
+
+    await render(clientWith({ pages: [], errors: [] }, getProduct), { onBreadcrumbLabel });
+
+    expect(labels["product:P-abc123"]).toBe("Empty Annotation Product");
+    expect(container.textContent).toContain("No handoff pages");
+  });
+
   // B4: on getProduct failure, console.warn + reports canvas.productUnavailable label.
   it("warns and reports productUnavailable label when getProduct rejects", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -153,10 +153,28 @@ export function AnnotationPage({
     setViewport(null);
     setSelectedId(null);
     setHoveredId(null);
+    function reportProductLabel() {
+      if (!client.getProduct) {
+        return;
+      }
+      void client
+        .getProduct(productId)
+        .then((p) => {
+          if (cancelled) return;
+          setPlatform(p.platform);
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, p.name);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          console.warn("failed to load product label for annotation canvas shell", formatApiError(error));
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+        });
+    }
     void (async () => {
       try {
         const handoff = await client.getRequirementHandoff(productId, reqId);
         if (cancelled) return;
+        reportProductLabel();
         if (handoff.pages.length === 0) {
           setState({ status: "empty" });
           return;
@@ -190,18 +208,6 @@ export function AnnotationPage({
         const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl, tRef.current);
         if (cancelled) return;
         setState({ status: "ready", pages, pageErrors, missingResources });
-        if (client.getProduct) {
-          void client
-            .getProduct(productId)
-            .then((p) => {
-              setPlatform(p.platform);
-              onBreadcrumbLabelRef.current?.(`product:${productId}`, p.name);
-            })
-            .catch((error: unknown) => {
-              console.warn("failed to load product label for annotation canvas shell", formatApiError(error));
-              onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
-            });
-        }
       } catch (e) {
         if (!cancelled) {
           console.warn("failed to load annotation canvas", formatApiError(e).message);
@@ -312,7 +318,7 @@ export function AnnotationPage({
   const focusedFrames = (composed?.frames ?? []).filter((f) => focusedKeys.has(frameKey(f)));
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative flex h-full w-full flex-col">
       {allFailed ? (
         <StatePanel state="error" title={t("requirement.listUnavailable")}>
           {state.pageErrors.map((e) => `${e.pageId}: ${e.reason}`).join("; ")}
@@ -320,7 +326,7 @@ export function AnnotationPage({
       ) : (
         <div
           ref={containerRef}
-          className="relative flex-1 overflow-hidden rounded-lg border border-zinc-200"
+          className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200"
           style={{ background: "#ffffff" }}
         >
           {/* z0: fixed dot-grid texture over the light/white canvas. */}
