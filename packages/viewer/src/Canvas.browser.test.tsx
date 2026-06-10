@@ -111,6 +111,30 @@ describe("Canvas", () => {
     expect(container.querySelector("[data-testid='selection-frame']")).not.toBeNull();
   });
 
+  // 回归 (d8205ab): design-page tile 关 iframe 指针事件交画布平移,但 component-library 是长文档,
+  // 必须保留内部滚动,否则品牌资源画布只剩顶部一截(Color/Typography)可见、下面滚不到。
+  it("keeps component-library tiles interactive (scrollable) while design pages are not", async () => {
+    const componentLibrary: NormalizeArtifactInput = {
+      artifactId: "lib",
+      kind: "component-library",
+      pageId: "brand-resources",
+      pageName: "brand-resources",
+      variant: "default",
+      title: "组件库",
+      version: 1,
+      width: 390,
+      height: 844,
+    };
+    const model = buildViewerModel({ entry: "page", artifacts: [componentLibrary] });
+    const container = render(<Canvas model={model} mode="design" resolver={resolver} />);
+    await act(async () => {
+      await sleep(50);
+    });
+    const iframe = container.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).not.toBeNull();
+    expect(iframe!.style.pointerEvents).not.toBe("none");
+  });
+
   it("annotation mode does not show design tile-title labels", async () => {
     const model = buildViewerModel({ entry: "requirement", artifacts });
     const container = render(<Canvas model={model} mode="annotation" resolver={resolver} />);

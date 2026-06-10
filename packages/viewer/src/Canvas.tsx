@@ -84,7 +84,14 @@ function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.React
         >
           {data.tile.title}
         </div>
-        <DesignTile tile={data.tile} resolver={data.resolver} interactive={false} />
+        {/* design-page tile == 一屏设备快照(高度即内容),关掉 iframe 指针事件让 React Flow 接管平移缩放。
+            component-library 是远高于设备屏高的长文档,唯一看全内容的方式是 iframe 内部滚动 —— 保持其可交互,
+            否则只剩顶部一截可见(品牌资源画布只此一个 tile,无需画布平移)。 */}
+        <DesignTile
+          tile={data.tile}
+          resolver={data.resolver}
+          interactive={data.tile.kind === "component-library"}
+        />
         {selected && <SelectionFrame />}
       </div>
     );
