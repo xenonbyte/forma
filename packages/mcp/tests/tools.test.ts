@@ -934,7 +934,7 @@ describe("MCP forma tools", () => {
         requirements: {
           ...fakeStore().requirements,
           getRequirementHistory: vi.fn(async () => [
-            { id: "R-12345678", product_id: "P-123abc", status: "active", pages: [] },
+            { id: "R-12345678", product_id: "P-123abc", status: "archived", pages: [] },
           ]),
         },
         artifacts: {
@@ -994,7 +994,7 @@ describe("MCP forma tools", () => {
         requirements: {
           ...fakeStore().requirements,
           getRequirementHistory: vi.fn(async () => [
-            { id: "R-12345678", product_id: "P-123abc", status: "active", pages: [] },
+            { id: "R-12345678", product_id: "P-123abc", status: "archived", pages: [] },
           ]),
         },
         artifacts: {
@@ -1043,14 +1043,14 @@ describe("MCP forma tools", () => {
             {
               id: "R-missing1",
               product_id: "P-123abc",
-              status: "active",
+              status: "archived",
               updated_at: "2026-06-02T00:00:00.000Z",
               pages: [],
             },
             {
               id: "R-ready1",
               product_id: "P-123abc",
-              status: "active",
+              status: "archived",
               updated_at: "2026-06-01T00:00:00.000Z",
               pages: [],
             },
@@ -1107,14 +1107,14 @@ describe("MCP forma tools", () => {
             {
               id: "R-missing1",
               product_id: "P-123abc",
-              status: "active",
+              status: "archived",
               updated_at: "2026-06-02T00:00:00.000Z",
               pages: [],
             },
             {
               id: "R-ready1",
               product_id: "P-123abc",
-              status: "active",
+              status: "archived",
               updated_at: "2026-06-01T00:00:00.000Z",
               pages: [],
             },
@@ -1245,38 +1245,44 @@ describe("MCP forma tools", () => {
     });
   });
 
-  it("get_baseline_image ignores legacy pointers for archived known requirements", async () => {
-    const store = fakeStore({
-      products: {
-        ...fakeStore().products,
-        getProduct: vi.fn(async () => ({
-          id: "P-123abc",
-          name: "App",
-          description: "Demo",
-          platform: "web",
-          requirements: {
-            "R-archived1": { latestArtifactId: "ARCHIVEDART12345" },
-          },
-        })),
-        listDesignPointers: vi.fn(async () => []),
-      },
-      requirements: {
-        ...fakeStore().requirements,
-        getRequirementHistory: vi.fn(async () => [
-          { id: "R-archived1", product_id: "P-123abc", status: "archived", pages: [] },
-        ]),
-      },
-    });
-    const tools = createFormaTools(store);
+  it("get_baseline_image returns preview path for archived requirement baseline pointer", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-baseline-archived-pointer-"));
+    try {
+      await writeVersionPreview(home, "P-123abc", "ARCHIVEDART12345", 2);
+      const store = fakeStore({
+        home,
+        products: {
+          ...fakeStore().products,
+          getProduct: vi.fn(async () => ({
+            id: "P-123abc",
+            name: "App",
+            description: "Demo",
+            platform: "web",
+            requirements: {
+              "R-archived1": { latestArtifactId: "ARCHIVEDART12345" },
+            },
+          })),
+          listDesignPointers: vi.fn(async () => []),
+        },
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [
+            { id: "R-archived1", product_id: "P-123abc", status: "archived", pages: [] },
+          ]),
+        },
+      });
+      const tools = createFormaTools(store);
 
-    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+      const result = await tools.get_baseline_image({ product_id: "P-123abc" });
 
-    expect(result.isError).toBe(true);
-    expect(textPayload(result)).toMatchObject({
-      error_code: "ARTIFACT_NOT_FOUND",
-      details: { product_id: "P-123abc" },
-    });
-    expect(store.artifacts.listArtifactVersions).not.toHaveBeenCalled();
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.path).toContain("ARCHIVEDART12345");
+      expect(payload.path).toMatch(/v2[/\\]preview[/\\]2x\.png$/);
+      expect(store.artifacts.listArtifactVersions).toHaveBeenCalledWith("P-123abc", "ARCHIVEDART12345");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });
 
@@ -2250,7 +2256,7 @@ describe("C-04 retained tools", () => {
           {
             id: "R-12345678",
             product_id: "P-123abc",
-            status: "active",
+            status: "archived",
             created_at: "2026-05-17T00:00:00.000Z",
             updated_at: "2026-05-18T00:00:00.000Z",
             pages: [
@@ -2312,7 +2318,7 @@ describe("C-04 retained tools", () => {
           {
             id: "R-12345678",
             product_id: "P-123abc",
-            status: "submitted",
+            status: "archived",
             created_at: "2026-05-17T00:00:00.000Z",
             updated_at: "2026-05-18T00:00:00.000Z",
             pages: [
@@ -2349,6 +2355,71 @@ describe("C-04 retained tools", () => {
         navigation: [{ from: "checkout", to: "confirmation", label: "Continue" }],
       },
     });
+  });
+
+  it("get_product_baseline aggregates only archived requirements and excludes in-progress ones", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-archived1",
+            product_id: "P-123abc",
+            status: "archived",
+            created_at: "2026-05-10T00:00:00.000Z",
+            updated_at: "2026-05-11T00:00:00.000Z",
+            pages: [{ page_id: "home-page", baseline_page: "home", name: "Home" }],
+            navigation: [{ from: "home-page", to: "home-page", label: "Self" }],
+          },
+          {
+            id: "R-active1",
+            product_id: "P-123abc",
+            status: "active",
+            created_at: "2026-05-12T00:00:00.000Z",
+            updated_at: "2026-05-13T00:00:00.000Z",
+            pages: [{ page_id: "draft-page", baseline_page: "draft", name: "Draft" }],
+            navigation: [{ from: "draft-page", to: "draft-page", label: "Draft" }],
+          },
+        ]),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const { baseline } = textPayload(result);
+    expect(baseline.pages).toEqual([
+      expect.objectContaining({ id: "home", name: "Home", source_requirements: ["R-archived1"] }),
+    ]);
+    expect(baseline.navigation).toEqual([{ from: "home", to: "home", label: "Self" }]);
+  });
+
+  it("get_product_baseline returns an empty baseline when no requirement is archived yet", async () => {
+    const store = fakeStore({
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          {
+            id: "R-active1",
+            product_id: "P-123abc",
+            status: "active",
+            created_at: "2026-05-12T00:00:00.000Z",
+            updated_at: "2026-05-13T00:00:00.000Z",
+            pages: [{ page_id: "draft-page", baseline_page: "draft", name: "Draft" }],
+            navigation: [{ from: "draft-page", to: "draft-page", label: "Draft" }],
+          },
+        ]),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_product_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const { baseline } = textPayload(result);
+    expect(baseline.pages).toEqual([]);
+    expect(baseline.navigation).toEqual([]);
   });
 
   // ─── get_style (D2: name-based) ───────────────────────────────────────────
@@ -2449,7 +2520,7 @@ describe("C-04 retained tools", () => {
             {
               id: "R-12345678",
               product_id: "P-123abc",
-              status: "submitted",
+              status: "archived",
               created_at: "2026-05-17T00:00:00.000Z",
               updated_at: "2026-05-18T00:00:00.000Z",
               pages: [{ page_id: "home-page", baseline_page: "home", name: "Home", features: "Dashboard" }],
@@ -2488,7 +2559,7 @@ describe("C-04 retained tools", () => {
             {
               id: "R-12345678",
               product_id: "P-123abc",
-              status: "submitted",
+              status: "archived",
               created_at: "2026-05-17T00:00:00.000Z",
               updated_at: "2026-05-18T00:00:00.000Z",
               pages: [{ page_id: "home-page", baseline_page: "home", name: "Home" }],
@@ -2521,7 +2592,7 @@ describe("C-04 retained tools", () => {
             {
               id: "R-12345678",
               product_id: "P-123abc",
-              status: "submitted",
+              status: "archived",
               created_at: "2026-05-17T00:00:00.000Z",
               updated_at: "2026-05-18T00:00:00.000Z",
               pages: [

@@ -906,7 +906,7 @@ async function getOwnedRequirement(store: FormaStore, productId: string, require
 async function getProductBaseline(store: FormaStore, productId: string) {
   await store.products.getProduct(productId);
   const requirements = (await store.requirements.getRequirementHistory(productId))
-    .filter((requirement) => requirement.status !== "archived")
+    .filter((requirement) => requirement.status === "archived")
     .sort(compareRequirementsOldestFirst);
   const pagesById = new Map<string, BaselinePageRecord>();
   const navigation: unknown[] = [];

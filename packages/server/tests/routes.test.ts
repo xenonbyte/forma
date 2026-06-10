@@ -1906,6 +1906,7 @@ describe("baseline compatibility routes", () => {
           {
             id: "R-12345678",
             product_id: "P-123abc",
+            status: "archived",
             created_at: "2026-05-17T00:00:00.000Z",
             updated_at: "2026-05-18T00:00:00.000Z",
             pages: [
@@ -1954,6 +1955,7 @@ describe("baseline compatibility routes", () => {
           {
             id: "R-12345678",
             product_id: "P-123abc",
+            status: "archived",
             created_at: "2026-05-17T00:00:00.000Z",
             updated_at: "2026-05-18T00:00:00.000Z",
             pages: [
@@ -2007,6 +2009,7 @@ describe("baseline compatibility routes", () => {
           {
             id: "R-12345678",
             product_id: "P-123abc",
+            status: "archived",
             created_at: "2026-05-17T00:00:00.000Z",
             updated_at: "2026-05-18T00:00:00.000Z",
             pages: [

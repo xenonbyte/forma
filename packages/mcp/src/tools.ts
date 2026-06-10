@@ -1148,7 +1148,7 @@ async function getLatestNonArchivedRequirement(store: FormaStore, productId: str
 async function getProductBaseline(store: FormaStore, productId: string) {
   await store.products.getProduct(productId);
   const requirements = (await store.requirements.getRequirementHistory(productId))
-    .filter((requirement) => requirement.status !== "archived")
+    .filter((requirement) => requirement.status === "archived")
     .sort(compareRequirementsOldestFirst);
   const pagesById = new Map<string, BaselinePageRecord>();
   const navigation: unknown[] = [];
@@ -1278,20 +1278,20 @@ async function getBaselineImage(store: FormaStore, productId: string) {
   const requirementPointers = product.requirements ?? {};
   const requirementHistory = await store.requirements.getRequirementHistory(productId);
   const knownRequirementIds = new Set(requirementHistory.map((requirement) => requirement.id));
-  const activeRequirementIds = new Set(
-    requirementHistory.filter((requirement) => requirement.status !== "archived").map((requirement) => requirement.id),
+  const baselineRequirementIds = new Set(
+    requirementHistory.filter((requirement) => requirement.status === "archived").map((requirement) => requirement.id),
   );
   const requirements = requirementHistory
-    .filter((requirement) => activeRequirementIds.has(requirement.id))
+    .filter((requirement) => baselineRequirementIds.has(requirement.id))
     .sort(compareRequirementsNewestFirst);
   const legacyRequirementIds = Object.keys(requirementPointers).filter(
-    (requirementId) => !knownRequirementIds.has(requirementId) || activeRequirementIds.has(requirementId),
+    (requirementId) => !knownRequirementIds.has(requirementId) || baselineRequirementIds.has(requirementId),
   );
   const requirementIds = uniqueStrings([...requirements.map((requirement) => requirement.id), ...legacyRequirementIds]);
   const designPointers = (await store.products.listDesignPointers(productId)).filter(
     (pointer) =>
       pointer.designStatus === "active" &&
-      (!knownRequirementIds.has(pointer.requirementId) || activeRequirementIds.has(pointer.requirementId)),
+      (!knownRequirementIds.has(pointer.requirementId) || baselineRequirementIds.has(pointer.requirementId)),
   );
   const candidates: BaselineImageCandidate[] = [];
   const seenDesignPointers = new Set<string>();
