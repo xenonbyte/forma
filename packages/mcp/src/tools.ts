@@ -1225,6 +1225,10 @@ function compareRequirementsOldestFirst(left: RequirementHistoryRecord, right: R
   return timestampForRequirement(left) - timestampForRequirement(right) || left.id.localeCompare(right.id);
 }
 
+function compareRequirementsNewestFirst(left: RequirementHistoryRecord, right: RequirementHistoryRecord): number {
+  return timestampForRequirement(right) - timestampForRequirement(left) || right.id.localeCompare(left.id);
+}
+
 function timestampForRequirement(requirement: RequirementHistoryRecord): number {
   const updatedAt = requirement.updated_at ? Date.parse(requirement.updated_at) : Number.NaN;
   if (Number.isFinite(updatedAt)) {
@@ -1242,19 +1246,14 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+interface BaselineImageCandidate {
+  artifactId: string;
+  version?: number;
+}
+
 async function getBaselinePage(store: FormaStore, productId: string, pageId: string) {
-  const product = await store.products.getProduct(productId);
-  if (!product.designSystemArtifactId) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "No baseline artifact for this product", { product_id: productId });
-  }
-  const { manifest } = await store.artifacts.readArtifact(productId, product.designSystemArtifactId);
-  const rawPages = (manifest.metadata as Record<string, unknown> | undefined)?.pages;
-  const pages: unknown[] = Array.isArray(rawPages) ? rawPages : [];
-  const page = pages.find((item) => {
-    if (typeof item !== "object" || item === null) return false;
-    const p = item as Record<string, unknown>;
-    return p.id === pageId || p.page_id === pageId;
-  });
+  const { baseline } = await getProductBaseline(store, productId);
+  const page = baseline.pages.find((item) => item.id === pageId);
   if (!page) {
     throw new FormaError("ARTIFACT_NOT_FOUND", "Baseline page not found", { product_id: productId, page_id: pageId });
   }
@@ -1263,12 +1262,64 @@ async function getBaselinePage(store: FormaStore, productId: string, pageId: str
 
 async function getBaselineImage(store: FormaStore, productId: string) {
   const product = await store.products.getProduct(productId);
-  if (!product.designSystemArtifactId) {
-    throw new FormaError("ARTIFACT_NOT_FOUND", "No baseline artifact for this product", { product_id: productId });
+  const requirementPointers = product.requirements ?? {};
+  const requirementHistory = await store.requirements.getRequirementHistory(productId);
+  const knownRequirementIds = new Set(requirementHistory.map((requirement) => requirement.id));
+  const activeRequirementIds = new Set(
+    requirementHistory.filter((requirement) => requirement.status !== "archived").map((requirement) => requirement.id),
+  );
+  const requirements = requirementHistory
+    .filter((requirement) => activeRequirementIds.has(requirement.id))
+    .sort(compareRequirementsNewestFirst);
+  const legacyRequirementIds = Object.keys(requirementPointers).filter(
+    (requirementId) => !knownRequirementIds.has(requirementId) || activeRequirementIds.has(requirementId),
+  );
+  const requirementIds = uniqueStrings([...requirements.map((requirement) => requirement.id), ...legacyRequirementIds]);
+  const designPointers = (await store.products.listDesignPointers(productId)).filter(
+    (pointer) =>
+      pointer.designStatus === "active" &&
+      (!knownRequirementIds.has(pointer.requirementId) || activeRequirementIds.has(pointer.requirementId)),
+  );
+  const candidates: BaselineImageCandidate[] = [];
+  const seenDesignPointers = new Set<string>();
+
+  for (const requirementId of requirementIds) {
+    for (const pointer of designPointers.filter((item) => item.requirementId === requirementId)) {
+      candidates.push({ artifactId: pointer.artifactId, version: pointer.version });
+      seenDesignPointers.add(`${pointer.requirementId}:${pointer.pageId}:${pointer.variant}`);
+    }
+    const artifactId = requirementPointers[requirementId]?.latestArtifactId;
+    if (!artifactId) {
+      continue;
+    }
+    candidates.push({ artifactId });
   }
+
+  for (const pointer of designPointers) {
+    const key = `${pointer.requirementId}:${pointer.pageId}:${pointer.variant}`;
+    if (!seenDesignPointers.has(key)) {
+      candidates.push({ artifactId: pointer.artifactId, version: pointer.version });
+    }
+  }
+
   const productsDir = getFormaPaths(store.home).productsDir;
-  const artifactDir = getArtifactDir(productsDir, productId, product.designSystemArtifactId);
-  return { path: join(artifactDir, "preview", "2x.png") };
+  for (const candidate of candidates) {
+    if (candidate.version !== undefined) {
+      return {
+        path: getArtifactVersionPreviewPath(productsDir, productId, candidate.artifactId, candidate.version, "2x"),
+      };
+    }
+    const versions = await store.artifacts.listArtifactVersions(productId, candidate.artifactId);
+    if (versions.length > 0) {
+      return {
+        path: getArtifactVersionPreviewPath(productsDir, productId, candidate.artifactId, Math.max(...versions), "2x"),
+      };
+    }
+    const artifactDir = getArtifactDir(productsDir, productId, candidate.artifactId);
+    return { path: join(artifactDir, "preview", "2x.png") };
+  }
+
+  throw new FormaError("ARTIFACT_NOT_FOUND", "No baseline image for this product", { product_id: productId });
 }
 
 function titleFromToolName(name: string): string {

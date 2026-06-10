@@ -861,7 +861,7 @@ describe("MCP forma tools", () => {
     });
   });
 
-  it("get_baseline_image returns path pointing to artifact preview PNG (artifact store path)", async () => {
+  it("get_baseline_image returns path pointing to the latest requirement design preview PNG", async () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
 
@@ -869,8 +869,86 @@ describe("MCP forma tools", () => {
 
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
-    // Path should include the artifact id and point to preview/2x.png
-    expect(payload.path).toMatch(/DS_ARTIFACT123456/);
+    // Path should include the requirement's latest artifact id and point to versioned preview/2x.png.
+    expect(payload.path).toMatch(/OLDARTIFACT12345/);
+    expect(payload.path).toMatch(/v2[/\\]preview[/\\]2x\.png$/);
+  });
+
+  it("get_baseline_image uses active design pointer version before legacy requirement pointer", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          requirements: {
+            "R-12345678": { latestArtifactId: "OLDARTIFACT12345" },
+          },
+        })),
+        listDesignPointers: vi.fn(async () => [
+          {
+            requirementId: "R-12345678",
+            pageId: "home",
+            variant: "default",
+            artifactId: "PTRARTIFACT12345",
+            version: 3,
+            designStatus: "active" as const,
+          },
+        ]),
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          { id: "R-12345678", product_id: "P-123abc", status: "active", pages: [] },
+        ]),
+      },
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1, 2]),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.path).toContain("PTRARTIFACT12345");
+    expect(payload.path).not.toContain("OLDARTIFACT12345");
+    expect(payload.path).toMatch(/v3[/\\]preview[/\\]2x\.png$/);
+    expect(store.artifacts.listArtifactVersions).not.toHaveBeenCalled();
+  });
+
+  it("get_baseline_image does not use designSystemArtifactId as the functional baseline source", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          designSystemArtifactId: "DS_ARTIFACT123456",
+          requirements: {
+            "R-12345678": { latestArtifactId: "DesignArtifact01" },
+          },
+        })),
+      },
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(payload.path).toContain("DesignArtifact01");
+    expect(payload.path).not.toContain("DS_ARTIFACT123456");
     expect(payload.path).toMatch(/preview[/\\]2x\.png$/);
   });
 
@@ -880,7 +958,7 @@ describe("MCP forma tools", () => {
     expectSchemaFailure("get_baseline_image", { product_id: "P-123abc", page_id: "checkout" });
   });
 
-  it("get_baseline_image returns preview path for product with designSystemArtifactId", async () => {
+  it("get_baseline_image returns preview path for product with a requirement artifact pointer", async () => {
     const store = fakeStore();
     const tools = createFormaTools(store);
 
@@ -889,7 +967,7 @@ describe("MCP forma tools", () => {
     expect(result.isError).toBeUndefined();
     const payload = textPayload(result);
     expect(typeof payload.path).toBe("string");
-    expect(payload.path).toContain("DS_ARTIFACT123456");
+    expect(payload.path).toContain("OLDARTIFACT12345");
     expect(payload.path).toContain("preview");
     expect(payload.path).toContain("2x.png");
   });
@@ -908,7 +986,7 @@ describe("MCP forma tools", () => {
     expect(formaToolNames).not.toContain("change_style");
   });
 
-  it("get_baseline_image returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
+  it("get_baseline_image returns ARTIFACT_NOT_FOUND when product has no requirement artifact pointer", async () => {
     const store = fakeStore({
       products: {
         ...fakeStore().products,
@@ -931,6 +1009,40 @@ describe("MCP forma tools", () => {
       error_code: "ARTIFACT_NOT_FOUND",
       details: { product_id: "P-123abc" },
     });
+  });
+
+  it("get_baseline_image ignores legacy pointers for archived known requirements", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({
+          id: "P-123abc",
+          name: "App",
+          description: "Demo",
+          platform: "web",
+          requirements: {
+            "R-archived1": { latestArtifactId: "ARCHIVEDART12345" },
+          },
+        })),
+        listDesignPointers: vi.fn(async () => []),
+      },
+      requirements: {
+        ...fakeStore().requirements,
+        getRequirementHistory: vi.fn(async () => [
+          { id: "R-archived1", product_id: "P-123abc", status: "archived", pages: [] },
+        ]),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_baseline_image({ product_id: "P-123abc" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "ARTIFACT_NOT_FOUND",
+      details: { product_id: "P-123abc" },
+    });
+    expect(store.artifacts.listArtifactVersions).not.toHaveBeenCalled();
   });
 });
 
@@ -2095,41 +2207,36 @@ describe("C-04 retained tools", () => {
   // ─── get_baseline_page ────────────────────────────────────────────────────
 
   describe("get_baseline_page", () => {
-    it("returns page from baseline artifact metadata", async () => {
+    it("returns page from requirement-derived functional baseline", async () => {
       const store = fakeStore({
-        products: {
-          ...fakeStore().products,
-          getProduct: vi.fn(async () => ({
-            id: "P-123abc",
-            name: "App",
-            description: "Demo",
-            designSystemArtifactId: "DS_ARTIFACT123456",
-          })),
-        },
-        artifacts: {
-          ...fakeStore().artifacts,
-          readArtifact: vi.fn(async () => ({
-            manifest: {
-              ...fakeManifest(),
-              kind: "design-system" as const,
-              metadata: { pages: [{ id: "home", name: "Home", layout: {} }] },
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [
+            {
+              id: "R-12345678",
+              product_id: "P-123abc",
+              status: "submitted",
+              created_at: "2026-05-17T00:00:00.000Z",
+              updated_at: "2026-05-18T00:00:00.000Z",
+              pages: [{ page_id: "home-page", baseline_page: "home", name: "Home", features: "Dashboard" }],
+              navigation: [],
             },
-            etag: "sha256:abc",
-          })),
+          ]),
         },
       });
       const tools = createFormaTools(store);
       const result = await tools.get_baseline_page({ product_id: "P-123abc", page_id: "home" });
       const payload = textPayload(result);
       expect(result.isError).toBeFalsy();
-      expect(payload).toMatchObject({ id: "home" });
+      expect(payload).toMatchObject({ id: "home", name: "Home", features: "Dashboard" });
+      expect(store.artifacts.readArtifact).not.toHaveBeenCalled();
     });
 
-    it("returns ARTIFACT_NOT_FOUND when product has no designSystemArtifactId", async () => {
+    it("returns ARTIFACT_NOT_FOUND when baseline has no matching page", async () => {
       const store = fakeStore({
-        products: {
-          ...fakeStore().products,
-          getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => []),
         },
       });
       const tools = createFormaTools(store);
@@ -2141,25 +2248,19 @@ describe("C-04 retained tools", () => {
 
     it("returns ARTIFACT_NOT_FOUND when page not found in metadata", async () => {
       const store = fakeStore({
-        products: {
-          ...fakeStore().products,
-          getProduct: vi.fn(async () => ({
-            id: "P-123abc",
-            name: "App",
-            description: "Demo",
-            designSystemArtifactId: "DS_ARTIFACT123456",
-          })),
-        },
-        artifacts: {
-          ...fakeStore().artifacts,
-          readArtifact: vi.fn(async () => ({
-            manifest: {
-              ...fakeManifest(),
-              kind: "design-system" as const,
-              metadata: { pages: [] },
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [
+            {
+              id: "R-12345678",
+              product_id: "P-123abc",
+              status: "submitted",
+              created_at: "2026-05-17T00:00:00.000Z",
+              updated_at: "2026-05-18T00:00:00.000Z",
+              pages: [{ page_id: "home-page", baseline_page: "home", name: "Home" }],
+              navigation: [],
             },
-            etag: "sha256:abc",
-          })),
+          ]),
         },
       });
       const tools = createFormaTools(store);
@@ -2169,8 +2270,7 @@ describe("C-04 retained tools", () => {
       expect(payload.error_code).toBe("ARTIFACT_NOT_FOUND");
     });
 
-    it("SUCCESS PATH (T006 B7): returns page after designSystemArtifactId pointer is set", async () => {
-      // After Task 5 sets the pointer, get_baseline_page must succeed (not always throw ARTIFACT_NOT_FOUND)
+    it("SUCCESS PATH (T006 B7): returns page without reading designSystemArtifactId pointer", async () => {
       const store = fakeStore({
         products: {
           ...fakeStore().products,
@@ -2181,15 +2281,22 @@ describe("C-04 retained tools", () => {
             designSystemArtifactId: "DS_ARTIFACT123456",
           })),
         },
-        artifacts: {
-          ...fakeStore().artifacts,
-          readArtifact: vi.fn(async () => ({
-            manifest: {
-              ...fakeManifest(),
-              metadata: { pages: [{ id: "home", name: "Home" }, { id: "settings", name: "Settings" }] },
+        requirements: {
+          ...fakeStore().requirements,
+          getRequirementHistory: vi.fn(async () => [
+            {
+              id: "R-12345678",
+              product_id: "P-123abc",
+              status: "submitted",
+              created_at: "2026-05-17T00:00:00.000Z",
+              updated_at: "2026-05-18T00:00:00.000Z",
+              pages: [
+                { page_id: "home-page", baseline_page: "home", name: "Home" },
+                { page_id: "settings-page", baseline_page: "settings", name: "Settings" },
+              ],
+              navigation: [],
             },
-            etag: "sha256:abc",
-          })),
+          ]),
         },
       });
       const tools = createFormaTools(store);
@@ -2197,6 +2304,7 @@ describe("C-04 retained tools", () => {
       expect(result.isError).toBeFalsy();
       const payload = textPayload(result);
       expect(payload).toMatchObject({ id: "settings", name: "Settings" });
+      expect(store.artifacts.readArtifact).not.toHaveBeenCalled();
     });
   });
 });

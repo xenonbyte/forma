@@ -52,6 +52,7 @@ export interface SupportingFileInput {
 
 /** Max per-file size for caller-supplied supporting files (256 KB). */
 const MAX_SUPPORTING_FILE_BYTES = 256 * 1024;
+const RESERVED_SUPPORTING_FILE_PATHS = new Set(["index.html", "manifest.json"]);
 
 export interface SaveDesignInput {
   productId: string;
@@ -119,6 +120,18 @@ function decodeUtf8(buf: Buffer, path: string): string {
   }
 }
 
+function normalizeBundlePath(path: string, label: string): string {
+  if (validateSupportingPath(path) === null) {
+    throw new FormaError("INVALID_INPUT", `${label} invalid: ${path}`, { path });
+  }
+  const normalizedPath = path.replace(/\\/g, "/");
+  const segments = normalizedPath.split("/");
+  if (segments.some((segment) => segment === "" || segment === ".")) {
+    throw new FormaError("INVALID_INPUT", `${label} invalid: ${path}`, { path });
+  }
+  return segments.join("/");
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -133,9 +146,16 @@ function validateAndDecodeSupportingFiles(
   if (!supportingFiles || supportingFiles.length === 0) return result;
 
   for (const sf of supportingFiles) {
-    // Path must be valid (no absolute, no traversal)
-    if (validateSupportingPath(sf.path) === null) {
-      throw new FormaError("INVALID_INPUT", `supportingFiles path invalid: ${sf.path}`, { path: sf.path });
+    const normalizedPath = normalizeBundlePath(sf.path, "supportingFiles path");
+    if (
+      RESERVED_SUPPORTING_FILE_PATHS.has(normalizedPath) ||
+      normalizedPath === "preview" ||
+      normalizedPath.startsWith("preview/")
+    ) {
+      throw new FormaError("INVALID_INPUT", `supportingFiles path is reserved: ${sf.path}`, { path: sf.path });
+    }
+    if (result.has(normalizedPath)) {
+      throw new FormaError("INVALID_INPUT", `supportingFiles path is duplicated: ${sf.path}`, { path: sf.path });
     }
     // Only SVG content type accepted for icon assets
     if (sf.contentType !== "image/svg+xml") {
@@ -161,9 +181,27 @@ function validateAndDecodeSupportingFiles(
         { path: sf.path, size: buf.byteLength },
       );
     }
-    result.set(sf.path, buf);
+    result.set(normalizedPath, buf);
   }
   return result;
+}
+
+function assertNoSupportingFileCollision(callerFiles: Map<string, Buffer>, generatedFiles: Map<string, Buffer>): void {
+  for (const path of callerFiles.keys()) {
+    if (generatedFiles.has(path)) {
+      throw new FormaError("INVALID_INPUT", `supportingFiles path conflicts with generated artifact file: ${path}`, {
+        path,
+      });
+    }
+  }
+}
+
+async function writeBundleFiles(rootDir: string, files: Map<string, Buffer>): Promise<void> {
+  for (const [relativePath, buf] of files) {
+    const destPath = join(rootDir, relativePath);
+    await mkdir(dirname(destPath), { recursive: true });
+    await writeFile(destPath, buf);
+  }
 }
 
 export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesignInput): Promise<SaveDesignResult> {
@@ -172,10 +210,18 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
 
   // ── Step 0: Validate and decode caller-supplied supporting files (SPEC-DATA-001) ──
   const callerFiles = validateAndDecodeSupportingFiles(input.supportingFiles);
+  const productIcon =
+    forma.productIcon === undefined
+      ? undefined
+      : {
+          ...forma.productIcon,
+          primary: normalizeBundlePath(forma.productIcon.primary, "forma.productIcon.primary"),
+          monochrome: normalizeBundlePath(forma.productIcon.monochrome, "forma.productIcon.monochrome"),
+        };
 
   // Validate productIcon: primary/monochrome must be in callerFiles (⊆ supportingFiles)
-  if (forma.productIcon !== undefined) {
-    const { primary, monochrome } = forma.productIcon;
+  if (productIcon !== undefined) {
+    const { primary, monochrome } = productIcon;
     if (!callerFiles.has(primary)) {
       throw new FormaError(
         "INVALID_INPUT",
@@ -194,6 +240,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
 
   // ── Step 1: localizeArtifactAssets (pure, no lock) ───────────────────────────
   const { html: localizedHtml, files, assets } = await localizeArtifactAssets({ html });
+  assertNoSupportingFileCollision(callerFiles, files);
 
   // ── Step 2: validateStaticArtifact (pure, no lock) ───────────────────────────
   const svgFiles = new Map<string, string>();
@@ -204,6 +251,9 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     } else if (path.endsWith(".css")) {
       cssFiles.set(path, decodeUtf8(buf, path));
     }
+  }
+  for (const [path, buf] of callerFiles) {
+    svgFiles.set(path, decodeUtf8(buf, path));
   }
 
   const validationResult = validateStaticArtifact({
@@ -243,11 +293,8 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   try {
     await mkdir(tempDir, { recursive: true });
     await writeFile(join(tempDir, "index.html"), Buffer.from(localizedHtml, "utf8"));
-    for (const [relativePath, buf] of files) {
-      const destPath = join(tempDir, relativePath);
-      await mkdir(dirname(destPath), { recursive: true });
-      await writeFile(destPath, buf);
-    }
+    await writeBundleFiles(tempDir, files);
+    await writeBundleFiles(tempDir, callerFiles);
 
     const previewOutDir = join(tempDir, "preview");
     try {
@@ -303,6 +350,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   for (const [path, buf] of files) {
     finalFiles.set(path, buf);
   }
+  assertNoSupportingFileCollision(callerFiles, finalFiles);
   // Merge caller-supplied supporting files (e.g. product icon SVGs) — SPEC-DATA-001
   for (const [path, buf] of callerFiles) {
     finalFiles.set(path, buf);
@@ -318,8 +366,8 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
 
   // Build icon assets from productIcon SVG paths (role: "icon") — SPEC-DATA-001
   const iconAssets: ArtifactAssetEntry[] = [];
-  if (forma.productIcon !== undefined) {
-    const { primary, monochrome } = forma.productIcon;
+  if (productIcon !== undefined) {
+    const { primary, monochrome } = productIcon;
     iconAssets.push({ path: primary, density: [1], role: "icon" });
     if (monochrome !== primary) {
       iconAssets.push({ path: monochrome, density: [1], role: "icon" });
@@ -328,6 +376,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
 
   const formaExtension: ArtifactFormaExtension = {
     ...forma,
+    ...(productIcon !== undefined ? { productIcon } : {}),
     ...(platform !== undefined ? { platform } : {}),
     ...(kind === "design-page" ? { variant: forma.variant ?? "default" } : {}),
     assets: [...assets, ...iconAssets],
@@ -379,6 +428,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
         return;
       }
       const variant = forma.variant ?? "default";
+      const previousPointer = await products.getDesignPointer(productId, forma.requirementId, forma.pageId, variant);
       await products.setDesignPointerLocked(productId, {
         requirementId: forma.requirementId,
         pageId: forma.pageId,
@@ -387,13 +437,22 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
         version: writtenVersion,
         designStatus: "active",
       });
-      await input.commitHooks?.afterPointerLocked?.({
-        artifactId,
-        version: writtenVersion,
-        requirementId: forma.requirementId,
-        pageId: forma.pageId,
-        variant,
-      });
+      try {
+        await input.commitHooks?.afterPointerLocked?.({
+          artifactId,
+          version: writtenVersion,
+          requirementId: forma.requirementId,
+          pageId: forma.pageId,
+          variant,
+        });
+      } catch (error) {
+        if (previousPointer) {
+          await products.setDesignPointerLocked(productId, previousPointer);
+        } else {
+          await products.removeDesignPointerLocked(productId, forma.requirementId, forma.pageId, variant);
+        }
+        throw error;
+      }
     },
   });
 

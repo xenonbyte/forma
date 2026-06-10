@@ -283,6 +283,16 @@ export class ProductService {
     await writeYamlAtomic(this.productFile(updated.id), updated);
   }
 
+  async removeDesignPointerLocked(productId: string, requirementId: string, pageId: string, variant: string): Promise<void> {
+    const product = await this.getProduct(productId);
+    const rest = (product.designPointers ?? []).filter(
+      (p) => !(p.requirementId === requirementId && p.pageId === pageId && p.variant === variant),
+    );
+    const { designPointers: _removed, ...productWithoutPointers } = product;
+    const updated = productSchema.parse(rest.length > 0 ? { ...product, designPointers: rest } : productWithoutPointers);
+    await writeYamlAtomic(this.productFile(updated.id), updated);
+  }
+
   async getDesignPointer(
     productId: string,
     requirementId: string,

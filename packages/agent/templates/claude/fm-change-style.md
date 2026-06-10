@@ -22,7 +22,7 @@ Execution:
    Do NOT continue to trigger fm-design or claim the style change is fully applied.
 
 4. Load the existing component library for re-skin (inlined fm-refine-components flow):
-   - Call `list_product_artifacts(product_id, kind="component-library")` to find the current library.
+   - Call `list_product_artifacts(product_id, kind="component-library", include_superseded=true)` to find the current library.
    - Call `get_product_artifact(product_id, artifact_id)` to read its manifest (recover `forma.productIcon.shape` for ICON geometry reuse).
    - Call `export_artifact(product_id, artifact_id, format="html")` and read the returned `output_path` as `source_html`. If the export response notes omitted assets, also call `export_artifact(product_id, artifact_id, format="zip")` and inspect the bundle. Stop and report the partial-failure message (step 3 boundary) if the source HTML cannot be loaded.
 5. Fetch style knowledge BEFORE generating: call `get_style(brand_style)` (returns DESIGN.md, tokens.css, components.html). If `system_style` is set, call `get_style(system_style)` too.

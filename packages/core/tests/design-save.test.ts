@@ -154,6 +154,49 @@ describe("saveDesignArtifact", () => {
     expect(pointer!.designStatus).toBe("active");
   }, 90000);
 
+  it("rolls back a newly-created design pointer when afterPointerLocked fails", async () => {
+    const input = await makeCleanInput({
+      commitHooks: {
+        afterPointerLocked: () => {
+          throw new FormaError("ARTIFACT_WRITE_FAIL", "injected post-pointer failure");
+        },
+      },
+    });
+    const deps = makeDeps();
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "ARTIFACT_WRITE_FAIL",
+    );
+
+    await expect(
+      store.products.getDesignPointer(productId, "req-001", "page-001", "default"),
+    ).resolves.toBeUndefined();
+    await expect(store.artifacts.listArtifacts(productId)).resolves.toEqual([]);
+  }, 90000);
+
+  it("restores the previous design pointer when a later version's afterPointerLocked fails", async () => {
+    const deps = makeDeps();
+    const first = await saveDesignArtifact(deps, await makeCleanInput());
+    const secondInput = await makeCleanInput({
+      artifactId: first.artifactId,
+      title: "Second Design Page",
+      commitHooks: {
+        afterPointerLocked: () => {
+          throw new FormaError("ARTIFACT_WRITE_FAIL", "injected post-pointer failure");
+        },
+      },
+    });
+
+    await expect(saveDesignArtifact(deps, secondInput)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "ARTIFACT_WRITE_FAIL",
+    );
+
+    await expect(store.artifacts.listArtifactVersions(productId, first.artifactId)).resolves.toEqual([1]);
+    await expect(
+      store.products.getDesignPointer(productId, "req-001", "page-001", "default"),
+    ).resolves.toMatchObject({ artifactId: first.artifactId, version: 1 });
+  }, 90000);
+
   it("HTML with <script> → throws ARTIFACT_NOT_STATIC", async () => {
     const deps = makeDeps();
     const input: SaveDesignInput = {
@@ -441,6 +484,27 @@ describe("saveDesignArtifact", () => {
     expect(monoAsset!.role).toBe("icon");
   }, 90000);
 
+  it("component-library HTML can reference caller-supplied supporting files during preview rendering", async () => {
+    const svgText = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"><rect width="16" height="16" fill="#2563eb"/></svg>`;
+    const html = `<!doctype html><html><body style="margin:0"><img src="assets/icon.svg" alt="icon" width="16" height="16"></body></html>`;
+    const deps = makeDeps();
+
+    const result = await saveDesignArtifact(deps, {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Library With Referenced Asset",
+      forma: { brandStyle: "ant" },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(svgText).toString("base64") },
+      ],
+    });
+
+    expect(result.previewStatus).toBe("ready");
+    const manifest = await readManifest(deps.productsRoot, result.artifactId);
+    expect(manifest.forma.preview.status).toBe("ready");
+  }, 90000);
+
   it("productIcon with absolute path in supportingFiles.path → throws INVALID_INPUT", async () => {
     const svgBase64 = Buffer.from("<svg/>").toString("base64");
     const dataPng = await makeDataPng();
@@ -586,6 +650,97 @@ describe("saveDesignArtifact", () => {
 
     await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
       (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile using reserved bundle entry path → throws INVALID_INPUT", async () => {
+    const html = `<!doctype html><html><body><p>comp</p></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Reserved supporting path",
+      forma: { brandStyle: "ant" },
+      supportingFiles: [
+        {
+          path: "index.html",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile using normalized reserved bundle entry path → throws INVALID_INPUT", async () => {
+    const html = `<!doctype html><html><body><p>comp</p></body></html>`;
+    const deps = makeDeps();
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Normalized reserved supporting path",
+      forma: { brandStyle: "ant" },
+      supportingFiles: [
+        {
+          path: "./index.html",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("<svg/>").toString("base64"),
+        },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile equivalent slash and backslash paths → throws INVALID_INPUT", async () => {
+    const html = `<!doctype html><html><body><p>comp</p></body></html>`;
+    const deps = makeDeps();
+    const svgBase64 = Buffer.from("<svg/>").toString("base64");
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Duplicate normalized supporting paths",
+      forma: { brandStyle: "ant" },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: svgBase64 },
+        { path: "assets\\icon.svg", contentType: "image/svg+xml", contentBase64: svgBase64 },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "INVALID_INPUT",
+    );
+  }, 30000);
+
+  it("supportingFile SVG with script → throws ARTIFACT_NOT_STATIC", async () => {
+    const html = `<!doctype html><html><body><img src="assets/icon.svg" alt="icon"></body></html>`;
+    const deps = makeDeps();
+    const svgWithScript = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="8" height="8"/></svg>`;
+
+    const input: SaveDesignInput = {
+      productId,
+      kind: "component-library" as const,
+      html,
+      title: "Unsafe supporting SVG",
+      forma: { brandStyle: "ant" },
+      supportingFiles: [
+        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(svgWithScript).toString("base64") },
+      ],
+    };
+
+    await expect(saveDesignArtifact(deps, input)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "ARTIFACT_NOT_STATIC",
     );
   }, 30000);
 

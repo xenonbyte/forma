@@ -124,6 +124,13 @@ describe("fm-refine-components template", () => {
       expectOrder(lc, "export_artifact", "generate_components");
     }
   });
+
+  it("includes superseded component libraries when finding an existing library", async () => {
+    const t = await loadCommand("fm-refine-components");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toContain('list_product_artifacts(product_id, kind="component-library", include_superseded=true)');
+    }
+  });
 });
 
 describe("fm-change-style template", () => {
@@ -142,6 +149,13 @@ describe("fm-change-style template", () => {
     expect(t.blob).toContain("fm-refine-components");
     // Must NOT reference the removed change_artifact_style tool
     expect(t.blob).not.toContain("change_artifact_style");
+  });
+
+  it("includes superseded component libraries when loading the current library", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toContain('list_product_artifacts(product_id, kind="component-library", include_superseded=true)');
+    }
   });
 
   it("persists style config before generation on every platform", async () => {
@@ -178,6 +192,9 @@ describe("fm-design component-library gate and reuse rules (T009)", () => {
     const t = await loadCommand("fm-design");
     // Must check the pointer, not list non-empty
     expect(t.blob).toContain("designsystemartifactid");
+    // The legacy branch must include superseded component-library artifacts because
+    // pointer-unset libraries are hidden by default.
+    expect(t.blob).toContain("include_superseded=true");
     // Must reference fm-refine-components as the remedy
     expect(t.blob).toContain("fm-refine-components");
   });
