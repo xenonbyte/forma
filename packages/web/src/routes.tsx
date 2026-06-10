@@ -23,6 +23,8 @@ export interface RoutePageProps {
 }
 
 export interface RouteDefinition {
+  /** "fullscreen" renders the page outside the sidebar Layout (canvas pages). */
+  chrome?: "fullscreen";
   component: (props: RoutePageProps) => ReactNode;
   context: string;
   navGroup: "products" | "settings" | "styles";
@@ -76,6 +78,7 @@ export const routeTable: RouteDefinition[] = [
     title: ({ productId }) => `${productId} baseline`,
   },
   {
+    chrome: "fullscreen",
     component: BrandResourcesRoute,
     context: "Brand",
     navGroup: "products",
@@ -83,6 +86,7 @@ export const routeTable: RouteDefinition[] = [
     title: ({ productId }) => `${productId} brand`,
   },
   {
+    chrome: "fullscreen",
     component: DesignViewRoute,
     context: "Design",
     navGroup: "products",
@@ -90,6 +94,7 @@ export const routeTable: RouteDefinition[] = [
     title: ({ reqId }) => `${reqId} design`,
   },
   {
+    chrome: "fullscreen",
     component: AnnotationPageRoute,
     context: "Annotation",
     navGroup: "products",
@@ -213,16 +218,48 @@ export function matchRoute(rawPathname: string, routes: RouteDefinition[] = rout
   return { found: false, hash, navigationState: undefined, params: {}, pathname, route: notFoundRoute };
 }
 
+export function canvasShellMeta(
+  match: RouteMatch,
+  t: (key: string) => string,
+  labels: Record<string, string>,
+): { backHref: string; productName: string; typeName: string } {
+  const pid = match.params.productId ?? "";
+  const reqId = match.params.reqId ?? "";
+  const productName = labels[`product:${pid}`] ?? t("canvas.productPending");
+  const enc = encodeURIComponent;
+  if (match.route.path === "/products/:productId/brand") {
+    return { backHref: `/products/${enc(pid)}`, productName, typeName: t("canvas.type.brand") };
+  }
+  if (match.route.path === "/products/:productId/requirements/:reqId/annotation") {
+    return {
+      backHref: `/products/${enc(pid)}/requirements/${enc(reqId)}`,
+      productName,
+      typeName: t("canvas.type.annotation"),
+    };
+  }
+  return {
+    backHref: `/products/${enc(pid)}/requirements/${enc(reqId)}`,
+    productName,
+    typeName: t("canvas.type.design"),
+  };
+}
+
 function AnnotationPageRoute(props: RoutePageProps) {
-  return <AnnotationPage client={apiClient} params={props.params as { productId: string; reqId: string }} />;
+  return (
+    <AnnotationPage
+      client={apiClient}
+      onBreadcrumbLabel={props.onBreadcrumbLabel}
+      params={props.params as { productId: string; reqId: string }}
+    />
+  );
 }
 
 function BrandResourcesRoute(props: RoutePageProps) {
-  return <BrandResources client={apiClient} params={props.params} />;
+  return <BrandResources client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params} />;
 }
 
 function DesignViewRoute(props: RoutePageProps) {
-  return <DesignView client={apiClient} params={props.params} />;
+  return <DesignView client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params} />;
 }
 
 function ProductListRoute(props: RoutePageProps) {

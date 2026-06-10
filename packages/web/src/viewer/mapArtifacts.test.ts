@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapArtifactsToViewerInputs, canvasSizeForPlatform } from "./mapArtifacts.js";
+import { mapArtifactsToViewerInputs } from "./mapArtifacts.js";
 import type { ArtifactSummary } from "../api.js";
 
 const artifacts: ArtifactSummary[] = [
@@ -41,6 +41,7 @@ describe("mapArtifactsToViewerInputs", () => {
       version: 2,
       width: 1280,
       height: 800,
+      platform: "web",
     });
   });
 

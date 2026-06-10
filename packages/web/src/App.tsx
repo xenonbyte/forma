@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 
 import { LocaleProvider, useT } from "./LocaleContext.js";
+import { CanvasShell } from "./components/CanvasShell.js";
 import { Layout, PrimaryActionLink, type BreadcrumbItem, type NavItem } from "./components/Layout.js";
-import { useCurrentRoute, type RouteMatch } from "./routes.js";
+import { canvasShellMeta, useCurrentRoute, type RouteMatch } from "./routes.js";
 
 const navItems: NavItem[] = [
   {
@@ -39,6 +40,21 @@ function AppShell({ match }: { match: RouteMatch }) {
   const onBreadcrumbLabel = useCallback((key: string, label: string) => {
     setBreadcrumbLabels((current) => (current[key] === label ? current : { ...current, [key]: label }));
   }, []);
+  if (match.route.chrome === "fullscreen") {
+    const meta = canvasShellMeta(match, t, breadcrumbLabels);
+    return (
+      <CanvasShell backHref={meta.backHref} productName={meta.productName} typeName={meta.typeName}>
+        <Page
+          hash={match.hash}
+          navigationState={match.navigationState}
+          onBreadcrumbLabel={onBreadcrumbLabel}
+          params={match.params}
+          route={match.route}
+        />
+      </CanvasShell>
+    );
+  }
+
   const headerAction =
     match.route.path === "/products" ? (
       <PrimaryActionLink href="/products/new">{t("action.newProduct")}</PrimaryActionLink>

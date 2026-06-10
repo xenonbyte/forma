@@ -3,8 +3,9 @@ import { CanvasKitSurface } from "@vzi-core/renderer";
 import type { CanvasKitViewportState } from "@vzi-core/renderer";
 import type { VZIContent } from "@vzi-core/format";
 import { apiClient, formatApiError, type FormaApiClient, type HandoffPage } from "../api.js";
+import { PlatformIcon } from "@xenonbyte/forma-viewer";
 import { useT } from "../LocaleContext.js";
-import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
+import { StatePanel } from "../components/Layout.js";
 import {
   composeAnnotationCanvas,
   withMissingResourcePlaceholders,
@@ -23,6 +24,7 @@ interface DecodedPageContent {
 
 export interface AnnotationPageProps {
   client?: FormaApiClient;
+  onBreadcrumbLabel?: (key: string, label: string) => void;
   params: { productId: string; reqId: string };
   /** Injectable for tests; defaults to fetching the decoded-content route as JSON. */
   fetchContent?: (url: string) => Promise<DecodedPageContent>;
@@ -120,12 +122,18 @@ function fitViewport(cw: number, ch: number, vwCss: number, vhCss: number, dpr: 
 
 export function AnnotationPage({
   client = apiClient,
+  onBreadcrumbLabel,
   params,
   fetchContent = defaultFetchContent,
   checkResourceUrl = defaultCheckResourceUrl,
 }: AnnotationPageProps) {
   const t = useT();
   const { productId, reqId } = params;
+  // Stable refs so the effect closure can read latest values without re-triggering.
+  const tRef = useRef(t);
+  tRef.current = t;
+  const onBreadcrumbLabelRef = useRef(onBreadcrumbLabel);
+  onBreadcrumbLabelRef.current = onBreadcrumbLabel;
   // Renderer offset/scale are in device pixels; overlays divide positions by dpr.
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -135,6 +143,7 @@ export function AnnotationPage({
   const [viewport, setViewport] = useState<CanvasKitViewportState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,11 +187,29 @@ export function AnnotationPage({
         }
         if (cancelled) return;
         const initial = composeAnnotationCanvas(pages);
-        const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl, t);
+        const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl, tRef.current);
         if (cancelled) return;
         setState({ status: "ready", pages, pageErrors, missingResources });
+        if (client.getProduct) {
+          void client
+            .getProduct(productId)
+            .then((p) => {
+              setPlatform(p.platform);
+              onBreadcrumbLabelRef.current?.(`product:${productId}`, p.name);
+            })
+            .catch((error: unknown) => {
+              console.warn("failed to load product label for annotation canvas shell", formatApiError(error));
+              onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+            });
+        }
       } catch (e) {
-        if (!cancelled) setState({ status: "error", message: formatApiError(e).message });
+        if (!cancelled) {
+          console.warn("failed to load annotation canvas", formatApiError(e).message);
+          setState({ status: "error", message: formatApiError(e).message });
+          // Handoff load failed before the product fetch ran — report an explicit shell
+          // label so the canvas top bar doesn't stay stuck on "Loading product".
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+        }
       }
     })();
     return () => {
@@ -239,8 +266,6 @@ export function AnnotationPage({
     );
   }, [composed, hasMeasuredSize, size.width, size.height, dpr]);
 
-  const backLink = `/products/${productId}/requirements/${reqId}`;
-
   if (state.status === "loading") {
     return (
       <StatePanel state="empty" title={t("annotation.loading")}>
@@ -251,7 +276,6 @@ export function AnnotationPage({
   if (state.status === "error") {
     return (
       <StatePanel
-        action={<PrimaryActionLink href={backLink}>{t("action.backToProduct")}</PrimaryActionLink>}
         state="error"
         title={state.message}
       >
@@ -262,7 +286,6 @@ export function AnnotationPage({
   if (state.status === "empty") {
     return (
       <StatePanel
-        action={<PrimaryActionLink href={backLink}>{t("action.backToProduct")}</PrimaryActionLink>}
         state="empty"
         title={t("annotation.empty")}
       >
@@ -289,17 +312,7 @@ export function AnnotationPage({
   const focusedFrames = (composed?.frames ?? []).filter((f) => focusedKeys.has(frameKey(f)));
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <a className="text-sm text-zinc-600 underline" href={backLink}>
-          {t("action.backToProduct")}
-        </a>
-        <span className="text-xs text-zinc-500">
-          {readyPageCount} {t("requirement.pageCount")}
-          {selectedId ? ` · ${t("annotation.selected")}: ${selectedId}` : ""}
-        </span>
-      </div>
-
+    <div className="relative h-full w-full">
       {allFailed ? (
         <StatePanel state="error" title={t("requirement.listUnavailable")}>
           {state.pageErrors.map((e) => `${e.pageId}: ${e.reason}`).join("; ")}
@@ -351,6 +364,7 @@ export function AnnotationPage({
               viewport={viewport}
               dpr={dpr}
               focusedKeys={focusedKeys}
+              platform={platform}
               t={t}
             />
           ) : null}
@@ -451,12 +465,14 @@ function PageFrameOverlays({
   viewport,
   dpr,
   focusedKeys,
+  platform,
   t,
 }: {
   frames: PageFrame[];
   viewport: CanvasKitViewportState;
   dpr: number;
   focusedKeys: Set<string>;
+  platform?: string;
   t: (key: string) => string;
 }) {
   return (
@@ -481,12 +497,25 @@ function PageFrameOverlays({
             </div>
           );
         }
+        if (focused) {
+          return (
+            <div
+              key={`${f.artifactId}-${f.pageId}`}
+              className="pointer-events-none absolute z-30 flex items-center gap-1 truncate text-xs font-medium text-indigo-600"
+              style={{ left, top, maxWidth: 240 }}
+            >
+              <PlatformIcon platform={platform} />
+              <span>
+                {f.title}
+                {suffix}
+              </span>
+            </div>
+          );
+        }
         return (
           <div
             key={`${f.artifactId}-${f.pageId}`}
-            className={`pointer-events-none absolute z-30 truncate text-xs font-medium ${
-              focused ? "text-blue-700" : "text-zinc-600"
-            }`}
+            className="pointer-events-none absolute z-30 truncate text-xs font-medium text-zinc-600"
             style={{ left, top, maxWidth: 240 }}
           >
             {f.title}

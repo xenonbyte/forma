@@ -28,6 +28,70 @@ afterEach(() => {
 });
 
 describe("App routing", () => {
+  it("renders fullscreen canvas routes without the sidebar Layout", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error_code: "NOT_FOUND", message: "" }, 404)));
+
+    window.history.pushState({}, "", "/products/P1/brand");
+    const { container, root } = createTestRoot();
+    await act(async () => {
+      root.render(<App />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector("aside")).toBeNull();
+    expect(container.querySelector("[data-testid='canvas-shell']")).not.toBeNull();
+  });
+
+  // B4: canvas shell shows real product name (from getProduct) not just the raw id.
+  it("populates breadcrumbLabels from getProduct on the brand route, not the raw product id", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const path = input.toString();
+        if (path === "/api/products/P1") {
+          return jsonResponse({
+            id: "P1",
+            name: "Brand Test Product",
+            description: "",
+            platform: "web",
+          });
+        }
+        // Anything else (artifact, handoff, etc.) → 404 so BrandResources goes empty/error.
+        return jsonResponse({ error_code: "NOT_FOUND", message: path }, 404);
+      }),
+    );
+
+    window.history.pushState({}, "", "/products/P1/brand");
+    const { container, root } = createTestRoot();
+    await act(async () => {
+      root.render(<App />);
+      await flushPromises();
+    });
+
+    // The canvas shell header must show the product name, not the raw id "P1".
+    expect(container.querySelector("[data-testid='canvas-shell']")).not.toBeNull();
+    expect(container.textContent).toContain("Brand Test Product");
+    expect(container.textContent).not.toContain("Loading product");
+  });
+
+  // B4: on getProduct failure, canvas shell shows "Product unavailable" (not "Loading product" forever).
+  it("shows productUnavailable label in the canvas shell when getProduct rejects", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => jsonResponse({ error_code: "NOT_FOUND", message: "" }, 404)));
+
+    window.history.pushState({}, "", "/products/P1/brand");
+    const { container, root } = createTestRoot();
+    await act(async () => {
+      root.render(<App />);
+      await flushPromises();
+    });
+
+    expect(container.querySelector("[data-testid='canvas-shell']")).not.toBeNull();
+    // After failure, the shell should NOT stay stuck on "Loading product".
+    // It should show "Product unavailable" instead.
+    expect(container.textContent).not.toContain("Loading product");
+    expect(container.textContent).toContain("Product unavailable");
+  });
+
   it("passes delete navigation state to the product list", async () => {
     vi.stubGlobal(
       "fetch",
