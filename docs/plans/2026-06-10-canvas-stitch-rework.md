@@ -14,7 +14,7 @@
 - Scope = all three canvases (incl. CanvasKit annotation).
 - Selection theme color = `#4f46e5`.
 - Back targets: design/annotation → requirement detail; brand → product detail.
-- **No** old-library compatibility fallback — a component-library artifact without `forma.units` renders an explicit empty state (dev phase; the lone calculator test product will be deleted and regenerated).
+- **No** old-library compatibility fallback — a component-library artifact without `forma.units` renders an explicit empty state. Any regeneration/deletion for acceptance must happen only inside a named disposable `FORMA_HOME`, never in the default `~/.forma`.
 - design-save resolution: compose combined `index.html` (entry/preview/validation unchanged) + per-unit `unit-<id>.html`; all CSS lives in shared `tokens.css`, unit `body_html` is pure markup.
 
 ---
@@ -51,14 +51,14 @@
 **Files:**
 - Modify: `packages/viewer/src/model.ts`
 - Modify: `packages/viewer/src/normalize.ts`
-- Test: `packages/viewer/src/normalize.test.ts` (create if absent)
+- Test: `packages/viewer/tests/normalize.test.ts`
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `packages/viewer/src/normalize.test.ts`:
+Add to the existing `packages/viewer/tests/normalize.test.ts`:
 ```ts
 import { describe, it, expect } from "vitest";
-import { buildViewerModel } from "./normalize.js";
+import { buildViewerModel } from "../src/normalize.js";
 
 describe("buildViewerModel platform + bundlePath", () => {
   it("carries platform onto tiles and uses bundlePath as an asset htmlBundle ref", () => {
@@ -92,7 +92,7 @@ describe("buildViewerModel platform + bundlePath", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/viewer/src/normalize.test.ts`
+Run: `pnpm exec vitest run packages/viewer/tests/normalize.test.ts`
 Expected: FAIL (`platform`/`bundlePath` not on input type; htmlBundle always `kind:"bundle"`).
 
 - [ ] **Step 3: Implement**
@@ -134,15 +134,13 @@ In `buildViewerModel`, change the tile mapping:
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/viewer/src/normalize.test.ts`
+Run: `pnpm exec vitest run packages/viewer/tests/normalize.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/viewer/src/model.ts packages/viewer/src/normalize.ts packages/viewer/src/normalize.test.ts
-git commit -m "feat(viewer): carry platform + bundlePath on tiles (asset htmlBundle)"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task A2: `PlatformIcon` component
 
@@ -175,7 +173,7 @@ describe("PlatformIcon", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/viewer/src/tiles/PlatformIcon.browser.test.tsx`
+Run: `pnpm exec vitest run packages/viewer/src/tiles/PlatformIcon.browser.test.tsx`
 Expected: FAIL (module not found).
 
 - [ ] **Step 3: Implement**
@@ -208,15 +206,13 @@ export function PlatformIcon({ platform, size = 14 }: { platform: string | undef
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/viewer/src/tiles/PlatformIcon.browser.test.tsx`
+Run: `pnpm exec vitest run packages/viewer/src/tiles/PlatformIcon.browser.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/viewer/src/tiles/PlatformIcon.tsx packages/viewer/src/tiles/PlatformIcon.browser.test.tsx
-git commit -m "feat(viewer): add PlatformIcon glyph component"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task A3: Tile header (platform icon + name) + `#4f46e5` selection
 
@@ -249,7 +245,7 @@ Add to `packages/viewer/src/Canvas.browser.test.tsx` (inside `describe("Canvas")
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/viewer/src/Canvas.browser.test.tsx`
+Run: `pnpm exec vitest run packages/viewer/src/Canvas.browser.test.tsx`
 Expected: FAIL (no svg in title; border is `#1d4ed8`).
 
 - [ ] **Step 3: Implement**
@@ -298,30 +294,29 @@ Replace the title `<div>` body (the `{data.tile.title}` expression) so the label
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/viewer/src/Canvas.browser.test.tsx`
+Run: `pnpm exec vitest run packages/viewer/src/Canvas.browser.test.tsx`
 Expected: PASS (existing `pointerEvents:none` + component-library interactive tests still green).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/viewer/src/Canvas.tsx packages/viewer/src/Canvas.browser.test.tsx
-git commit -m "feat(viewer): tile header platform icon + #4f46e5 selection frame"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task A4: Figma trackpad gestures (two-finger pan + pinch zoom)
 
 **Files:**
-- Modify: `packages/viewer/src/Canvas.tsx:150-168` (ReactFlow props)
-- Test: `packages/viewer/src/Canvas.gestures.test.tsx` (create)
+- Create: `packages/viewer/src/canvas-interaction.ts` (CSS/React-free; holds `CANVAS_INTERACTION_PROPS`)
+- Modify: `packages/viewer/src/Canvas.tsx:150-168` (import + spread the props)
+- Test: `packages/viewer/tests/Canvas.gestures.test.ts` (create)
 
 - [ ] **Step 1: Write the failing test**
 
-`@xyflow/react` does not expose gesture config on the DOM, so assert the props object we pass. Refactor the props into an exported constant and test it.
+`@xyflow/react` does not expose gesture config on the DOM, so assert the props object we pass. Keep the constant in a **CSS/React-free** module (`canvas-interaction.ts`) so this plain-node `tests/` test never pulls in `Canvas.tsx`'s `import "@xyflow/react/dist/style.css"` side-effect.
 
-Create `packages/viewer/src/Canvas.gestures.test.tsx`:
-```tsx
+Create `packages/viewer/tests/Canvas.gestures.test.ts`:
+```ts
 import { describe, it, expect } from "vitest";
-import { CANVAS_INTERACTION_PROPS } from "./Canvas.js";
+import { CANVAS_INTERACTION_PROPS } from "../src/canvas-interaction.js";
 
 describe("CANVAS_INTERACTION_PROPS", () => {
   it("pans on two-finger scroll and zooms on pinch (Figma standard)", () => {
@@ -337,22 +332,28 @@ describe("CANVAS_INTERACTION_PROPS", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/viewer/src/Canvas.gestures.test.tsx`
+Run: `pnpm exec vitest run packages/viewer/tests/Canvas.gestures.test.ts`
 Expected: FAIL (`CANVAS_INTERACTION_PROPS` not exported).
 
 - [ ] **Step 3: Implement**
 
-In `packages/viewer/src/Canvas.tsx`, add near the top (after imports):
+Create `packages/viewer/src/canvas-interaction.ts` (imports only the `PanOnScrollMode` enum from `@xyflow/react` — no React, no CSS, so a plain-node test can import it safely):
 ```ts
+import { PanOnScrollMode } from "@xyflow/react";
+
 /** 画布交互手势:双指拖=平移,捏合/Cmd+滚轮=缩放,左键拖=平移(Figma 标准,对齐标注页)。 */
 export const CANVAS_INTERACTION_PROPS = {
   panOnScroll: true,
-  panOnScrollMode: "free",
+  panOnScrollMode: PanOnScrollMode.Free,
   zoomOnScroll: false,
   zoomOnPinch: true,
   panOnDrag: true,
   zoomOnDoubleClick: false,
 } as const;
+```
+In `packages/viewer/src/Canvas.tsx`, import the constant:
+```ts
+import { CANVAS_INTERACTION_PROPS } from "./canvas-interaction.js";
 ```
 Replace the `<ReactFlow>` gesture props (`panOnDrag zoomOnScroll panOnScroll={false}`) with a spread + keep min/max zoom:
 ```tsx
@@ -371,19 +372,17 @@ Replace the `<ReactFlow>` gesture props (`panOnDrag zoomOnScroll panOnScroll={fa
       proOptions={{ hideAttribution: false }}
     >
 ```
-Note: `panOnScrollMode` value `"free"` is `PanOnScrollMode.Free`; the string literal is accepted by `@xyflow/react` v12 prop typing.
+Note: `PanOnScrollMode.Free` has the runtime value `"free"`, so the test can continue to assert `.toBe("free")` while `pnpm typecheck` sees the enum member expected by `@xyflow/react` v12.
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/viewer/src/Canvas.gestures.test.tsx packages/viewer/src/Canvas.browser.test.tsx`
+Run: `pnpm exec vitest run packages/viewer/tests/Canvas.gestures.test.ts packages/viewer/src/Canvas.browser.test.tsx`
 Expected: PASS (both files).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/viewer/src/Canvas.tsx packages/viewer/src/Canvas.gestures.test.tsx
-git commit -m "feat(viewer): Figma trackpad gestures (two-finger pan, pinch zoom)"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ---
 
@@ -416,7 +415,7 @@ it("marks the three canvas routes as full-screen chrome", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/routes.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/routes.test.tsx`
 Expected: FAIL (`chrome` not a field).
 
 - [ ] **Step 3: Implement**
@@ -434,25 +433,27 @@ In `packages/web/src/i18n.ts`, add to the `en` map and the `zh` map:
 "canvas.type.brand": "Brand resources",
 "canvas.type.design": "Design",
 "canvas.type.annotation": "Annotation",
+"canvas.productPending": "Loading product",
+"canvas.productUnavailable": "Product unavailable",
 "canvas.back": "Back",
 // zh
 "canvas.type.brand": "品牌资源",
 "canvas.type.design": "设计稿",
 "canvas.type.annotation": "标注",
+"canvas.productPending": "正在加载产品",
+"canvas.productUnavailable": "产品不可用",
 "canvas.back": "返回",
 ```
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/routes.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/routes.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/routes.tsx packages/web/src/i18n.ts packages/web/src/routes.test.tsx
-git commit -m "feat(web): chrome:fullscreen route flag + canvas type i18n"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task B2: `CanvasShell` component
 
@@ -498,7 +499,7 @@ describe("CanvasShell", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/components/CanvasShell.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/components/CanvasShell.test.tsx`
 Expected: FAIL (module not found).
 
 - [ ] **Step 3: Implement**
@@ -547,15 +548,13 @@ export function CanvasShell({ backHref, productName, typeName, children }: Canva
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/components/CanvasShell.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/components/CanvasShell.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/components/CanvasShell.tsx packages/web/src/components/CanvasShell.test.tsx
-git commit -m "feat(web): CanvasShell full-screen top bar"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task B3: Render fullscreen routes without `<Layout>`
 
@@ -581,7 +580,7 @@ Also add `data-testid="canvas-shell"` to `CanvasShell`'s root `<div>` from Task 
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/App.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/App.test.tsx`
 Expected: FAIL (sidebar still rendered for `/brand`).
 
 - [ ] **Step 3: Implement**
@@ -620,7 +619,7 @@ export function canvasShellMeta(
 ): { backHref: string; productName: string; typeName: string } {
   const pid = match.params.productId ?? "";
   const reqId = match.params.reqId ?? "";
-  const productName = labels[`product:${pid}`] ?? pid;
+  const productName = labels[`product:${pid}`] ?? t("canvas.productPending");
   const enc = encodeURIComponent;
   if (match.route.path === "/products/:productId/brand") {
     return { backHref: `/products/${enc(pid)}`, productName, typeName: t("canvas.type.brand") };
@@ -642,15 +641,13 @@ export function canvasShellMeta(
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/App.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/App.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/App.tsx packages/web/src/routes.tsx packages/web/src/components/CanvasShell.tsx packages/web/src/App.test.tsx
-git commit -m "feat(web): render canvas routes full-screen via CanvasShell"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task B4: Strip inline top bars + full-bleed canvases + report product name
 
@@ -680,7 +677,7 @@ it("reports the product name for the canvas shell and has no inline back link", 
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/pages/DesignView.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/pages/DesignView.test.tsx`
 Expected: FAIL (inline back link present; name not reported).
 
 - [ ] **Step 3: Implement**
@@ -727,7 +724,7 @@ Expected: FAIL (inline back link present; name not reported).
     return <DesignView client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params} />;
   }
   ```
-- Add a focused route-wrapper test that renders brand and annotation routes through the existing `App`/route harness and proves `breadcrumbLabels["product:<id>"]` is populated from `getProduct`, not left as the raw product id.
+- Add focused route-wrapper tests that render brand and annotation routes through the existing `App`/route harness and prove `breadcrumbLabels["product:<id>"]` is populated from `getProduct`, not left as the raw product id. Add a failure-path test where `getProduct` rejects: assert a non-sensitive warning is emitted, the shell label becomes `t("canvas.productUnavailable")`, and the shell is not accepted with the raw product id as a silent success.
 
 `BrandResources.tsx`:
 - Add `onBreadcrumbLabel?` to props; call `props.onBreadcrumbLabel?.(`product:${productId}`, product.name)` after `getProduct`.
@@ -742,20 +739,27 @@ Expected: FAIL (inline back link present; name not reported).
   (Remove now-unused `iconUrl` state field + its derivation; keep `ViewState` `ready` as `{ status: "ready"; model }`.)
 
 `AnnotationPage.tsx`:
-- Add `onBreadcrumbLabel?` to props; fetch the product name (client has `getProduct`) and report it. After `getRequirementHandoff` succeeds, also `void client.getProduct(productId).then((p) => props.onBreadcrumbLabel?.(`product:${productId}`, p.name)).catch(() => {})`.
+- Add `onBreadcrumbLabel?` to props; fetch the product name (client has `getProduct`) and report it. After `getRequirementHandoff` succeeds, also:
+  ```ts
+  void client
+    .getProduct(productId)
+    .then((p) => props.onBreadcrumbLabel?.(`product:${productId}`, p.name))
+    .catch((error: unknown) => {
+      console.warn("failed to load product label for annotation canvas shell", formatApiError(error));
+      props.onBreadcrumbLabel?.(`product:${productId}`, t("canvas.productUnavailable"));
+    });
+  ```
 - Remove the inline top bar (`293-301`) and make the canvas container fill: change the outer `<div className="flex h-[calc(100vh-8rem)] flex-col gap-2">` to `<div className="relative h-full w-full">` and drop the back `<a>`/page-count `<span>` row. Keep the error/empty `StatePanel` branches (their inline back links can stay; shell also has one — acceptable, or remove for consistency).
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/pages/DesignView.test.tsx packages/web/src/pages/BrandResources.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/pages/DesignView.test.tsx packages/web/src/pages/BrandResources.test.tsx`
 Expected: PASS. Fix any test that asserted the removed inline top bars.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/routes.tsx packages/web/src/pages/DesignView.tsx packages/web/src/pages/BrandResources.tsx packages/web/src/pages/AnnotationPage.tsx packages/web/src/viewer/mapArtifacts.ts packages/web/src/pages/DesignView.test.tsx
-git commit -m "feat(web): full-bleed canvases, drop inline top bars, report product name + platform"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ---
 
@@ -780,7 +784,7 @@ expect(label.className).toContain("text-indigo-600");
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/pages/AnnotationPage` (the overlay test path)
+Run: `pnpm exec vitest run packages/web/src/pages/AnnotationPage` (the overlay test path)
 Expected: FAIL (no icon; focused color is `text-blue-700`).
 
 - [ ] **Step 3: Implement**
@@ -796,15 +800,13 @@ export { PlatformIcon } from "./tiles/PlatformIcon.js";
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/pages/AnnotationPage`
+Run: `pnpm exec vitest run packages/web/src/pages/AnnotationPage`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/pages/AnnotationPage.tsx packages/viewer/src/index.ts
-git commit -m "feat(web): annotation page labels gain platform icon + indigo focus"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task C2: Confirm annotation two-finger pan matches Figma feel
 
@@ -815,12 +817,10 @@ git commit -m "feat(web): annotation page labels gain platform icon + indigo foc
 
 `CanvasKitSurface` already takes `panOnPrimaryDrag` (left-drag pan) and handles wheel for pan + ctrl/⌘-wheel zoom. Run the app (`pnpm dev:web`), open an annotation page, confirm two-finger = pan and pinch = zoom. If the surface zooms on plain two-finger (mismatch with React Flow), add the surface's pan-on-scroll prop (check `@vzi-core/renderer` `CanvasKitSurfaceProps`); otherwise no change.
 
-- [ ] **Step 2: Commit only if changed**
+- [ ] **Step 2: Checkpoint**
 
-```bash
-git add packages/web/src/pages/AnnotationPage.tsx
-git commit -m "fix(web): align annotation trackpad pan/zoom with canvas"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ---
 
@@ -877,7 +877,7 @@ it("rejects duplicate unit ids", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/core/tests/artifact-manifest.test.ts`
+Run: `pnpm exec vitest run packages/core/tests/artifact-manifest.test.ts`
 Expected: FAIL (`forma.units` not validated; passes through but supportingFiles check missing → first test may pass, the reject tests FAIL).
 
 - [ ] **Step 3: Implement**
@@ -951,15 +951,13 @@ In `validateArtifactManifest`, after the `productIcon` ⊆ supportingFiles check
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/core/tests/artifact-manifest.test.ts`
+Run: `pnpm exec vitest run packages/core/tests/artifact-manifest.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/core/src/artifact-manifest.ts packages/core/tests/artifact-manifest.test.ts
-git commit -m "feat(core): forma.units manifest type + validation"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task D2: `design-save` composes index.html + per-unit files + forma.units
 
@@ -969,7 +967,25 @@ git commit -m "feat(core): forma.units manifest type + validation"
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `packages/core/tests/design-save.test.ts` (mirror its existing `saveDesignArtifact` harness/deps):
+Add `validateStaticArtifact` to `packages/core/tests/design-save.test.ts` imports:
+```ts
+import { validateStaticArtifact } from "../src/artifact-static-validation.js";
+```
+
+This file has no `artifactVersionDir` helper yet (existing tests inline the path, e.g. `join(productsRoot, productId, "od-project", "artifacts", id, "v1")`). Add it once near the top, after `makeDeps()`:
+```ts
+function artifactVersionDir(
+  deps: ReturnType<typeof makeDeps>,
+  productId: string,
+  artifactId: string,
+  version: number,
+): string {
+  return join(deps.productsRoot, productId, "od-project", "artifacts", artifactId, `v${version}`);
+}
+```
+(`deps.productsRoot` is the `productsRoot` already present on the deps object; `join` is already imported in this file.)
+
+Then add tests (mirror the file's existing `saveDesignArtifact` harness/deps):
 ```ts
 it("composes a combined index.html + per-unit files and records forma.units", async () => {
   const result = await saveDesignArtifact(deps, {
@@ -1013,10 +1029,25 @@ it("rejects unsafe urls in tokensCss before writing unit files", async () => {
   ).rejects.toMatchObject({ code: "ARTIFACT_NOT_STATIC" });
 });
 
-// A remote ref in a unit body is rejected by localizeArtifactAssets' rejectRemote
-// (on the composed index.html, which concatenates every unit body) BEFORE
-// validateStaticArtifact runs — so the code is ARTIFACT_REMOTE_RESOURCE.
-it("localizes and validates every generated unit document, not only index.html", async () => {
+it("localizes data assets inside each generated unit document", async () => {
+  const dataPng = await makeDataPng();
+  const result = await saveDesignArtifact(deps, {
+    productId: "P-x", kind: "component-library", title: "Lib",
+    tokensCss: ":root{--fg:#111}",
+    units: [{ id: "button", title: "Button", role: "component", bodyHtml: `<section><img src="${dataPng}" alt="Button"></section>` }],
+    forma: { brandStyle: "apple", platform: "mobile" },
+  });
+  const dir = artifactVersionDir(deps, "P-x", result.artifactId, result.version);
+  const tokens = await readFile(join(dir, "tokens.css"), "utf8");
+  const unitBtn = await readFile(join(dir, "unit-button.html"), "utf8");
+  expect(unitBtn).not.toContain("data:image/png;base64,");
+  expect(unitBtn).toMatch(/src="assets\/[^"]+\.png"/);
+  expect(validateStaticArtifact({ html: unitBtn, cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({ ok: true });
+});
+
+// This covers composition-time rejectRemote for unit bodies. The data-asset test
+// above is the direct per-unit localization/static-validation proof.
+it("rejects remote refs in generated unit bodies", async () => {
   await expect(
     saveDesignArtifact(deps, {
       productId: "P-x", kind: "component-library", title: "Lib",
@@ -1030,7 +1061,7 @@ it("localizes and validates every generated unit document, not only index.html",
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/core/tests/design-save.test.ts`
+Run: `pnpm exec vitest run packages/core/tests/design-save.test.ts`
 Expected: FAIL (`tokensCss`/`units` not on `SaveDesignInput`).
 
 - [ ] **Step 3: Implement**
@@ -1139,15 +1170,13 @@ In Step 6 (build `formaExtension`), add units:
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/core/tests/design-save.test.ts`
+Run: `pnpm exec vitest run packages/core/tests/design-save.test.ts`
 Expected: PASS. Existing single-`html` design-page tests stay green (units path is opt-in).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/core/src/design-save.ts packages/core/tests/design-save.test.ts
-git commit -m "feat(core): design-save composes component-library units (index.html + unit files + forma.units)"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task D3: `store.generateComponents` accepts units
 
@@ -1175,7 +1204,7 @@ it("generateComponents persists units and sets the designSystem pointer", async 
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/core/tests/store-design-mutations.test.ts`
+Run: `pnpm exec vitest run packages/core/tests/store-design-mutations.test.ts`
 Expected: FAIL (`tokensCss`/`units` not on `GenerateComponentsInput`).
 
 - [ ] **Step 3: Implement**
@@ -1195,15 +1224,13 @@ In the `generateComponents` function's `saveDesignArtifact({...})` call, thread 
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/core/tests/store-design-mutations.test.ts`
+Run: `pnpm exec vitest run packages/core/tests/store-design-mutations.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/core/src/store.ts packages/core/tests/store-design-mutations.test.ts
-git commit -m "feat(core): store.generateComponents threads tokensCss + units"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task D4: MCP `generate_components` schema + handler
 
@@ -1236,7 +1263,7 @@ it("generate_components rejects neither html nor units", async () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/mcp/tests/tools.test.ts -t generate_components`
+Run: `pnpm exec vitest run packages/mcp/tests/tools.test.ts -t generate_components`
 Expected: FAIL (`units`/`tokens_css` rejected by `.strict()`).
 
 - [ ] **Step 3: Implement**
@@ -1295,15 +1322,13 @@ In the handler, thread the new fields. Replace `html: input.html,` (in the `gene
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/mcp/tests/tools.test.ts -t generate_components`
+Run: `pnpm exec vitest run packages/mcp/tests/tools.test.ts -t generate_components`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/mcp/src/tools.ts packages/mcp/tests/tools.test.ts
-git commit -m "feat(mcp): generate_components accepts units + tokens_css"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ---
 
@@ -1363,7 +1388,7 @@ describe("mapComponentLibraryUnits", () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/viewer/componentLibraryMapper.test.ts`
+Run: `pnpm exec vitest run packages/web/src/viewer/componentLibraryMapper.test.ts`
 Expected: FAIL (module not found).
 
 - [ ] **Step 3: Implement**
@@ -1417,15 +1442,13 @@ export function mapComponentLibraryUnits(input: MapComponentLibraryInput): Norma
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/viewer/componentLibraryMapper.test.ts`
+Run: `pnpm exec vitest run packages/web/src/viewer/componentLibraryMapper.test.ts`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/viewer/componentLibraryMapper.ts packages/web/src/viewer/componentLibraryMapper.test.ts
-git commit -m "feat(web): mapComponentLibraryUnits (forma.units → per-unit tiles)"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task E2: `BrandResources` renders units; no-units → explicit empty
 
@@ -1466,7 +1489,7 @@ it("shows an empty state when the library has no units", async () => {
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `npx vitest run packages/web/src/pages/BrandResources.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/pages/BrandResources.test.tsx`
 Expected: FAIL (still maps a single tile via the removed `mapBrandResourcesArtifact`).
 
 - [ ] **Step 3: Implement**
@@ -1507,15 +1530,13 @@ In `packages/web/src/pages/BrandResources.tsx`:
 
 - [ ] **Step 4: Run to verify it passes**
 
-Run: `npx vitest run packages/web/src/pages/BrandResources.test.tsx`
+Run: `pnpm exec vitest run packages/web/src/pages/BrandResources.test.tsx`
 Expected: PASS. Delete the now-dead `mapBrandResourcesArtifact` + its test cases in `BrandResources.test.tsx`.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Checkpoint**
 
-```bash
-git add packages/web/src/api.ts packages/web/src/pages/BrandResources.tsx packages/web/src/viewer/brandResourcesMapper.ts packages/web/src/pages/BrandResources.test.tsx packages/web/src/i18n.ts
-git commit -m "feat(web): brand canvas renders per-unit component tiles; explicit empty without units"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task E3: Remove dead `brandResourcesMapper`
 
@@ -1525,23 +1546,18 @@ git commit -m "feat(web): brand canvas renders per-unit component tiles; explici
 
 - [ ] **Step 1: Find importers**
 
-Run: `grep -rn "brandResourcesMapper\|mapBrandResourcesArtifact" packages/web/src`
+Run: `rg -n "brandResourcesMapper\|mapBrandResourcesArtifact" packages/web/src`
 Expected: only the deleted test references remain.
 
 - [ ] **Step 2: Delete + verify build**
 
-```bash
-git rm packages/web/src/viewer/brandResourcesMapper.ts
-npx vitest run packages/web
-```
+Delete `packages/web/src/viewer/brandResourcesMapper.ts` with the same patch/edit mechanism used for source edits, then run: `pnpm exec vitest run packages/web`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Checkpoint**
 
-```bash
-git add -A
-git commit -m "chore(web): remove dead brandResourcesMapper (replaced by units mapper)"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ---
 
@@ -1566,15 +1582,13 @@ Replace step 6 ("Generate ... as one self-contained static HTML document ... thr
 
 - [ ] **Step 2: Verify the template references no removed field**
 
-Run: `grep -n "html\b" packages/agent/templates/claude/fm-refine-components.md`
+Run: `rg -n "html\b" packages/agent/templates/claude/fm-refine-components.md`
 Confirm remaining `html` mentions are about `body_html`/markup, not a top-level `html` payload.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 3: Checkpoint**
 
-```bash
-git add packages/agent/templates/claude/fm-refine-components.md
-git commit -m "docs(agent): fm-refine-components (claude) emits tokens_css + units"
-```
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task F2: Mirror to codex template
 
@@ -1582,12 +1596,15 @@ git commit -m "docs(agent): fm-refine-components (claude) emits tokens_css + uni
 - Modify: `packages/agent/templates/codex/fm-refine-components/SKILL.md`
 
 - [ ] **Step 1: Apply the same contract changes as F1 (codex wording).**
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify the template references no removed top-level payload**
 
-```bash
-git add packages/agent/templates/codex/fm-refine-components/SKILL.md
-git commit -m "docs(agent): fm-refine-components (codex) emits tokens_css + units"
-```
+Run: `rg -n "html\b|tokens_css|body_html|units" packages/agent/templates/codex/fm-refine-components/SKILL.md`
+Confirm remaining `html` mentions are about `body_html`/markup, not a top-level `html` payload; confirm `tokens_css`, `body_html`, and `units` are present.
+
+- [ ] **Step 3: Checkpoint**
+
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ### Task F3: Mirror to gemini template
 
@@ -1595,12 +1612,15 @@ git commit -m "docs(agent): fm-refine-components (codex) emits tokens_css + unit
 - Modify: `packages/agent/templates/gemini/fm-refine-components.toml`
 
 - [ ] **Step 1: Apply the same contract changes as F1 (gemini/toml wording).**
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Verify the template references no removed top-level payload**
 
-```bash
-git add packages/agent/templates/gemini/fm-refine-components.toml
-git commit -m "docs(agent): fm-refine-components (gemini) emits tokens_css + units"
-```
+Run: `rg -n "html\b|tokens_css|body_html|units" packages/agent/templates/gemini/fm-refine-components.toml`
+Confirm remaining `html` mentions are about `body_html`/markup, not a top-level `html` payload; confirm `tokens_css`, `body_html`, and `units` are present.
+
+- [ ] **Step 3: Checkpoint**
+
+Run: `git status --short`
+Expected: only intended files for this task are changed. Do not run `git add` or `git commit` unless the user explicitly requests a commit.
 
 ---
 
