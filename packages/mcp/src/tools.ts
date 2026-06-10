@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -1246,6 +1246,19 @@ function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (code === "ENOENT" || code === "ENOTDIR") {
+      return false;
+    }
+    throw error;
+  }
+}
+
 interface BaselineImageCandidate {
   artifactId: string;
   version?: number;
@@ -1305,9 +1318,17 @@ async function getBaselineImage(store: FormaStore, productId: string) {
   const productsDir = getFormaPaths(store.home).productsDir;
   for (const candidate of candidates) {
     if (candidate.version !== undefined) {
-      return {
-        path: getArtifactVersionPreviewPath(productsDir, productId, candidate.artifactId, candidate.version, "2x"),
-      };
+      const previewPath = getArtifactVersionPreviewPath(
+        productsDir,
+        productId,
+        candidate.artifactId,
+        candidate.version,
+        "2x",
+      );
+      if (await fileExists(previewPath)) {
+        return { path: previewPath };
+      }
+      continue;
     }
     const versions = await store.artifacts.listArtifactVersions(productId, candidate.artifactId);
     if (versions.length > 0) {

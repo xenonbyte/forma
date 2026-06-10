@@ -143,6 +143,15 @@ describe("fm-refine-components template", () => {
       expect(body).toContain("source_version");
     }
   });
+
+  it("treats missing productIcon metadata on an existing library as icon initial creation", async () => {
+    const t = await loadCommand("fm-refine-components");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toMatch(/manifest\.forma\.productIcon.*missing/i);
+      expect(body).toMatch(/initial icon creation/i);
+      expect(body).toMatch(/preserve.*source_html/i);
+    }
+  });
 });
 
 describe("fm-change-style template", () => {
@@ -187,6 +196,24 @@ describe("fm-change-style template", () => {
     const t = await loadCommand("fm-change-style");
     for (const body of [t.claude, t.codex, t.gemini]) {
       expectOrder(body.toLowerCase(), "update_product_config", "generate_components");
+    }
+  });
+
+  it("requires concrete product config fields before update_product_config", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toMatch(/platform.*languages.*default_language/i);
+      expect(body).toMatch(/missing.*product config/i);
+      expect(body).toMatch(/Do NOT pass undefined, null, or empty values to `update_product_config`/);
+    }
+  });
+
+  it("keeps existing source_html while creating an icon for legacy libraries without productIcon", async () => {
+    const t = await loadCommand("fm-change-style");
+    for (const body of [t.claude, t.codex, t.gemini]) {
+      expect(body).toMatch(/manifest\.forma\.productIcon.*missing/i);
+      expect(body).toMatch(/initial icon creation/i);
+      expect(body).toMatch(/preserve.*source_html/i);
     }
   });
 
