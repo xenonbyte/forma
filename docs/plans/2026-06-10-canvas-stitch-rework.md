@@ -34,6 +34,7 @@
 - `packages/web/src/routes.tsx` — `chrome?: "fullscreen"` on `RouteDefinition`; mark 3 canvas routes.
 - `packages/web/src/App.tsx` — render fullscreen routes without `<Layout>`, wrap in `CanvasShell`.
 - `packages/web/src/pages/{DesignView,AnnotationPage,BrandResources}.tsx` — drop inline top bars, full-screen height, report product name, use units (brand).
+- `packages/web/src/api.ts` — expose `manifest.forma.units` in the Web artifact manifest type.
 - `packages/web/src/i18n.ts` — `canvas.type.*`, `canvas.back` keys (en + zh).
 - `packages/core/src/artifact-manifest.ts` — `ArtifactComponentUnit` type + `forma.units` validation.
 - `packages/core/src/design-save.ts` — accept `tokensCss`+`units`; compose index.html + unit files; emit `forma.units`.
@@ -654,10 +655,11 @@ git commit -m "feat(web): render canvas routes full-screen via CanvasShell"
 ### Task B4: Strip inline top bars + full-bleed canvases + report product name
 
 **Files:**
+- Modify: `packages/web/src/routes.tsx`
 - Modify: `packages/web/src/pages/DesignView.tsx`
 - Modify: `packages/web/src/pages/BrandResources.tsx`
 - Modify: `packages/web/src/pages/AnnotationPage.tsx`
-- Test: existing `DesignView.test.tsx`, `BrandResources.test.tsx`, `AnnotationPage` tests
+- Test: existing `DesignView.test.tsx`, `BrandResources.test.tsx`, `AnnotationPage` tests, plus route wrapper coverage in `routes.test.tsx` or `App.test.tsx`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -710,6 +712,23 @@ Expected: FAIL (inline back link present; name not reported).
 - Thread `platform` into the model: in the `mapArtifactsToViewerInputs` call, the mapper already sets width/height per platform; extend it (Task E precondition) to also set `platform: product.platform`. For Part B, add `platform` in `mapArtifactsToViewerInputs` now:
   in `packages/web/src/viewer/mapArtifacts.ts`, inside the pushed object add `...(input.platform !== undefined ? { platform: input.platform } : {})`.
 
+`routes.tsx`:
+- Thread the shell label callback through all three canvas route wrappers so product names can reach `CanvasShell`:
+  ```tsx
+  function AnnotationPageRoute(props: RoutePageProps) {
+    return <AnnotationPage client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params as { productId: string; reqId: string }} />;
+  }
+
+  function BrandResourcesRoute(props: RoutePageProps) {
+    return <BrandResources client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params} />;
+  }
+
+  function DesignViewRoute(props: RoutePageProps) {
+    return <DesignView client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params} />;
+  }
+  ```
+- Add a focused route-wrapper test that renders brand and annotation routes through the existing `App`/route harness and proves `breadcrumbLabels["product:<id>"]` is populated from `getProduct`, not left as the raw product id.
+
 `BrandResources.tsx`:
 - Add `onBreadcrumbLabel?` to props; call `props.onBreadcrumbLabel?.(`product:${productId}`, product.name)` after `getProduct`.
 - Remove the standalone product-icon `<img>` block (lines `139-149`) — the icon becomes a canvas tile in Part E. Replace the ready `return` with a full-bleed canvas:
@@ -734,7 +753,7 @@ Expected: PASS. Fix any test that asserted the removed inline top bars.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/web/src/pages/DesignView.tsx packages/web/src/pages/BrandResources.tsx packages/web/src/pages/AnnotationPage.tsx packages/web/src/viewer/mapArtifacts.ts packages/web/src/pages/DesignView.test.tsx
+git add packages/web/src/routes.tsx packages/web/src/pages/DesignView.tsx packages/web/src/pages/BrandResources.tsx packages/web/src/pages/AnnotationPage.tsx packages/web/src/viewer/mapArtifacts.ts packages/web/src/pages/DesignView.test.tsx
 git commit -m "feat(web): full-bleed canvases, drop inline top bars, report product name + platform"
 ```
 
@@ -978,6 +997,37 @@ it("composes a combined index.html + per-unit files and records forma.units", as
 });
 ```
 
+Add security regression tests in the same file:
+```ts
+// tokens.css is NOT routed through localizeArtifactAssets; it is scanned by
+// validateStaticArtifact (cssFiles), whose remote-url() violation surfaces as
+// ARTIFACT_NOT_STATIC.
+it("rejects unsafe urls in tokensCss before writing unit files", async () => {
+  await expect(
+    saveDesignArtifact(deps, {
+      productId: "P-x", kind: "component-library", title: "Lib",
+      tokensCss: ".card{background:url(https://example.com/card.png)}",
+      units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section>Button</section>" }],
+      forma: { brandStyle: "apple", platform: "mobile" },
+    }),
+  ).rejects.toMatchObject({ code: "ARTIFACT_NOT_STATIC" });
+});
+
+// A remote ref in a unit body is rejected by localizeArtifactAssets' rejectRemote
+// (on the composed index.html, which concatenates every unit body) BEFORE
+// validateStaticArtifact runs — so the code is ARTIFACT_REMOTE_RESOURCE.
+it("localizes and validates every generated unit document, not only index.html", async () => {
+  await expect(
+    saveDesignArtifact(deps, {
+      productId: "P-x", kind: "component-library", title: "Lib",
+      tokensCss: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<img src=\"https://example.com/bad.png\">" }],
+      forma: { brandStyle: "apple", platform: "mobile" },
+    }),
+  ).rejects.toMatchObject({ code: "ARTIFACT_REMOTE_RESOURCE" });
+});
+```
+
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `npx vitest run packages/core/tests/design-save.test.ts`
@@ -1051,14 +1101,26 @@ At the top of `saveDesignArtifact`, before Step 1, normalize the html source —
     throw new FormaError("INVALID_INPUT", "either html or units must be provided", {});
   }
 ```
-Replace every later use of `input.html`/`html` in the function with this local `html`. The localize/validate/preview pipeline runs on the composed `html` unchanged.
+Replace every later use of `input.html`/`html` in the function with this local `html`, but do **not** validate only the composed `index.html`. Unit output must stay inside the same static-safety boundary:
+- Run `localizeArtifactAssets({ html })` for the composed index as today.
+- Also run `localizeArtifactAssets({ html: u.doc })` for every `composedUnits` entry.
+- Merge each localization pass's `files` into the shared localized file map after `assertNoSupportingFileCollision(...)`, so any downloaded/localized assets referenced by unit documents are persisted with the bundle.
+- Store each unit's **localized** document text, for example `localizedUnitDocs.set(u.entry, unitLocalized.html)`. Never write the pre-localization `u.doc` to `finalFiles`.
+- Add `tokens.css` to `cssFiles` before `validateStaticArtifact`, using `decodeUtf8(tokensFile, "tokens.css")`, so remote/data/javascript CSS references are rejected.
+- Run `validateStaticArtifact` for the composed `localizedHtml` and for every localized unit document, all with the same `svgFiles` and `cssFiles`. Throw `ARTIFACT_NOT_STATIC` if any document or CSS file violates the pure-static policy.
 
 In Step 5 (build final file set), after merging caller files, write tokens + unit docs:
 ```ts
   if (tokensFile !== undefined) {
     finalFiles.set("tokens.css", tokensFile);
     for (const u of composedUnits) {
-      finalFiles.set(u.entry, Buffer.from(u.doc, "utf8"));
+      const localizedDoc = localizedUnitDocs.get(u.entry);
+      if (localizedDoc === undefined) {
+        // Internal invariant (every composed unit was localized above). There is no
+        // INTERNAL code in the FormaError enum; ARTIFACT_WRITE_FAIL is the closest fit.
+        throw new FormaError("ARTIFACT_WRITE_FAIL", `missing localized unit document: ${u.entry}`, { entry: u.entry });
+      }
+      finalFiles.set(u.entry, Buffer.from(localizedDoc, "utf8"));
     }
   }
 ```
@@ -1068,7 +1130,7 @@ In Step 6 (build `formaExtension`), add units:
       ? { units: composedUnits.map(({ id, title, role, entry, width, height }) => ({ id, title, role, entry, ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}) })) }
       : {}),
 ```
-(Note: `tokens.css` and unit files are auto-included in `supportingFiles` because that array is `Array.from(finalFiles.keys())`.) Also ensure the temp preview dir writes `tokens.css` + units so the combined `index.html` resolves `tokens.css` during preview render — add after `writeBundleFiles(tempDir, callerFiles)`:
+(Note: `tokens.css`, localized unit files, and localized unit assets are auto-included in `supportingFiles` because that array is `Array.from(finalFiles.keys())`.) Also ensure the temp preview dir writes `tokens.css` so the combined `index.html` resolves shared styles during preview render — add after `writeBundleFiles(tempDir, callerFiles)`:
 ```ts
     if (tokensFile !== undefined) {
       await writeFile(join(tempDir, "tokens.css"), tokensFile);
@@ -1368,6 +1430,7 @@ git commit -m "feat(web): mapComponentLibraryUnits (forma.units → per-unit til
 ### Task E2: `BrandResources` renders units; no-units → explicit empty
 
 **Files:**
+- Modify: `packages/web/src/api.ts`
 - Modify: `packages/web/src/pages/BrandResources.tsx`
 - Test: `packages/web/src/pages/BrandResources.test.tsx`
 
@@ -1409,6 +1472,22 @@ Expected: FAIL (still maps a single tile via the removed `mapBrandResourcesArtif
 - [ ] **Step 3: Implement**
 
 In `packages/web/src/pages/BrandResources.tsx`:
+- In `packages/web/src/api.ts`, add the Web-facing manifest unit type next to `ArtifactAssetEntryWeb`/`ArtifactProductIconWeb` and expose it from `ArtifactFormaExtensionWeb`:
+  ```ts
+  export interface ArtifactComponentUnitWeb {
+    id: string;
+    title: string;
+    role: "foundations" | "icon" | "component";
+    entry: string;
+    width?: number;
+    height?: number;
+  }
+
+  export interface ArtifactFormaExtensionWeb {
+    // existing fields...
+    units?: ArtifactComponentUnitWeb[];
+  }
+  ```
 - Replace the `mapBrandResourcesArtifact` import with `mapComponentLibraryUnits` from `../viewer/componentLibraryMapper.js`.
 - In `load()`, after resolving `detail`/`version`, read units:
   ```ts
@@ -1434,7 +1513,7 @@ Expected: PASS. Delete the now-dead `mapBrandResourcesArtifact` + its test cases
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/web/src/pages/BrandResources.tsx packages/web/src/viewer/brandResourcesMapper.ts packages/web/src/pages/BrandResources.test.tsx packages/web/src/i18n.ts
+git add packages/web/src/api.ts packages/web/src/pages/BrandResources.tsx packages/web/src/viewer/brandResourcesMapper.ts packages/web/src/pages/BrandResources.test.tsx packages/web/src/i18n.ts
 git commit -m "feat(web): brand canvas renders per-unit component tiles; explicit empty without units"
 ```
 
@@ -1538,7 +1617,7 @@ Expected: all green. Update any pre-existing component-library tests (d8205ab ba
 
 - [ ] **Manual acceptance (`pnpm dev:web`)**
 
-1. Delete the calculator test product; create a product and run `fm-refine-components` → brand canvas shows `[Icon] [Foundations] [Button] [Input] …` horizontally, each independently selectable with `#4f46e5` border + platform-icon header.
+1. Use an isolated disposable home, for example `FORMA_HOME=/tmp/forma-canvas-stitch-acceptance pnpm dev:web`; create/delete only a known throwaway product in that isolated home, then run `fm-refine-components` → brand canvas shows `[Icon] [Foundations] [Button] [Input] …` horizontally, each independently selectable with `#4f46e5` border + platform-icon header. Do not delete products from the default `~/.forma` data directory during acceptance.
 2. Brand/design canvases: two-finger drag pans, pinch zooms; no two-finger zoom.
 3. All three canvases are full-screen with `[← back] productName · typeName`; back lands on requirement detail (design/annotation) or product detail (brand).
 4. Annotation page label shows the platform icon and indigo focus color.
