@@ -347,6 +347,46 @@ describe("SPEC-DATA-001: validateFormaExtension productIcon", () => {
   });
 });
 
+describe("D1 forma.units validation", () => {
+  it("accepts forma.units with entries ⊆ supportingFiles and unique ids", () => {
+    const r = validateArtifactManifest({
+      version: 1, id: "A1b2C3d4E5f6G7h8", kind: "component-library", renderer: "html",
+      title: "Lib", entry: "index.html", status: "complete",
+      exports: ["index.html"],
+      supportingFiles: ["index.html", "tokens.css", "unit-foundations.html", "unit-button.html"],
+      createdAt: "t", updatedAt: "t",
+      forma: { units: [
+        { id: "foundations", title: "Foundations", role: "foundations", entry: "unit-foundations.html", width: 520, height: 720 },
+        { id: "button", title: "Button", role: "component", entry: "unit-button.html", width: 320, height: 420 },
+      ] },
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("rejects forma.units entry not in supportingFiles", () => {
+    const r = validateArtifactManifest({
+      version: 1, id: "A1b2C3d4E5f6G7h8", kind: "component-library", renderer: "html",
+      title: "Lib", entry: "index.html", status: "complete", exports: ["index.html"],
+      supportingFiles: ["index.html"], createdAt: "t", updatedAt: "t",
+      forma: { units: [{ id: "x", title: "X", role: "component", entry: "unit-x.html" }] },
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects duplicate unit ids", () => {
+    const r = validateArtifactManifest({
+      version: 1, id: "A1b2C3d4E5f6G7h8", kind: "component-library", renderer: "html",
+      title: "Lib", entry: "index.html", status: "complete", exports: ["index.html"],
+      supportingFiles: ["index.html", "unit-a.html"], createdAt: "t", updatedAt: "t",
+      forma: { units: [
+        { id: "a", title: "A", role: "component", entry: "unit-a.html" },
+        { id: "a", title: "A2", role: "component", entry: "unit-a.html" },
+      ] },
+    });
+    expect(r.ok).toBe(false);
+  });
+});
+
 describe("A1 manifest.forma extension + kind migration", () => {
   it("accepts new kinds design-page and component-library", () => {
     expect(ALLOWED_KINDS).toContain("design-page");

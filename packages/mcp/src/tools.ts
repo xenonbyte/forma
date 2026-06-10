@@ -245,6 +245,17 @@ const supportingFileSchema = z
   })
   .strict();
 
+const componentUnitSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
+    title: z.string().min(1),
+    role: z.enum(["foundations", "icon", "component"]),
+    body_html: z.string().min(1),
+    width: z.number().positive().optional(),
+    height: z.number().positive().optional(),
+  })
+  .strict();
+
 const productIconShapeSchema = z
   .object({
     shape_id: z.string().min(1),
@@ -268,14 +279,24 @@ const productIconSchema = z
 const generateComponentsSchema = z
   .object({
     product_id: z.string().min(1),
-    html: z.string().min(1),
     title: z.string().min(1),
     brand_style: z.string().min(1),
     system_style: z.string().min(1).optional(),
+    html: z.string().min(1).optional(),
+    tokens_css: z.string().min(1).optional(),
+    units: z.array(componentUnitSchema).min(1).optional(),
     product_icon: productIconSchema.optional(),
     supporting_files: z.array(supportingFileSchema).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((input, ctx) => {
+    if (!input.html && !input.units) {
+      ctx.addIssue({ code: "custom", message: "provide either html or units" });
+    }
+    if (input.units && !input.tokens_css) {
+      ctx.addIssue({ code: "custom", message: "units requires tokens_css" });
+    }
+  });
 
 const getDesignContextSchema = z
   .object({
@@ -463,12 +484,26 @@ export function createFormaTools(store: FormaStore): FormaTools {
         systemStyle: input.system_style,
       }),
     ),
-    generate_components: tool("generate_components", async (input) =>
-      store.generateComponents(input.product_id, {
-        html: input.html,
-        title: input.title,
-        brandStyle: input.brand_style,
-        systemStyle: input.system_style,
+    generate_components: tool("generate_components", async (input) => {
+      type UnitRow = { id: string; title: string; role: string; body_html: string; width?: number; height?: number };
+      const gcInput: import("@xenonbyte/forma-core").GenerateComponentsInput = {
+        ...(input.html !== undefined ? { html: input.html as string } : {}),
+        title: input.title as string,
+        brandStyle: input.brand_style as string,
+        systemStyle: input.system_style as string | undefined,
+        ...(input.tokens_css !== undefined ? { tokensCss: input.tokens_css as string } : {}),
+        ...(input.units !== undefined
+          ? {
+              units: (input.units as UnitRow[]).map((u) => ({
+                id: u.id,
+                title: u.title,
+                role: u.role as "foundations" | "icon" | "component",
+                bodyHtml: u.body_html,
+                ...(u.width !== undefined ? { width: u.width } : {}),
+                ...(u.height !== undefined ? { height: u.height } : {}),
+              })),
+            }
+          : {}),
         ...(input.product_icon !== undefined
           ? {
               productIcon: {
@@ -491,8 +526,9 @@ export function createFormaTools(store: FormaStore): FormaTools {
               })),
             }
           : {}),
-      }),
-    ),
+      };
+      return store.generateComponents(input.product_id as string, gcInput);
+    }),
     get_design_context: tool("get_design_context", async (input) => {
       const ctx = await buildDesignContext(
         {

@@ -15,6 +15,7 @@ import { createFormaStore } from "../src/store.js";
 import { saveDesignArtifact, type SaveDesignInput } from "../src/design-save.js";
 import { FormaError } from "../src/errors.js";
 import { getFormaPaths } from "../src/paths.js";
+import { validateStaticArtifact } from "../src/artifact-static-validation.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -94,6 +95,15 @@ function makeDeps() {
     runProductMutation: store.runProductMutation.bind(store),
     productsRoot: productsDir,
   };
+}
+
+function artifactVersionDir(
+  deps: ReturnType<typeof makeDeps>,
+  artifactProductId: string,
+  artifactId: string,
+  version: number,
+): string {
+  return join(deps.productsRoot, artifactProductId, "od-project", "artifacts", artifactId, `v${version}`);
 }
 
 async function readManifest(productsRoot: string, artifactId: string, version = 1) {
@@ -835,4 +845,81 @@ describe("saveDesignArtifact", () => {
     expect(meta.width).toBe(390);
     expect(meta.height).toBe(884);
   }, 90000);
+
+  // ─── D2: units decomposition ──────────────────────────────────────────────
+
+  it("composes a combined index.html + per-unit files and records forma.units", async () => {
+    const deps = makeDeps();
+    const result = await saveDesignArtifact(deps, {
+      productId,
+      kind: "component-library",
+      title: "Lib",
+      tokensCss: ":root{--fg:#111}\n.btn{color:var(--fg)}",
+      units: [
+        { id: "foundations", title: "Foundations", role: "foundations", bodyHtml: "<section data-od-id=\"foundations\"><h2>Color</h2></section>" },
+        { id: "button", title: "Button", role: "component", bodyHtml: "<section data-od-id=\"components\"><button class=\"btn\">A</button></section>" },
+      ],
+      forma: { brandStyle: "apple", platform: "mobile" },
+    });
+    const dir = artifactVersionDir(deps, productId, result.artifactId, result.version);
+    const manifest = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8"));
+    expect(manifest.entry).toBe("index.html");
+    expect(manifest.forma.units.map((u: { entry: string }) => u.entry)).toEqual(["unit-foundations.html", "unit-button.html"]);
+    const tokens = await readFile(join(dir, "tokens.css"), "utf8");
+    expect(tokens).toContain("--fg:#111");
+    const indexHtml = await readFile(join(dir, "index.html"), "utf8");
+    expect(indexHtml).toContain("Color");
+    expect(indexHtml).toContain("class=\"btn\"");
+    expect(indexHtml).toContain("href=\"tokens.css\"");
+    const unitBtn = await readFile(join(dir, "unit-button.html"), "utf8");
+    expect(unitBtn).toContain("class=\"btn\"");
+    expect(unitBtn).not.toContain("Color");
+  }, 90000);
+
+  it("rejects unsafe urls in tokensCss before writing unit files", async () => {
+    const deps = makeDeps();
+    await expect(
+      saveDesignArtifact(deps, {
+        productId,
+        kind: "component-library",
+        title: "Lib",
+        tokensCss: ".card{background:url(https://example.com/card.png)}",
+        units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section>Button</section>" }],
+        forma: { brandStyle: "apple", platform: "mobile" },
+      }),
+    ).rejects.toMatchObject({ code: "ARTIFACT_NOT_STATIC" });
+  }, 30000);
+
+  it("localizes data assets inside each generated unit document", async () => {
+    const deps = makeDeps();
+    const dataPng = await makeDataPng();
+    const result = await saveDesignArtifact(deps, {
+      productId,
+      kind: "component-library",
+      title: "Lib",
+      tokensCss: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", bodyHtml: `<section><img src="${dataPng}" alt="Button"></section>` }],
+      forma: { brandStyle: "apple", platform: "mobile" },
+    });
+    const dir = artifactVersionDir(deps, productId, result.artifactId, result.version);
+    const tokens = await readFile(join(dir, "tokens.css"), "utf8");
+    const unitBtn = await readFile(join(dir, "unit-button.html"), "utf8");
+    expect(unitBtn).not.toContain("data:image/png;base64,");
+    expect(unitBtn).toMatch(/src="assets\/[^"]+\.png"/);
+    expect(validateStaticArtifact({ html: unitBtn, cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({ ok: true });
+  }, 90000);
+
+  it("rejects remote refs in generated unit bodies", async () => {
+    const deps = makeDeps();
+    await expect(
+      saveDesignArtifact(deps, {
+        productId,
+        kind: "component-library",
+        title: "Lib",
+        tokensCss: ":root{--fg:#111}",
+        units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<img src=\"https://example.com/bad.png\">" }],
+        forma: { brandStyle: "apple", platform: "mobile" },
+      }),
+    ).rejects.toMatchObject({ code: "ARTIFACT_REMOTE_RESOURCE" });
+  }, 30000);
 });

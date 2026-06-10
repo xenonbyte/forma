@@ -48,7 +48,7 @@ export interface GenerateRequirementDesignInput {
 }
 
 export interface GenerateComponentsInput {
-  html: string;
+  html?: string;
   title: string;
   brandStyle?: string;
   systemStyle?: string;
@@ -59,6 +59,10 @@ export interface GenerateComponentsInput {
   productIcon?: import("./artifact-manifest.js").ArtifactProductIcon;
   /** Caller-supplied supporting files (e.g. product icon SVGs) mapped into the artifact bundle. */
   supportingFiles?: import("./design-save.js").SupportingFileInput[];
+  /** Shared CSS variable definitions for a decomposed component library. */
+  tokensCss?: string;
+  /** Per-unit component definitions for a decomposed component library. */
+  units?: import("./design-save.js").ComponentUnitInput[];
 }
 
 export interface FormaStore {
@@ -220,7 +224,9 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
         const result = await saveDesignArtifact(saveDesignDeps, {
           productId,
           kind: "component-library",
-          html: input.html,
+          ...(input.html !== undefined ? { html: input.html } : {}),
+          ...(input.tokensCss !== undefined ? { tokensCss: input.tokensCss } : {}),
+          ...(input.units !== undefined ? { units: input.units } : {}),
           title: input.title,
           ...(expectedArtifactId !== undefined ? { artifactId: expectedArtifactId } : {}),
           forma: {

@@ -2910,6 +2910,42 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
     });
   });
 
+  it("generate_components accepts units + tokens_css and persists a unit library", async () => {
+    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
+    const store = fakeStore({
+      generateComponents: vi.fn(async () => fakeResult),
+    });
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({
+      product_id: "P-123abc",
+      title: "Lib",
+      brand_style: "apple",
+      tokens_css: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", body_html: "<section><button>A</button></section>" }],
+    });
+
+    expect(res.isError).toBeUndefined();
+    const genCall = (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents;
+    expect(genCall).toHaveBeenCalledWith("P-123abc", {
+      title: "Lib",
+      brandStyle: "apple",
+      systemStyle: undefined,
+      tokensCss: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section><button>A</button></section>" }],
+    });
+  });
+
+  it("generate_components rejects neither html nor units", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({ product_id: "P-123abc", title: "Lib", brand_style: "apple" });
+
+    expect(res.isError).toBe(true);
+    expect(textPayload(res)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+  });
+
 });
 
 describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {

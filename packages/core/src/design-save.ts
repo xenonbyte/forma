@@ -56,10 +56,21 @@ const MAX_SUPPORTING_FILE_BYTES = 256 * 1024;
 const RESERVED_SUPPORTING_FILE_PATHS = new Set(["index.html", "manifest.json"]);
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
+export interface ComponentUnitInput {
+  id: string;
+  title: string;
+  role: "foundations" | "icon" | "component";
+  /** Pure markup fragment (no <html>/<head>); styled only via shared tokens.css classes. */
+  bodyHtml: string;
+  width?: number;
+  height?: number;
+}
+
 export interface SaveDesignInput {
   productId: string;
   kind: "design-page" | "component-library";
-  html: string;
+  /** Single-document HTML (design-page, and legacy single-doc libraries). */
+  html?: string;
   title: string;
   forma: {
     requirementId?: string;
@@ -73,6 +84,10 @@ export interface SaveDesignInput {
     /** Product icon metadata — when present, primary/monochrome must be in supportingFiles (SPEC-DATA-001). */
     productIcon?: ArtifactProductIcon;
   };
+  /** Component-library decomposition: shared CSS written to tokens.css. */
+  tokensCss?: string;
+  /** Component-library decomposition: ordered units → per-unit HTML + forma.units. */
+  units?: ComponentUnitInput[];
   /**
    * Caller-supplied supporting files (e.g. product icon SVGs).
    * Each file is validated and written into the artifact bundle verbatim.
@@ -186,6 +201,16 @@ function normalizeBundlePath(path: string, label: string): string {
   return segments.join("/");
 }
 
+const UNIT_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,63}$/;
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+}
+
+function composeUnitDocument(tokensHref: string, bodyHtml: string, title: string): string {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><link rel="stylesheet" href="${tokensHref}"></head><body>${bodyHtml}</body></html>`;
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 /**
@@ -262,9 +287,53 @@ async function writeBundleFiles(rootDir: string, files: Map<string, Buffer>): Pr
 
 export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesignInput): Promise<SaveDesignResult> {
   const { artifacts, products } = deps;
-  const { productId, kind, html, title, forma } = input;
+  const { productId, kind, title, forma } = input;
 
-  // ── Step 0: Validate and decode caller-supplied supporting files (SPEC-DATA-001) ──
+  // ── Step 0a: Normalize units input → composed index.html + per-unit docs ─────
+  type ComposedUnit = {
+    id: string;
+    title: string;
+    role: ComponentUnitInput["role"];
+    entry: string;
+    width?: number;
+    height?: number;
+    doc: string;
+  };
+  let composedUnits: ComposedUnit[] = [];
+  let tokensFile: Buffer | undefined;
+  let html: string;
+  if (input.units && input.units.length > 0) {
+    if (kind !== "component-library") {
+      throw new FormaError("INVALID_INPUT", "units is only valid for component-library", {});
+    }
+    if (input.tokensCss === undefined) {
+      throw new FormaError("INVALID_INPUT", "units requires tokensCss", {});
+    }
+    const seen = new Set<string>();
+    for (const u of input.units) {
+      if (!UNIT_ID_REGEX.test(u.id)) throw new FormaError("INVALID_INPUT", `unit id invalid: ${u.id}`, { id: u.id });
+      if (seen.has(u.id)) throw new FormaError("INVALID_INPUT", `unit id duplicated: ${u.id}`, { id: u.id });
+      seen.add(u.id);
+    }
+    tokensFile = Buffer.from(input.tokensCss, "utf8");
+    composedUnits = input.units.map((u) => ({
+      id: u.id,
+      title: u.title,
+      role: u.role,
+      entry: `unit-${u.id}.html`,
+      ...(u.width !== undefined ? { width: u.width } : {}),
+      ...(u.height !== undefined ? { height: u.height } : {}),
+      doc: composeUnitDocument("tokens.css", u.bodyHtml, u.title),
+    }));
+    const combinedBody = input.units.map((u) => u.bodyHtml).join("\n");
+    html = composeUnitDocument("tokens.css", combinedBody, title);
+  } else if (input.html !== undefined) {
+    html = input.html;
+  } else {
+    throw new FormaError("INVALID_INPUT", "either html or units must be provided", {});
+  }
+
+  // ── Step 0b: Validate and decode caller-supplied supporting files (SPEC-DATA-001) ──
   const callerFiles = validateAndDecodeSupportingFiles(input.supportingFiles);
   const productIcon =
     forma.productIcon === undefined
@@ -300,6 +369,17 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   const { html: localizedHtml, files, assets } = await localizeArtifactAssets({ html });
   assertNoSupportingFileCollision(callerFiles, files);
 
+  // Localize each composed unit document and collect their assets into the shared file map
+  const localizedUnitDocs = new Map<string, string>();
+  for (const u of composedUnits) {
+    const unitLocalized = await localizeArtifactAssets({ html: u.doc });
+    // Merge localized unit assets into the shared files map
+    for (const [path, buf] of unitLocalized.files) {
+      files.set(path, buf);
+    }
+    localizedUnitDocs.set(u.entry, unitLocalized.html);
+  }
+
   // ── Step 2: validateStaticArtifact (pure, no lock) ───────────────────────────
   const svgFiles = new Map<string, string>();
   const cssFiles = new Map<string, string>();
@@ -313,6 +393,10 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   for (const [path, buf] of callerFiles) {
     svgFiles.set(path, decodeUtf8(buf, path));
   }
+  // Add tokens.css to cssFiles so unsafe CSS refs are caught before writing
+  if (tokensFile !== undefined) {
+    cssFiles.set("tokens.css", decodeUtf8(tokensFile, "tokens.css"));
+  }
 
   const validationResult = validateStaticArtifact({
     html: localizedHtml,
@@ -323,6 +407,22 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     throw new FormaError("ARTIFACT_NOT_STATIC", "Artifact is not pure-static", {
       violations: validationResult.violations,
     });
+  }
+
+  // Validate each localized unit document against the same static boundary
+  for (const u of composedUnits) {
+    const localizedDoc = localizedUnitDocs.get(u.entry);
+    if (localizedDoc === undefined) {
+      // Invariant: every composed unit was localized above. Fail loud rather than
+      // silently skipping a unit's static-safety validation.
+      throw new FormaError("ARTIFACT_WRITE_FAIL", `missing localized unit document: ${u.entry}`, { entry: u.entry });
+    }
+    const unitValidation = validateStaticArtifact({ html: localizedDoc, svgFiles, cssFiles });
+    if (!unitValidation.ok) {
+      throw new FormaError("ARTIFACT_NOT_STATIC", `Unit "${u.id}" is not pure-static`, {
+        violations: unitValidation.violations,
+      });
+    }
   }
 
   // ── Step 3: Render preview to a temp dir (no lock, browser render) ───────────
@@ -353,6 +453,9 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     await writeFile(join(tempDir, "index.html"), Buffer.from(localizedHtml, "utf8"));
     await writeBundleFiles(tempDir, files);
     await writeBundleFiles(tempDir, callerFiles);
+    if (tokensFile !== undefined) {
+      await writeFile(join(tempDir, "tokens.css"), tokensFile);
+    }
 
     const previewOutDir = join(tempDir, "preview");
     try {
@@ -413,6 +516,17 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   for (const [path, buf] of callerFiles) {
     finalFiles.set(path, buf);
   }
+  // Write tokens.css and localized unit docs (units decomposition)
+  if (tokensFile !== undefined) {
+    finalFiles.set("tokens.css", tokensFile);
+    for (const u of composedUnits) {
+      const localizedDoc = localizedUnitDocs.get(u.entry);
+      if (localizedDoc === undefined) {
+        throw new FormaError("ARTIFACT_WRITE_FAIL", `missing localized unit document: ${u.entry}`, { entry: u.entry });
+      }
+      finalFiles.set(u.entry, Buffer.from(localizedDoc, "utf8"));
+    }
+  }
   if (finalPreviewStatus === "ready" && finalPreview1x && finalPreview2x) {
     finalFiles.set("preview/1x.png", finalPreview1x);
     finalFiles.set("preview/2x.png", finalPreview2x);
@@ -444,6 +558,18 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
       ...(finalPreviewError ? { error: finalPreviewError } : {}),
     },
     ...(finalCraftChecks ? { quality: { craftChecks: finalCraftChecks } } : {}),
+    ...(composedUnits.length > 0
+      ? {
+          units: composedUnits.map(({ id, title: unitTitle, role, entry, width, height }) => ({
+            id,
+            title: unitTitle,
+            role,
+            entry,
+            ...(width !== undefined ? { width } : {}),
+            ...(height !== undefined ? { height } : {}),
+          })),
+        }
+      : {}),
   };
 
   const manifest: ArtifactManifest = {
