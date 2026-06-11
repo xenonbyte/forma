@@ -122,30 +122,46 @@ describe("mobile de-shell (spec §5.4)", () => {
 const SQUARE_EDGE_SENTENCE =
   "The outermost screen edges MUST be square — no border-radius on <body> or any full-bleed root container (no rounded screen silhouette).";
 
+// 状态栏是屏幕内容,不是设备外壳:去壳的同时必须保留屏内系统状态栏。
+const STATUS_BAR_SENTENCE =
+  "DO draw the in-screen system status bar as the first element of every screen: " +
+  "time (9:41) on the left, signal/Wi-Fi/battery glyphs on the right, rendered flat as screen content " +
+  "(no notch or island cutout), with the app content starting below it.";
+
 function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
 // TEST-PROMPT-001 — discovery.ts fixed square-edge sentences (SPEC-BEHAVIOR-001).
 describe("mobile square outer edges — discovery (SPEC-BEHAVIOR-001)", () => {
-  it("Mobile app prototype entry carries the square-edge rule right after the de-shell rule", () => {
+  it("Mobile app prototype entry carries status-bar + square-edge rules right after the de-shell rule", () => {
     expect(DISCOVERY_AND_PHILOSOPHY).toContain(SQUARE_EDGE_SENTENCE);
     expect(DISCOVERY_AND_PHILOSOPHY).toContain(
-      "do NOT draw any device shell (no phone frame, bezel, notch chrome, status bar, or gesture bar). " +
+      "do NOT draw any device shell (no phone frame, bezel, notch chrome, or gesture bar). " +
+        STATUS_BAR_SENTENCE +
+        " " +
         SQUARE_EDGE_SENTENCE,
     );
   });
 
-  it("iOS entry parenthetical requires square outer corners", () => {
+  it("iOS entry parenthetical requires square outer corners and an in-screen status bar", () => {
     expect(DISCOVERY_AND_PHILOSOPHY).toContain(
-      "(no iPhone frame, no notch or pill chrome, no status bar, no gesture bar, square outer corners — no rounded screen edges)",
+      "(no iPhone frame, no notch or pill chrome, no gesture bar, square outer corners — no rounded screen edges), " +
+        "an in-screen iOS status bar (9:41 + signal/Wi-Fi/battery) at the top of every screen",
     );
   });
 
-  it("Android entry parenthetical requires square outer corners", () => {
+  it("Android entry parenthetical requires square outer corners and an in-screen status bar", () => {
     expect(DISCOVERY_AND_PHILOSOPHY).toContain(
-      "(no Pixel frame, status bar, or nav bar chrome, square outer corners — no rounded screen edges)",
+      "(no Pixel frame or nav bar chrome, square outer corners — no rounded screen edges), " +
+        "an in-screen Android status bar (time + signal/Wi-Fi/battery) at the top of every screen",
     );
+  });
+
+  it("status bar is no longer part of any de-shell prohibition list", () => {
+    expect(DISCOVERY_AND_PHILOSOPHY).not.toContain("no status bar");
+    expect(DISCOVERY_AND_PHILOSOPHY).not.toContain("status bar, or gesture bar");
+    expect(DISCOVERY_AND_PHILOSOPHY).not.toContain("status bar, or nav bar chrome");
   });
 
   it("multi-screen side-by-side panels keep square outer edges", () => {
