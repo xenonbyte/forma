@@ -32,6 +32,8 @@ Execution:
 
    **On-demand reuse (B5/B6):** When the page spec calls for a standard UI element, reuse the corresponding baseline component from `componentBaseline`/`componentLibrary` (same tokens, states, and interaction patterns) rather than inventing a one-off. When the page shows the product icon, reuse the product ICON SVG from `componentLibrary.productIcon`. Do NOT design-for-reuse (do not add extra components the page spec did not require); immersive or fully custom pages may omit or replace generic components. This guidance does NOT weaken the Scope fidelity hard rule above.
 
+   **Mobile screen contract (when product platform is mobile):** output the screen content only — do NOT draw any device shell (no phone frame, bezel, notch chrome, or gesture bar; the outermost screen edges stay square, no rounded screen silhouette). DO draw the in-screen system status bar as the first element of every screen: time (9:41) on the left, signal/Wi-Fi/battery glyphs on the right, rendered flat as screen content (no notch or island cutout), with the app content starting below it.
+
    **Rule 1 (style/component changes are not retroactive):** `fm-change-style` and `fm-refine-components` do NOT retroactively regenerate already-produced design pages. Existing page versions remain immutable until the page is explicitly re-run via `fm-design`.
 6. Save: `generate_requirement_design(product_id, requirement_id, page_id, html, title, brand_style, system_style[, variant])`. It returns `artifact_id`, `version`, `preview_status`.
 7. Self-review (MANDATORY): run the **Self-review protocol** in shared SKILL.md. The save tool here is `generate_requirement_design`.
