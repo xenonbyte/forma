@@ -38,6 +38,7 @@ describe("mapArtifactsToViewerInputs", () => {
       version: 2,
       width: 1280,
       height: 800,
+      platform: "web",
     });
   });
 
@@ -45,6 +46,7 @@ describe("mapArtifactsToViewerInputs", () => {
     const { width, height } = canvasSizeForPlatform("mobile");
     const out = mapArtifactsToViewerInputs({ artifacts: [artifacts[0]], pages: [], platform: "mobile" });
     expect(out[0].pageName).toBe("login");
+    expect(out[0].platform).toBe("mobile");
     expect({ w: out[0].width, h: out[0].height }).toEqual({ w: width, h: height });
     expect({ w: width, h: height }).toEqual({ w: 390, h: 844 });
   });

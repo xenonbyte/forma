@@ -11,9 +11,11 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { CANVAS_INTERACTION_PROPS } from "./canvas-interaction.js";
 import type { CanvasMode, PositionedTile, ResourceResolver, ViewerModel } from "./model.js";
 import { DesignTile } from "./tiles/DesignTile.js";
 import { AnnotationTile } from "./tiles/AnnotationTile.js";
+import { PlatformIcon } from "./tiles/PlatformIcon.js";
 
 export interface CanvasProps {
   model: ViewerModel;
@@ -47,10 +49,10 @@ function SelectionFrame(): React.ReactElement {
         position: "absolute",
         inset: -6,
         borderRadius: 8,
-        border: "2px solid #1d4ed8",
-        background: "rgba(219,234,254,0.15)",
+        border: "2px solid #4f46e5",
+        background: "rgba(79,70,229,0.10)",
         pointerEvents: "none",
-        boxShadow: "0 0 0 1px rgba(29,78,216,0.12)",
+        boxShadow: "0 0 0 1px rgba(79,70,229,0.18)",
       }}
     />
   );
@@ -62,7 +64,7 @@ function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.React
     return (
       <div style={{ position: "relative" }}>
         {/* 每 tile 标题标签:左对齐,浮于 tile 顶边上方 — 对齐 PageFrameOverlays 风格。
-            focused → blue-700 (#1d4ed8);默认 → zinc-600 (#52525b),与 annotation AA palette 一致。*/}
+            focused → indigo-600 (#4f46e5);默认 → zinc-600 (#52525b),与 annotation AA palette 一致。*/}
         <div
           data-testid="tile-title"
           style={{
@@ -70,21 +72,28 @@ function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.React
             bottom: "100%",
             left: 0,
             marginBottom: 6,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
             fontSize: 12,
             fontWeight: 500,
             lineHeight: "1.4",
-            color: selected ? "#1d4ed8" : "#52525b",
-            maxWidth: 240,
+            color: selected ? "#4f46e5" : "#52525b",
+            maxWidth: 280,
             overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
             pointerEvents: "none",
             userSelect: "none",
           }}
         >
-          {data.tile.title}
+          <span style={{ display: "inline-flex", flexShrink: 0 }}>
+            <PlatformIcon platform={data.tile.platform} />
+          </span>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {data.tile.title}
+          </span>
         </div>
-        <DesignTile tile={data.tile} resolver={data.resolver} interactive={false} />
+        {/* iframe 始终不可点击,避免静态稿里的链接/表单导航;选中态只通过滚动代理查看长页面。 */}
+        <DesignTile tile={data.tile} resolver={data.resolver} interactive={false} scrollable={selected} />
         {selected && <SelectionFrame />}
       </div>
     );
@@ -138,8 +147,9 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, def
     rf.setCenter(tile.x + tile.width / 2, tile.y + tile.height / 2, { zoom: 1, duration: 300 });
   }, [locateRequestId, locateTileId, model.tiles, rf]);
 
-  // 只渲视口内 tile;不要默认 fitView,否则全图缩进视口会破坏离屏卸载验收。
-  // pan/zoom feel 与 annotation canvas 对齐:滚轮缩放 + 左键拖拽平移。
+  // 只渲视口内 tile。不做整图 fitView(会把全部 tile 缩进视口、破坏离屏卸载),而是 onInit 时
+  // 只 fit 首个 tile(局部区域、保留虚拟化),缩放上限 1 不放大 —— 进入画布时设计稿以正常比例完整
+  // 可见,而非 100% 溢出视口一眼看不全。pan/zoom 与 annotation 对齐(见 CANVAS_INTERACTION_PROPS)。
   return (
     <ReactFlow
       nodes={nodes}
@@ -150,9 +160,13 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, def
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable
-      panOnDrag
-      zoomOnScroll
-      panOnScroll={false}
+      onInit={(instance) => {
+        const firstTileId = model.tiles[0]?.id;
+        if (firstTileId) {
+          instance.fitView({ nodes: [{ id: firstTileId }], padding: 0.12, minZoom: 0.1, maxZoom: 1, duration: 0 });
+        }
+      }}
+      {...CANVAS_INTERACTION_PROPS}
       minZoom={0.1}
       maxZoom={4}
       proOptions={{ hideAttribution: false }}

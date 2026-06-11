@@ -722,6 +722,24 @@ describe("SPEC-BEHAVIOR-008 / SPEC-DATA-002: component-library pointer activatio
   });
 });
 
+describe("D3: generateComponents accepts tokensCss + units", () => {
+  it("generateComponents persists units and sets the designSystem pointer", async () => {
+    const store = await createTestStore();
+    const product = await store.products.createProduct({ name: "UnitLib", description: "d" });
+
+    const res = await store.generateComponents(product.id, {
+      title: "Lib",
+      brandStyle: "apple",
+      tokensCss: ":root{--fg:#111}",
+      units: [{ id: "foundations", title: "Foundations", role: "foundations", bodyHtml: "<section><h2>Color</h2></section>" }],
+    });
+
+    expect(res.version).toBe(1);
+    const updated = await store.products.getProduct(product.id);
+    expect(updated.designSystemArtifactId).toBe(res.artifact_id);
+  });
+});
+
 describe("Review #5 (PLAN-TASK-008): changeArtifactStyle removed from core", () => {
   it("change_artifact_style removed from core — store.changeArtifactStyle is undefined", async () => {
     const store = await createTestStore();

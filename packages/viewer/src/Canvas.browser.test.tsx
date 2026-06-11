@@ -111,6 +111,66 @@ describe("Canvas", () => {
     expect(container.querySelector("[data-testid='selection-frame']")).not.toBeNull();
   });
 
+  // per-unit 改造后:组件库不再是单张长文档,而是一组设备尺寸的独立 per-unit tile。
+  // 它们与设计页一样关掉 iframe 指针事件,否则点击会落进 iframe(选不中 tile)、双指平移被吞掉。
+  it("renders component-library tiles non-interactive so they stay selectable and pannable", async () => {
+    const componentLibrary: NormalizeArtifactInput = {
+      artifactId: "lib",
+      kind: "component-library",
+      pageId: "brand-resources",
+      pageName: "brand-resources",
+      variant: "000-button",
+      title: "Button",
+      version: 1,
+      width: 390,
+      height: 844,
+    };
+    const model = buildViewerModel({ entry: "page", artifacts: [componentLibrary] });
+    const container = render(<Canvas model={model} mode="design" resolver={resolver} />);
+    await act(async () => {
+      await sleep(50);
+    });
+    const iframe = container.querySelector("iframe") as HTMLIFrameElement | null;
+    expect(iframe).not.toBeNull();
+    expect(iframe!.style.pointerEvents).toBe("none");
+  });
+
+  it("tile header shows a platform icon and selection frame uses the theme color", async () => {
+    const model = buildViewerModel({
+      entry: "page",
+      artifacts: [
+        { artifactId: "a", kind: "design-page", pageId: "p", pageName: "P", variant: "default",
+          title: "登录页", version: 1, width: 390, height: 844, platform: "mobile" },
+      ],
+    });
+    const first = model.tiles[0]!;
+    const container = render(<Canvas model={model} mode="design" resolver={resolver} defaultSelectedTileId={first.id} />);
+    await act(async () => { await sleep(50); });
+    const title = container.querySelector("[data-testid='tile-title']")!;
+    expect(title.querySelector("svg[data-platform='mobile']")).not.toBeNull();
+    expect(title.textContent).toContain("登录页");
+    const frame = container.querySelector("[data-testid='selection-frame']") as HTMLElement;
+    expect(frame.style.borderColor).toBe("rgb(79, 70, 229)"); // #4f46e5
+  });
+
+  // 聚焦滚动:选中的设计 tile 只暴露滚动代理,不放开 iframe 点击/提交/导航交互。
+  it("keeps selected design tiles non-clickable while exposing a scroll proxy", async () => {
+    const model = buildViewerModel({ entry: "requirement", artifacts });
+    const first = model.tiles[0]!;
+    const container = render(
+      <Canvas model={model} mode="design" resolver={resolver} defaultSelectedTileId={first.id} />,
+    );
+    await act(async () => {
+      await sleep(50);
+    });
+    const iframes = Array.from(container.querySelectorAll("iframe")) as HTMLIFrameElement[];
+    expect(iframes.length).toBeGreaterThanOrEqual(1);
+    for (const iframe of iframes) {
+      expect(iframe.style.pointerEvents).toBe("none");
+    }
+    expect(container.querySelectorAll("[data-testid='design-tile-scroll-proxy']").length).toBe(1);
+  });
+
   it("annotation mode does not show design tile-title labels", async () => {
     const model = buildViewerModel({ entry: "requirement", artifacts });
     const container = render(<Canvas model={model} mode="annotation" resolver={resolver} />);

@@ -284,6 +284,20 @@ export interface ArtifactAssetEntryWeb {
 }
 
 /**
+ * E2: per-unit entry in manifest.forma.units for component-library artifacts.
+ * Mirrors core `ArtifactComponentUnit` (packages/core/src/artifact-manifest.ts).
+ * Keep in sync when that interface changes.
+ */
+export interface ArtifactComponentUnitWeb {
+  id: string;
+  title: string;
+  role: "foundations" | "icon" | "component";
+  entry: string;
+  width?: number;
+  height?: number;
+}
+
+/**
  * BC3: forma extension namespace in the artifact manifest.
  * Mirrors core `ArtifactFormaExtension` (packages/core/src/artifact-manifest.ts).
  * Keep in sync when that interface changes.
@@ -302,6 +316,8 @@ export interface ArtifactFormaExtensionWeb {
   assets?: ArtifactAssetEntryWeb[];
   /** Present only for component-library artifacts (SPEC-DATA-001). */
   productIcon?: ArtifactProductIconWeb;
+  /** E2: per-unit entries for component-library artifacts (D1/D2). */
+  units?: ArtifactComponentUnitWeb[];
 }
 
 export interface ArtifactDetail {

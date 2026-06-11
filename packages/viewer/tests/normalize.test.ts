@@ -67,3 +67,32 @@ describe("buildViewerModel", () => {
     expect(model.tiles).toHaveLength(1);
   });
 });
+
+describe("buildViewerModel platform + bundlePath", () => {
+  it("carries platform onto tiles and uses bundlePath as an asset htmlBundle ref", () => {
+    const model = buildViewerModel({
+      entry: "page",
+      artifacts: [
+        {
+          artifactId: "lib", kind: "component-library", pageId: "brand", pageName: "brand",
+          variant: "default", title: "Button", version: 2, width: 320, height: 420,
+          platform: "mobile", bundlePath: "unit-button.html",
+        },
+      ],
+    });
+    const tile = model.tiles[0]!;
+    expect(tile.platform).toBe("mobile");
+    expect(tile.htmlBundle).toEqual({ artifactId: "lib", version: 2, kind: "asset", path: "unit-button.html" });
+  });
+
+  it("defaults htmlBundle to the bundle entry when bundlePath is absent", () => {
+    const model = buildViewerModel({
+      entry: "requirement",
+      artifacts: [
+        { artifactId: "a", kind: "design-page", pageId: "p", pageName: "P", variant: "default",
+          title: "P", version: 1, width: 390, height: 844 },
+      ],
+    });
+    expect(model.tiles[0]!.htmlBundle).toEqual({ artifactId: "a", version: 1, kind: "bundle" });
+  });
+});

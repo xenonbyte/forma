@@ -53,6 +53,8 @@ export interface ViewerTile {
   /** 内在画布尺寸(布局用,单位 px)。 */
   width: number;
   height: number;
+  /** 设备平台,驱动 tile 头部平台图标。component-library 单元复用产品 platform。 */
+  platform?: string;
   /** 设计画布用:自包含 HTML bundle 引用。 */
   htmlBundle: ResourceRef;
   /** 标注画布用:PNG 预览引用,保留 1x/2x LOD。 */

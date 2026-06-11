@@ -187,6 +187,35 @@ describe("composeAnnotationCanvas", () => {
     expect(secondChild?.bounds.x).toBe(480); // 10 + 470
   });
 
+  it("grows the frame to bound content taller than the captured viewport (long page)", () => {
+    const longPage: AdapterPageInput = {
+      pageId: "long",
+      artifactId: "L",
+      variant: "default",
+      title: "Long",
+      content: makeContent(
+        [
+          { id: "L-root", parentId: null, type: "container", bounds: { x: 0, y: 0, width: 390, height: 800 }, styles: {} },
+          // tail element extends well past the 800px captured viewport
+          {
+            id: "L-tail",
+            parentId: "L-root",
+            type: "text",
+            bounds: { x: 0, y: 1400, width: 390, height: 100 },
+            styles: {},
+            textContent: "bottom",
+          },
+        ],
+        { formaViewport: { width: 390, height: 800 } },
+      ),
+      urls: URLS,
+    };
+    const result = composeAnnotationCanvas([longPage], 80);
+    // height = max(viewport 800, content extent 1400+100) so the focus frame / fit covers it all
+    expect(result.frames[0].height).toBe(1500);
+    expect(result.frames[0].width).toBe(390); // width unchanged (content fits)
+  });
+
   it("namespaces duplicate decoded element ids by artifact and page before merging pages", () => {
     function duplicateContent(label: string): VZIContent {
       return makeContent(

@@ -58,6 +58,7 @@ describe("DesignTile", () => {
     expect(sandboxAttr).not.toBeNull();
     const sandbox = sandboxAttr ?? "";
     expect(sandbox).not.toContain("allow-scripts");
+    expect(sandbox).not.toContain("allow-forms");
     // No-coexistence contract (TEST-VIEWER-001): allow-same-origin + allow-scripts
     // together let the framed document lift its own sandbox — equivalent to no sandbox.
     expect(sandbox.includes("allow-same-origin") && sandbox.includes("allow-scripts")).toBe(false);

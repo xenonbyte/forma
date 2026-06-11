@@ -48,4 +48,19 @@ describe("layoutTiles", () => {
   it("returns one positioned tile per input tile", () => {
     expect(layoutTiles(tiles, groups)).toHaveLength(3);
   });
+
+  it("single-row lays every tile in one horizontal row across groups", () => {
+    const positioned = layoutTiles(tiles, groups, true);
+    const a = positioned.find((t) => t.id === "a")!;
+    const b = positioned.find((t) => t.id === "b")!;
+    const c = positioned.find((t) => t.id === "c")!;
+    // All tiles share the same row (y = 0) regardless of page group.
+    expect(a.y).toBe(0);
+    expect(b.y).toBe(0);
+    expect(c.y).toBe(0);
+    // x advances left-to-right across the group boundary (login a,b then home c).
+    expect(a.x).toBe(0);
+    expect(b.x).toBe(a.width + TILE_GAP);
+    expect(c.x).toBe(b.x + b.width + TILE_GAP);
+  });
 });

@@ -21,4 +21,5 @@ packages/desktop/out/
 output/
 docs/*
 !docs/forma-requirements-consolidated.md
+!docs/plans/
 design-version/

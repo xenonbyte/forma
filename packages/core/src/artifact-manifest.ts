@@ -70,6 +70,21 @@ export interface ArtifactPreview {
   error?: string;
 }
 
+const UNIT_ROLES = ["foundations", "icon", "component"] as const;
+
+export interface ArtifactComponentUnit {
+  /** Stable slug, unique within the library. */
+  id: string;
+  /** Display name shown on the tile header. */
+  title: string;
+  role: (typeof UNIT_ROLES)[number];
+  /** Bundle-relative HTML for this unit (⊆ supportingFiles). */
+  entry: string;
+  /** Intrinsic tile size; viewer falls back to platform default when absent. */
+  width?: number;
+  height?: number;
+}
+
 /** Product icon metadata embedded in the component-library manifest (SPEC-DATA-001) */
 export interface ArtifactProductIcon {
   /** Bundle-relative SVG asset path (⊆ supportingFiles, validated via validateSupportingPath) */
@@ -99,6 +114,8 @@ export interface ArtifactFormaExtension {
   assets?: ArtifactAssetEntry[];
   /** Product icon metadata — present only for component-library artifacts (SPEC-DATA-001) */
   productIcon?: ArtifactProductIcon;
+  /** Ordered list of renderable unit surfaces for component-library artifacts (D1) */
+  units?: ArtifactComponentUnit[];
 }
 
 const LEGACY_KIND_MAP: Record<string, ArtifactKind> = {
@@ -167,6 +184,40 @@ export function validateFormaExtension(forma: unknown): FormaValidationResult {
       }
       if (typeof entry["role"] !== "string" || entry["role"].length === 0) {
         return { ok: false, error: "forma.assets role must be a non-empty string" };
+      }
+    }
+  }
+
+  if (f["units"] !== undefined) {
+    if (!Array.isArray(f["units"])) {
+      return { ok: false, error: "forma.units must be an array" };
+    }
+    const seen = new Set<string>();
+    for (const u of f["units"] as unknown[]) {
+      if (typeof u !== "object" || u === null || Array.isArray(u)) {
+        return { ok: false, error: "forma.units entry must be an object" };
+      }
+      const unit = u as Record<string, unknown>;
+      if (typeof unit["id"] !== "string" || unit["id"].length === 0) {
+        return { ok: false, error: "forma.units id must be a non-empty string" };
+      }
+      if (seen.has(unit["id"])) {
+        return { ok: false, error: `forma.units id is duplicated: ${unit["id"]}` };
+      }
+      seen.add(unit["id"]);
+      if (typeof unit["title"] !== "string" || unit["title"].length === 0) {
+        return { ok: false, error: "forma.units title must be a non-empty string" };
+      }
+      if (!(UNIT_ROLES as readonly string[]).includes(unit["role"] as string)) {
+        return { ok: false, error: `forma.units role must be one of: ${UNIT_ROLES.join(", ")}` };
+      }
+      if (validateSupportingPath(unit["entry"]) === null) {
+        return { ok: false, error: `forma.units entry invalid: ${String(unit["entry"])}` };
+      }
+      for (const dim of ["width", "height"] as const) {
+        if (unit[dim] !== undefined && (typeof unit[dim] !== "number" || (unit[dim] as number) <= 0)) {
+          return { ok: false, error: `forma.units ${dim} must be a positive number` };
+        }
       }
     }
   }
@@ -429,6 +480,14 @@ export function validateArtifactManifest(manifest: unknown): ValidationResult {
           ok: false,
           error: `forma.productIcon.monochrome missing from supportingFiles: ${productIcon.monochrome}`,
         };
+      }
+    }
+    const units = formaResult.value.units;
+    if (units !== undefined) {
+      for (const unit of units) {
+        if (!supportingFileIndex.has(unit.entry)) {
+          return { ok: false, error: `forma.units entry missing from supportingFiles: ${unit.entry}` };
+        }
       }
     }
   }

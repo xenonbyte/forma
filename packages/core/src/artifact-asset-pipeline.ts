@@ -68,6 +68,14 @@ export interface LocalizeResult {
   assets: ArtifactAssetEntry[];
 }
 
+export interface LocalizeCssResult {
+  css: string;
+  /** relative path → content; assets ⊆ these keys */
+  files: Map<string, Buffer>;
+  /** manifest.forma.assets entries */
+  assets: ArtifactAssetEntry[];
+}
+
 // ─── Internal context shared across the walk ─────────────────────────────────
 
 interface Context {
@@ -505,6 +513,21 @@ async function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density
 }
 
 // ─── Main localization walk ───────────────────────────────────────────────────
+
+export async function localizeArtifactCss(css: string, assetDirName = "assets"): Promise<LocalizeCssResult> {
+  const ctx: Context = {
+    assetDir: assetDirName,
+    files: new Map(),
+    assets: new Map(),
+  };
+  const localizedCss = await localizeCssText(css, ctx);
+  assertArtifactAssetBudgets(ctx.files);
+  return {
+    css: localizedCss,
+    files: ctx.files,
+    assets: Array.from(ctx.assets.values()),
+  };
+}
 
 export async function localizeArtifactAssets(input: LocalizeInput): Promise<LocalizeResult> {
   const { html, assetDirName = "assets" } = input;

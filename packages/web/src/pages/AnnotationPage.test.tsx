@@ -12,6 +12,8 @@ const canvasKitSurfaceCalls = vi.hoisted(
     [] as Array<{
       elements?: unknown[];
       onViewportChange?: (viewport: { offsetX: number; offsetY: number; scale: number }) => void;
+      onSelectElement?: (el: { id: string } | null) => void;
+      onHoverElement?: (el: { id: string } | null) => void;
     }>,
 );
 
@@ -26,8 +28,15 @@ vi.mock("@vzi-core/renderer", async () => {
       height?: number;
       viewport?: { offsetX: number; offsetY: number; scale: number };
       onViewportChange?: (viewport: { offsetX: number; offsetY: number; scale: number }) => void;
+      onSelectElement?: (el: { id: string } | null) => void;
+      onHoverElement?: (el: { id: string } | null) => void;
     }) => {
-      canvasKitSurfaceCalls.push({ elements: props.elements, onViewportChange: props.onViewportChange });
+      canvasKitSurfaceCalls.push({
+        elements: props.elements,
+        onViewportChange: props.onViewportChange,
+        onSelectElement: props.onSelectElement,
+        onHoverElement: props.onHoverElement,
+      });
       return React.createElement("div", {
         "data-testid": "ck-surface",
         "data-count": (props.elements ?? []).length,
@@ -113,6 +122,7 @@ async function render(
   options: {
     fetchContent?: (url: string) => Promise<DecodedPageContent>;
     checkResourceUrl?: (url: string) => Promise<boolean>;
+    onBreadcrumbLabel?: (key: string, label: string) => void;
   } = {},
 ) {
   const { AnnotationPage } = await import("./AnnotationPage.js");
@@ -125,6 +135,7 @@ async function render(
           params={{ productId: "P-abc123", reqId: "R-1" }}
           fetchContent={fetchContent}
           checkResourceUrl={options.checkResourceUrl}
+          onBreadcrumbLabel={options.onBreadcrumbLabel}
         />
       </LocaleProvider>,
     );
@@ -135,8 +146,11 @@ async function render(
   });
 }
 
-function clientWith(handoff: RequirementHandoff): FormaApiClient {
-  return { getRequirementHandoff: vi.fn(async () => handoff) } as unknown as FormaApiClient;
+function clientWith(handoff: RequirementHandoff, getProduct?: FormaApiClient["getProduct"]): FormaApiClient {
+  return {
+    getRequirementHandoff: vi.fn(async () => handoff),
+    ...(getProduct ? { getProduct } : {}),
+  } as unknown as FormaApiClient;
 }
 
 function page(over: Partial<RequirementHandoff["pages"][number]> = {}): RequirementHandoff["pages"][number] {
@@ -291,6 +305,83 @@ describe("AnnotationPage", () => {
     expect(container.textContent).toContain("Missing resource");
   });
 
+  // B4: reports product name via onBreadcrumbLabel on successful getProduct.
+  it("reports the product name for the canvas shell via onBreadcrumbLabel", async () => {
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const getProduct: FormaApiClient["getProduct"] = async () => ({
+      id: "P-abc123",
+      name: "My Annotation Product",
+      description: "",
+      platform: "web",
+    });
+
+    await render(clientWith({ pages: [page()], errors: [] }, getProduct), { onBreadcrumbLabel });
+
+    expect(labels["product:P-abc123"]).toBe("My Annotation Product");
+  });
+
+  it("reports the product name for the canvas shell when the handoff has no pages", async () => {
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const getProduct: FormaApiClient["getProduct"] = async () => ({
+      id: "P-abc123",
+      name: "Empty Annotation Product",
+      description: "",
+      platform: "web",
+    });
+
+    await render(clientWith({ pages: [], errors: [] }, getProduct), { onBreadcrumbLabel });
+
+    expect(labels["product:P-abc123"]).toBe("Empty Annotation Product");
+    expect(container.textContent).toContain("No handoff pages");
+  });
+
+  // B4: on getProduct failure, console.warn + reports canvas.productUnavailable label.
+  it("warns and reports productUnavailable label when getProduct rejects", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const getProduct: FormaApiClient["getProduct"] = async () => {
+      throw new Error("product fetch failed");
+    };
+
+    await render(clientWith({ pages: [page()], errors: [] }, getProduct), { onBreadcrumbLabel });
+
+    expect(warnSpy).toHaveBeenCalled();
+    // Label should be the unavailable fallback, not pending/undefined.
+    expect(labels["product:P-abc123"]).toBe("Product unavailable");
+  });
+
+  // Review fix: the handoff load fails before the product fetch runs — the outer catch
+  // must still report the productUnavailable label so the shell top bar doesn't stay on "Loading product".
+  it("warns and reports productUnavailable label when the handoff load rejects", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const client = {
+      getRequirementHandoff: vi.fn(async () => {
+        throw new Error("handoff load failed");
+      }),
+      getProduct: vi.fn(async () => {
+        throw new Error("getProduct should not run when the handoff load fails");
+      }),
+    } as unknown as FormaApiClient;
+
+    await render(client, { onBreadcrumbLabel });
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(labels["product:P-abc123"]).toBe("Product unavailable");
+  });
+
   it("keeps a failed content fetch as a marked frame while rendering another page", async () => {
     const instances = stubResizeObserver();
 
@@ -316,5 +407,153 @@ describe("AnnotationPage", () => {
     expect(container.querySelector('[data-testid="ck-surface"]')).not.toBeNull();
     expect(container.textContent).toContain("Settings");
     expect(container.textContent).toContain("HTTP 404");
+  });
+
+  // C1: focused label shows platform icon (svg[data-platform]) and uses indigo.
+  it("focused page label renders the platform icon and uses text-indigo-600", async () => {
+    const instances = stubResizeObserver();
+
+    const getProduct: FormaApiClient["getProduct"] = async () => ({
+      id: "P-abc123",
+      name: "My Product",
+      description: "",
+      platform: "mobile",
+    });
+
+    await render(clientWith({ pages: [page()], errors: [] }, getProduct));
+
+    // Trigger resize so hasMeasuredSize=true, which fires fitViewport → sets viewport.
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // Trigger an element selection so the page becomes focused (focusedKeys gets an entry).
+    // "root" is the element id in rootContent(); it matches via content.elements.has("root").
+    const lastCall = canvasKitSurfaceCalls.at(-1);
+    if (!lastCall?.onSelectElement) throw new Error("onSelectElement not captured in mock");
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "root" });
+      await Promise.resolve();
+    });
+
+    // The focused label div has z-30, truncate, text-xs font-medium, and the color class.
+    const labels = container.querySelectorAll<HTMLElement>(
+      ".pointer-events-none.absolute.z-30.truncate.text-xs.font-medium",
+    );
+    // Find the focused one (should contain "text-indigo-600").
+    const focused = Array.from(labels).find((el) => el.className.includes("text-indigo-600"));
+    expect(focused).not.toBeUndefined();
+    expect(focused!.className).toContain("text-indigo-600");
+    expect(focused!.querySelector("svg[data-platform='mobile']")).not.toBeNull();
+  });
+
+  // Fix: the focused page selection is a 2px indigo (#4f46e5) border hugging the design
+  // (border only — no padding ring, no fill, no frosted backdrop).
+  it("focused page draws an indigo border-only selection that hugs the design", async () => {
+    const instances = stubResizeObserver();
+    await render(clientWith({ pages: [page()], errors: [] }));
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const lastCall = canvasKitSurfaceCalls.at(-1);
+    if (!lastCall?.onSelectElement) throw new Error("onSelectElement not captured in mock");
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "root" });
+      await Promise.resolve();
+    });
+    const frame = container.querySelector<HTMLElement>('[data-testid="annotation-focus-frame"]');
+    expect(frame).not.toBeNull();
+    // indigo #4f46e5 appears in the border (any form the env normalizes it to).
+    const styleText = `${frame!.style.border} ${frame!.style.borderColor} ${frame!.style.cssText}`.toLowerCase();
+    expect(styleText).toMatch(/#4f46e5|79,\s?70,\s?229/);
+    // frosted backdrop blur is gone.
+    expect(frame!.style.backdropFilter || "").toBe("");
+    // border only — no fill tinting the design underneath.
+    expect(frame!.style.background || frame!.style.backgroundColor || "").toBe("");
+  });
+
+  // 属性面板:选中元素后右侧显示其标注属性;图片元素提供切图导出下载。
+  it("properties panel reflects the selected element and exposes image slice export", async () => {
+    const panelContent = (): DecodedPageContent => ({
+      metadata: { formaViewport: { width: 390, height: 800 } },
+      elements: new Map<string, unknown>([
+        [
+          "root",
+          {
+            id: "root",
+            parentId: null,
+            type: "container",
+            bounds: { x: 0, y: 0, width: 390, height: 800 },
+            styles: { backgroundColor: "rgb(255, 255, 255)" },
+          },
+        ],
+        [
+          "title",
+          {
+            id: "title",
+            parentId: "root",
+            type: "text",
+            bounds: { x: 92, y: 12, width: 177, height: 21 },
+            styles: { color: "rgb(51, 51, 51)", fontFamily: "Roboto, sans-serif", fontSize: "18px" },
+            textContent: "Application was reject",
+          },
+        ],
+        [
+          "hero",
+          {
+            id: "hero",
+            parentId: "root",
+            type: "image",
+            bounds: { x: 146, y: 120, width: 98, height: 98 },
+            styles: {},
+            imageData: { src: "assets/shield.png" },
+          },
+        ],
+      ]),
+      images: new Map(),
+    });
+    const instances = stubResizeObserver();
+    await render(clientWith({ pages: [page()], errors: [] }), {
+      fetchContent: async () => panelContent(),
+      checkResourceUrl: async () => true,
+    });
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 未选中:面板空态。
+    const panel = container.querySelector('[data-testid="annotation-props-panel"]');
+    expect(panel).not.toBeNull();
+    expect(container.querySelector('[data-testid="annotation-props-layout"]')).toBeNull();
+
+    const lastCall = canvasKitSurfaceCalls.at(-1);
+    if (!lastCall?.onSelectElement) throw new Error("onSelectElement not captured in mock");
+
+    // 选中文本 → 内容 + 文字属性 + 颜色。
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "title" });
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="annotation-props-content"]')!.textContent).toContain(
+      "Application was reject",
+    );
+    expect(container.querySelector('[data-testid="annotation-props-typography"]')!.textContent).toContain("Roboto");
+    expect(container.querySelector('[data-testid="annotation-props-colors"]')!.textContent).toContain("#333333");
+
+    // 选中图片 → 导出下载链接指向重写后的 bundle 切图 URL。
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "hero" });
+      await Promise.resolve();
+    });
+    const download = container.querySelector<HTMLAnchorElement>('[data-testid="annotation-props-download"]');
+    expect(download).not.toBeNull();
+    expect(download!.getAttribute("href")).toBe("/api/products/P-abc123/artifacts/A/versions/1/bundle/assets/shield.png");
+    expect(download!.getAttribute("download")).toBe("shield.png");
   });
 });

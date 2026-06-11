@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CanvasKitSurface } from "@vzi-core/renderer";
-import type { CanvasKitViewportState } from "@vzi-core/renderer";
+import type { CanvasKitViewportState, IRElement } from "@vzi-core/renderer";
 import type { VZIContent } from "@vzi-core/format";
 import { apiClient, formatApiError, type FormaApiClient, type HandoffPage } from "../api.js";
+import { PlatformIcon } from "@xenonbyte/forma-viewer";
 import { useT } from "../LocaleContext.js";
-import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
+import { StatePanel } from "../components/Layout.js";
 import {
   composeAnnotationCanvas,
   withMissingResourcePlaceholders,
@@ -14,6 +15,7 @@ import {
   type ResourceRef,
   type ResourceError,
 } from "./annotation-adapter.js";
+import { AnnotationPropertiesPanel, type AnnotationSelectedElement } from "./AnnotationPropertiesPanel.js";
 
 interface DecodedPageContent {
   metadata: Record<string, unknown>;
@@ -23,6 +25,7 @@ interface DecodedPageContent {
 
 export interface AnnotationPageProps {
   client?: FormaApiClient;
+  onBreadcrumbLabel?: (key: string, label: string) => void;
   params: { productId: string; reqId: string };
   /** Injectable for tests; defaults to fetching the decoded-content route as JSON. */
   fetchContent?: (url: string) => Promise<DecodedPageContent>;
@@ -120,12 +123,18 @@ function fitViewport(cw: number, ch: number, vwCss: number, vhCss: number, dpr: 
 
 export function AnnotationPage({
   client = apiClient,
+  onBreadcrumbLabel,
   params,
   fetchContent = defaultFetchContent,
   checkResourceUrl = defaultCheckResourceUrl,
 }: AnnotationPageProps) {
   const t = useT();
   const { productId, reqId } = params;
+  // Stable refs so the effect closure can read latest values without re-triggering.
+  const tRef = useRef(t);
+  tRef.current = t;
+  const onBreadcrumbLabelRef = useRef(onBreadcrumbLabel);
+  onBreadcrumbLabelRef.current = onBreadcrumbLabel;
   // Renderer offset/scale are in device pixels; overlays divide positions by dpr.
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
   const [state, setState] = useState<LoadState>({ status: "loading" });
@@ -135,6 +144,7 @@ export function AnnotationPage({
   const [viewport, setViewport] = useState<CanvasKitViewportState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,10 +154,28 @@ export function AnnotationPage({
     setViewport(null);
     setSelectedId(null);
     setHoveredId(null);
+    function reportProductLabel() {
+      if (!client.getProduct) {
+        return;
+      }
+      void client
+        .getProduct(productId)
+        .then((p) => {
+          if (cancelled) return;
+          setPlatform(p.platform);
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, p.name);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          console.warn("failed to load product label for annotation canvas shell", formatApiError(error));
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+        });
+    }
     void (async () => {
       try {
         const handoff = await client.getRequirementHandoff(productId, reqId);
         if (cancelled) return;
+        reportProductLabel();
         if (handoff.pages.length === 0) {
           setState({ status: "empty" });
           return;
@@ -178,11 +206,17 @@ export function AnnotationPage({
         }
         if (cancelled) return;
         const initial = composeAnnotationCanvas(pages);
-        const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl, t);
+        const missingResources = await validateResourceUrls(initial.resourceRefs, checkResourceUrl, tRef.current);
         if (cancelled) return;
         setState({ status: "ready", pages, pageErrors, missingResources });
       } catch (e) {
-        if (!cancelled) setState({ status: "error", message: formatApiError(e).message });
+        if (!cancelled) {
+          console.warn("failed to load annotation canvas", formatApiError(e).message);
+          setState({ status: "error", message: formatApiError(e).message });
+          // Handoff load failed before the product fetch ran — report an explicit shell
+          // label so the canvas top bar doesn't stay stuck on "Loading product".
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+        }
       }
     })();
     return () => {
@@ -231,6 +265,20 @@ export function AnnotationPage({
     return withMissingResourcePlaceholders(composed.elements, missingResourceUrls);
   }, [composed, missingResourceUrls]);
 
+  // 属性面板的元素索引:选中 id → 组合树元素(bounds 已被横排平移为画布绝对坐标)。
+  const elementIndex = useMemo(() => {
+    const map = new Map<string, IRElement>();
+    if (!composed) return map;
+    const walk = (els: IRElement[]) => {
+      for (const el of els) {
+        map.set(el.id, el);
+        if (el.children && el.children.length > 0) walk(el.children);
+      }
+    };
+    walk(composed.elements);
+    return map;
+  }, [composed]);
+
   // Initial fit-to-content once we have both composed content and a measured size.
   useEffect(() => {
     if (!composed || composed.contentWidth <= 0 || !hasMeasuredSize) return;
@@ -238,8 +286,6 @@ export function AnnotationPage({
       (prev) => prev ?? fitViewport(composed.contentWidth, composed.contentHeight, size.width, size.height, dpr),
     );
   }, [composed, hasMeasuredSize, size.width, size.height, dpr]);
-
-  const backLink = `/products/${productId}/requirements/${reqId}`;
 
   if (state.status === "loading") {
     return (
@@ -250,22 +296,14 @@ export function AnnotationPage({
   }
   if (state.status === "error") {
     return (
-      <StatePanel
-        action={<PrimaryActionLink href={backLink}>{t("action.backToProduct")}</PrimaryActionLink>}
-        state="error"
-        title={state.message}
-      >
+      <StatePanel state="error" title={state.message}>
         {state.message}
       </StatePanel>
     );
   }
   if (state.status === "empty") {
     return (
-      <StatePanel
-        action={<PrimaryActionLink href={backLink}>{t("action.backToProduct")}</PrimaryActionLink>}
-        state="empty"
-        title={t("annotation.empty")}
-      >
+      <StatePanel state="empty" title={t("annotation.empty")}>
         {t("annotation.emptyHelp")}
       </StatePanel>
     );
@@ -288,72 +326,77 @@ export function AnnotationPage({
   }
   const focusedFrames = (composed?.frames ?? []).filter((f) => focusedKeys.has(frameKey(f)));
 
-  return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col gap-2">
-      <div className="flex items-center justify-between">
-        <a className="text-sm text-zinc-600 underline" href={backLink}>
-          {t("action.backToProduct")}
-        </a>
-        <span className="text-xs text-zinc-500">
-          {readyPageCount} {t("requirement.pageCount")}
-          {selectedId ? ` · ${t("annotation.selected")}: ${selectedId}` : ""}
-        </span>
-      </div>
+  // 属性面板数据:选中元素 + 它所属页的 frame(算页内相对坐标)。
+  let selectedForPanel: AnnotationSelectedElement | null = null;
+  {
+    const el = selectedId ? elementIndex.get(selectedId) : undefined;
+    if (el) {
+      const selKey = pageKeyForElement(selectedId, composed?.frames ?? [], state.pages);
+      const frame = selKey ? ((composed?.frames ?? []).find((f) => frameKey(f) === selKey) ?? null) : null;
+      selectedForPanel = { element: el, frame };
+    }
+  }
 
+  return (
+    <div className="relative flex h-full w-full flex-col">
       {allFailed ? (
         <StatePanel state="error" title={t("requirement.listUnavailable")}>
           {state.pageErrors.map((e) => `${e.pageId}: ${e.reason}`).join("; ")}
         </StatePanel>
       ) : (
-        <div
-          ref={containerRef}
-          className="relative flex-1 overflow-hidden rounded-lg border border-zinc-200"
-          style={{ background: "#ffffff" }}
-        >
-          {/* z0: fixed dot-grid texture over the light/white canvas. */}
+        <div className="flex min-h-0 flex-1 gap-3">
           <div
-            className="pointer-events-none absolute inset-0 z-0"
-            style={{
-              backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1.5px)",
-              backgroundSize: "22px 22px",
-            }}
-          />
-          {/* z10: frosted focus frame(s) behind the canvas — one per focused page
+            ref={containerRef}
+            className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200"
+            style={{ background: "#ffffff" }}
+          >
+            {/* z0: fixed dot-grid texture over the light/white canvas. */}
+            <div
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{
+                backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1.5px)",
+                backgroundSize: "22px 22px",
+              }}
+            />
+            {/* z10: frosted focus frame(s) behind the canvas — one per focused page
                (selected page, and the hovered page while measuring distance). */}
-          {viewport
-            ? focusedFrames.map((f) => (
-                <FocusFrame key={`${f.artifactId}-${f.pageId}`} frame={f} viewport={viewport} dpr={dpr} />
-              ))
-            : null}
-          {/* z20: transparent CanvasKit canvas (backgroundColor "" → transparent clear) so the
+            {viewport
+              ? focusedFrames.map((f) => (
+                  <FocusFrame key={`${f.artifactId}-${f.pageId}`} frame={f} viewport={viewport} dpr={dpr} />
+                ))
+              : null}
+            {/* z20: transparent CanvasKit canvas (backgroundColor "" → transparent clear) so the
                light dot grid and the frosted frame behind show through the empty areas. */}
-          <div className="absolute inset-0 z-20">
-            {composed ? (
-              <CanvasKitSurface
-                elements={surfaceElements}
-                width={size.width}
-                height={size.height}
-                interactive
-                panOnPrimaryDrag
-                backgroundColor=""
-                selectedElementId={selectedId}
-                {...(viewport ? { viewport } : {})}
-                onViewportChange={setViewport}
-                onSelectElement={(el) => setSelectedId(el ? el.id : null)}
-                onHoverElement={(el) => setHoveredId(el ? el.id : null)}
+            <div className="absolute inset-0 z-20">
+              {composed ? (
+                <CanvasKitSurface
+                  elements={surfaceElements}
+                  width={size.width}
+                  height={size.height}
+                  interactive
+                  panOnPrimaryDrag
+                  backgroundColor=""
+                  selectedElementId={selectedId}
+                  {...(viewport ? { viewport } : {})}
+                  onViewportChange={setViewport}
+                  onSelectElement={(el) => setSelectedId(el ? el.id : null)}
+                  onHoverElement={(el) => setHoveredId(el ? el.id : null)}
+                />
+              ) : null}
+            </div>
+            {/* z30: per-page title labels. */}
+            {viewport ? (
+              <PageFrameOverlays
+                frames={composed?.frames ?? []}
+                viewport={viewport}
+                dpr={dpr}
+                focusedKeys={focusedKeys}
+                platform={platform}
+                t={t}
               />
             ) : null}
           </div>
-          {/* z30: per-page title labels. */}
-          {viewport ? (
-            <PageFrameOverlays
-              frames={composed?.frames ?? []}
-              viewport={viewport}
-              dpr={dpr}
-              focusedKeys={focusedKeys}
-              t={t}
-            />
-          ) : null}
+          <AnnotationPropertiesPanel selected={selectedForPanel} t={t} />
         </div>
       )}
 
@@ -403,20 +446,16 @@ function pageKeyForElement(
   return null;
 }
 
-// Focus-frame geometry (CSS px). The TOP pad is larger so the title label sits
-// INSIDE the frosted panel (see 22.png); the other three sides hug the design
-// tighter. The label is parked FOCUS_LABEL_TOP above the page top (inside the panel).
-const FOCUS_PAD_X = 10;
-const FOCUS_PAD_TOP = 40;
-const FOCUS_PAD_BOTTOM = 10;
-const FOCUS_RADIUS = 12;
-const FOCUS_LABEL_TOP = FOCUS_PAD_TOP - 12;
+// The focused page's title label sits just above its top edge. The selection border
+// hugs the design rect exactly (no padding ring), so the label is NOT wrapped by it.
+const FOCUS_LABEL_TOP = 28;
 
 /**
- * Frosted-glass focus frame drawn BEHIND the (transparent) canvas, anchored to
- * the focused page's screen rect plus padding. Its margin ring shows through the
- * canvas's transparent area around the design; the design itself covers its center.
- * The taller top band wraps the title label.
+ * Selection border for the focused page — a 2px indigo (#4f46e5) outline that hugs
+ * the design's screen rect exactly (no padding ring, no fill). Drawn ABOVE the
+ * (transparent) canvas (z25, below the z30 labels) so the border sits on the design's
+ * own edges; pointer-events:none lets clicks fall through to the canvas for selection.
+ * box-sizing:border-box keeps the 2px stroke inside the rect so it tracks the edge.
  */
 function FocusFrame({ frame, viewport, dpr }: { frame: PageFrame; viewport: CanvasKitViewportState; dpr: number }) {
   const pageLeft = (frame.x * viewport.scale + viewport.offsetX) / dpr;
@@ -425,16 +464,16 @@ function FocusFrame({ frame, viewport, dpr }: { frame: PageFrame; viewport: Canv
   const pageHeight = (frame.height * viewport.scale) / dpr;
   return (
     <div
-      className="pointer-events-none absolute z-10 border border-zinc-200/80 shadow-lg"
+      data-testid="annotation-focus-frame"
+      className="pointer-events-none absolute"
       style={{
-        left: pageLeft - FOCUS_PAD_X,
-        top: pageTop - FOCUS_PAD_TOP,
-        width: pageWidth + FOCUS_PAD_X * 2,
-        height: pageHeight + FOCUS_PAD_TOP + FOCUS_PAD_BOTTOM,
-        borderRadius: FOCUS_RADIUS,
-        background: "rgba(241,245,249,0.85)",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
+        left: pageLeft,
+        top: pageTop,
+        width: pageWidth,
+        height: pageHeight,
+        boxSizing: "border-box",
+        border: "2px solid #4f46e5",
+        zIndex: 25,
       }}
     />
   );
@@ -451,12 +490,14 @@ function PageFrameOverlays({
   viewport,
   dpr,
   focusedKeys,
+  platform,
   t,
 }: {
   frames: PageFrame[];
   viewport: CanvasKitViewportState;
   dpr: number;
   focusedKeys: Set<string>;
+  platform?: string;
   t: (key: string) => string;
 }) {
   return (
@@ -464,7 +505,7 @@ function PageFrameOverlays({
       {frames.map((f) => {
         const focused = f.status !== "error" && focusedKeys.has(frameKey(f));
         const left = (f.x * viewport.scale + viewport.offsetX) / dpr;
-        // Focused: park the label inside the frosted panel's top band. Otherwise
+        // Focused: park the label inside the focus frame's top band. Otherwise
         // it floats just above the page in the light canvas margin.
         const top = viewport.offsetY / dpr - (focused ? FOCUS_LABEL_TOP : 24);
         const suffix = f.variant && f.variant !== "default" ? ` · ${f.variant}` : "";
@@ -481,12 +522,25 @@ function PageFrameOverlays({
             </div>
           );
         }
+        if (focused) {
+          return (
+            <div
+              key={`${f.artifactId}-${f.pageId}`}
+              className="pointer-events-none absolute z-30 flex items-center gap-1 truncate text-xs font-medium text-indigo-600"
+              style={{ left, top, maxWidth: 240 }}
+            >
+              <PlatformIcon platform={platform} />
+              <span>
+                {f.title}
+                {suffix}
+              </span>
+            </div>
+          );
+        }
         return (
           <div
             key={`${f.artifactId}-${f.pageId}`}
-            className={`pointer-events-none absolute z-30 truncate text-xs font-medium ${
-              focused ? "text-blue-700" : "text-zinc-600"
-            }`}
+            className="pointer-events-none absolute z-30 truncate text-xs font-medium text-zinc-600"
             style={{ left, top, maxWidth: 240 }}
           >
             {f.title}

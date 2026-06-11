@@ -1,5 +1,6 @@
 import {
   FormaError,
+  MAX_TOKENS_CSS_BYTES,
   getArtifactDir,
   getArtifactIconsDir,
   getArtifactVziPath,
@@ -1831,6 +1832,42 @@ describe("artifact tools (C-03)", () => {
     expect(zip.getEntry("assets/app.css")?.getData().toString("utf8")).toBe("main { color: black; }");
   });
 
+  it("export_artifact html warns when the single entry omits tokens.css", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-export-tokens-"));
+    const artifactId = "ABCDEFGHIJ123456";
+    const productId = "P-123abc";
+    const versionDir = join(home, "data", "products", productId, "od-project", "artifacts", artifactId, "v1");
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, "index.html"), '<link rel="stylesheet" href="tokens.css"><main>Hello</main>', "utf8");
+    await writeFile(join(versionDir, "tokens.css"), ":root{--fg:#111}", "utf8");
+    const manifest = { ...fakeManifest(), supportingFiles: ["index.html", "tokens.css"] };
+    const store = fakeStore({
+      home,
+      artifacts: {
+        ...fakeStore().artifacts,
+        listArtifactVersions: vi.fn(async () => [1]),
+        readArtifactVersion: vi.fn(async () => ({ manifest, etag: "sha256:abc" })),
+      },
+      products: {
+        ...fakeStore().products,
+        listDesignPointers: vi.fn(async () => []),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.export_artifact({
+      product_id: productId,
+      artifact_id: artifactId,
+      format: "html",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toMatchObject({
+      output_path: expect.stringContaining(`${artifactId}.html`),
+      note: expect.stringContaining("tokens.css"),
+    });
+  });
+
   it.each([
     { artifactKind: "html" as const, entry: "index.html", requestedFormat: "svg" as const },
     { artifactKind: "svg" as const, entry: "icon.svg", requestedFormat: "html" as const },
@@ -2908,6 +2945,87 @@ describe("generate tools (P4.5 save-AI-HTML semantics)", () => {
         { path: "assets/icon-mono.svg", contentType: "image/svg+xml", contentBase64: svgB64 },
       ],
     });
+  });
+
+  it("generate_components accepts units + tokens_css and persists a unit library", async () => {
+    const fakeResult = { artifact_id: "ABCDEFGHIJ123456", version: 1, preview_status: "pending" };
+    const store = fakeStore({
+      generateComponents: vi.fn(async () => fakeResult),
+    });
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({
+      product_id: "P-123abc",
+      title: "Lib",
+      brand_style: "apple",
+      tokens_css: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", body_html: "<section><button>A</button></section>" }],
+    });
+
+    expect(res.isError).toBeUndefined();
+    const genCall = (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents;
+    expect(genCall).toHaveBeenCalledWith("P-123abc", {
+      title: "Lib",
+      brandStyle: "apple",
+      systemStyle: undefined,
+      tokensCss: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section><button>A</button></section>" }],
+    });
+  });
+
+  it("generate_components rejects neither html nor units", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({ product_id: "P-123abc", title: "Lib", brand_style: "apple" });
+
+    expect(res.isError).toBe(true);
+    expect(textPayload(res)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+  });
+
+  it("generate_components rejects over-budget tokens_css", async () => {
+    const store = fakeStore({
+      generateComponents: vi.fn(),
+    });
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({
+      product_id: "P-123abc",
+      title: "Lib",
+      brand_style: "apple",
+      tokens_css: "a".repeat(MAX_TOKENS_CSS_BYTES + 1),
+      units: [{ id: "button", title: "Button", role: "component", body_html: "<section>Button</section>" }],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(textPayload(res)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+    const genCall = (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents;
+    expect(genCall).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["html tag", "<html><body><section>Button</section></body></html>"],
+    ["head tag", "<head><title>Button</title></head><section>Button</section>"],
+    ["body tag", "<body><section>Button</section></body>"],
+    ["style tag", "<section><style>.btn{color:red}</style><button>Button</button></section>"],
+  ])("generate_components rejects unit body_html containing a forbidden %s", async (_label, bodyHtml) => {
+    const store = fakeStore({
+      generateComponents: vi.fn(),
+    });
+    const tools = createFormaTools(store);
+
+    const res = await tools.generate_components({
+      product_id: "P-123abc",
+      title: "Lib",
+      brand_style: "apple",
+      tokens_css: ":root{--fg:#111}",
+      units: [{ id: "button", title: "Button", role: "component", body_html: bodyHtml }],
+    });
+
+    expect(res.isError).toBe(true);
+    expect(textPayload(res)).toMatchObject({ error_code: "VALIDATION_ERROR" });
+    const genCall = (store as unknown as { generateComponents: ReturnType<typeof vi.fn> }).generateComponents;
+    expect(genCall).not.toHaveBeenCalled();
   });
 
 });

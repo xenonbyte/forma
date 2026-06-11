@@ -177,17 +177,30 @@ describe("DesignView", () => {
     expect(container.querySelectorAll("img").length).toBe(0);
   });
 
-  it("renders a top bar with a back link to the requirement detail and the requirement id", async () => {
+  it("reports the product name for the canvas shell and has no inline back link", async () => {
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const client = fakeClient({
+      getProduct: async () => ({ id: "P1", name: "计算器", description: "", platform: "mobile" }),
+    });
     const { container, root } = createTestRoot();
 
     await act(async () => {
-      root.render(<DesignView client={fakeClient()} params={{ productId: "p1", reqId: "r1" }} />);
+      root.render(
+        <DesignView
+          client={client}
+          onBreadcrumbLabel={onBreadcrumbLabel}
+          params={{ productId: "P1", reqId: "r1" }}
+        />,
+      );
       await flushPromises();
     });
 
-    const backLink = container.querySelector('a[href="/products/p1/requirements/r1"]');
-    expect(backLink).not.toBeNull();
-    expect(container.textContent).toContain("r1");
+    expect(labels["product:P1"]).toBe("计算器");
+    // Inline back link removed — shell owns navigation.
+    expect(container.querySelector("a[href$='/requirements/r1']")).toBeNull();
   });
 
   // TEST-WEB-002: 空态/ui_affected=false/加载/错误态。
@@ -268,6 +281,35 @@ describe("DesignView", () => {
     expect(canvasSpy).not.toHaveBeenCalled();
     expect(container.textContent).toContain("Design canvas unavailable");
     expect(container.textContent).toContain("boom");
+  });
+
+  // B4: on product/requirement load failure, console.warn + reports canvas.productUnavailable label.
+  it("warns and reports productUnavailable label when product load rejects", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const client = fakeClient({
+      getProduct: async () => {
+        throw new Error("product fetch failed");
+      },
+    });
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <DesignView
+          client={client}
+          onBreadcrumbLabel={onBreadcrumbLabel}
+          params={{ productId: "p1", reqId: "r1" }}
+        />,
+      );
+      await flushPromises();
+    });
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(labels["product:p1"]).toBe("Product unavailable");
   });
 
   // RISK-REG-002: current_version 内部活跃指针被保留 — 当 current_version 不是最高版本时
