@@ -153,6 +153,24 @@ describe("Canvas", () => {
     expect(frame.style.borderColor).toBe("rgb(79, 70, 229)"); // #4f46e5
   });
 
+  // 聚焦滚动:选中的设计 tile 只暴露滚动代理,不放开 iframe 点击/提交/导航交互。
+  it("keeps selected design tiles non-clickable while exposing a scroll proxy", async () => {
+    const model = buildViewerModel({ entry: "requirement", artifacts });
+    const first = model.tiles[0]!;
+    const container = render(
+      <Canvas model={model} mode="design" resolver={resolver} defaultSelectedTileId={first.id} />,
+    );
+    await act(async () => {
+      await sleep(50);
+    });
+    const iframes = Array.from(container.querySelectorAll("iframe")) as HTMLIFrameElement[];
+    expect(iframes.length).toBeGreaterThanOrEqual(1);
+    for (const iframe of iframes) {
+      expect(iframe.style.pointerEvents).toBe("none");
+    }
+    expect(container.querySelectorAll("[data-testid='design-tile-scroll-proxy']").length).toBe(1);
+  });
+
   it("annotation mode does not show design tile-title labels", async () => {
     const model = buildViewerModel({ entry: "requirement", artifacts });
     const container = render(<Canvas model={model} mode="annotation" resolver={resolver} />);

@@ -92,10 +92,8 @@ function TileNodeComponent({ data, selected }: NodeProps<TileNode>): React.React
             {data.tile.title}
           </span>
         </div>
-        {/* 所有设计模式 tile(设计页 + 组件库 per-unit tile)都是设备尺寸快照:关掉 iframe 指针事件,
-            让 React Flow 接管双指平移/缩放与点击选中。开着指针事件会吞掉点击(选不中 tile)和画布平移;
-            看细节靠画布缩放,无需 iframe 内部滚动。 */}
-        <DesignTile tile={data.tile} resolver={data.resolver} interactive={false} />
+        {/* iframe 始终不可点击,避免静态稿里的链接/表单导航;选中态只通过滚动代理查看长页面。 */}
+        <DesignTile tile={data.tile} resolver={data.resolver} interactive={false} scrollable={selected} />
         {selected && <SelectionFrame />}
       </div>
     );
@@ -149,8 +147,9 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, def
     rf.setCenter(tile.x + tile.width / 2, tile.y + tile.height / 2, { zoom: 1, duration: 300 });
   }, [locateRequestId, locateTileId, model.tiles, rf]);
 
-  // 只渲视口内 tile;不要默认 fitView,否则全图缩进视口会破坏离屏卸载验收。
-  // pan/zoom feel 与 annotation canvas 对齐:双指平移 + 捏合缩放(见 CANVAS_INTERACTION_PROPS)。
+  // 只渲视口内 tile。不做整图 fitView(会把全部 tile 缩进视口、破坏离屏卸载),而是 onInit 时
+  // 只 fit 首个 tile(局部区域、保留虚拟化),缩放上限 1 不放大 —— 进入画布时设计稿以正常比例完整
+  // 可见,而非 100% 溢出视口一眼看不全。pan/zoom 与 annotation 对齐(见 CANVAS_INTERACTION_PROPS)。
   return (
     <ReactFlow
       nodes={nodes}
@@ -161,6 +160,12 @@ function CanvasInner({ model, mode, resolver, locateTileId, locateRequestId, def
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable
+      onInit={(instance) => {
+        const firstTileId = model.tiles[0]?.id;
+        if (firstTileId) {
+          instance.fitView({ nodes: [{ id: firstTileId }], padding: 0.12, minZoom: 0.1, maxZoom: 1, duration: 0 });
+        }
+      }}
       {...CANVAS_INTERACTION_PROPS}
       minZoom={0.1}
       maxZoom={4}
