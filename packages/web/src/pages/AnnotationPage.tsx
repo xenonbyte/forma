@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CanvasKitSurface } from "@vzi-core/renderer";
-import type { CanvasKitViewportState } from "@vzi-core/renderer";
+import type { CanvasKitViewportState, IRElement } from "@vzi-core/renderer";
 import type { VZIContent } from "@vzi-core/format";
 import { apiClient, formatApiError, type FormaApiClient, type HandoffPage } from "../api.js";
 import { PlatformIcon } from "@xenonbyte/forma-viewer";
@@ -15,6 +15,7 @@ import {
   type ResourceRef,
   type ResourceError,
 } from "./annotation-adapter.js";
+import { AnnotationPropertiesPanel, type AnnotationSelectedElement } from "./AnnotationPropertiesPanel.js";
 
 interface DecodedPageContent {
   metadata: Record<string, unknown>;
@@ -264,6 +265,20 @@ export function AnnotationPage({
     return withMissingResourcePlaceholders(composed.elements, missingResourceUrls);
   }, [composed, missingResourceUrls]);
 
+  // 属性面板的元素索引:选中 id → 组合树元素(bounds 已被横排平移为画布绝对坐标)。
+  const elementIndex = useMemo(() => {
+    const map = new Map<string, IRElement>();
+    if (!composed) return map;
+    const walk = (els: IRElement[]) => {
+      for (const el of els) {
+        map.set(el.id, el);
+        if (el.children && el.children.length > 0) walk(el.children);
+      }
+    };
+    walk(composed.elements);
+    return map;
+  }, [composed]);
+
   // Initial fit-to-content once we have both composed content and a measured size.
   useEffect(() => {
     if (!composed || composed.contentWidth <= 0 || !hasMeasuredSize) return;
@@ -281,20 +296,14 @@ export function AnnotationPage({
   }
   if (state.status === "error") {
     return (
-      <StatePanel
-        state="error"
-        title={state.message}
-      >
+      <StatePanel state="error" title={state.message}>
         {state.message}
       </StatePanel>
     );
   }
   if (state.status === "empty") {
     return (
-      <StatePanel
-        state="empty"
-        title={t("annotation.empty")}
-      >
+      <StatePanel state="empty" title={t("annotation.empty")}>
         {t("annotation.emptyHelp")}
       </StatePanel>
     );
@@ -317,6 +326,17 @@ export function AnnotationPage({
   }
   const focusedFrames = (composed?.frames ?? []).filter((f) => focusedKeys.has(frameKey(f)));
 
+  // 属性面板数据:选中元素 + 它所属页的 frame(算页内相对坐标)。
+  let selectedForPanel: AnnotationSelectedElement | null = null;
+  {
+    const el = selectedId ? elementIndex.get(selectedId) : undefined;
+    if (el) {
+      const selKey = pageKeyForElement(selectedId, composed?.frames ?? [], state.pages);
+      const frame = selKey ? ((composed?.frames ?? []).find((f) => frameKey(f) === selKey) ?? null) : null;
+      selectedForPanel = { element: el, frame };
+    }
+  }
+
   return (
     <div className="relative flex h-full w-full flex-col">
       {allFailed ? (
@@ -324,56 +344,59 @@ export function AnnotationPage({
           {state.pageErrors.map((e) => `${e.pageId}: ${e.reason}`).join("; ")}
         </StatePanel>
       ) : (
-        <div
-          ref={containerRef}
-          className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200"
-          style={{ background: "#ffffff" }}
-        >
-          {/* z0: fixed dot-grid texture over the light/white canvas. */}
+        <div className="flex min-h-0 flex-1 gap-3">
           <div
-            className="pointer-events-none absolute inset-0 z-0"
-            style={{
-              backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1.5px)",
-              backgroundSize: "22px 22px",
-            }}
-          />
-          {/* z10: frosted focus frame(s) behind the canvas — one per focused page
+            ref={containerRef}
+            className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-zinc-200"
+            style={{ background: "#ffffff" }}
+          >
+            {/* z0: fixed dot-grid texture over the light/white canvas. */}
+            <div
+              className="pointer-events-none absolute inset-0 z-0"
+              style={{
+                backgroundImage: "radial-gradient(circle, rgba(0,0,0,0.10) 1px, transparent 1.5px)",
+                backgroundSize: "22px 22px",
+              }}
+            />
+            {/* z10: frosted focus frame(s) behind the canvas — one per focused page
                (selected page, and the hovered page while measuring distance). */}
-          {viewport
-            ? focusedFrames.map((f) => (
-                <FocusFrame key={`${f.artifactId}-${f.pageId}`} frame={f} viewport={viewport} dpr={dpr} />
-              ))
-            : null}
-          {/* z20: transparent CanvasKit canvas (backgroundColor "" → transparent clear) so the
+            {viewport
+              ? focusedFrames.map((f) => (
+                  <FocusFrame key={`${f.artifactId}-${f.pageId}`} frame={f} viewport={viewport} dpr={dpr} />
+                ))
+              : null}
+            {/* z20: transparent CanvasKit canvas (backgroundColor "" → transparent clear) so the
                light dot grid and the frosted frame behind show through the empty areas. */}
-          <div className="absolute inset-0 z-20">
-            {composed ? (
-              <CanvasKitSurface
-                elements={surfaceElements}
-                width={size.width}
-                height={size.height}
-                interactive
-                panOnPrimaryDrag
-                backgroundColor=""
-                selectedElementId={selectedId}
-                {...(viewport ? { viewport } : {})}
-                onViewportChange={setViewport}
-                onSelectElement={(el) => setSelectedId(el ? el.id : null)}
-                onHoverElement={(el) => setHoveredId(el ? el.id : null)}
+            <div className="absolute inset-0 z-20">
+              {composed ? (
+                <CanvasKitSurface
+                  elements={surfaceElements}
+                  width={size.width}
+                  height={size.height}
+                  interactive
+                  panOnPrimaryDrag
+                  backgroundColor=""
+                  selectedElementId={selectedId}
+                  {...(viewport ? { viewport } : {})}
+                  onViewportChange={setViewport}
+                  onSelectElement={(el) => setSelectedId(el ? el.id : null)}
+                  onHoverElement={(el) => setHoveredId(el ? el.id : null)}
+                />
+              ) : null}
+            </div>
+            {/* z30: per-page title labels. */}
+            {viewport ? (
+              <PageFrameOverlays
+                frames={composed?.frames ?? []}
+                viewport={viewport}
+                dpr={dpr}
+                focusedKeys={focusedKeys}
+                platform={platform}
+                t={t}
               />
             ) : null}
           </div>
-          {/* z30: per-page title labels. */}
-          {viewport ? (
-            <PageFrameOverlays
-              frames={composed?.frames ?? []}
-              viewport={viewport}
-              dpr={dpr}
-              focusedKeys={focusedKeys}
-              platform={platform}
-              t={t}
-            />
-          ) : null}
+          <AnnotationPropertiesPanel selected={selectedForPanel} t={t} />
         </div>
       )}
 

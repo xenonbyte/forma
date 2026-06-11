@@ -475,4 +475,85 @@ describe("AnnotationPage", () => {
     // border only — no fill tinting the design underneath.
     expect(frame!.style.background || frame!.style.backgroundColor || "").toBe("");
   });
+
+  // 属性面板:选中元素后右侧显示其标注属性;图片元素提供切图导出下载。
+  it("properties panel reflects the selected element and exposes image slice export", async () => {
+    const panelContent = (): DecodedPageContent => ({
+      metadata: { formaViewport: { width: 390, height: 800 } },
+      elements: new Map<string, unknown>([
+        [
+          "root",
+          {
+            id: "root",
+            parentId: null,
+            type: "container",
+            bounds: { x: 0, y: 0, width: 390, height: 800 },
+            styles: { backgroundColor: "rgb(255, 255, 255)" },
+          },
+        ],
+        [
+          "title",
+          {
+            id: "title",
+            parentId: "root",
+            type: "text",
+            bounds: { x: 92, y: 12, width: 177, height: 21 },
+            styles: { color: "rgb(51, 51, 51)", fontFamily: "Roboto, sans-serif", fontSize: "18px" },
+            textContent: "Application was reject",
+          },
+        ],
+        [
+          "hero",
+          {
+            id: "hero",
+            parentId: "root",
+            type: "image",
+            bounds: { x: 146, y: 120, width: 98, height: 98 },
+            styles: {},
+            imageData: { src: "assets/shield.png" },
+          },
+        ],
+      ]),
+      images: new Map(),
+    });
+    const instances = stubResizeObserver();
+    await render(clientWith({ pages: [page()], errors: [] }), {
+      fetchContent: async () => panelContent(),
+      checkResourceUrl: async () => true,
+    });
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // 未选中:面板空态。
+    const panel = container.querySelector('[data-testid="annotation-props-panel"]');
+    expect(panel).not.toBeNull();
+    expect(container.querySelector('[data-testid="annotation-props-layout"]')).toBeNull();
+
+    const lastCall = canvasKitSurfaceCalls.at(-1);
+    if (!lastCall?.onSelectElement) throw new Error("onSelectElement not captured in mock");
+
+    // 选中文本 → 内容 + 文字属性 + 颜色。
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "title" });
+      await Promise.resolve();
+    });
+    expect(container.querySelector('[data-testid="annotation-props-content"]')!.textContent).toContain(
+      "Application was reject",
+    );
+    expect(container.querySelector('[data-testid="annotation-props-typography"]')!.textContent).toContain("Roboto");
+    expect(container.querySelector('[data-testid="annotation-props-colors"]')!.textContent).toContain("#333333");
+
+    // 选中图片 → 导出下载链接指向重写后的 bundle 切图 URL。
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "hero" });
+      await Promise.resolve();
+    });
+    const download = container.querySelector<HTMLAnchorElement>('[data-testid="annotation-props-download"]');
+    expect(download).not.toBeNull();
+    expect(download!.getAttribute("href")).toBe("/api/products/P-abc123/artifacts/A/versions/1/bundle/assets/shield.png");
+    expect(download!.getAttribute("download")).toBe("shield.png");
+  });
 });
