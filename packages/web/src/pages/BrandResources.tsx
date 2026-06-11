@@ -52,7 +52,17 @@ export function BrandResources({ client, onBreadcrumbLabel, params }: BrandResou
     setState({ status: "loading" });
 
     async function load() {
-      const product: Product = await client.getProduct(productId);
+      let product: Product;
+      try {
+        product = await client.getProduct(productId);
+      } catch (error: unknown) {
+        if (!cancelled) {
+          console.warn("failed to load product label for brand canvas shell", formatApiError(error));
+          onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+          setState({ status: "error", error: formatApiError(error) });
+        }
+        return;
+      }
       onBreadcrumbLabelRef.current?.(`product:${productId}`, product.name);
 
       if (!product.designSystemArtifactId) {
@@ -92,8 +102,7 @@ export function BrandResources({ client, onBreadcrumbLabel, params }: BrandResou
 
     load().catch((error: unknown) => {
       if (!cancelled) {
-        console.warn("failed to load product label for brand canvas shell", formatApiError(error));
-        onBreadcrumbLabelRef.current?.(`product:${productId}`, tRef.current("canvas.productUnavailable"));
+        console.warn("failed to load brand resources", formatApiError(error));
         setState({ status: "error", error: formatApiError(error) });
       }
     });

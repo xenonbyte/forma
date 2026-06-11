@@ -346,6 +346,34 @@ describe("BrandResources", () => {
     expect(labels[`product:${PRODUCT_ID}`]).toBe("Product unavailable");
   });
 
+  it("preserves loaded product label when component-library artifact load rejects", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const labels: Record<string, string> = {};
+    const onBreadcrumbLabel = (k: string, v: string) => {
+      labels[k] = v;
+    };
+    const client = fakeClient({
+      getProductArtifact: async () => {
+        throw new Error("artifact fetch failed");
+      },
+    });
+    const { root } = createTestRoot();
+
+    await act(async () => {
+      root.render(
+        <BrandResources
+          client={client}
+          onBreadcrumbLabel={onBreadcrumbLabel}
+          params={{ productId: PRODUCT_ID }}
+        />,
+      );
+      await flushPromises();
+    });
+
+    expect(warnSpy).toHaveBeenCalled();
+    expect(labels[`product:${PRODUCT_ID}`]).toBe("My Product");
+  });
+
   // TEST-BC3-006: viewer model entry is "page" and group key is "brand-resources".
   it("passes a viewer model with group pageId brand-resources to Canvas", async () => {
     const { container: _c, root } = createTestRoot();
@@ -361,4 +389,3 @@ describe("BrandResources", () => {
     expect(props.model.entry).toBe("page");
   });
 });
-

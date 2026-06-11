@@ -56,6 +56,7 @@ export function mapArtifactsToViewerInputs(input: MapArtifactsInput): NormalizeA
       version: a.current_version,
       width,
       height,
+      ...(input.platform !== undefined ? { platform: input.platform } : {}),
     });
   }
   return result;
