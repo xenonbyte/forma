@@ -236,6 +236,10 @@ function isValidSupportingPath(value: string): boolean {
   return !segs.some((s) => s === "..");
 }
 
+function isComponentUnitBodyFragment(value: string): boolean {
+  return !/<\/?\s*(?:html|head|body|style)(?:\s|>|\/)/i.test(value);
+}
+
 const supportingFileSchema = z
   .object({
     path: z.string().min(1).refine(isValidSupportingPath, {
@@ -251,7 +255,9 @@ const componentUnitSchema = z
     id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/),
     title: z.string().min(1),
     role: z.enum(["foundations", "icon", "component"]),
-    body_html: z.string().min(1),
+    body_html: z.string().min(1).refine(isComponentUnitBodyFragment, {
+      message: "body_html must be a fragment with no <html>, <head>, <body>, or <style> tags",
+    }),
     width: z.number().positive().optional(),
     height: z.number().positive().optional(),
   })
@@ -828,11 +834,11 @@ async function exportArtifact(
     }
     const entrySrc = join(artifactBase, entry);
     await copyFile(entrySrc, outputPath);
-    const hasAssets = (manifest.supportingFiles ?? []).some((f) => f.startsWith("assets/"));
-    if (hasAssets) {
+    const omittedSupportingFiles = singleFileExportOmittedFiles(manifest, entry);
+    if (omittedSupportingFiles.length > 0) {
       return {
         output_path: outputPath,
-        note: "Only the single entry file is included. Assets are not exported in html/svg format. Use format=zip for the complete self-contained bundle.",
+        note: `Only the single entry file is included. Supporting files are not exported in html/svg format (${formatSupportingFileList(omittedSupportingFiles)}). Use format=zip for the complete self-contained bundle.`,
       };
     }
   } else if (format === "zip") {
@@ -1073,6 +1079,15 @@ function artifactExportEntry(manifest: ArtifactManifest, format: "html" | "svg")
     return manifest.entry;
   }
   return manifest.exports.find((path) => path.toLowerCase().endsWith(extension));
+}
+
+function singleFileExportOmittedFiles(manifest: ArtifactManifest, entry: string): string[] {
+  return (manifest.supportingFiles ?? []).filter((path) => path !== entry);
+}
+
+function formatSupportingFileList(paths: string[]): string {
+  const visible = paths.slice(0, 5).join(", ");
+  return paths.length > 5 ? `${visible}, and ${paths.length - 5} more` : visible;
 }
 
 function addArtifactFileToZip(zip: AdmZip, artifactDir: string, relPath: string, addedFiles: Set<string>): void {
