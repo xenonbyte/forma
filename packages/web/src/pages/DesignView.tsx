@@ -62,7 +62,8 @@ export function DesignView({ client, onBreadcrumbLabel, params }: DesignViewProp
         }
         setState({
           status: "ready",
-          model: buildViewerModel({ entry: "requirement", artifacts: inputs }),
+          // 设计稿像标注那样横向排:所有页面同一横行,而非每页一行。
+          model: buildViewerModel({ entry: "requirement", artifacts: inputs, layout: "single-row" }),
         });
       })
       .catch((error: unknown) => {

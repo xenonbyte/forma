@@ -21,6 +21,11 @@ export interface NormalizeArtifactInput {
 export interface BuildViewerModelInput {
   entry: ViewerEntry;
   artifacts: NormalizeArtifactInput[];
+  /**
+   * 画布布局:"rows"(默认)= 每个 page group 一行;"single-row" = 所有 tile 同一横行,
+   * 让设计稿像标注那样横向排。
+   */
+  layout?: "rows" | "single-row";
 }
 
 function tileId(a: NormalizeArtifactInput): string {
@@ -53,7 +58,7 @@ export function buildViewerModel(input: BuildViewerModelInput): ViewerModel {
   }));
 
   const groups = buildGroups(tiles);
-  const positioned = layoutTiles(tiles, groups);
+  const positioned = layoutTiles(tiles, groups, input.layout === "single-row");
 
   return { entry: input.entry, tiles: positioned, groups };
 }
