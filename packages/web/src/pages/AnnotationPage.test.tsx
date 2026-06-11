@@ -448,4 +448,31 @@ describe("AnnotationPage", () => {
     expect(focused!.className).toContain("text-indigo-600");
     expect(focused!.querySelector("svg[data-platform='mobile']")).not.toBeNull();
   });
+
+  // Fix: the focused page selection is a 2px indigo (#4f46e5) border hugging the design
+  // (border only — no padding ring, no fill, no frosted backdrop).
+  it("focused page draws an indigo border-only selection that hugs the design", async () => {
+    const instances = stubResizeObserver();
+    await render(clientWith({ pages: [page()], errors: [] }));
+    await act(async () => {
+      instances[0].callback([{ contentRect: { width: 640, height: 480 } }]);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const lastCall = canvasKitSurfaceCalls.at(-1);
+    if (!lastCall?.onSelectElement) throw new Error("onSelectElement not captured in mock");
+    await act(async () => {
+      lastCall.onSelectElement?.({ id: "root" });
+      await Promise.resolve();
+    });
+    const frame = container.querySelector<HTMLElement>('[data-testid="annotation-focus-frame"]');
+    expect(frame).not.toBeNull();
+    // indigo #4f46e5 appears in the border (any form the env normalizes it to).
+    const styleText = `${frame!.style.border} ${frame!.style.borderColor} ${frame!.style.cssText}`.toLowerCase();
+    expect(styleText).toMatch(/#4f46e5|79,\s?70,\s?229/);
+    // frosted backdrop blur is gone.
+    expect(frame!.style.backdropFilter || "").toBe("");
+    // border only — no fill tinting the design underneath.
+    expect(frame!.style.background || frame!.style.backgroundColor || "").toBe("");
+  });
 });

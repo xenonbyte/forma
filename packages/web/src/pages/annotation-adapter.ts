@@ -339,23 +339,26 @@ function isFiniteNumber(v: unknown): v is number {
 export function pageSize(content: VZIContent): { width: number; height: number } {
   const meta = content.metadata as unknown as Record<string, unknown>;
   const vp = asRecord(meta["formaViewport"]);
-  let width = isFiniteNumber(vp["width"]) ? (vp["width"] as number) : 0;
-  let height = isFiniteNumber(vp["height"]) ? (vp["height"] as number) : 0;
-  if (width <= 0 || height <= 0) {
-    let maxX = 0;
-    let maxY = 0;
-    for (const rawEl of content.elements.values()) {
-      const b = asRecord((rawEl as unknown as Record<string, unknown>)["bounds"]);
-      const x = isFiniteNumber(b["x"]) ? (b["x"] as number) : 0;
-      const y = isFiniteNumber(b["y"]) ? (b["y"] as number) : 0;
-      const w = isFiniteNumber(b["width"]) ? (b["width"] as number) : 0;
-      const h = isFiniteNumber(b["height"]) ? (b["height"] as number) : 0;
-      maxX = Math.max(maxX, x + w);
-      maxY = Math.max(maxY, y + h);
-    }
-    if (width <= 0) width = Math.ceil(maxX);
-    if (height <= 0) height = Math.ceil(maxY);
+  const vpWidth = isFiniteNumber(vp["width"]) ? (vp["width"] as number) : 0;
+  const vpHeight = isFiniteNumber(vp["height"]) ? (vp["height"] as number) : 0;
+  // Always measure the real element extent and take the max with formaViewport. A long
+  // page's content can exceed the captured viewport (e.g. a scrolling page captured at
+  // device height), and the CanvasKit surface draws EVERY element — so the frame must
+  // bound them all, otherwise the focus frame / initial fit only covers the top portion
+  // and clips long designs.
+  let maxX = 0;
+  let maxY = 0;
+  for (const rawEl of content.elements.values()) {
+    const b = asRecord((rawEl as unknown as Record<string, unknown>)["bounds"]);
+    const x = isFiniteNumber(b["x"]) ? (b["x"] as number) : 0;
+    const y = isFiniteNumber(b["y"]) ? (b["y"] as number) : 0;
+    const w = isFiniteNumber(b["width"]) ? (b["width"] as number) : 0;
+    const h = isFiniteNumber(b["height"]) ? (b["height"] as number) : 0;
+    maxX = Math.max(maxX, x + w);
+    maxY = Math.max(maxY, y + h);
   }
+  const width = Math.max(vpWidth, Math.ceil(maxX));
+  const height = Math.max(vpHeight, Math.ceil(maxY));
   return { width: Math.max(1, width), height: Math.max(1, height) };
 }
 

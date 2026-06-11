@@ -423,20 +423,16 @@ function pageKeyForElement(
   return null;
 }
 
-// Focus-frame geometry (CSS px). The TOP pad is larger so the title label sits
-// INSIDE the frosted panel (see 22.png); the other three sides hug the design
-// tighter. The label is parked FOCUS_LABEL_TOP above the page top (inside the panel).
-const FOCUS_PAD_X = 10;
-const FOCUS_PAD_TOP = 40;
-const FOCUS_PAD_BOTTOM = 10;
-const FOCUS_RADIUS = 12;
-const FOCUS_LABEL_TOP = FOCUS_PAD_TOP - 12;
+// The focused page's title label sits just above its top edge. The selection border
+// hugs the design rect exactly (no padding ring), so the label is NOT wrapped by it.
+const FOCUS_LABEL_TOP = 28;
 
 /**
- * Frosted-glass focus frame drawn BEHIND the (transparent) canvas, anchored to
- * the focused page's screen rect plus padding. Its margin ring shows through the
- * canvas's transparent area around the design; the design itself covers its center.
- * The taller top band wraps the title label.
+ * Selection border for the focused page — a 2px indigo (#4f46e5) outline that hugs
+ * the design's screen rect exactly (no padding ring, no fill). Drawn ABOVE the
+ * (transparent) canvas (z25, below the z30 labels) so the border sits on the design's
+ * own edges; pointer-events:none lets clicks fall through to the canvas for selection.
+ * box-sizing:border-box keeps the 2px stroke inside the rect so it tracks the edge.
  */
 function FocusFrame({ frame, viewport, dpr }: { frame: PageFrame; viewport: CanvasKitViewportState; dpr: number }) {
   const pageLeft = (frame.x * viewport.scale + viewport.offsetX) / dpr;
@@ -445,16 +441,16 @@ function FocusFrame({ frame, viewport, dpr }: { frame: PageFrame; viewport: Canv
   const pageHeight = (frame.height * viewport.scale) / dpr;
   return (
     <div
-      className="pointer-events-none absolute z-10 border border-zinc-200/80 shadow-lg"
+      data-testid="annotation-focus-frame"
+      className="pointer-events-none absolute"
       style={{
-        left: pageLeft - FOCUS_PAD_X,
-        top: pageTop - FOCUS_PAD_TOP,
-        width: pageWidth + FOCUS_PAD_X * 2,
-        height: pageHeight + FOCUS_PAD_TOP + FOCUS_PAD_BOTTOM,
-        borderRadius: FOCUS_RADIUS,
-        background: "rgba(241,245,249,0.85)",
-        backdropFilter: "blur(6px)",
-        WebkitBackdropFilter: "blur(6px)",
+        left: pageLeft,
+        top: pageTop,
+        width: pageWidth,
+        height: pageHeight,
+        boxSizing: "border-box",
+        border: "2px solid #4f46e5",
+        zIndex: 25,
       }}
     />
   );
@@ -486,7 +482,7 @@ function PageFrameOverlays({
       {frames.map((f) => {
         const focused = f.status !== "error" && focusedKeys.has(frameKey(f));
         const left = (f.x * viewport.scale + viewport.offsetX) / dpr;
-        // Focused: park the label inside the frosted panel's top band. Otherwise
+        // Focused: park the label inside the focus frame's top band. Otherwise
         // it floats just above the page in the light canvas margin.
         const top = viewport.offsetY / dpr - (focused ? FOCUS_LABEL_TOP : 24);
         const suffix = f.variant && f.variant !== "default" ? ` · ${f.variant}` : "";
