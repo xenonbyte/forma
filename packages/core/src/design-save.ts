@@ -32,7 +32,7 @@ import type {
   ArtifactProvenance,
 } from "./artifact-manifest.js";
 import { validateSupportingPath } from "./artifact-manifest.js";
-import { localizeArtifactAssets } from "./artifact-asset-pipeline.js";
+import { assertArtifactAssetBudgets, localizeArtifactAssets, localizeArtifactCss } from "./artifact-asset-pipeline.js";
 import { validateStaticArtifact } from "./artifact-static-validation.js";
 import { renderArtifactPreview } from "./preview-renderer.js";
 import { lintCraft } from "./quality/craft-lint.js";
@@ -379,6 +379,15 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   const { html: localizedHtml, files, assets } = await localizeArtifactAssets({ html });
   assertNoSupportingFileCollision(callerFiles, files);
 
+  if (tokensFile !== undefined) {
+    const tokensLocalized = await localizeArtifactCss(decodeUtf8(tokensFile, "tokens.css"));
+    for (const [path, buf] of tokensLocalized.files) {
+      files.set(path, buf);
+    }
+    assets.push(...tokensLocalized.assets);
+    tokensFile = Buffer.from(tokensLocalized.css, "utf8");
+  }
+
   // Localize each composed unit document and collect their assets into the shared file map
   const localizedUnitDocs = new Map<string, string>();
   for (const u of composedUnits) {
@@ -389,6 +398,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
     }
     localizedUnitDocs.set(u.entry, unitLocalized.html);
   }
+  assertArtifactAssetBudgets(files);
 
   // ── Step 2: validateStaticArtifact (pure, no lock) ───────────────────────────
   const svgFiles = new Map<string, string>();

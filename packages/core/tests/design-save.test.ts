@@ -16,6 +16,7 @@ import { MAX_TOKENS_CSS_BYTES, saveDesignArtifact, type SaveDesignInput } from "
 import { FormaError } from "../src/errors.js";
 import { getFormaPaths } from "../src/paths.js";
 import { validateStaticArtifact } from "../src/artifact-static-validation.js";
+import { MAX_ASSET_COUNT } from "../src/artifact-asset-pipeline.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,11 @@ async function makeDataPng(): Promise<string> {
  */
 function makeScriptSvgDataUrl(): string {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><rect width="10" height="10"/></svg>`;
+  return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+}
+
+function makeSvgDataUrl(seed: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"><title>${seed}</title><rect width="1" height="1"/></svg>`;
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
@@ -887,7 +893,7 @@ describe("saveDesignArtifact", () => {
         units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section>Button</section>" }],
         forma: { brandStyle: "apple", platform: "mobile" },
       }),
-    ).rejects.toMatchObject({ code: "ARTIFACT_NOT_STATIC" });
+    ).rejects.toMatchObject({ code: "ARTIFACT_REMOTE_RESOURCE" });
   }, 30000);
 
   it("rejects over-budget tokensCss before writing unit files", async () => {
@@ -925,6 +931,57 @@ describe("saveDesignArtifact", () => {
     expect(unitBtn).toMatch(/src="assets\/[^"]+\.png"/);
     expect(validateStaticArtifact({ html: unitBtn, cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({ ok: true });
   }, 90000);
+
+  it("localizes data assets inside tokensCss before static validation", async () => {
+    const deps = makeDeps();
+    const dataPng = await makeDataPng();
+    const result = await saveDesignArtifact(deps, {
+      productId,
+      kind: "component-library",
+      title: "Lib",
+      tokensCss: `.brand-bg{background-image:url("${dataPng}")}`,
+      units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<section>Button</section>" }],
+      forma: { brandStyle: "apple", platform: "mobile" },
+    });
+
+    const dir = artifactVersionDir(deps, productId, result.artifactId, result.version);
+    const tokens = await readFile(join(dir, "tokens.css"), "utf8");
+    const assetPath = /url\(['"](assets\/[^'"]+\.png)['"]\)/.exec(tokens)?.[1];
+    expect(tokens).not.toContain("data:image/png;base64,");
+    expect(assetPath).toBeDefined();
+    await expect(readFile(join(dir, assetPath!))).resolves.toBeInstanceOf(Buffer);
+    expect(validateStaticArtifact({ html: "<html><body></body></html>", cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({
+      ok: true,
+    });
+  }, 90000);
+
+  it("rejects component-library assets when html and tokensCss are only over-budget after merging", async () => {
+    const deps = makeDeps();
+    const htmlAssetCount = 100;
+    const tokensAssetCount = MAX_ASSET_COUNT - htmlAssetCount + 1;
+    const bodyHtml = Array.from(
+      { length: htmlAssetCount },
+      (_, index) => `<img src="${makeSvgDataUrl(index)}" alt="asset-${index}">`,
+    ).join("");
+    const tokensCss = Array.from(
+      { length: tokensAssetCount },
+      (_, index) => `.asset-${index}{background:url(${makeSvgDataUrl(index + htmlAssetCount)})}`,
+    ).join("\n");
+
+    await expect(
+      saveDesignArtifact(deps, {
+        productId,
+        kind: "component-library",
+        title: "Lib",
+        tokensCss,
+        units: [{ id: "button", title: "Button", role: "component", bodyHtml }],
+        forma: { brandStyle: "apple", platform: "mobile" },
+      }),
+    ).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: { budget: "MAX_ASSET_COUNT", limit: MAX_ASSET_COUNT, actual: MAX_ASSET_COUNT + 1 },
+    });
+  }, 30000);
 
   it("rejects remote refs in generated unit bodies", async () => {
     const deps = makeDeps();
