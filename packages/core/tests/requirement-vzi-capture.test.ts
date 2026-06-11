@@ -130,6 +130,28 @@ const DESIGN_PAGE_HTML_WITH_SVG_AND_IMG = `<!DOCTYPE html>
 </body>
 </html>`;
 
+/**
+ * 切图回归 fixture:版本目录里真实存在的位图切图(assets/photo.png)被 <img> 引用,
+ * 另一张(assets/bg.png)被 CSS background-image 引用。归档 capture 必须把这两个
+ * 引用以 file://…/od-project/artifacts/<aid>/v1/assets/… 的形式带进 page.vzi,
+ * 标注页 adapter 才能重写为 bundle URL 供渲染与导出。
+ */
+const DESIGN_PAGE_HTML_WITH_ASSET_IMAGES = `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <main style="width:1024px;height:768px;padding:24px">
+    <h1 style="font-size:24px;color:#1a1a2e">Asset slices</h1>
+    <img src="assets/photo.png" width="120" height="90" alt="hero photo" />
+    <div style="width:200px;height:100px;background-image:url('assets/bg.png');background-size:cover"></div>
+  </main>
+</body>
+</html>`;
+
+/** 1×1 PNG bytes (decoded from INLINE_PNG_DATA_URL). */
+function tinyPngBytes(): Buffer {
+  return Buffer.from(INLINE_PNG_DATA_URL.split(",")[1], "base64");
+}
+
 function makePointer(requirementId: string, pageId: string, artifactId: string, version = 1): DesignPointer {
   return {
     requirementId,
@@ -309,6 +331,74 @@ describe("captureRequirementVzi (smoke — Puppeteer required)", () => {
       await rm(formaHome, { recursive: true, force: true });
     }
   }, 90_000); // Puppeteer can be slow to launch; give it 90 seconds
+
+  it("carries raster slice refs (img src + CSS background-image) into the page VZI as version-asset file URLs", async () => {
+    const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-slices-"));
+    try {
+      const deps = await makeTestDeps(formaHome, "desktop");
+      const productsRoot = join(formaHome, "products");
+
+      await seedVersionHtml(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1, DESIGN_PAGE_HTML_WITH_ASSET_IMAGES);
+      const versionDir = getArtifactVersionDir(productsRoot, PRODUCT_ID, ARTIFACT_ID, 1);
+      await mkdir(join(versionDir, "assets"), { recursive: true });
+      await writeFile(join(versionDir, "assets", "photo.png"), tinyPngBytes());
+      await writeFile(join(versionDir, "assets", "bg.png"), tinyPngBytes());
+
+      const pointer = makePointer(REQ_ID, PAGE_ID, ARTIFACT_ID, 1);
+      deps.listDesignPointers = async () => [pointer];
+
+      const result = await captureRequirementVzi(deps, { productId: PRODUCT_ID, requirementId: REQ_ID });
+      expect(result.pages).toHaveLength(1);
+
+      const vziPath = getArtifactVziPath(productsRoot, PRODUCT_ID, ARTIFACT_ID);
+      const decoder = new VZIDecoder({ enableErrorRecovery: true });
+      const decoded = decoder.decode(new Uint8Array(await readFile(vziPath)));
+      expect(decoded.errors.filter((e) => e.fatal)).toHaveLength(0);
+
+      // 标注页 adapter(rewriteResourceUrl)只接受两种本地形态:
+      //  a) bundle 相对路径 "assets/<rel>"(直接拼 bundleBaseUrl)
+      //  b) file://…/od-project/artifacts/<artifactId>/v1/assets/<rel>(版本目录内的绝对 file URL)
+      // 其它形态(http、盘上任意 file://、绝对路径)都会被拒绝 → 图片渲染/导出即断。
+      const versionAssetRef = (raw: unknown, rel: string): boolean =>
+        typeof raw === "string" &&
+        (raw === `assets/${rel}` ||
+          (raw.startsWith("file://") && raw.includes(`/od-project/artifacts/${ARTIFACT_ID}/v1/assets/${rel}`)));
+
+      const elements = Array.from(decoded.content.elements.values()).map(
+        (el) => el as unknown as Record<string, unknown>,
+      );
+
+      // <img> 切图引用进入元素(imageData.src / src / source.src 任一渠道)。
+      const imgRefs = elements.filter((el) => {
+        const imageData = el["imageData"] as Record<string, unknown> | undefined;
+        const source = el["source"] as Record<string, unknown> | undefined;
+        return (
+          versionAssetRef(el["src"], "photo.png") ||
+          versionAssetRef(imageData?.["src"], "photo.png") ||
+          versionAssetRef(source?.["src"], "photo.png")
+        );
+      });
+      expect(imgRefs.length).toBeGreaterThan(0);
+
+      // CSS background-image 切图引用进入元素样式(computed style 解析为版本目录内的
+      // 绝对 file URL,或保留 bundle 相对路径 —— 两者 adapter 都能重写)。
+      const bgRefs = elements.filter((el) => {
+        const styles = el["styles"] as Record<string, unknown> | undefined;
+        const bg = styles?.["backgroundImage"] ?? styles?.["background"];
+        return (
+          typeof bg === "string" &&
+          (bg.includes(`/od-project/artifacts/${ARTIFACT_ID}/v1/assets/bg.png`) || bg.includes(`url("assets/bg.png")`))
+        );
+      });
+      expect(bgRefs.length).toBeGreaterThan(0);
+
+      // 导出源文件保留在不可变版本目录(标注页导出即下载该文件)。
+      expect((await readFile(join(versionDir, "assets", "photo.png"))).length).toBeGreaterThan(0);
+      expect((await readFile(join(versionDir, "assets", "bg.png"))).length).toBeGreaterThan(0);
+    } finally {
+      await rm(formaHome, { recursive: true, force: true });
+    }
+  }, 90_000);
 
   it("viewport source is observable in page result for platform=mobile", async () => {
     const formaHome = await mkdtemp(join(tmpdir(), "forma-vzi-mobile-"));
