@@ -309,6 +309,11 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       })),
       listStyles: vi.fn(async () => [{ name: "linear" }]),
       listSystemStyles: vi.fn(async () => []),
+      listCraftDocs: vi.fn(async () => [
+        { slug: "ai-tells", content: "# AI Tells\nDesign tells content." },
+        { slug: "design-read", content: "# Design Read\nDesign read content." },
+        { slug: "color", content: "# Color\nColor guidelines." },
+      ]),
     },
     ...overrides,
   };
@@ -3463,6 +3468,37 @@ describe("get_component_baseline (T006 SPEC-DATA-005)", () => {
     expect(compIdx).not.toBe(prodIdx);
     expect(compIdx).toBeGreaterThan(-1);
     expect(prodIdx).toBeGreaterThan(-1);
+  });
+
+  it("get_component_baseline returns craft_rules containing all craft docs (SPEC-BEHAVIOR-009)", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_component_baseline({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    // craft_rules must be present
+    expect(payload.craft_rules).toBeDefined();
+    expect(Array.isArray(payload.craft_rules)).toBe(true);
+    // must include ai-tells
+    expect(payload.craft_rules.some((d: { slug: string }) => d.slug === "ai-tells")).toBe(true);
+    // existing fields unchanged
+    expect(payload.platform).toBe("web");
+    expect(payload.baseline).toBeDefined();
+  });
+
+  it("get_component_baseline craft_rules each have slug and content fields", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_component_baseline({ product_id: "P-123abc" });
+
+    const payload = textPayload(result);
+    for (const doc of payload.craft_rules as Array<{ slug: string; content: string }>) {
+      expect(typeof doc.slug).toBe("string");
+      expect(typeof doc.content).toBe("string");
+    }
   });
 });
 

@@ -50,6 +50,14 @@ export interface DesignContextResult {
 }
 
 /**
+ * Read the full craft doc set — same source as get_design_context (all slugs, no filtering).
+ * Callers that need craft docs without a full DesignContext (e.g. get_component_baseline) use this.
+ */
+export async function readAllCraftDocs(styles: StyleService): Promise<CraftDoc[]> {
+  return styles.listCraftDocs();
+}
+
+/**
  * Map a product platform string to one of the two supported ComponentPlatform values.
  * - "mobile" → "mobile"
  * - "web" | "desktop" | "tablet" | anything else → "web" (default; noted in SPEC-DATA-005)

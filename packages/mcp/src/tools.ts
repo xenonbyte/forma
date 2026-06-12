@@ -9,6 +9,7 @@ import {
   artifactPreviewUrl,
   assetDensityPath,
   buildDesignContext,
+  readAllCraftDocs,
   extractIconAssets,
   getArtifactDir,
   getArtifactVersionDir,
@@ -459,9 +460,12 @@ export function createFormaTools(store: FormaStore): FormaTools {
     confirm_product_id: tool("confirm_product_id", async (input) => confirmProductId(store, input)),
     get_product_baseline: tool("get_product_baseline", async (input) => getProductBaseline(store, input.product_id)),
     get_component_baseline: tool("get_component_baseline", async (input) => {
-      const product = await store.products.getProduct(input.product_id);
+      const [product, craft_rules] = await Promise.all([
+        store.products.getProduct(input.product_id),
+        readAllCraftDocs(store.styles),
+      ]);
       const componentPlatform = mapToComponentPlatform(product.platform);
-      return { platform: componentPlatform, baseline: COMPONENT_BASELINES[componentPlatform] };
+      return { platform: componentPlatform, baseline: COMPONENT_BASELINES[componentPlatform], craft_rules };
     }),
     get_baseline_page: tool("get_baseline_page", async (input) =>
       getBaselinePage(store, input.product_id, input.page_id),

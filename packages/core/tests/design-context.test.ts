@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createFormaStore } from "../src/store.js";
-import { buildDesignContext } from "../src/design-context.js";
+import { buildDesignContext, readAllCraftDocs } from "../src/design-context.js";
 
 async function createTestStore() {
   const home = await mkdtemp(join(tmpdir(), "forma-design-ctx-"));
@@ -306,5 +306,45 @@ describe("buildDesignContext", () => {
     });
 
     expect(ctx.systemStyle).toBeUndefined();
+  });
+});
+
+describe("readAllCraftDocs", () => {
+  it("returns all craft docs (>=11) including ai-tells and design-read", async () => {
+    const store = await createTestStore();
+    const docs = await readAllCraftDocs(store.styles);
+
+    expect(docs.length).toBeGreaterThanOrEqual(11);
+    expect(docs.some((d) => d.slug === "ai-tells")).toBe(true);
+    expect(docs.some((d) => d.slug === "design-read")).toBe(true);
+  });
+
+  it("each doc has slug and content fields", async () => {
+    const store = await createTestStore();
+    const docs = await readAllCraftDocs(store.styles);
+
+    for (const doc of docs) {
+      expect(typeof doc.slug).toBe("string");
+      expect(doc.slug.length).toBeGreaterThan(0);
+      expect(typeof doc.content).toBe("string");
+      expect(doc.content.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("returns the same set as buildDesignContext with no craftSlugs", async () => {
+    const store = await createTestStore();
+    const deps = { styles: store.styles, requirements: store.requirements, products: store.products };
+    const { product, requirement } = await seedProductAndRequirement(store);
+
+    const allDocs = await readAllCraftDocs(store.styles);
+    const ctx = await buildDesignContext(deps, {
+      productId: product.id,
+      requirementId: requirement.id,
+    });
+
+    // Same slugs (order may differ, so compare sets)
+    const allSlugs = new Set(allDocs.map((d) => d.slug));
+    const ctxSlugs = new Set(ctx.craft.map((d) => d.slug));
+    expect(allSlugs).toEqual(ctxSlugs);
   });
 });
