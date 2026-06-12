@@ -16,6 +16,8 @@ describe("B1 craft reading", () => {
     const slugs = docs.map((d) => d.slug);
     expect(slugs).toContain("color");
     expect(slugs).toContain("anti-ai-slop");
+    expect(slugs).toContain("design-read");
+    expect(slugs).toContain("ai-tells");
     expect(slugs).toContain("typography-hierarchy");
     expect(slugs.length).toBeGreaterThanOrEqual(11);
   });

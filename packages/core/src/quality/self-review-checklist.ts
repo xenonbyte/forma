@@ -56,4 +56,22 @@ export const SELF_REVIEW_CHECKLIST: SelfReviewItem[] = [
     craftDoc: "laws-of-ux",
     prompt: "Does the layout honor core UX laws (Fitts, Hick, proximity, consistent affordances)?",
   },
+  {
+    id: "design-read-dials",
+    craftDoc: "design-read",
+    prompt:
+      "Did generation start from an explicit design read (surface kind, audience, VARIANCE/DENSITY dials), and does the result match those dials rather than a default aesthetic?",
+  },
+  {
+    id: "no-ai-tells",
+    craftDoc: "ai-tells",
+    prompt:
+      "Is the page free of production AI tells (em/en-dashes in Latin copy, fake-precise numbers, decorative status dots, version-label decoration, theme/accent/radius inconsistency)?",
+  },
+  {
+    id: "copy-self-audit",
+    craftDoc: "ai-tells",
+    prompt:
+      "Has every visible string been re-read for grammar breaks, unclear referents, and mock-poetic filler, and rewritten in plain functional language where flagged?",
+  },
 ];

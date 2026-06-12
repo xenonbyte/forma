@@ -61,7 +61,7 @@ motion.
 
 Craft files mix auto-checked rules and guidance.
 
-- **Auto-checked.** Rules wired into `apps/daemon/src/lint-artifact.ts` — currently the P0 list in `anti-ai-slop.md` (Tailwind-indigo accent, two-stop hero gradients, emoji-as-icons, etc.). The linter reports these as findings back to the UI (for P0/P1 badges) and to the agent (as a system reminder for self-correction). Artifact persistence is not currently hard-blocked on P0 hits.
+- **Auto-checked.** Rules wired into Forma's deterministic craft lint (`packages/core/src/quality/craft-lint.ts`) currently cover contrast, type scale, palette/font restraint, mobile screen-edge radius, Latin-context em/en-dashes, pure black text/backgrounds, and eyebrow density. The linter reports these as artifact `craftChecks` for agent self-correction. Artifact persistence is not currently hard-blocked on craft check failures.
 - **Guidance.** The rest. The agent reads the rules, reviewers apply them, the linter doesn't check them.
 
 A purely behavioral craft file (state-coverage, animation-discipline) is guidance unless a specific rule is later promoted into `lint-artifact.ts`.
@@ -75,6 +75,8 @@ A purely behavioral craft file (state-coverage, animation-discipline) is guidanc
 | `typography-hierarchy-editorial.md` | `typography-hierarchy-editorial` | Skills whose primary artifact is a sustained reading surface: `blog-post`, `docs-page`, `digital-eguide`. Requires `typography` + `typography-hierarchy`. |
 | `color.md` | `color` | Any skill that emits styled output (~all skills) |
 | `anti-ai-slop.md` | `anti-ai-slop` | Marketing pages, landing pages, decks |
+| `design-read.md` | `design-read` | Design-generating skills before writing HTML; classifies surface kind, audience, and variance/density dials |
+| `ai-tells.md` | `ai-tells` | Design-generating skills; universal copy/style tells for all pages, plus marketing-only quotas gated by the design read |
 | `state-coverage.md` | `state-coverage` | Any skill with stateful UI (dashboards, mobile apps, forms, list/table views) |
 | `animation-discipline.md` | `animation-discipline` | Any skill that ships motion: mobile apps, multi-screen flows, gamified UI, transitions, microinteractions |
 | `accessibility-baseline.md` | `accessibility-baseline` | Any skill that ships interactive UI: dashboards, forms, mobile flows, anything with focus/labels/keyboard paths |

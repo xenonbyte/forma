@@ -52,7 +52,163 @@ export function lintCraft(snapshot: RenderedDomSnapshot, options: LintOptions = 
     colorPaletteCheck(visible, opts.maxColors),
     fontFamilyCheck(visible, opts.maxFontFamilies),
     screenEdgeRadiusCheck(snapshot, options.platform),
+    emDashCheck(visible),
+    pureBlackCheck(visible),
+    eyebrowDensityCheck(snapshot, visible),
   ];
+}
+
+// ─── no-em-dash ──────────────────────────────────────────────────────────────
+
+/**
+ * CJK character (ideographs, kana, hangul-adjacent punctuation, fullwidth
+ * forms). Dashes adjacent to CJK text follow CJK punctuation conventions and
+ * are exempt from the em-dash ban.
+ */
+function isCjkChar(ch: string): boolean {
+  return /[\u2E80-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/.test(ch);
+}
+
+/** Nearest non-whitespace char before/after index `i` (exclusive), or "". */
+function nearestChar(text: string, i: number, dir: -1 | 1): string {
+  for (let j = i + dir; j >= 0 && j < text.length; j += dir) {
+    if (!/\s/.test(text[j])) return text[j];
+  }
+  return "";
+}
+
+/**
+ * Em-dash (—) / en-dash (–) in Latin-context copy is the most reliable LLM
+ * authorship tell (see craft/ai-tells.md). Exemptions: the Chinese double dash
+ * `——` and any dash directly adjacent to CJK text, where the character is
+ * legitimate punctuation.
+ */
+function emDashCheck(nodes: RenderedTextNode[]): ArtifactCraftCheck {
+  const samples: string[] = [];
+  let count = 0;
+  for (const n of nodes) {
+    for (let i = 0; i < n.text.length; i++) {
+      const ch = n.text[i];
+      if (ch !== "—" && ch !== "–") continue;
+      // Chinese double dash —— : exempt both halves.
+      if (ch === "—" && (n.text[i - 1] === "—" || n.text[i + 1] === "—")) continue;
+      const prev = nearestChar(n.text, i, -1);
+      const next = nearestChar(n.text, i, 1);
+      if ((prev && isCjkChar(prev)) || (next && isCjkChar(next))) continue;
+      count++;
+      if (samples.length < 3) samples.push(`"${n.text}"`);
+      break; // one finding per node is enough for the count's purpose
+    }
+  }
+  if (count === 0) {
+    return { id: "no-em-dash", passed: true, detail: "no em/en-dash in Latin-context text" };
+  }
+  return {
+    id: "no-em-dash",
+    passed: false,
+    detail: `${count} text node(s) contain em/en-dash in Latin context. e.g. ${samples.join("; ")}`,
+  };
+}
+
+// ─── no-pure-black ───────────────────────────────────────────────────────────
+
+/**
+ * Pure #000000 text or backgrounds cause vibration against saturated surfaces
+ * and read as unstyled defaults (craft/color.md: use off-black). Only fully
+ * opaque foregrounds are judged; translucent blacks composite to off-black.
+ */
+function pureBlackCheck(nodes: RenderedTextNode[]): ArtifactCraftCheck {
+  const samples: string[] = [];
+  let count = 0;
+  for (const n of nodes) {
+    const fgPure = n.color[0] === 0 && n.color[1] === 0 && n.color[2] === 0 && n.color[3] >= 0.99;
+    const bgPure = n.backgroundSolid && n.backgroundColor[0] === 0 && n.backgroundColor[1] === 0 && n.backgroundColor[2] === 0;
+    if (!fgPure && !bgPure) continue;
+    count++;
+    if (samples.length < 3) samples.push(`"${n.text}" (${fgPure ? "text" : "background"} #000000)`);
+  }
+  if (count === 0) {
+    return { id: "no-pure-black", passed: true, detail: "no pure #000000 text or solid background" };
+  }
+  return {
+    id: "no-pure-black",
+    passed: false,
+    detail: `${count} text node(s) use pure #000000. e.g. ${samples.join("; ")}`,
+  };
+}
+
+// ─── eyebrow-density ─────────────────────────────────────────────────────────
+
+/**
+ * Tags whose small uppercase tracked text is a legitimate UI pattern (table
+ * headers, buttons, form labels), not an eyebrow.
+ */
+const EYEBROW_EXCLUDED_TAGS = new Set([
+  "th",
+  "td",
+  "button",
+  "a",
+  "label",
+  "option",
+  "summary",
+  "legend",
+  "input",
+  "textarea",
+  "select",
+]);
+
+function rendersUppercase(n: RenderedTextNode): boolean {
+  if (n.uppercaseTransform) return true;
+  const letters = n.text.match(/[A-Za-z]/g) ?? [];
+  return letters.length >= 3 && !/[a-z]/.test(n.text);
+}
+
+/**
+ * Eyebrow quota: max 1 eyebrow (small uppercase wide-tracking bare label) per
+ * 3 <section> elements — the templated "label above every headline" rhythm is
+ * a production AI tell (craft/ai-tells.md). Badges/chips are excluded via
+ * `ownChrome`; table headers and buttons via tag. Skips when the snapshot
+ * carries no section count or no letter-spacing instrumentation (hand-built
+ * snapshots), or when the page has no <section> structure to ration against.
+ */
+function eyebrowDensityCheck(snapshot: RenderedDomSnapshot, nodes: RenderedTextNode[]): ArtifactCraftCheck {
+  const sectionCount = snapshot.sectionCount;
+  if (sectionCount === undefined) {
+    return { id: "eyebrow-density", passed: true, detail: "skipped (no sectionCount in snapshot)" };
+  }
+  if (sectionCount === 0) {
+    return { id: "eyebrow-density", passed: true, detail: "skipped (no <section> elements)" };
+  }
+  if (!nodes.some((n) => n.letterSpacingPx !== undefined)) {
+    return { id: "eyebrow-density", passed: true, detail: "skipped (no letter-spacing data in snapshot)" };
+  }
+  const eyebrows = nodes.filter(
+    (n) =>
+      !EYEBROW_EXCLUDED_TAGS.has(n.tag) &&
+      n.ownChrome !== true &&
+      n.fontSizePx > 0 &&
+      n.fontSizePx <= 14 &&
+      (n.letterSpacingPx ?? 0) / n.fontSizePx >= 0.05 &&
+      n.text.length <= 40 &&
+      rendersUppercase(n),
+  );
+  const allowed = Math.max(1, Math.ceil(sectionCount / 3));
+  if (eyebrows.length <= allowed) {
+    return {
+      id: "eyebrow-density",
+      passed: true,
+      detail: `${eyebrows.length} eyebrow(s) within quota (${allowed} allowed for ${sectionCount} section(s))`,
+    };
+  }
+  const sample = eyebrows
+    .slice(0, 3)
+    .map((n) => `"${n.text}"`)
+    .join("; ");
+  return {
+    id: "eyebrow-density",
+    passed: false,
+    detail: `${eyebrows.length} eyebrow(s) exceed quota (${allowed} allowed for ${sectionCount} section(s)). e.g. ${sample}`,
+  };
 }
 
 /**

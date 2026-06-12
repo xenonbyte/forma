@@ -30,6 +30,21 @@ export interface RenderedTextNode {
   backgroundSolid: boolean;
   /** trimmed rendered text (direct text, or a form control's value/placeholder), truncated */
   text: string;
+  /**
+   * computed letter-spacing in CSS px ("normal" → 0). Optional for backward
+   * compatibility with hand-built snapshots; the eyebrow-density check skips
+   * when no node carries it.
+   */
+  letterSpacingPx?: number;
+  /** true when computed text-transform is uppercase. Optional (see letterSpacingPx). */
+  uppercaseTransform?: boolean;
+  /**
+   * true when the element itself paints chrome (own background color or any
+   * border). Distinguishes bare labels (eyebrow candidates) from badges /
+   * chips / buttons which legitimately use small uppercase tracked text.
+   * Optional (see letterSpacingPx).
+   */
+  ownChrome?: boolean;
 }
 
 /** A page-root element sampled for outer corner rounding (screen-edge-radius rule). */
@@ -57,6 +72,12 @@ export interface RenderedDomSnapshot {
    * which case the screen-edge-radius check reports skipped.
    */
   rootCorners?: RootCornerSample[];
+  /**
+   * Number of <section> elements in the document. Drives the eyebrow-density
+   * quota (max 1 eyebrow per 3 sections). Optional for backward compatibility:
+   * hand-built snapshots may omit it, in which case the check reports skipped.
+   */
+  sectionCount?: number;
 }
 
 /**
@@ -216,6 +237,13 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     const bg = resolveBackground(el);
     const op = effectiveOpacity(el);
     const folded: [number, number, number, number] = [color[0], color[1], color[2], color[3] * op];
+    const ownBg = resolveRgba(cs.backgroundColor);
+    const ownChrome =
+      ownBg[3] > 0 ||
+      (parseFloat(cs.borderTopWidth) || 0) > 0 ||
+      (parseFloat(cs.borderRightWidth) || 0) > 0 ||
+      (parseFloat(cs.borderBottomWidth) || 0) > 0 ||
+      (parseFloat(cs.borderLeftWidth) || 0) > 0;
     textNodes.push({
       tag: el.tagName.toLowerCase(),
       fontSizePx: parseFloat(cs.fontSize) || 0,
@@ -224,6 +252,9 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
       backgroundColor: bg.color,
       backgroundSolid: bg.solid,
       text: text.trim().slice(0, 80),
+      letterSpacingPx: cs.letterSpacing === "normal" ? 0 : parseFloat(cs.letterSpacing) || 0,
+      uppercaseTransform: cs.textTransform === "uppercase",
+      ownChrome,
     });
   }
 
@@ -433,5 +464,6 @@ export function extractSnapshotInPage(): RenderedDomSnapshot {
     viewport: { width: window.innerWidth, height: window.innerHeight },
     textNodes,
     rootCorners,
+    sectionCount: document.getElementsByTagName("section").length,
   };
 }

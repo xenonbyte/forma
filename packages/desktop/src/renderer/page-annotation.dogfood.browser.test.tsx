@@ -109,7 +109,16 @@ describe("dogfood: 页面标注画布", () => {
 
     const checks = lintCraft(extractSnapshotInPage());
     const ids = checks.map((c) => c.id).sort();
-    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "screen-edge-radius", "type-scale"]);
+    expect(ids).toEqual([
+      "color-palette",
+      "contrast-aa",
+      "eyebrow-density",
+      "font-families",
+      "no-em-dash",
+      "no-pure-black",
+      "screen-edge-radius",
+      "type-scale",
+    ]);
     for (const c of checks) {
       expect(c.passed, `${c.id}: ${c.detail ?? ""}`).toBe(true);
     }

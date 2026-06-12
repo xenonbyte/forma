@@ -29,7 +29,16 @@ describe("lintCraft", () => {
   it("emits one check per rule with id+passed", () => {
     const checks = lintCraft(snap([node()]));
     const ids = checks.map((c) => c.id).sort();
-    expect(ids).toEqual(["color-palette", "contrast-aa", "font-families", "screen-edge-radius", "type-scale"]);
+    expect(ids).toEqual([
+      "color-palette",
+      "contrast-aa",
+      "eyebrow-density",
+      "font-families",
+      "no-em-dash",
+      "no-pure-black",
+      "screen-edge-radius",
+      "type-scale",
+    ]);
     for (const c of checks) expect(typeof c.passed).toBe("boolean");
   });
 
@@ -188,5 +197,92 @@ describe("lintCraft", () => {
     const c = check(lintCraft(snap([node()]), { platform: "mobile" }), "screen-edge-radius");
     expect(c.passed).toBe(true);
     expect(c.detail).toBe("skipped (no rootCorners in snapshot)");
+  });
+
+  it("no-em-dash fails on em-dash and en-dash in Latin copy", () => {
+    const em = check(lintCraft(snap([node({ text: "Fast — reliable" })])), "no-em-dash");
+    expect(em.passed).toBe(false);
+    expect(em.detail).toMatch(/Fast/);
+    const en = check(lintCraft(snap([node({ text: "2018–2026" })])), "no-em-dash");
+    expect(en.passed).toBe(false);
+  });
+
+  it("no-em-dash exempts the Chinese double dash and CJK-adjacent dashes", () => {
+    const double = check(lintCraft(snap([node({ text: "设计——快速交付" })])), "no-em-dash");
+    expect(double.passed).toBe(true);
+    const adjacent = check(lintCraft(snap([node({ text: "速度 — 极快" })])), "no-em-dash");
+    expect(adjacent.passed).toBe(true);
+    const clean = check(lintCraft(snap([node({ text: "Fast - reliable" })])), "no-em-dash");
+    expect(clean.passed).toBe(true);
+  });
+
+  it("no-pure-black flags #000000 text and solid backgrounds, not off-black", () => {
+    const fg = check(lintCraft(snap([node({ color: [0, 0, 0, 1] })])), "no-pure-black");
+    expect(fg.passed).toBe(false);
+    expect(fg.detail).toMatch(/text #000000/);
+    const bg = check(
+      lintCraft(snap([node({ color: [240, 240, 240, 1], backgroundColor: [0, 0, 0, 1] })])),
+      "no-pure-black",
+    );
+    expect(bg.passed).toBe(false);
+    expect(bg.detail).toMatch(/background #000000/);
+    const offBlack = check(lintCraft(snap([node({ color: [15, 15, 15, 1] })])), "no-pure-black");
+    expect(offBlack.passed).toBe(true);
+    // Translucent black composites to off-black → not judged as pure black.
+    const translucent = check(lintCraft(snap([node({ color: [0, 0, 0, 0.6] })])), "no-pure-black");
+    expect(translucent.passed).toBe(true);
+  });
+
+  function eyebrow(text: string, over: Partial<RenderedTextNode> = {}): RenderedTextNode {
+    return node({ tag: "span", fontSizePx: 11, letterSpacingPx: 1.2, uppercaseTransform: true, text, ...over });
+  }
+
+  function snapWithSections(nodes: RenderedTextNode[], sectionCount: number): RenderedDomSnapshot {
+    return { ...snap(nodes), sectionCount };
+  }
+
+  it("eyebrow-density fails past the 1-per-3-sections quota and passes within it", () => {
+    const labels = ["SELECTED WORK", "THE HARDWARE", "FOUR COLORWAYS"].map((t) => eyebrow(t));
+    const over = check(lintCraft(snapWithSections(labels, 3)), "eyebrow-density");
+    expect(over.passed).toBe(false);
+    expect(over.detail).toMatch(/3 eyebrow/);
+    const within = check(lintCraft(snapWithSections([eyebrow("SELECTED WORK")], 3)), "eyebrow-density");
+    expect(within.passed).toBe(true);
+    const nine = check(lintCraft(snapWithSections(labels, 9)), "eyebrow-density");
+    expect(nine.passed).toBe(true);
+  });
+
+  it("eyebrow-density ignores badges (ownChrome), table headers, and normal-tracking text", () => {
+    const nodes = [
+      eyebrow("ACTIVE", { ownChrome: true }),
+      eyebrow("NAME", { tag: "th" }),
+      eyebrow("Plain label", { uppercaseTransform: false, text: "Plain label" }),
+      node({ letterSpacingPx: 0, text: "BODY COPY IN CAPS BUT UNTRACKED", fontSizePx: 11 }),
+    ];
+    const c = check(lintCraft(snapWithSections(nodes, 3)), "eyebrow-density");
+    expect(c.passed).toBe(true);
+    expect(c.detail).toMatch(/0 eyebrow/);
+  });
+
+  it("eyebrow-density counts text-derived all-caps when uppercaseTransform is false", () => {
+    const nodes = [
+      eyebrow("00 / INDEX", { uppercaseTransform: false, text: "SELECTED WORK" }),
+      eyebrow("002 · FEATURED", { uppercaseTransform: false, text: "FEATURED COMMISSION" }),
+    ];
+    const c = check(lintCraft(snapWithSections(nodes, 3)), "eyebrow-density");
+    expect(c.passed).toBe(false);
+  });
+
+  it("eyebrow-density skips without sectionCount, with zero sections, or without letter-spacing data", () => {
+    const noCount = check(lintCraft(snap([eyebrow("SELECTED WORK")])), "eyebrow-density");
+    expect(noCount.passed).toBe(true);
+    expect(noCount.detail).toBe("skipped (no sectionCount in snapshot)");
+    const zero = check(lintCraft(snapWithSections([eyebrow("SELECTED WORK")], 0)), "eyebrow-density");
+    expect(zero.passed).toBe(true);
+    expect(zero.detail).toBe("skipped (no <section> elements)");
+    const bare = node({ text: "HELLO WORLD" }); // helper omits letterSpacingPx
+    const uninstrumented = check(lintCraft(snapWithSections([bare], 3)), "eyebrow-density");
+    expect(uninstrumented.passed).toBe(true);
+    expect(uninstrumented.detail).toBe("skipped (no letter-spacing data in snapshot)");
   });
 });
