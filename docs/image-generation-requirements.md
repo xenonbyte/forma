@@ -211,6 +211,8 @@ providers:
 
    语义照搬 od `media-config.ts`：env 优先（`FORMA_VOLCENGINE_API_KEY` > `ARK_API_KEY` > `VOLCENGINE_API_KEY`）；读接口脱敏（只回 `configured/source/api_key_tail(末4位)/base_url/model`，env 来源连尾巴都不回显）；写接口支持 `preserve_api_key`（UI 改 model 不必重填 key）；空 payload 将清空已有配置时返回 409 拒绝（防误清空），`force=true` 才放行。
 
+   安全约束：`media-config.yaml` 含计费凭证，新建时必须以用户私有权限写入（mode `0600`），更新时保留既有更严格权限；若既有文件权限宽于 `0600`，写入时收紧到 `0600`。该文件不得被 server 静态服务、artifact/brand-assets zip 导出、诊断包、日志或错误 details 暴露；诊断输出仅允许脱敏元数据（`configured/source/model/base_url/api_key_tail`，且 env 来源不回显尾号）。测试覆盖权限创建/收紧、脱敏读取、防误清空和导出/诊断排除。平台例外：Windows 上 Node 忽略 POSIX mode，无 `0600` 语义——权限创建/收紧的实现与测试在 `win32` 按平台跳过（`process.platform` 门控），其余约束（不暴露、脱敏、防误清空）跨平台不变。
+
 3. **`image-generate.ts`** — 生成调度器：校验 model 在目录内且 surface 匹配 → `resolveProviderConfig` 取凭证（无 key 抛 `MEDIA_NOT_CONFIGURED`）→ 按 provider id 查 renderer 注册表 → 执行。v1 renderer：
    - `volcengine`：`POST {baseUrl}/images/generations`，Bearer 鉴权，`{ model, prompt, size, response_format: "b64_json" }`，解析 `data[0].b64_json|url`（参考 od `media.ts:1293-1343`）。aspect→size 映射按火山官方 API 参考（文档 82379/1541523）实现，原则：每档取该模型推荐的最高质量像素值（≥2K）。
    - `stub`：确定性 PNG 字节（含尺寸编码），测试全程不打网络。
@@ -266,7 +268,7 @@ save_brand_asset(product_id, kind: "app-icon"|"store-shot"|"poster",
 list_brand_assets(product_id, kind?) → { assets: […含 brand_style 与 stale 判定所需字段] }
 ```
 
-  `html` 源经 puppeteer 按目标尺寸渲染（复用 preview-renderer 的 file:// bundle 渲染与子资源 fail-loud 逻辑；HTML 内允许 `forma-image://` 引用与产品自身 artifact 预览图的本地引用，同样走解析器，禁远程）。
+  `html` 源经 puppeteer 按目标尺寸渲染（复用 preview-renderer 的 file:// bundle 渲染与子资源 fail-loud 逻辑；HTML 内允许 `forma-image://` 引用与产品自身 artifact 预览图的本地引用，同样走解析器，禁远程）。渲染沙箱必须默认禁脚本或拦截脚本执行，并拦截所有子资源请求。分两层表述：`forma-image://` 与产品预览引用属于「HTML 源允许的引用形态」，在**渲染前**由解析器重写为本地 bundle 文件（与 design-save 管线同序：先 localize 再渲染）——浏览器层不会出现 `forma-image://` 请求；拦截层白名单只放行重写后 bundle 目录内的 `file://` 与经 path-boundary 校验通过的产品预览文件。`http(s):`、协议相对 URL、白名单外的任意 `file://`、越界路径和未授权本地资源一律 fail loud。测试覆盖脚本拦截、远程请求拒绝、file 越界拒绝、允许列表预览图可用。
 
 **3b. fm-app-icon 命令（新模板 ×3 平台）：**
 
@@ -299,7 +301,7 @@ list_brand_assets(product_id, kind?) → { assets: […含 brand_style 与 stale
 ### M5 营销资产（fm-brand-assets，D3/D4）
 
 1. fm-brand-assets 命令（新模板 ×3 平台），范围 = **商店图 + 海报**。流程：确认产品 + 5.2 节前置检测（含 ICON 硬前置；商店图要求至少一个有预览的设计稿，缺失则停止并指引先跑 fm-design）→ 读 brand tokens + 应用 ICON + 设计稿预览图 → 按 platform 生成：
-   - **商店图**：iOS `1290×2796`（6.7" 竖屏组）、Android Play `1080×1920`、Web 则 OG 图 `1200×630`。agent 写排版 HTML（设备框 + 真实页面截图 + 卖点文案 + 品牌色背景，可用 `generate_image(purpose="store-shot-bg")` 产背景素材）→ `save_brand_asset(kind="store-shot", html, preset)`。
+   - **商店图**：尺寸 preset 是 M5 实现期核定项；当前示例值 iOS `1290×2796`（6.7" 竖屏组）、Android Play `1080×1920`、Web OG `1200×630` 均为 **UNCONFIRMED 占位**，禁止直接落表或写入测试。M5 实现前必须按 App Store Connect、Google Play、Open Graph/平台分享图官方文档核定尺寸并在 preset 表测试中记录来源 URL 与核实日期。agent 写排版 HTML（设备框 + 真实页面截图 + 卖点文案 + 品牌色背景，可用 `generate_image(purpose="store-shot-bg")` 产背景素材）→ `save_brand_asset(kind="store-shot", html, preset)`。
    - **海报**：`1080×1920` 竖版（朋友圈/分享场景），HTML 排版 + 生图插画素材 → `save_brand_asset(kind="poster", html, target)`。
 2. 画布页扩展商店图/海报两个分组（AssetTile 复用）。
 3. 商店图尺寸预设表放 core（`brand-assets.ts`），按 product.platform 给 agent 返回可用 preset 清单（实现时以各商店当时官方规格为准核定像素值，原则：每平台取主力机型/官方推荐尺寸 1–2 档，不求全集）。
@@ -325,14 +327,22 @@ list_brand_assets(product_id, kind?) → { assets: […含 brand_style 与 stale
 | 项 | 说明 | Owner |
 |---|---|---|
 | Seedream aspect→size 像素映射 | 实现时按火山官方 API 参考（82379/1541523）核定每档值 | M1 实现 |
-| 商店图各平台精确规格 | 实现时按各商店当时官方文档核定 | M5 实现 |
+| 商店图各平台精确规格 | 当前 M5 示例值均为 UNCONFIRMED 占位；实现时按各商店/平台当时官方文档核定，并同步来源 URL、核实日期、preset 表与测试 | M5 实现 |
 | ICON monochrome 变体 | v1 不做，见非范围 | 后续需求 |
 | ICON / 营销资产历史版本 | v1 覆盖式更新，无版本树；若需要回滚历史另立需求 | 后续需求 |
 | 更多 provider（OpenAI / Gemini / 自定义兼容端点） | 架构已留位：目录加条目 + 一个 renderer | 后续需求 |
 
 ## 附录 A：Seedream 模型核实记录
 
-2026-06-13 经火山方舟官方文档（82379/1330310 模型列表、82379/1824121 Seedream 5.0 lite 教程、82379/1541523 API 参考）核实：可生图模型为 `doubao-seedream-5-0-260128`、`doubao-seedream-5-0-lite-260128`、`doubao-seedream-4-5-251128`、`doubao-seedream-4-0-250828`、`doubao-seedream-3-0-t2i-250415`；`doubao-seededit-3-0-i2i-250628` 为 i2i 编辑模型，v1 不收录。端点 `POST {ark}/api/v3/images/generations`（OpenAI 形，Bearer + `response_format: b64_json`）。
+2026-06-13 经火山方舟官方文档核实：可生图模型为 `doubao-seedream-5-0-260128`、`doubao-seedream-5-0-lite-260128`、`doubao-seedream-4-5-251128`、`doubao-seedream-4-0-250828`、`doubao-seedream-3-0-t2i-250415`；`doubao-seededit-3-0-i2i-250628` 为 i2i 编辑模型，v1 不收录。端点 `POST {ark}/api/v3/images/generations`（OpenAI 形，Bearer + `response_format: b64_json`）。
+
+官方来源入口（2026-06-13 复查；火山文档正文由站点 JS 渲染，以下保留稳定 URL 与页面可见最近更新时间，M1 实现前必须重新打开官方页面核对 model id、endpoint、`response_format`、返回字段和 aspect/size 映射；若与本文不一致，以官方文档为准并同步更新目录与测试）：
+
+| 来源 | URL | 页面可见最近更新时间 | 本文依赖字段 |
+|---|---|---|---|
+| 模型列表 | https://www.volcengine.com/docs/82379/1330310 | 2026.06.12 11:41:23 | 可用 Seedream/SeedEdit 模型 ID 与模型类别 |
+| 图片生成 API | https://www.volcengine.com/docs/82379/1541523 | 2026.06.04 15:34:26 | `images/generations` 端点、鉴权、请求/响应字段、尺寸参数 |
+| Seedream 4.0-5.0 教程 | https://www.volcengine.com/docs/82379/1824121 | 2026.06.04 20:43:36 | Seedream 4.0/5.0 文生图模型用法和规格说明 |
 
 ## 附录 B：open-design 移植映射
 
