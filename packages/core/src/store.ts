@@ -328,9 +328,9 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   const resolveBrandImageRefBound = (productId: string, ref: string): Promise<Buffer> =>
     resolveBrandImageRef(options.home, productId, ref);
 
-  // Media credential read/write are home-bound, lock-free (the file is written
-  // atomically with its own 0600 enforcement) and never mutate product state, so
-  // they bypass runProductMutation like the rest of the home-scoped services.
+  // Media credential reads/writes are home-bound and never mutate product state,
+  // so they bypass runProductMutation. writeMediaConfig serializes its own
+  // read-modify-write sequence and still writes atomically with 0600 enforcement.
   const readMediaConfigBound = (): Promise<MaskedMediaConfig> => readMediaConfig(options.home);
   const writeMediaConfigBound = (
     payload: MediaConfigInput,

@@ -89,6 +89,27 @@ describe("buildDiagnosticsZip", () => {
     expect(log).not.toContain("sk-test-1234abcd");
   });
 
+  it("excludes media-config.yaml when only the absolute path basename is sensitive", async () => {
+    const rawSecret = "sk-absolute-path-only";
+    const mediaConfigPath = join(tempDir, "media-config.yaml");
+    await writeFile(
+      mediaConfigPath,
+      ["providers:", "  openai:", `    api_key: "${rawSecret}"`, "    base_url: https://example.test/v1"].join("\n"),
+      "utf8",
+    );
+
+    const result = await buildDiagnosticsZip({
+      context: { app: { name: "forma" }, source: "test" },
+      sources: [{ name: "config/current.yaml", absolutePath: mediaConfigPath, kind: "text" }],
+    });
+
+    const zip = await JSZip.loadAsync(result.zip);
+    const configContent = await zip.file("config/current.yaml")!.async("string");
+    expect(configContent).toContain("file excluded");
+    expect(configContent).not.toContain(rawSecret);
+    expect(configContent).not.toContain("base_url");
+  });
+
   it("records a warning placeholder when a file cannot be read", async () => {
     const result = await buildDiagnosticsZip({
       context: {

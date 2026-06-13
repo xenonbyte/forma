@@ -29,8 +29,8 @@
 //
 // Security invariants:
 //   * Masked reads only ever return, per provider, { configured, source, model,
-//     base_url, api_key_tail }. api_key_tail is the last 4 chars and is OMITTED
-//     entirely when the key came from the environment.
+//     base_url, api_key_tail }. api_key_tail is the last 4 chars for file keys
+//     longer than 4 chars and is OMITTED entirely for env-sourced or short keys.
 //   * The plaintext api_key NEVER appears in any FormaError message/details or
 //     in the masked-read response. (resolveProviderConfig is the only path that
 //     returns the plaintext key, by design, to the in-process renderer.)
@@ -52,7 +52,7 @@
 // ---------------------------------------------------------------------------
 
 import { chmod, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { FormaError } from "../errors.js";
 import { readYamlUnknown, writeYamlAtomic } from "../yaml.js";
 import { IMAGE_MODELS, IMAGE_PROVIDERS } from "./image-models.js";
@@ -88,9 +88,12 @@ function isVisibleProvider(providerId: string): boolean {
 
 const MEDIA_CONFIG_FILENAME = "media-config.yaml";
 const CONFIG_FILE_MODE = 0o600;
+const API_KEY_TAIL_LENGTH = 4;
+const mediaConfigWriteQueues = new Map<string, Promise<void>>();
 
 /** Masked view of a single provider's stored credentials. Never carries the
- * plaintext key. `api_key_tail` is omitted entirely for env-sourced keys. */
+ * plaintext key. `api_key_tail` is omitted for env-sourced keys and file keys
+ * short enough that the tail would reveal the whole key. */
 export interface MaskedProviderConfig {
   configured: boolean;
   source: "env" | "file" | "none";
@@ -146,6 +149,27 @@ function trimmedString(value: unknown): string {
 
 function configFile(home: string): string {
   return join(home, MEDIA_CONFIG_FILENAME);
+}
+
+async function runWithMediaConfigWriteLock<T>(home: string, fn: () => Promise<T>): Promise<T> {
+  const queueKey = configFile(resolve(home));
+  const queueTail = mediaConfigWriteQueues.get(queueKey) ?? Promise.resolve();
+  let releaseQueue!: () => void;
+  const currentOperation = new Promise<void>((resolveCurrentOperation) => {
+    releaseQueue = resolveCurrentOperation;
+  });
+  const queuedOperation = queueTail.catch(() => undefined).then(() => currentOperation);
+  mediaConfigWriteQueues.set(queueKey, queuedOperation);
+  await queueTail.catch(() => undefined);
+
+  try {
+    return await fn();
+  } finally {
+    releaseQueue();
+    if (mediaConfigWriteQueues.get(queueKey) === queuedOperation) {
+      mediaConfigWriteQueues.delete(queueKey);
+    }
+  }
 }
 
 /** Read the env-supplied key for a provider, honouring its precedence list.
@@ -268,7 +292,7 @@ function maskProvider(providerId: string, entry: ProviderEntry): MaskedProviderC
     return {
       configured: true,
       source: "file",
-      api_key_tail: fileKey.slice(-4),
+      ...(fileKey.length > API_KEY_TAIL_LENGTH ? { api_key_tail: fileKey.slice(-API_KEY_TAIL_LENGTH) } : {}),
       ...(model ? { model } : {}),
       ...(baseUrl ? { base_url: baseUrl } : {}),
     };
@@ -285,10 +309,10 @@ function maskProvider(providerId: string, entry: ProviderEntry): MaskedProviderC
 /**
  * Masked read of EVERY visible provider plus the stored active_provider. Never
  * returns a plaintext key. Env-sourced keys report source="env" with NO
- * api_key_tail; file-sourced keys report source="file" with the last-4 tail;
- * absent keys report configured:false. The hidden `stub` provider is never
- * surfaced here. `active_provider` reflects the stored field verbatim (null when
- * unset — meaning "auto / fallback" to MP4/MP5).
+ * api_key_tail; file-sourced keys report source="file" with a last-4 tail only
+ * when the key is longer than 4 chars; absent keys report configured:false. The
+ * hidden `stub` provider is never surfaced here. `active_provider` reflects the
+ * stored field verbatim (null when unset — meaning "auto / fallback" to MP4/MP5).
  */
 export async function readMediaConfig(home: string): Promise<MaskedMediaConfig> {
   const config = await readStoredConfig(home);
@@ -333,47 +357,56 @@ export async function writeMediaConfig(
     });
   }
 
-  const config = await readStoredConfig(home);
-  const prior = providerEntry(config, provider);
-  const priorApiKey = trimmedString(prior.api_key);
+  return runWithMediaConfigWriteLock(home, async () => {
+    const config = await readStoredConfig(home);
+    const prior = providerEntry(config, provider);
+    const priorApiKey = trimmedString(prior.api_key);
 
-  const incomingApiKey = trimmedString(payload.api_key);
-  const apiKey = incomingApiKey || (opts.preserveApiKey ? priorApiKey : "");
-  const baseUrl = trimmedString(payload.base_url);
-  const model = trimmedString(payload.model);
+    const incomingApiKey = trimmedString(payload.api_key);
+    const apiKey = incomingApiKey || (opts.preserveApiKey ? priorApiKey : "");
+    const baseUrl = trimmedString(payload.base_url);
+    const model = trimmedString(payload.model);
 
-  const wouldBeEmpty = !apiKey && !baseUrl && !model;
-  const priorHadConfig = entryHasContent(prior);
+    const wouldBeEmpty = !apiKey && !baseUrl && !model;
+    const priorHadConfig = entryHasContent(prior);
 
-  if (wouldBeEmpty && priorHadConfig && !opts.force) {
-    throw new FormaError("MEDIA_NOT_CONFIGURED", "Refusing to clear existing media credentials without force", {
-      provider,
-      requires_force: true,
-    });
-  }
-
-  const next: ProviderEntry = {};
-  if (apiKey) next.api_key = apiKey;
-  if (baseUrl) next.base_url = baseUrl;
-  if (model) next.model = model;
-
-  if (entryHasContent(next)) {
-    config.providers[provider] = next;
-  } else {
-    delete config.providers[provider];
-  }
-  if (payload.make_active) {
-    if (!apiKey && !readEnvKey(provider)) {
-      throw new FormaError("MEDIA_NOT_CONFIGURED", `Cannot set active media provider without an API key: ${provider}`, {
+    if (wouldBeEmpty && priorHadConfig && !opts.force) {
+      throw new FormaError("MEDIA_NOT_CONFIGURED", "Refusing to clear existing media credentials without force", {
         provider,
-        requires_api_key: true,
+        requires_force: true,
       });
     }
-    config.active_provider = provider;
-  }
 
-  await writeStoredConfig(home, config);
-  return readMediaConfig(home);
+    const next: ProviderEntry = {};
+    if (apiKey) next.api_key = apiKey;
+    if (baseUrl) next.base_url = baseUrl;
+    if (model) next.model = model;
+
+    if (entryHasContent(next)) {
+      config.providers[provider] = next;
+    } else {
+      delete config.providers[provider];
+      if (config.active_provider === provider && !readEnvKey(provider)) {
+        config.active_provider = "";
+      }
+    }
+    if (payload.make_active) {
+      if (!apiKey && !readEnvKey(provider)) {
+        throw new FormaError(
+          "MEDIA_NOT_CONFIGURED",
+          `Cannot set active media provider without an API key: ${provider}`,
+          {
+            provider,
+            requires_api_key: true,
+          },
+        );
+      }
+      config.active_provider = provider;
+    }
+
+    await writeStoredConfig(home, config);
+    return readMediaConfig(home);
+  });
 }
 
 /** Resolved plaintext credentials a renderer needs. */

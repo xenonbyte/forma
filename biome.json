@@ -7,7 +7,16 @@
     "defaultBranch": "main"
   },
   "files": {
-    "includes": ["**", "!pnpm-lock.yaml", "!styles", "!craft", "!spikes", "!design-version", "!**/*.tsbuildinfo"]
+    "includes": [
+      "**",
+      "!pnpm-lock.yaml",
+      "!styles",
+      "!craft",
+      "!spikes",
+      "!design-version",
+      "!**/*.tsbuildinfo",
+      "!packages/core/assets/lucide-icons.json"
+    ]
   },
   "formatter": {
     "enabled": true,

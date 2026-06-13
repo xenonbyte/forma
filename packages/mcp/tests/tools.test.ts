@@ -6122,6 +6122,33 @@ describe("generate_image tool (PLAN-TASK-010)", () => {
     });
   });
 
+  it("validates product existence before generating an image", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => {
+          throw new FormaError("PRODUCT_NOT_FOUND", "Product not found");
+        }),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_image({
+      product_id: "P-missing",
+      purpose: "app-icon",
+      prompt: "minimal icon",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(store.products.getProduct).toHaveBeenCalledWith("P-missing");
+    expect(store.generateProductImage).not.toHaveBeenCalled();
+    expect(textPayload(result)).toEqual({
+      error_code: "PRODUCT_NOT_FOUND",
+      message: "Product not found",
+      details: {},
+    });
+  });
+
   it("maps FormaError from store.generateProductImage to structured MCP error", async () => {
     const store = fakeStore({
       generateProductImage: vi.fn(async () => {
@@ -6153,10 +6180,11 @@ describe("generate_image tool (PLAN-TASK-010)", () => {
       await writeFile(join(home, "media-config.yaml"), "providers:\n  stub:\n    model: stub-image-1\n", "utf8");
 
       const store = createStrictFormaStore({ home });
+      const product = await store.products.createProduct({ name: "Image App", description: "Demo" });
       const tools = createFormaTools(store);
 
       const result = await tools.generate_image({
-        product_id: "P-123abc",
+        product_id: product.id,
         purpose: "app-icon",
         prompt: "a bold blue circle on white",
         count: 1,

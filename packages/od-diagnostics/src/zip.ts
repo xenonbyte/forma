@@ -41,6 +41,10 @@ function placeholderForMissing(file: CollectedFile): string {
   return `${PLACEHOLDER_PREFIX}${file.error ?? "unknown error"}\n`;
 }
 
+function isSensitiveSource(source: LogSource): boolean {
+  return isSensitiveConfigFile(source.name) || isSensitiveConfigFile(source.absolutePath);
+}
+
 export async function buildDiagnosticsZip(input: DiagnosticsExportInput): Promise<DiagnosticsExportResult> {
   const redaction = input.redaction ?? {};
   const sources = [...input.sources];
@@ -53,8 +57,12 @@ export async function buildDiagnosticsZip(input: DiagnosticsExportInput): Promis
   // Partition off credential files (e.g. media-config.yaml). Their bytes are
   // NEVER read or redacted — they are replaced wholesale with a placeholder so
   // no provider api_key can leak even through a redaction miss.
-  const safeSources = sources.filter((source) => !isSensitiveConfigFile(source.name));
-  const excludedSources = sources.filter((source) => isSensitiveConfigFile(source.name));
+  const safeSources: LogSource[] = [];
+  const excludedSources: LogSource[] = [];
+  for (const source of sources) {
+    if (isSensitiveSource(source)) excludedSources.push(source);
+    else safeSources.push(source);
+  }
 
   const safeCollected = await collectLogSources(safeSources, redaction);
   const collected: CollectedFile[] = [

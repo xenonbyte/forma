@@ -651,15 +651,16 @@ export function createFormaTools(store: FormaStore): FormaTools {
       };
       return store.generateComponents(input.product_id as string, gcInput);
     }),
-    generate_image: tool("generate_image", async (input) =>
-      store.generateProductImage({
+    generate_image: tool("generate_image", async (input) => {
+      await store.products.getProduct(input.product_id);
+      return store.generateProductImage({
         productId: input.product_id,
         purpose: input.purpose,
         prompt: input.prompt,
         aspect: input.aspect,
         count: input.count,
-      }),
-    ),
+      });
+    }),
     save_brand_asset: tool("save_brand_asset", async (input) => saveBrandAsset(store, input)),
     list_brand_assets: tool("list_brand_assets", async (input) => ({
       assets: await store.listBrandAssets(input.product_id, input.kind),

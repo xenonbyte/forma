@@ -222,6 +222,18 @@ describe("readMediaConfig — multi-provider view", () => {
     });
   });
 
+  it("omits api_key_tail for file keys short enough that the tail would reveal the key", async () => {
+    const home = await makeHome();
+    await writeMediaConfig(home, { provider: "openai", api_key: "abcd" }, {});
+    const masked = await readMediaConfig(home);
+    expect(masked.providers.openai).toMatchObject({
+      configured: true,
+      source: "file",
+    });
+    expect(masked.providers.openai).not.toHaveProperty("api_key_tail");
+    expect(JSON.stringify(masked)).not.toContain("abcd");
+  });
+
   it("active_provider reflects the stored field when set", async () => {
     const home = await makeHome();
     await writeMediaConfig(home, { provider: "openai", api_key: "sk-active-0001", make_active: true }, {});
@@ -397,6 +409,29 @@ describe("writeMediaConfig — provider-targeted", () => {
     expect(masked.providers.openai.api_key_tail).toBe("bbbb");
   });
 
+  it("serializes overlapping provider writes so concurrent saves preserve both entries", async () => {
+    const homes = await Promise.all(Array.from({ length: 5 }, () => makeHome()));
+
+    for (const [index, home] of homes.entries()) {
+      await Promise.all([
+        writeMediaConfig(home, { provider: "volcengine", api_key: `sk-volc-race-${index}-1111` }, {}),
+        writeMediaConfig(home, { provider: "openai", api_key: `sk-openai-race-${index}-2222` }, {}),
+      ]);
+
+      const masked = await readMediaConfig(home);
+      expect(masked.providers.volcengine).toMatchObject({
+        configured: true,
+        source: "file",
+        api_key_tail: "1111",
+      });
+      expect(masked.providers.openai).toMatchObject({
+        configured: true,
+        source: "file",
+        api_key_tail: "2222",
+      });
+    }
+  });
+
   it("rejects an unknown provider with MEDIA_INVALID_INPUT", async () => {
     const home = await makeHome();
     let thrown: unknown;
@@ -466,6 +501,18 @@ describe("writeMediaConfig — wipe-guard per provider", () => {
     const masked = await writeMediaConfig(home, { provider: "openai" }, { force: true });
     expect(masked.providers.openai).toEqual(NONE);
     expect(masked.providers.volcengine.configured).toBe(true);
+  });
+
+  it("clears active_provider when force-wiping the active file provider without an env key", async () => {
+    const home = await makeHome();
+    await writeMediaConfig(home, { provider: "volcengine", api_key: "sk-volc-fallback" }, {});
+    await writeMediaConfig(home, { provider: "openai", api_key: "sk-openai-active", make_active: true }, {});
+
+    const masked = await writeMediaConfig(home, { provider: "openai" }, { force: true });
+
+    expect(masked.active_provider).toBeNull();
+    expect(masked.providers.openai).toEqual(NONE);
+    expect((await resolveActiveImageConfig(home)).providerId).toBe("volcengine");
   });
 
   it("does not guard when that provider had no existing config", async () => {
