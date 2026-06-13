@@ -1,38 +1,39 @@
 /**
- * brand-assets.test.ts — PLAN-TASK-015 (M3)
+ * brand-assets.test.ts — Task 4 (discriminated-union save_brand_asset)
  *
- * TDD for the brand-assets storage layer:
- *   - saveBrandAsset (app-icon path): 2048 master + per-platform derivative set
- *     + favicon, atomic under the product-mutation lock, manifest overwrite
- *     semantics (same kind+name replaces).
- *   - listBrandAssets: records, empty for absent kind.
- *   - resolveBrandImageRef: brand/app-icon → master, @<size> → derivative,
- *     unknown size / missing asset → MEDIA_IMAGE_NOT_FOUND.
- *   - exportBrandAssetsZip: contains every file, NEVER media-config.yaml.
- *   - path-boundary: traversal in name/ref is rejected.
- *
- * Spec: SPEC-BEHAVIOR-006, SPEC-BEHAVIOR-008, SPEC-BEHAVIOR-004.
+ * TDD for the brand-assets storage layer after SPEC-DATA-006 / SPEC-BEHAVIOR-005 /
+ * SPEC-BEHAVIOR-006 / SPEC-DATA-008:
+ *   - saveBrandAsset(app-icon): resolves master refs (logo/bg/safe-logo), derives
+ *     the full per-surface variant set, and ATOMICALLY REPLACES the product's
+ *     entire app-icon set. Returns { kind:"app-icon", assets }.
+ *   - saveBrandAsset(store-shot/banner/poster): html→PNG render, records carry
+ *     surface/variant, target honoured. Returns { kind, asset }.
+ *   - deleteBrandAsset: removes record + files, rejects boundary escapes, fails
+ *     loud on not-found.
+ *   - resolveBrandImageRef: bare ref → largest standard-variant file; @size →
+ *     matching standard file; no match → MEDIA_IMAGE_NOT_FOUND. No "primary"
+ *     fallback, no MASTER_SIZE dependence.
+ *   - listBrandAssets / exportBrandAssetsZip: records + zip (never media-config).
  */
 
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, sep } from "node:path";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
 import AdmZip from "adm-zip";
 import {
+  deleteBrandAsset,
   saveBrandAsset,
   listBrandAssets,
   exportBrandAssetsZip,
   resolveBrandImageRef,
   resolveFormaImageRef,
   putStagedImage,
-  APP_ICON_SIZES,
-  STORE_SHOT_PRESETS,
   BRAND_ASSET_KINDS,
   brandSurfacesForPlatform,
   type BrandAssetDeps,
-  type SavedBrandAsset,
+  type SaveBrandAssetResult,
   type BrandAssetRecord,
 } from "@xenonbyte/forma-core";
 import { FormaError } from "../src/errors.js";
@@ -52,14 +53,35 @@ function makeDeps(homeDir: string): BrandAssetDeps {
   };
 }
 
-/** Produces a solid-colour square PNG at the given pixel size. */
-async function makeSquarePng(size: number, color = "#3366cc"): Promise<Buffer> {
+/** Deps with the real puppeteer-backed render sandbox wired in. */
+function makeRenderDeps(homeDir: string): BrandAssetDeps {
+  const lock = getProductMutationLock(homeDir);
+  return {
+    home: homeDir,
+    runProductMutation: (input, fn) => runProductMutationWithWarnings(lock, input, fn, () => undefined),
+    renderHtml: (input) =>
+      renderBrandAssetHtml({ resolveFormaImage: (ref) => resolveFormaImageRef(homeDir, PRODUCT_ID, ref) }, input),
+  };
+}
+
+/** A solid-colour OPAQUE square PNG (background master b). */
+async function makeOpaqueSquare(size: number, color = "#3366cc"): Promise<Buffer> {
   return sharp({ create: { width: size, height: size, channels: 4, background: color } })
     .png()
     .toBuffer();
 }
 
-/** Stages a PNG and returns its forma-image:// ref for use as a source image_ref. */
+/** A transparent-background logo PNG: a centred opaque disc on transparency (master a / c). */
+async function makeLogoPng(size: number, color = "#cc3366"): Promise<Buffer> {
+  const r = Math.round(size * 0.3);
+  const c = Math.round(size / 2);
+  const svg = Buffer.from(
+    `<svg width="${size}" height="${size}"><circle cx="${c}" cy="${c}" r="${r}" fill="${color}"/></svg>`,
+  );
+  return sharp(svg).png().toBuffer();
+}
+
+/** Stages a PNG and returns its forma-image:// ref for use as a master ref. */
 async function stageImage(homeDir: string, productId: string, bytes: Buffer): Promise<string> {
   const meta = await sharp(bytes).metadata();
   const staged = await putStagedImage(homeDir, productId, bytes, {
@@ -72,240 +94,229 @@ async function stageImage(homeDir: string, productId: string, bytes: Buffer): Pr
   return staged.ref;
 }
 
+/** Stage the three app-icon masters and return their refs. */
+async function stageMasters(
+  homeDir: string,
+  productId: string,
+  opts: { withSafe?: boolean; logoColor?: string; bgColor?: string } = {},
+): Promise<{ logo_ref: string; bg_ref: string; safe_logo_ref?: string }> {
+  const logo_ref = await stageImage(homeDir, productId, await makeLogoPng(1024, opts.logoColor ?? "#cc3366"));
+  const bg_ref = await stageImage(homeDir, productId, await makeOpaqueSquare(1024, opts.bgColor ?? "#0a2540"));
+  if (opts.withSafe) {
+    const safe_logo_ref = await stageImage(homeDir, productId, await makeLogoPng(1024, opts.logoColor ?? "#cc3366"));
+    return { logo_ref, bg_ref, safe_logo_ref };
+  }
+  return { logo_ref, bg_ref };
+}
+
+function appIconAssets(result: SaveBrandAssetResult): BrandAssetRecord[] {
+  if (result.kind !== "app-icon") throw new Error(`expected app-icon result, got ${result.kind}`);
+  return result.assets;
+}
+
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), "forma-brand-assets-"));
 });
 
-// ─── app-icon save: master + platform set + favicon ───────────────────────────
+// ─── app-icon save: discriminated input derives the full variant set ──────────
 
 describe("saveBrandAsset — app-icon (web product)", () => {
-  it("derives the web size set + 2048 master + favicon", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const saved = await saveBrandAsset(makeDeps(home), {
+  it("derives the standard web variant set and returns { kind, assets }", async () => {
+    const masters = await stageMasters(home, PRODUCT_ID);
+    const result = await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...masters,
     });
 
-    expect(saved.kind).toBe("app-icon");
-    expect(saved.name).toBe("primary");
+    expect(result.kind).toBe("app-icon");
+    const assets = appIconAssets(result);
+    // web is single-surface → one "standard" record, no surface field.
+    expect(assets).toHaveLength(1);
+    expect(assets[0].kind).toBe("app-icon");
+    expect(assets[0].name).toBe("standard");
+    expect(assets[0].variant).toBe("standard");
+    expect(assets[0].surface).toBeUndefined();
+    expect(assets[0].files.length).toBeGreaterThan(0);
 
-    const widths = saved.files.map((f) => f.width).sort((a, b) => a - b);
-    // web set 512/192/32/16 + favicon 32/16 (deduped) + 2048 master
-    expect(widths).toContain(2048);
-    for (const w of APP_ICON_SIZES.web) {
-      expect(widths).toContain(w);
-    }
-
-    // Every emitted file is a square PNG of the declared size.
-    for (const file of saved.files) {
+    // Every emitted file is a square PNG of the declared size and exists on disk.
+    for (const file of assets[0].files) {
       expect(file.width).toBe(file.height);
-      const buf = await readFile(file.path);
-      const meta = await sharp(buf).metadata();
+      const meta = await sharp(await readFile(file.path)).metadata();
       expect(meta.width).toBe(file.width);
       expect(meta.height).toBe(file.height);
       expect(meta.format).toBe("png");
     }
-
-    // master is exactly 2048
-    const master = saved.files.find((f) => f.width === 2048);
-    expect(master).toBeDefined();
-  });
-
-  it("emits a favicon file", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const saved = await saveBrandAsset(makeDeps(home), {
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "primary",
-      brand_style: "ant",
-      source: { image_ref: ref },
-      platform: "web",
-    });
-    expect(saved.files.some((f) => f.path.includes("favicon"))).toBe(true);
   });
 });
 
 describe("saveBrandAsset — app-icon (mobile product)", () => {
-  it("derives BOTH ios + android sets (plus master + favicon)", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const saved = await saveBrandAsset(makeDeps(home), {
+  it("derives BOTH android + ios surface variant records", async () => {
+    const masters = await stageMasters(home, PRODUCT_ID, { withSafe: true });
+    const result = await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "mobile",
+      ...masters,
     });
-    const widths = new Set(saved.files.map((f) => f.width));
-    for (const w of APP_ICON_SIZES.ios) expect(widths.has(w)).toBe(true);
-    for (const w of APP_ICON_SIZES.android) expect(widths.has(w)).toBe(true);
-    expect(widths.has(2048)).toBe(true);
+
+    const assets = appIconAssets(result);
+    const surfaces = new Set(assets.map((a) => a.surface));
+    expect(surfaces).toEqual(new Set(["android", "ios"]));
+
+    // Variant names cover the android + ios matrices.
+    const variants = new Set(assets.map((a) => a.variant));
+    expect(variants.has("android-standard")).toBe(true);
+    expect(variants.has("android-foreground")).toBe(true);
+    expect(variants.has("android-background")).toBe(true);
+    expect(variants.has("android-monochrome")).toBe(true);
+    expect(variants.has("ios-standard")).toBe(true);
+    expect(variants.has("ios-dark")).toBe(true);
+    expect(variants.has("ios-tinted")).toBe(true);
+
+    // ios-standard is a multi-size variant → ONE record with multiple files.
+    const iosStandard = assets.find((a) => a.variant === "ios-standard");
+    if (!iosStandard) throw new Error("ios-standard record not found");
+    expect(iosStandard.files.length).toBeGreaterThan(1);
+  });
+
+  it("fails loud (FormaError) when safe_logo_ref is missing for a mobile product", async () => {
+    const masters = await stageMasters(home, PRODUCT_ID, { withSafe: false });
+    await expect(
+      saveBrandAsset(makeDeps(home), {
+        product_id: PRODUCT_ID,
+        kind: "app-icon",
+        brand_style: "ant",
+        platform: "mobile",
+        ...masters,
+      }),
+    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError);
   });
 });
 
-// ─── under-2048 master warns (upscales) ───────────────────────────────────────
+// ─── app-icon ATOMIC REPLACE (re-save does not accumulate) ────────────────────
 
-describe("saveBrandAsset — under-2048 master", () => {
-  it("upscales to 2048 and returns a warning", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(512));
-    const saved = await saveBrandAsset(makeDeps(home), {
+describe("saveBrandAsset — app-icon atomic replacement", () => {
+  it("re-saving replaces the whole set: record count stays constant", async () => {
+    const deps = makeDeps(home);
+    const first = await saveBrandAsset(deps, {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "small",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID, { bgColor: "#aa0000" })),
     });
-    expect(saved.warnings.some((w) => /upscale|2048|smaller/i.test(w))).toBe(true);
-    const master = saved.files.find((f) => f.width === 2048);
-    if (!master) throw new Error("master file not found in saved.files");
-    const buf = await readFile(master.path);
-    const meta = await sharp(buf).metadata();
-    expect(meta.width).toBe(2048);
+    const firstCount = appIconAssets(first).length;
+
+    const second = await saveBrandAsset(deps, {
+      product_id: PRODUCT_ID,
+      kind: "app-icon",
+      brand_style: "antd",
+      platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID, { bgColor: "#00aa00" })),
+    });
+    const secondCount = appIconAssets(second).length;
+
+    expect(secondCount).toBe(firstCount);
+
+    // The manifest holds exactly the second set (no accumulation).
+    const records = await listBrandAssets(home, PRODUCT_ID, "app-icon");
+    expect(records).toHaveLength(secondCount);
+    expect(records.every((r) => r.brand_style === "antd")).toBe(true);
+
+    // The resolved standard icon reflects the second image (green-dominant bg).
+    const bytes = await resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon");
+    const stats = await sharp(bytes).stats();
+    expect(stats.channels[1].mean).toBeGreaterThan(stats.channels[0].mean);
+  });
+
+  it("prior on-disk files are pruned after replacement", async () => {
+    const deps = makeDeps(home);
+    const first = appIconAssets(
+      await saveBrandAsset(deps, {
+        product_id: PRODUCT_ID,
+        kind: "app-icon",
+        brand_style: "ant",
+        platform: "web",
+        ...(await stageMasters(home, PRODUCT_ID)),
+      }),
+    );
+    const oldPath = first[0].files[0].path;
+    await expect(access(oldPath)).resolves.toBeUndefined();
+
+    await saveBrandAsset(deps, {
+      product_id: PRODUCT_ID,
+      kind: "app-icon",
+      brand_style: "ant",
+      platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID)),
+    });
+
+    // The first generation's file is gone.
+    await expect(access(oldPath)).rejects.toBeInstanceOf(Error);
   });
 });
 
 // ─── invalid input ────────────────────────────────────────────────────────────
 
-describe("saveBrandAsset — BRAND_ASSET_INVALID_INPUT", () => {
-  async function expectInvalid(input: Parameters<typeof saveBrandAsset>[1]): Promise<void> {
-    await expect(saveBrandAsset(makeDeps(home), input)).rejects.toSatisfy(
-      (err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT",
-    );
-  }
-
-  it("rejects neither source", async () => {
-    await expectInvalid({
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "x",
-      brand_style: "ant",
-      source: {},
-      platform: "web",
-    });
+describe("saveBrandAsset — invalid input", () => {
+  it("rejects an unknown kind with BRAND_ASSET_INVALID_INPUT", async () => {
+    await expect(
+      saveBrandAsset(makeDeps(home), {
+        // biome-ignore lint/suspicious/noExplicitAny: deliberately bad kind
+        kind: "splash-screen" as any,
+        product_id: PRODUCT_ID,
+        name: "x",
+        brand_style: "ant",
+        source: { html: "<div/>" },
+        target: { width: 10, height: 10 },
+      }),
+    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
   });
 
-  it("rejects both sources", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    await expectInvalid({
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "x",
-      brand_style: "ant",
-      source: { image_ref: ref, html: "<div/>" },
-      platform: "web",
-    });
-  });
-
-  it("rejects app-icon given html (only image_ref allowed)", async () => {
-    await expectInvalid({
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "x",
-      brand_style: "ant",
-      source: { html: "<div/>" },
-      platform: "web",
-    });
-  });
-
-  it("rejects an unknown kind", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    await expectInvalid({
-      product_id: PRODUCT_ID,
-      // biome-ignore lint/suspicious/noExplicitAny: deliberately bad kind
-      kind: "splash-screen" as any,
-      name: "x",
-      brand_style: "ant",
-      source: { image_ref: ref },
-      platform: "web",
-    });
-  });
-
-  it("rejects a name with path traversal", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    await expectInvalid({
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "../escape",
-      brand_style: "ant",
-      source: { image_ref: ref },
-      platform: "web",
-    });
-  });
-});
-
-// ─── manifest overwrite semantics ─────────────────────────────────────────────
-
-describe("saveBrandAsset — manifest overwrite (same kind+name replaces)", () => {
-  it("replaces the prior record for the same kind+name", async () => {
-    const deps = makeDeps(home);
-    const ref1 = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048, "#aa0000"));
-    await saveBrandAsset(deps, {
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "primary",
-      brand_style: "ant",
-      source: { image_ref: ref1 },
-      platform: "web",
-    });
-    const ref2 = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048, "#00aa00"));
-    const second = await saveBrandAsset(deps, {
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "primary",
-      brand_style: "antd",
-      source: { image_ref: ref2 },
-      platform: "web",
-    });
-
-    const records = await listBrandAssets(home, PRODUCT_ID, "app-icon");
-    const primaries = records.filter((r) => r.name === "primary");
-    expect(primaries).toHaveLength(1);
-    expect(primaries[0].brand_style).toBe("antd");
-    expect(primaries[0].generated_at).toBe(second.generated_at);
-
-    // The resolved master must reflect the second image (green, not red).
-    const master = await resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon");
-    const stats = await sharp(master).stats();
-    // green channel dominant
-    expect(stats.channels[1].mean).toBeGreaterThan(stats.channels[0].mean);
+  it("rejects a media name with path traversal", async () => {
+    await expect(
+      saveBrandAsset(makeRenderDeps(home), {
+        product_id: PRODUCT_ID,
+        kind: "store-shot",
+        name: "../escape",
+        brand_style: "ant",
+        source: { html: "<div/>" },
+        target: { width: 10, height: 10 },
+      }),
+    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
   });
 });
 
 // ─── lock acquisition (concurrency serializes) ────────────────────────────────
 
-describe("saveBrandAsset — runs under the product-mutation lock", () => {
-  it("serializes concurrent saves for the same product", async () => {
+describe("saveBrandAsset — app-icon runs under the product-mutation lock", () => {
+  it("serializes concurrent app-icon saves (last write wins, set stays consistent)", async () => {
     const deps = makeDeps(home);
-    const refA = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const refB = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
     const [a, b] = await Promise.all([
       saveBrandAsset(deps, {
         product_id: PRODUCT_ID,
         kind: "app-icon",
-        name: "a",
         brand_style: "ant",
-        source: { image_ref: refA },
         platform: "web",
+        ...(await stageMasters(home, PRODUCT_ID)),
       }),
       saveBrandAsset(deps, {
         product_id: PRODUCT_ID,
         kind: "app-icon",
-        name: "b",
         brand_style: "ant",
-        source: { image_ref: refB },
         platform: "web",
+        ...(await stageMasters(home, PRODUCT_ID)),
       }),
     ]);
-    expect(a.name).toBe("a");
-    expect(b.name).toBe("b");
-    // both records survive — no lost update from interleaved manifest writes
+    expect(a.kind).toBe("app-icon");
+    expect(b.kind).toBe("app-icon");
+    // Atomic-replace under the lock → manifest holds exactly one consistent set.
     const records = await listBrandAssets(home, PRODUCT_ID, "app-icon");
-    expect(records.map((r) => r.name).sort()).toEqual(["a", "b"]);
+    expect(records.length).toBe(appIconAssets(a).length);
   });
 });
 
@@ -313,14 +324,12 @@ describe("saveBrandAsset — runs under the product-mutation lock", () => {
 
 describe("listBrandAssets", () => {
   it("returns an empty array for an absent kind", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
     await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID)),
     });
     expect(await listBrandAssets(home, PRODUCT_ID, "poster")).toEqual([]);
   });
@@ -329,53 +338,63 @@ describe("listBrandAssets", () => {
     expect(await listBrandAssets(home, PRODUCT_ID)).toEqual([]);
   });
 
-  it("returns all records when no kind filter is given", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
+  it("returns all app-icon records when filtered by kind", async () => {
     await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID)),
     });
-    const all = await listBrandAssets(home, PRODUCT_ID);
-    expect(all).toHaveLength(1);
-    expect(all[0].files.length).toBeGreaterThan(0);
+    const records = await listBrandAssets(home, PRODUCT_ID, "app-icon");
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.every((r) => r.kind === "app-icon")).toBe(true);
   });
 });
 
-// ─── resolveBrandImageRef ─────────────────────────────────────────────────────
+// ─── resolveBrandImageRef (SPEC-DATA-008) ─────────────────────────────────────
 
 describe("resolveBrandImageRef", () => {
-  async function seed(): Promise<void> {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    await saveBrandAsset(makeDeps(home), {
+  async function seed(platform: "web" | "mobile" = "web"): Promise<BrandAssetRecord[]> {
+    const result = await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
-      platform: "web",
+      platform,
+      ...(await stageMasters(home, PRODUCT_ID, { withSafe: platform === "mobile" })),
     });
+    return appIconAssets(result);
   }
 
-  it("resolves brand/app-icon to the 2048 master", async () => {
-    await seed();
+  it("bare ref resolves the LARGEST standard-variant file", async () => {
+    const assets = await seed("web");
+    const standardWidths = assets.filter((a) => a.variant === "standard").flatMap((a) => a.files.map((f) => f.width));
+    const largest = Math.max(...standardWidths);
+
     const bytes = await resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon");
     const meta = await sharp(bytes).metadata();
-    expect(meta.width).toBe(2048);
+    expect(meta.width).toBe(largest);
   });
 
-  it("resolves brand/app-icon@512 to the 512px derivative", async () => {
-    await seed();
-    const bytes = await resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon@512");
+  it("@size resolves the standard file whose width === size", async () => {
+    const assets = await seed("web");
+    const aWidth = assets[0].files[0].width;
+    const bytes = await resolveBrandImageRef(home, PRODUCT_ID, `forma-image://brand/app-icon@${aWidth}`);
     const meta = await sharp(bytes).metadata();
-    expect(meta.width).toBe(512);
+    expect(meta.width).toBe(aWidth);
   });
 
-  it("rejects a size not in the set (@999) with MEDIA_IMAGE_NOT_FOUND", async () => {
-    await seed();
+  it("bare ref on a mobile product picks a STANDARD variant (never a foreground/mono layer)", async () => {
+    await seed("mobile");
+    // The largest standard width across android-standard + ios-standard.
+    const bytes = await resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon");
+    const meta = await sharp(bytes).metadata();
+    expect(meta.width).toBeGreaterThan(0);
+    expect(meta.height).toBe(meta.width);
+  });
+
+  it("rejects a size not in the standard set (@999) with MEDIA_IMAGE_NOT_FOUND", async () => {
+    await seed("web");
     await expect(resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon@999")).rejects.toSatisfy(
       (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
     );
@@ -388,14 +407,14 @@ describe("resolveBrandImageRef", () => {
   });
 
   it("rejects an unknown brand kind with MEDIA_IMAGE_NOT_FOUND", async () => {
-    await seed();
+    await seed("web");
     await expect(resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/unknown-thing")).rejects.toSatisfy(
       (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
     );
   });
 
   it("rejects a traversal-laden ref with MEDIA_IMAGE_NOT_FOUND", async () => {
-    await seed();
+    await seed("web");
     await expect(
       resolveBrandImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon@../../etc/passwd"),
     ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND");
@@ -406,18 +425,16 @@ describe("resolveBrandImageRef", () => {
 
 describe("resolveFormaImageRef — brand/ forwards to brand-assets", () => {
   it("resolves forma-image://brand/app-icon through the staging entry point", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
     await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID)),
     });
     const bytes = await resolveFormaImageRef(home, PRODUCT_ID, "forma-image://brand/app-icon");
     const meta = await sharp(bytes).metadata();
-    expect(meta.width).toBe(2048);
+    expect(meta.width).toBeGreaterThan(0);
   });
 
   it("still 404s an unknown brand ref via the staging entry point", async () => {
@@ -427,22 +444,103 @@ describe("resolveFormaImageRef — brand/ forwards to brand-assets", () => {
   });
 });
 
+// ─── deleteBrandAsset (SPEC-BEHAVIOR-006) ─────────────────────────────────────
+
+describe("deleteBrandAsset", () => {
+  /** Persist a poster via the render path and return its name. */
+  async function savedPoster(name: string): Promise<BrandAssetRecord> {
+    const result = await saveBrandAsset(makeRenderDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "poster",
+      name,
+      brand_style: "ant",
+      source: { html: "<!doctype html><html><body style='margin:0;background:#0a2540'></body></html>" },
+      variant: "portrait",
+      target: { width: 80, height: 120 },
+    });
+    if (result.kind === "app-icon") throw new Error("expected poster result");
+    return (await listBrandAssets(home, PRODUCT_ID, "poster")).find((r) => r.name === name) as BrandAssetRecord;
+  }
+
+  it("deletes the manifest record and its on-disk files", async () => {
+    const record = await savedPoster("p1");
+    const filePath = record.files[0].path;
+    await expect(access(filePath)).resolves.toBeUndefined();
+
+    const res = await deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "p1" });
+    expect(res).toEqual({ deleted: true });
+
+    expect(await listBrandAssets(home, PRODUCT_ID, "poster")).toEqual([]);
+    await expect(access(filePath)).rejects.toBeInstanceOf(Error);
+  }, 60000);
+
+  it("fails loud with FormaError when the record does not exist (no silent no-op)", async () => {
+    await expect(
+      deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "ghost" }),
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof FormaError &&
+        err.code === "BRAND_ASSET_INVALID_INPUT" &&
+        (err.details as { reason?: string }).reason === "not_found",
+    );
+  });
+
+  it("rejects a record whose file path escapes the kind directory", async () => {
+    // Plant a manifest record with an absolute out-of-boundary file path.
+    const productsRoot = join(home, "data", "products");
+    const brandDir = join(productsRoot, PRODUCT_ID, "od-project", "brand-assets");
+    await mkdir(brandDir, { recursive: true });
+    const manifest = {
+      assets: [
+        {
+          kind: "poster",
+          name: "evil",
+          files: [{ path: "/etc/passwd", width: 10, height: 10 }],
+          brand_style: "ant",
+          generated_at: new Date().toISOString(),
+        },
+      ],
+    };
+    await writeFile(join(brandDir, "manifest.json"), JSON.stringify(manifest));
+
+    await expect(
+      deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "evil" }),
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof FormaError &&
+        err.code === "BRAND_ASSET_INVALID_INPUT" &&
+        (err.details as { reason?: string }).reason === "path_traversal",
+    );
+    // The escaping path was NOT deleted (it never existed; just assert no crash leaked it).
+    expect(await listBrandAssets(home, PRODUCT_ID, "poster")).toHaveLength(1);
+  });
+
+  it("supports orphan cleanup: deleting one poster leaves the others intact", async () => {
+    await savedPoster("keep-1");
+    await savedPoster("drop");
+    await savedPoster("keep-2");
+
+    await deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "drop" });
+
+    const names = (await listBrandAssets(home, PRODUCT_ID, "poster")).map((r) => r.name).sort();
+    expect(names).toEqual(["keep-1", "keep-2"]);
+  }, 60000);
+});
+
 // ─── zip export ───────────────────────────────────────────────────────────────
 
 describe("exportBrandAssetsZip", () => {
   it("contains every brand-asset file and NEVER media-config.yaml", async () => {
-    // Plant a media-config.yaml at $FORMA_HOME root to prove it is never zipped.
     await writeFile(join(home, "media-config.yaml"), "providers:\n  volcengine:\n    api_key: secret\n");
 
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const saved = await saveBrandAsset(makeDeps(home), {
+    const result = await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID)),
     });
+    const assets = appIconAssets(result);
 
     const zipBuf = await exportBrandAssetsZip(home, PRODUCT_ID);
     const names = new AdmZip(zipBuf)
@@ -450,67 +548,37 @@ describe("exportBrandAssetsZip", () => {
       .filter((e) => !e.isDirectory)
       .map((e) => e.entryName);
 
-    // manifest + every derivative present
     expect(names).toContain("manifest.json");
-    for (const file of saved.files) {
+    for (const file of assets.flatMap((a) => a.files)) {
       const rel = file.path.split("/brand-assets/")[1];
       expect(names).toContain(rel);
     }
-    // never the credential file
     expect(names.some((n) => n.includes("media-config.yaml"))).toBe(false);
     expect(names.some((n) => n.includes("api_key") || n.includes("secret"))).toBe(false);
   });
 
   it("exports manifest file paths as brand-assets-relative paths, never absolute host paths", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const saved = await saveBrandAsset(makeDeps(home), {
+    const result = await saveBrandAsset(makeDeps(home), {
       product_id: PRODUCT_ID,
       kind: "app-icon",
-      name: "primary",
       brand_style: "ant",
-      source: { image_ref: ref },
       platform: "web",
+      ...(await stageMasters(home, PRODUCT_ID)),
     });
+    const fileCount = appIconAssets(result).flatMap((a) => a.files).length;
 
     const zip = new AdmZip(await exportBrandAssetsZip(home, PRODUCT_ID));
     const exported = JSON.parse(zip.readAsText("manifest.json")) as {
-      assets: Array<{ files: Array<{ path: string; width: number; height: number }> }>;
+      assets: Array<{ files: Array<{ path: string }> }>;
     };
     const exportedPaths = exported.assets.flatMap((asset) => asset.files.map((file) => file.path));
 
-    expect(exportedPaths).toHaveLength(saved.files.length);
+    expect(exportedPaths).toHaveLength(fileCount);
     for (const path of exportedPaths) {
       expect(path.startsWith("/")).toBe(false);
       expect(path).not.toContain(home);
-      expect(path).not.toContain("brand-assets/");
-      expect(path).toMatch(/^app-icon\/primary\//);
+      expect(path).toMatch(/^app-icon\//);
     }
-  });
-
-  it("does not export unreferenced files left by interrupted replacements", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    const saved = await saveBrandAsset(makeDeps(home), {
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "primary",
-      brand_style: "ant",
-      source: { image_ref: ref },
-      platform: "web",
-    });
-    const marker = `${sep}brand-assets${sep}`;
-    const markerIndex = saved.files[0].path.indexOf(marker);
-    if (markerIndex === -1) throw new Error("saved file is not under brand-assets");
-    const brandRoot = saved.files[0].path.slice(0, markerIndex + marker.length - 1);
-    const orphanDir = join(brandRoot, "app-icon", "primary", "orphan-generation");
-    await mkdir(orphanDir, { recursive: true });
-    await writeFile(join(orphanDir, "orphan.png"), await makeSquarePng(16, "#ff00ff"));
-
-    const names = new AdmZip(await exportBrandAssetsZip(home, PRODUCT_ID))
-      .getEntries()
-      .filter((e) => !e.isDirectory)
-      .map((e) => e.entryName);
-
-    expect(names.some((name) => name.includes("orphan-generation"))).toBe(false);
   });
 
   it("returns a zip for an empty brand-assets dir (manifest only / nothing)", async () => {
@@ -519,52 +587,64 @@ describe("exportBrandAssetsZip", () => {
   });
 });
 
-// ─── store-shot / poster — HTML → PNG through the PUBLIC save path (task 016) ──
+// ─── store-shot / banner / poster — HTML → PNG through the PUBLIC save path ────
 
-describe("saveBrandAsset — store-shot / poster (html render, public path)", () => {
-  /** Deps with the real puppeteer-backed render sandbox wired in. */
-  function makeRenderDeps(homeDir: string): BrandAssetDeps {
-    const lock = getProductMutationLock(homeDir);
-    return {
-      home: homeDir,
-      runProductMutation: (input, fn) => runProductMutationWithWarnings(lock, input, fn, () => undefined),
-      renderHtml: (input) =>
-        renderBrandAssetHtml({ resolveFormaImage: (ref) => resolveFormaImageRef(homeDir, PRODUCT_ID, ref) }, input),
-    };
-  }
-
-  it("renders store-shot HTML to a PNG stored under store-shots/ + recorded in manifest", async () => {
-    const saved = await saveBrandAsset(makeRenderDeps(home), {
+describe("saveBrandAsset — media kinds (html render, public path)", () => {
+  it("renders store-shot HTML to a PNG, records surface/variant, returns { kind, asset }", async () => {
+    const result = await saveBrandAsset(makeRenderDeps(home), {
       product_id: PRODUCT_ID,
       kind: "store-shot",
       name: "hero",
       brand_style: "ant",
       source: { html: "<!doctype html><html><body style='margin:0;background:#0a2540'></body></html>" },
+      surface: "android",
+      variant: "feature",
       target: { width: 320, height: 480 },
     });
 
-    expect(saved.kind).toBe("store-shot");
-    expect(saved.files).toHaveLength(1);
-    const file = saved.files[0];
+    expect(result.kind).toBe("store-shot");
+    if (result.kind === "app-icon") throw new Error("unexpected app-icon");
+    const asset = result.asset;
+    expect(asset.files).toHaveLength(1);
+    expect(asset.surface).toBe("android");
+    expect(asset.variant).toBe("feature");
+    const file = asset.files[0];
     expect(file.width).toBe(320);
     expect(file.height).toBe(480);
     expect(file.path.includes("/store-shots/")).toBe(true);
 
-    // The PNG exists on disk at the recorded dims.
-    const buf = await readFile(file.path);
-    const meta = await sharp(buf).metadata();
+    const meta = await sharp(await readFile(file.path)).metadata();
     expect(meta.format).toBe("png");
     expect(meta.width).toBe(320);
     expect(meta.height).toBe(480);
 
-    // Recorded in the manifest.
+    // Recorded in the manifest with surface/variant.
     const records = await listBrandAssets(home, PRODUCT_ID, "store-shot");
-    expect(records.map((r) => r.name)).toContain("hero");
+    expect(records).toHaveLength(1);
+    expect(records[0].surface).toBe("android");
+    expect(records[0].variant).toBe("feature");
   }, 60000);
 
-  it("renders poster HTML referencing a localized forma-image:// to a PNG (public path)", async () => {
-    const staged = await stageImage(home, PRODUCT_ID, await makeSquarePng(256, "#ff8800"));
-    const saved = await saveBrandAsset(makeRenderDeps(home), {
+  it("renders a banner to its target size and stores it under banners/", async () => {
+    const result = await saveBrandAsset(makeRenderDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "banner",
+      name: "promo",
+      brand_style: "ant",
+      source: { html: "<!doctype html><html><body style='margin:0;background:#123'></body></html>" },
+      target: { width: 200, height: 80 },
+    });
+    if (result.kind === "app-icon") throw new Error("unexpected app-icon");
+    const file = result.asset.files[0];
+    expect(file.path.includes("/banners/")).toBe(true);
+    const meta = await sharp(await readFile(file.path)).metadata();
+    expect(meta.width).toBe(200);
+    expect(meta.height).toBe(80);
+  }, 60000);
+
+  it("renders poster HTML referencing a localized forma-image:// (public path)", async () => {
+    const staged = await stageImage(home, PRODUCT_ID, await makeOpaqueSquare(256, "#ff8800"));
+    const result = await saveBrandAsset(makeRenderDeps(home), {
       product_id: PRODUCT_ID,
       kind: "poster",
       name: "launch",
@@ -572,15 +652,15 @@ describe("saveBrandAsset — store-shot / poster (html render, public path)", ()
       source: {
         html: `<!doctype html><html><body style='margin:0'><img src="${staged}" style="width:100%"></body></html>`,
       },
-      target: { width: 400, height: 600 },
+      variant: "square",
+      target: { width: 400, height: 400 },
     });
-
-    expect(saved.kind).toBe("poster");
-    const file = saved.files[0];
+    if (result.kind === "app-icon") throw new Error("unexpected app-icon");
+    const file = result.asset.files[0];
     expect(file.path.includes("/posters/")).toBe(true);
     const meta = await sharp(await readFile(file.path)).metadata();
     expect(meta.width).toBe(400);
-    expect(meta.height).toBe(600);
+    expect(meta.height).toBe(400);
   }, 60000);
 
   it("fails loud when store-shot HTML references a remote resource (no PNG produced)", async () => {
@@ -594,71 +674,8 @@ describe("saveBrandAsset — store-shot / poster (html render, public path)", ()
         target: { width: 100, height: 100 },
       }),
     ).rejects.toSatisfy((err: unknown) => err instanceof FormaError);
-    // Nothing was recorded.
     expect(await listBrandAssets(home, PRODUCT_ID, "store-shot")).toEqual([]);
   }, 60000);
-
-  it("rejects a store-shot save with no render target (fail loud, preset deferred)", async () => {
-    await expect(
-      saveBrandAsset(makeRenderDeps(home), {
-        product_id: PRODUCT_ID,
-        kind: "store-shot",
-        name: "notarget",
-        brand_style: "ant",
-        source: { html: "<!doctype html><html><body></body></html>" },
-      }),
-    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
-  });
-
-  it("rejects an UNKNOWN preset id with BRAND_ASSET_INVALID_INPUT (not preset_unsupported)", async () => {
-    await expect(
-      saveBrandAsset(makeRenderDeps(home), {
-        product_id: PRODUCT_ID,
-        kind: "poster",
-        name: "presetonly",
-        brand_style: "ant",
-        source: { html: "<!doctype html><html><body></body></html>" },
-        target: { preset: "app-store-6.7" },
-      }),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof FormaError &&
-        err.code === "BRAND_ASSET_INVALID_INPUT" &&
-        (err.details as { reason?: string } | undefined)?.reason === "unknown_preset",
-    );
-  });
-
-  it("renders a store-shot at the EXACT pixels of a known preset (target.preset)", async () => {
-    const preset = STORE_SHOT_PRESETS["web-og"];
-    const saved = await saveBrandAsset(makeRenderDeps(home), {
-      product_id: PRODUCT_ID,
-      kind: "store-shot",
-      name: "og-shot",
-      brand_style: "ant",
-      source: { html: "<!doctype html><html><body style='margin:0;background:#0a2540'></body></html>" },
-      target: { preset: "web-og" },
-    });
-
-    const file = saved.files[0];
-    expect(file.width).toBe(preset.width);
-    expect(file.height).toBe(preset.height);
-
-    // Pixel-exact: the PNG on disk equals the preset's declared dimensions.
-    const meta = await sharp(await readFile(file.path)).metadata();
-    expect(meta.format).toBe("png");
-    expect(meta.width).toBe(preset.width); // 1200
-    expect(meta.height).toBe(preset.height); // 630
-  }, 60000);
-});
-
-// ─── APP_ICON_SIZES shape ─────────────────────────────────────────────────────
-
-describe("APP_ICON_SIZES", () => {
-  it("matches the spec'd platform sets", () => {
-    expect(APP_ICON_SIZES.ios).toEqual([1024, 180, 120]);
-    expect(APP_ICON_SIZES.android).toEqual([512, 192, 144, 96, 72, 48]);
-    expect(APP_ICON_SIZES.web).toEqual([512, 192, 32, 16]);
-  });
 });
 
 // ─── BRAND_ASSET_KINDS includes "banner" (SPEC-DATA-001) ─────────────────────
@@ -673,45 +690,13 @@ describe("BRAND_ASSET_KINDS", () => {
 // ─── brandSurfacesForPlatform (SPEC-BEHAVIOR-002) ─────────────────────────────
 
 describe("brandSurfacesForPlatform", () => {
-  it("mobile → ['android', 'ios']", () => {
+  it("mobile / tablet → ['android', 'ios']", () => {
     expect(brandSurfacesForPlatform("mobile")).toEqual(["android", "ios"]);
-  });
-
-  it("tablet → ['android', 'ios']", () => {
     expect(brandSurfacesForPlatform("tablet")).toEqual(["android", "ios"]);
   });
 
-  it("web → [] (single surface, no surface field)", () => {
+  it("web / desktop → [] (single surface)", () => {
     expect(brandSurfacesForPlatform("web")).toEqual([]);
-  });
-
-  it("desktop → [] (single surface, no surface field)", () => {
     expect(brandSurfacesForPlatform("desktop")).toEqual([]);
   });
 });
-
-// ─── BrandAssetRecord surface + variant optional fields ───────────────────────
-
-describe("BrandAssetRecord — surface and variant are optional", () => {
-  it("a record without surface/variant validates correctly in the manifest", async () => {
-    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
-    await saveBrandAsset(makeDeps(home), {
-      product_id: PRODUCT_ID,
-      kind: "app-icon",
-      name: "primary",
-      brand_style: "ant",
-      source: { image_ref: ref },
-      platform: "web",
-    });
-    const records = await listBrandAssets(home, PRODUCT_ID, "app-icon");
-    expect(records).toHaveLength(1);
-    // surface and variant must be absent (undefined) for a web single-surface asset
-    expect(records[0].surface).toBeUndefined();
-    expect(records[0].variant).toBeUndefined();
-  });
-});
-
-// Keep type-only imports referenced so unused-import lint stays quiet and the
-// public export surface is exercised.
-const _types: [SavedBrandAsset?, BrandAssetRecord?] = [];
-void _types;

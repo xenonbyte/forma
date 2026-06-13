@@ -6,6 +6,7 @@ import {
   BRAND_ASSET_KINDS,
   COMPONENT_BASELINES,
   FormaError,
+  brandSurfaces,
   IMAGE_PURPOSES,
   MAX_TOKENS_CSS_BYTES,
   artifactBundleUrl,
@@ -332,54 +333,46 @@ const generateImageSchema = z
   .strict();
 
 // ─── save_brand_asset / list_brand_assets (PLAN-TASK-017) ────────────────────
-// SPEC-BEHAVIOR-006 / SPEC-BEHAVIOR-008. The schema is the FIRST gate; core
-// (brand-assets.ts) is the authority for the size derivation, render, and the
-// kind↔source pairing. Per the plan, the pairing is enforced in BOTH places:
-// the schema refine below rejects app-icon+html / store-shot+image_ref early,
-// and core re-asserts it via BRAND_ASSET_INVALID_INPUT.
-
-// source: exactly one of image_ref / html. Both-absent and both-present are
-// rejected at the schema level (before core).
-const brandAssetSourceSchema = z
-  .object({
-    image_ref: z.string().min(1).optional(),
-    html: z.string().min(1).optional(),
-  })
-  .strict()
-  .refine((source) => (source.image_ref !== undefined) !== (source.html !== undefined), {
-    message: "source must carry exactly one of image_ref or html",
-  });
-
-// target: optional XOR — { width, height } (both positive ints) OR { preset }.
-// Preset resolution (T024) is live: core resolves a known preset id through
-// STORE_SHOT_PRESETS to its exact pixels, and fails loud with
-// BRAND_ASSET_INVALID_INPUT (reason: "unknown_preset") for an unknown id.
-const brandAssetTargetSchema = z.union([
-  z.object({ width: z.int().positive(), height: z.int().positive() }).strict(),
-  z.object({ preset: z.string().min(1) }).strict(),
+// SPEC-DATA-006. save_brand_asset is a discriminated union on `kind`. The schema
+// is the FIRST gate; core (brand-assets.ts) is the authority for the derivation,
+// render, and atomic replacement.
+//   - app-icon: master refs (logo_ref/bg_ref/safe_logo_ref?) + colors? — derived
+//     locally into the full per-surface variant set and atomically replaced.
+//   - store-shot/banner/poster: source {html} + target {width,height} (+surface?,
+//     variant?) — rendered to a single PNG via the sandbox.
+// brand_style + platform are injected from the product config by the wrapper.
+const saveBrandAssetSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      product_id: z.string().min(1),
+      kind: z.literal("app-icon"),
+      logo_ref: z.string().min(1),
+      bg_ref: z.string().min(1),
+      safe_logo_ref: z.string().min(1).optional(),
+      colors: z
+        .object({
+          mono: z.string().min(1).optional(),
+          tint: z.string().min(1).optional(),
+          dark_bg: z.string().min(1).optional(),
+        })
+        .strict()
+        .optional(),
+      model: z.string().min(1).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      product_id: z.string().min(1),
+      kind: z.enum(["store-shot", "banner", "poster"]),
+      name: z.string().min(1),
+      source: z.object({ html: z.string().min(1) }).strict(),
+      surface: z.enum(brandSurfaces).optional(),
+      variant: z.string().min(1).optional(),
+      target: z.object({ width: z.int().positive(), height: z.int().positive() }).strict(),
+      model: z.string().min(1).optional(),
+    })
+    .strict(),
 ]);
-
-const saveBrandAssetSchema = z
-  .object({
-    product_id: z.string().min(1),
-    kind: z.enum(BRAND_ASSET_KINDS),
-    name: z.string().min(1),
-    source: brandAssetSourceSchema,
-    target: brandAssetTargetSchema.optional(),
-  })
-  .strict()
-  .superRefine((input, ctx) => {
-    // kind ↔ source pairing (also enforced by core): app-icon only accepts an
-    // image_ref; store-shot / poster only accept html.
-    const hasRef = input.source.image_ref !== undefined;
-    const hasHtml = input.source.html !== undefined;
-    if (input.kind === "app-icon" && !hasRef) {
-      ctx.addIssue({ code: "custom", path: ["source"], message: "app-icon source must be an image_ref" });
-    }
-    if (input.kind !== "app-icon" && !hasHtml) {
-      ctx.addIssue({ code: "custom", path: ["source"], message: `${input.kind} source must be html` });
-    }
-  });
 
 const listBrandAssetsSchema = z
   .object({
@@ -516,7 +509,7 @@ const descriptions = {
   generate_image:
     "Generate product images via the configured AI image provider. Returns images[].preview_path (absolute local path — use the Read tool to visually inspect each candidate) and images[].ref (forma-image://<uuid> — use this reference when embedding in design HTML or passing to save_brand_asset).",
   save_brand_asset:
-    "Persist a brand asset for a product. kind=app-icon takes source.image_ref (a forma-image://<uuid> staged via generate_image purpose=app-icon) and derives the per-platform icon size set + favicon. kind=store-shot/poster take source.html plus target={width,height} and render it to a PNG through the localize+sandbox render path. brand_style and platform are read from the product config. Returns { kind, name, files:[{path,width,height}], generated_at, warnings }. Files render onto the product canvas.",
+    "Persist a brand asset for a product (discriminated by kind). kind=app-icon takes logo_ref + bg_ref (and safe_logo_ref for mobile/tablet), each a forma-image://<uuid> staged via generate_image; it derives the full per-surface variant matrix locally and ATOMICALLY REPLACES the product's whole app-icon set — returns { kind:'app-icon', assets:[{kind,name,files,variant,surface?,...}] }. kind=store-shot/banner/poster take name + source.html + target={width,height} (and optional surface/variant) and render to a PNG through the localize+sandbox path — returns { kind, asset:{name,files,...} }. brand_style and platform are read from the product config.",
   list_brand_assets:
     "List a product's saved brand assets, optionally filtered by kind (app-icon, store-shot, poster). Returns { assets: [{ kind, name, files, brand_style, model?, generated_at }] }.",
   list_store_shot_presets:
@@ -641,7 +634,9 @@ export function createFormaTools(store: FormaStore): FormaTools {
           : {}),
         ...(input.supporting_files !== undefined
           ? {
-              supportingFiles: (input.supporting_files as Array<{ path: string; content_type: string; content_base64: string }>).map((sf) => ({
+              supportingFiles: (
+                input.supporting_files as Array<{ path: string; content_type: string; content_base64: string }>
+              ).map((sf) => ({
                 path: sf.path,
                 contentType: sf.content_type,
                 contentBase64: sf.content_base64,
@@ -1232,12 +1227,32 @@ function archiveDirname(relPath: string): string {
 async function saveBrandAsset(store: FormaStore, input: z.infer<typeof saveBrandAssetSchema>) {
   // brand_style + platform come from the product config (not from the agent):
   // the saved manifest records the product's configured brand style, and the
-  // app-icon size set is platform-derived. A product must be configured first.
+  // app-icon variant set is platform-derived. A product must be configured first.
   const product = await store.products.getProduct(input.product_id);
   if (product.brand_style === undefined) {
     throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Product has no brand_style configured", {
       product_id: input.product_id,
       reason: "product_not_configured",
+    });
+  }
+
+  if (input.kind === "app-icon") {
+    if (product.platform === undefined) {
+      throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Product has no platform configured", {
+        product_id: input.product_id,
+        reason: "product_not_configured",
+      });
+    }
+    return store.saveBrandAsset({
+      product_id: input.product_id,
+      kind: "app-icon",
+      brand_style: product.brand_style,
+      platform: product.platform,
+      logo_ref: input.logo_ref,
+      bg_ref: input.bg_ref,
+      ...(input.safe_logo_ref !== undefined ? { safe_logo_ref: input.safe_logo_ref } : {}),
+      ...(input.colors !== undefined ? { colors: input.colors } : {}),
+      ...(input.model !== undefined ? { model: input.model } : {}),
     });
   }
 
@@ -1247,8 +1262,10 @@ async function saveBrandAsset(store: FormaStore, input: z.infer<typeof saveBrand
     name: input.name,
     brand_style: product.brand_style,
     source: input.source,
-    ...(product.platform !== undefined ? { platform: product.platform } : {}),
-    ...(input.target !== undefined ? { target: input.target } : {}),
+    ...(input.surface !== undefined ? { surface: input.surface } : {}),
+    ...(input.variant !== undefined ? { variant: input.variant } : {}),
+    target: input.target,
+    ...(input.model !== undefined ? { model: input.model } : {}),
   });
 }
 
