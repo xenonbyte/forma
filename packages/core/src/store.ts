@@ -9,16 +9,13 @@ import {
   deleteBrandAsset,
   exportBrandAssetsZip,
   listBrandAssets,
-  listStoreShotPresets,
   resolveBrandImageRef,
   saveBrandAsset,
   type BrandAssetKind,
   type BrandAssetRecord,
   type SaveBrandAssetInput,
   type SaveBrandAssetResult,
-  type StoreShotPreset,
 } from "./brand-assets.js";
-import type { Platform } from "./schemas.js";
 import { resolveFormaImageRef } from "./media/image-staging.js";
 import {
   readMediaConfig,
@@ -109,8 +106,6 @@ export interface FormaStore {
   deleteBrandAsset(input: { product_id: string; kind: BrandAssetKind; name: string }): Promise<{ deleted: boolean }>;
   /** List brand-asset records (optionally filtered by kind). */
   listBrandAssets(productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]>;
-  /** Verified store-shot presets applicable to a product platform (static data). */
-  listStoreShotPresets(platform: Platform): StoreShotPreset[];
   /** Zip every brand-asset file for a product (never includes media-config.yaml). */
   exportBrandAssetsZip(productId: string): Promise<Buffer>;
   /** Resolve a forma-image://brand/... reference to raw bytes. */
@@ -356,7 +351,6 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     saveBrandAsset: saveBrandAssetBound,
     deleteBrandAsset: deleteBrandAssetBound,
     listBrandAssets: listBrandAssetsBound,
-    listStoreShotPresets,
     exportBrandAssetsZip: exportBrandAssetsZipBound,
     resolveBrandImageRef: resolveBrandImageRefBound,
     readMediaConfig: readMediaConfigBound,

@@ -51,70 +51,6 @@ import type { BrandSurface, Platform } from "./schemas.js";
 // ─── Public constants ──────────────────────────────────────────────────────────
 
 /**
- * Store-shot / sharing-image presets — official platform sizes (PLAN-TASK-024).
- *
- * Every pixel value here was verified against the platform's own documentation
- * on the date in `verifiedAt`. NO placeholder values: each entry records the
- * `source` URL it was read from so the provenance is auditable. We keep the
- * PRIMARY 1-2 sizes per platform (not an exhaustive device matrix).
- *
- * Verified 2026-06-13:
- *   - ios-6.9       1320×2868  App Store Connect "Screenshot specifications":
- *                              the 6.9" display is the current required class;
- *                              1320×2868 is its newest/largest accepted portrait
- *                              resolution (iPhone 17 Pro Max / iPhone Air).
- *   - android-phone 1080×1920  Google Play Console "Add preview assets": phone
- *                              screenshots use 9:16 portrait, recommended 1080px
- *                              short edge → 1080×1920 is the recommended primary.
- *   - web-og        1200×630   Open Graph protocol (og:image, 1.91:1); the
- *                              1200×630 figure is the platform-recommended size
- *                              (Facebook sharing-image guidance corroborates).
- *
- * Each preset is tagged with the `platform`s it applies to so
- * listStoreShotPresets() can filter (see PLATFORM_PRESET_MAP for the mapping).
- */
-export const STORE_SHOT_PRESETS = {
-  "ios-6.9": {
-    id: "ios-6.9",
-    width: 1320,
-    height: 2868,
-    source: "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/",
-    verifiedAt: "2026-06-13",
-  },
-  "android-phone": {
-    id: "android-phone",
-    width: 1080,
-    height: 1920,
-    source: "https://support.google.com/googleplay/android-developer/answer/9866151",
-    verifiedAt: "2026-06-13",
-  },
-  "web-og": {
-    id: "web-og",
-    width: 1200,
-    height: 630,
-    source: "https://ogp.me/",
-    verifiedAt: "2026-06-13",
-  },
-} as const satisfies Record<string, StoreShotPreset>;
-
-/**
- * Product platform → applicable store-shot preset ids.
- *
- *   mobile  → iOS + Android phone store screenshots
- *   web     → web Open Graph sharing image
- *   desktop → web Open Graph sharing image (desktop apps share via the web/OG)
- *   tablet  → web Open Graph sharing image — NO tablet-specific size was
- *             verified for v1, so tablet maps to the web/OG preset rather than
- *             guessing an iPad/tablet screenshot size.
- */
-const PLATFORM_PRESET_MAP = {
-  mobile: ["ios-6.9", "android-phone"],
-  web: ["web-og"],
-  desktop: ["web-og"],
-  tablet: ["web-og"],
-} as const satisfies Record<Platform, readonly (keyof typeof STORE_SHOT_PRESETS)[]>;
-
-/**
  * Standard app-icon variant names — the "primary" square icon for each surface.
  * resolveBrandImageRef (bare `forma-image://brand/app-icon` and `@<size>`) only
  * considers files belonging to these variants, so it never returns a foreground/
@@ -163,24 +99,6 @@ export interface BrandAssetRecord {
    * Omitted when not applicable.
    */
   variant?: string;
-}
-
-/**
- * A verified store-shot / sharing-image preset (PLAN-TASK-024). `source` is the
- * official documentation URL the dimensions were read from; `verifiedAt` is the
- * ISO date (YYYY-MM-DD) the value was confirmed against that source.
- */
-export interface StoreShotPreset {
-  /** Stable preset id, e.g. "ios-6.9" / "android-phone" / "web-og". */
-  id: string;
-  /** Exact render width in px. */
-  width: number;
-  /** Exact render height in px. */
-  height: number;
-  /** Official documentation URL the dimensions were verified against. */
-  source: string;
-  /** ISO date (YYYY-MM-DD) the dimensions were verified on. */
-  verifiedAt: string;
 }
 
 /**
@@ -704,21 +622,6 @@ export async function listBrandAssets(
     const manifest = await readManifest(home, productId);
     return kind === undefined ? manifest.assets : manifest.assets.filter((a) => a.kind === kind);
   });
-}
-
-// ─── listStoreShotPresets ──────────────────────────────────────────────────────
-
-/**
- * Returns the verified store-shot presets applicable to a product platform
- * (PLAN-TASK-024). The returned array is a fresh copy of fresh objects, so
- * callers can never mutate the static STORE_SHOT_PRESETS table.
- *
- * Mapping (see PLATFORM_PRESET_MAP): mobile → iOS + Android phone; web/desktop/
- * tablet → web Open Graph (no tablet-specific size verified for v1).
- */
-export function listStoreShotPresets(platform: Platform): StoreShotPreset[] {
-  const ids = PLATFORM_PRESET_MAP[platform] ?? [];
-  return ids.map((id) => ({ ...STORE_SHOT_PRESETS[id] }));
 }
 
 // ─── resolveBrandImageRef (SPEC-BEHAVIOR-004) ──────────────────────────────────
