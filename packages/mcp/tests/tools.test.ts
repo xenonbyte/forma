@@ -258,6 +258,22 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       provider_note: "stub/stub-image-1 · 1:1 · 512x512 · 1 image",
       warnings: [],
     })),
+    saveBrandAsset: vi.fn(async (input: { kind: string; name: string }) => ({
+      kind: input.kind,
+      name: input.name,
+      files: [{ path: `/tmp/forma/brand/${input.kind}/${input.name}/image.png`, width: 320, height: 480 }],
+      generated_at: "2026-06-13T00:00:00.000Z",
+      warnings: [],
+    })),
+    listBrandAssets: vi.fn(async () => [
+      {
+        kind: "app-icon",
+        name: "primary",
+        files: [{ path: "/tmp/forma/brand/app-icon/primary/master.png", width: 2048, height: 2048 }],
+        brand_style: "linear",
+        generated_at: "2026-06-13T00:00:00.000Z",
+      },
+    ]),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
       getProduct: vi.fn(async () => ({
@@ -265,6 +281,7 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
         name: "App",
         description: "Demo",
         platform: "web",
+        brand_style: "linear",
         style: { name: "linear" },
         languages: ["en", "zh-CN"],
         default_language: "en",
@@ -6216,4 +6233,388 @@ describe("search_icons tool (PLAN-TASK-014)", () => {
     const payload = textPayload(result);
     expect(payload.error_code).toBe("INVALID_INPUT");
   });
+});
+
+// ─── save_brand_asset / list_brand_assets (PLAN-TASK-017) ────────────────────
+
+describe("save_brand_asset / list_brand_assets tools (PLAN-TASK-017)", () => {
+  // ─── Schema gates ───────────────────────────────────────────────────────────
+
+  it("tools appear in formaToolNames", () => {
+    expect(formaToolNames).toContain("save_brand_asset");
+    expect(formaToolNames).toContain("list_brand_assets");
+  });
+
+  it("schema: accepts app-icon with image_ref", () => {
+    expectSchemaSuccess("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      source: { image_ref: "forma-image://img-uuid-0001" },
+    });
+  });
+
+  it("schema: accepts store-shot with html and a {width,height} target", () => {
+    expectSchemaSuccess("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      source: { html: "<!doctype html><html><body></body></html>" },
+      target: { width: 320, height: 480 },
+    });
+  });
+
+  it("schema: accepts a {preset} target shape (resolution deferred to core)", () => {
+    expectSchemaSuccess("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "poster",
+      name: "launch",
+      source: { html: "<!doctype html><html><body></body></html>" },
+      target: { preset: "app-store-6.7" },
+    });
+  });
+
+  it("schema: rejects source with neither image_ref nor html", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      source: {},
+    });
+  });
+
+  it("schema: rejects source carrying both image_ref and html", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      source: { image_ref: "forma-image://x", html: "<div/>" },
+    });
+  });
+
+  it("schema: rejects an unknown kind", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "banner",
+      name: "primary",
+      source: { image_ref: "forma-image://x" },
+    });
+  });
+
+  it("schema: rejects app-icon given html (kind↔source pairing)", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      source: { html: "<div/>" },
+    });
+  });
+
+  it("schema: rejects store-shot given image_ref (kind↔source pairing)", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      source: { image_ref: "forma-image://x" },
+    });
+  });
+
+  it("schema: rejects a target carrying both {width,height} and {preset}", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      source: { html: "<div/>" },
+      target: { width: 320, height: 480, preset: "app-store-6.7" },
+    });
+  });
+
+  it("schema: rejects a target with width but no height", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      source: { html: "<div/>" },
+      target: { width: 320 },
+    });
+  });
+
+  it("schema: rejects unknown top-level keys", () => {
+    expectSchemaFailure("save_brand_asset", {
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      source: { image_ref: "forma-image://x" },
+      brand_style: "linear",
+    });
+  });
+
+  it("schema: list_brand_assets accepts product_id and optional kind", () => {
+    expectSchemaSuccess("list_brand_assets", { product_id: "P-123abc" });
+    expectSchemaSuccess("list_brand_assets", { product_id: "P-123abc", kind: "poster" });
+    expectSchemaFailure("list_brand_assets", { product_id: "P-123abc", kind: "banner" });
+  });
+
+  // ─── Delegation (fakeStore) ──────────────────────────────────────────────────
+
+  it("delegates app-icon save, deriving brand_style + platform from the product config", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.save_brand_asset({
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      source: { image_ref: "forma-image://img-uuid-0001" },
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(store.saveBrandAsset).toHaveBeenCalledWith({
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      brand_style: "linear",
+      source: { image_ref: "forma-image://img-uuid-0001" },
+      platform: "web",
+    });
+    const payload = textPayload(result);
+    expect(payload).toMatchObject({ kind: "app-icon", name: "primary", files: expect.any(Array) });
+  });
+
+  it("forwards a store-shot target through to the store method", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    await tools.save_brand_asset({
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      source: { html: "<!doctype html><html><body></body></html>" },
+      target: { width: 320, height: 480 },
+    });
+
+    expect(store.saveBrandAsset).toHaveBeenCalledWith({
+      product_id: "P-123abc",
+      kind: "store-shot",
+      name: "hero",
+      brand_style: "linear",
+      source: { html: "<!doctype html><html><body></body></html>" },
+      platform: "web",
+      target: { width: 320, height: 480 },
+    });
+  });
+
+  it("fails loud with BRAND_ASSET_INVALID_INPUT when the product has no brand_style configured", async () => {
+    const store = fakeStore({
+      products: {
+        ...fakeStore().products,
+        getProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo", platform: "web" })),
+      },
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.save_brand_asset({
+      product_id: "P-123abc",
+      kind: "app-icon",
+      name: "primary",
+      source: { image_ref: "forma-image://img-uuid-0001" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "BRAND_ASSET_INVALID_INPUT",
+      details: { reason: "product_not_configured" },
+    });
+    expect(store.saveBrandAsset).not.toHaveBeenCalled();
+  });
+
+  it("maps a BRAND_ASSET_* FormaError from the store to a structured MCP error", async () => {
+    const store = fakeStore({
+      saveBrandAsset: vi.fn(async () => {
+        throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Preset render targets are not yet supported (M5)", {
+          reason: "preset_unsupported",
+        });
+      }),
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.save_brand_asset({
+      product_id: "P-123abc",
+      kind: "poster",
+      name: "launch",
+      source: { html: "<div/>" },
+      target: { preset: "app-store-6.7" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toEqual({
+      error_code: "BRAND_ASSET_INVALID_INPUT",
+      message: "Preset render targets are not yet supported (M5)",
+      details: { reason: "preset_unsupported" },
+    });
+  });
+
+  it("list_brand_assets wraps store records under { assets }", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_brand_assets({ product_id: "P-123abc" });
+
+    expect(store.listBrandAssets).toHaveBeenCalledWith("P-123abc", undefined);
+    expect(textPayload(result)).toEqual({
+      assets: [
+        {
+          kind: "app-icon",
+          name: "primary",
+          files: [{ path: "/tmp/forma/brand/app-icon/primary/master.png", width: 2048, height: 2048 }],
+          brand_style: "linear",
+          generated_at: "2026-06-13T00:00:00.000Z",
+        },
+      ],
+    });
+  });
+
+  it("list_brand_assets forwards the kind filter", async () => {
+    const store = fakeStore({ listBrandAssets: vi.fn(async () => []) });
+    const tools = createFormaTools(store);
+
+    const result = await tools.list_brand_assets({ product_id: "P-123abc", kind: "poster" });
+
+    expect(store.listBrandAssets).toHaveBeenCalledWith("P-123abc", "poster");
+    expect(textPayload(result)).toEqual({ assets: [] });
+  });
+
+  // ─── Full chain (real store + disk) ──────────────────────────────────────────
+
+  /** Reads width/height from a PNG's IHDR chunk (bytes 16..24) without sharp. */
+  function readPngDimensions(buf: Buffer): { format: "png" | "unknown"; width: number; height: number } {
+    const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    if (buf.length < 24 || !buf.subarray(0, 8).equals(signature)) {
+      return { format: "unknown", width: 0, height: 0 };
+    }
+    return { format: "png", width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+  }
+
+  /** Configure the stub image provider on a real store home. */
+  async function writeStubProvider(home: string): Promise<void> {
+    await writeFile(join(home, "media-config.yaml"), "providers:\n  stub:\n    model: stub-image-1\n", "utf8");
+  }
+
+  /** Create a configured product on a real store so brand assets can be saved. */
+  async function seedConfiguredProduct(store: FormaStore, platform: "web" | "mobile" = "web"): Promise<string> {
+    const product = await store.products.createProduct({ name: "Brand App", description: "Demo" });
+    await store.products.initProductConfig(product.id, {
+      platform,
+      brand_style: "linear",
+      languages: ["en"],
+      default_language: "en",
+    });
+    return product.id;
+  }
+
+  it("full chain: app-icon via a generate_image-staged image_ref persists derived files + a manifest record", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-brand-app-icon-"));
+    try {
+      await writeStubProvider(home);
+      const store = createStrictFormaStore({ home });
+      const productId = await seedConfiguredProduct(store, "web");
+      const tools = createFormaTools(store);
+
+      // Stage a real app-icon image through the public generate_image tool.
+      const gen = await tools.generate_image({
+        product_id: productId,
+        purpose: "app-icon",
+        prompt: "a bold blue circle on white",
+        count: 1,
+      });
+      expect(gen.isError).toBeUndefined();
+      const imageRef: string = textPayload(gen).images[0].ref;
+
+      const result = await tools.save_brand_asset({
+        product_id: productId,
+        kind: "app-icon",
+        name: "primary",
+        source: { image_ref: imageRef },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.kind).toBe("app-icon");
+      expect(payload.name).toBe("primary");
+      expect(Array.isArray(payload.files)).toBe(true);
+      expect(payload.files.length).toBeGreaterThan(1);
+      // The 2048 master is part of every set.
+      expect(payload.files.some((f: { width: number }) => f.width === 2048)).toBe(true);
+      // Every recorded file exists on disk.
+      for (const file of payload.files) {
+        await expect(access(file.path)).resolves.toBeUndefined();
+      }
+
+      // Recorded in the manifest and readable through the list tool.
+      const list = await tools.list_brand_assets({ product_id: productId, kind: "app-icon" });
+      const listed = textPayload(list);
+      expect(listed.assets.map((a: { name: string }) => a.name)).toContain("primary");
+      expect(listed.assets[0].brand_style).toBe("linear");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("full chain: app-icon image_ref pointing at a missing staged image surfaces MEDIA_IMAGE_NOT_FOUND", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-brand-missing-ref-"));
+    try {
+      const store = createStrictFormaStore({ home });
+      const productId = await seedConfiguredProduct(store, "web");
+      const tools = createFormaTools(store);
+
+      const result = await tools.save_brand_asset({
+        product_id: productId,
+        kind: "app-icon",
+        name: "primary",
+        source: { image_ref: "forma-image://does-not-exist" },
+      });
+
+      expect(result.isError).toBe(true);
+      expect(textPayload(result).error_code).toBe("MEDIA_IMAGE_NOT_FOUND");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }, 60000);
+
+  it("full chain: store-shot html renders to a PNG through the store/render public path on disk", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-brand-store-shot-"));
+    try {
+      const store = createStrictFormaStore({ home });
+      const productId = await seedConfiguredProduct(store, "web");
+      const tools = createFormaTools(store);
+
+      const result = await tools.save_brand_asset({
+        product_id: productId,
+        kind: "store-shot",
+        name: "hero",
+        source: { html: "<!doctype html><html><body style='margin:0;background:#0a2540'></body></html>" },
+        target: { width: 320, height: 480 },
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.kind).toBe("store-shot");
+      expect(payload.files).toHaveLength(1);
+      const file = payload.files[0];
+      expect(file.width).toBe(320);
+      expect(file.height).toBe(480);
+      expect(file.path.includes("store-shots")).toBe(true);
+
+      // A real PNG of the requested dimensions landed on disk.
+      const meta = readPngDimensions(await readFile(file.path));
+      expect(meta.format).toBe("png");
+      expect(meta.width).toBe(320);
+      expect(meta.height).toBe(480);
+
+      const list = await tools.list_brand_assets({ product_id: productId, kind: "store-shot" });
+      expect(textPayload(list).assets.map((a: { name: string }) => a.name)).toContain("hero");
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  }, 60000);
 });

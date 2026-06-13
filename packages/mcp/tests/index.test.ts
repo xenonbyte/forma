@@ -35,6 +35,7 @@ vi.mock("@xenonbyte/forma-core", () => {
     platforms: ["web", "mobile"],
     IMAGE_PURPOSES: ["app-icon", "illustration", "hero", "poster-bg", "store-shot-bg"],
     ASPECT_RATIOS: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+    BRAND_ASSET_KINDS: ["app-icon", "store-shot", "poster"],
   };
 });
 

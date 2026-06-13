@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
   ASPECT_RATIOS,
+  BRAND_ASSET_KINDS,
   COMPONENT_BASELINES,
   FormaError,
   IMAGE_PURPOSES,
@@ -63,6 +64,8 @@ export const formaToolNames = [
   "generate_requirement_design",
   "generate_components",
   "generate_image",
+  "save_brand_asset",
+  "list_brand_assets",
   "search_icons",
   "get_design_context",
   "get_design_handoff",
@@ -327,6 +330,62 @@ const generateImageSchema = z
   })
   .strict();
 
+// ─── save_brand_asset / list_brand_assets (PLAN-TASK-017) ────────────────────
+// SPEC-BEHAVIOR-006 / SPEC-BEHAVIOR-008. The schema is the FIRST gate; core
+// (brand-assets.ts) is the authority for the size derivation, render, and the
+// kind↔source pairing. Per the plan, the pairing is enforced in BOTH places:
+// the schema refine below rejects app-icon+html / store-shot+image_ref early,
+// and core re-asserts it via BRAND_ASSET_INVALID_INPUT.
+
+// source: exactly one of image_ref / html. Both-absent and both-present are
+// rejected at the schema level (before core).
+const brandAssetSourceSchema = z
+  .object({
+    image_ref: z.string().min(1).optional(),
+    html: z.string().min(1).optional(),
+  })
+  .strict()
+  .refine((source) => (source.image_ref !== undefined) !== (source.html !== undefined), {
+    message: "source must carry exactly one of image_ref or html",
+  });
+
+// target: optional XOR — { width, height } (both positive ints) OR { preset }.
+// Preset resolution is M5/T024; the shape is accepted here and core fails loud
+// with preset_unsupported until then.
+const brandAssetTargetSchema = z.union([
+  z.object({ width: z.int().positive(), height: z.int().positive() }).strict(),
+  z.object({ preset: z.string().min(1) }).strict(),
+]);
+
+const saveBrandAssetSchema = z
+  .object({
+    product_id: z.string().min(1),
+    kind: z.enum(BRAND_ASSET_KINDS),
+    name: z.string().min(1),
+    source: brandAssetSourceSchema,
+    target: brandAssetTargetSchema.optional(),
+  })
+  .strict()
+  .superRefine((input, ctx) => {
+    // kind ↔ source pairing (also enforced by core): app-icon only accepts an
+    // image_ref; store-shot / poster only accept html.
+    const hasRef = input.source.image_ref !== undefined;
+    const hasHtml = input.source.html !== undefined;
+    if (input.kind === "app-icon" && !hasRef) {
+      ctx.addIssue({ code: "custom", path: ["source"], message: "app-icon source must be an image_ref" });
+    }
+    if (input.kind !== "app-icon" && !hasHtml) {
+      ctx.addIssue({ code: "custom", path: ["source"], message: `${input.kind} source must be html` });
+    }
+  });
+
+const listBrandAssetsSchema = z
+  .object({
+    product_id: z.string().min(1),
+    kind: z.enum(BRAND_ASSET_KINDS).optional(),
+  })
+  .strict();
+
 // limit cap of 50: comfortably above core's default of 10 without letting an
 // agent request the entire ~1,964-icon set in one call. Whitespace-only query
 // passes min(1) here and hits core searchIcons' INVALID_INPUT throw.
@@ -412,6 +471,8 @@ export const formaToolInputSchemas = {
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
   generate_image: generateImageSchema,
+  save_brand_asset: saveBrandAssetSchema,
+  list_brand_assets: listBrandAssetsSchema,
   search_icons: searchIconsSchema,
   get_design_context: getDesignContextSchema,
   get_design_handoff: mcpGetDesignHandoffSchema,
@@ -447,6 +508,10 @@ const descriptions = {
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   generate_image:
     "Generate product images via the configured AI image provider. Returns images[].preview_path (absolute local path — use the Read tool to visually inspect each candidate) and images[].ref (forma-image://<uuid> — use this reference when embedding in design HTML or passing to save_brand_asset).",
+  save_brand_asset:
+    "Persist a brand asset for a product. kind=app-icon takes source.image_ref (a forma-image://<uuid> staged via generate_image purpose=app-icon) and derives the per-platform icon size set + favicon. kind=store-shot/poster take source.html plus target={width,height} and render it to a PNG through the localize+sandbox render path. brand_style and platform are read from the product config. Returns { kind, name, files:[{path,width,height}], generated_at, warnings }. Files render onto the product canvas.",
+  list_brand_assets:
+    "List a product's saved brand assets, optionally filtered by kind (app-icon, store-shot, poster). Returns { assets: [{ kind, name, files, brand_style, model?, generated_at }] }.",
   search_icons:
     "Search the bundled Lucide icon set by name or tag. Returns { icons: [{ name, tags, svg }] } ranked name-prefix → substring → tag (svg is inline-ready Lucide markup with currentColor inheritance). Use this instead of hand-drawing functional icons; no match returns an empty array.",
   get_design_context:
@@ -586,6 +651,10 @@ export function createFormaTools(store: FormaStore): FormaTools {
         count: input.count,
       }),
     ),
+    save_brand_asset: tool("save_brand_asset", async (input) => saveBrandAsset(store, input)),
+    list_brand_assets: tool("list_brand_assets", async (input) => ({
+      assets: await store.listBrandAssets(input.product_id, input.kind),
+    })),
     // search_icons has no store dependency: it calls the core searchIcons
     // function directly against the bundled Lucide set.
     search_icons: tool("search_icons", async (input) => ({ icons: searchIcons(input.query, input.limit) })),
@@ -1148,6 +1217,29 @@ function archiveDirname(relPath: string): string {
 }
 
 // ─── Retained tool implementations ───────────────────────────────────────────
+
+async function saveBrandAsset(store: FormaStore, input: z.infer<typeof saveBrandAssetSchema>) {
+  // brand_style + platform come from the product config (not from the agent):
+  // the saved manifest records the product's configured brand style, and the
+  // app-icon size set is platform-derived. A product must be configured first.
+  const product = await store.products.getProduct(input.product_id);
+  if (product.brand_style === undefined) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Product has no brand_style configured", {
+      product_id: input.product_id,
+      reason: "product_not_configured",
+    });
+  }
+
+  return store.saveBrandAsset({
+    product_id: input.product_id,
+    kind: input.kind,
+    name: input.name,
+    brand_style: product.brand_style,
+    source: input.source,
+    ...(product.platform !== undefined ? { platform: product.platform } : {}),
+    ...(input.target !== undefined ? { target: input.target } : {}),
+  });
+}
 
 async function confirmProductId(store: FormaStore, input: z.infer<typeof confirmProductIdSchema>) {
   const { product_id, expected_name } = input;
