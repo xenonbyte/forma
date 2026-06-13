@@ -18,6 +18,7 @@ describe("B1 craft reading", () => {
     expect(slugs).toContain("anti-ai-slop");
     expect(slugs).toContain("design-read");
     expect(slugs).toContain("ai-tells");
+    expect(slugs).toContain("image-prompts");
     expect(slugs).toContain("typography-hierarchy");
     expect(slugs.length).toBeGreaterThanOrEqual(11);
   });

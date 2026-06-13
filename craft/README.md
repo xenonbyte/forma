@@ -77,6 +77,7 @@ A purely behavioral craft file (state-coverage, animation-discipline) is guidanc
 | `anti-ai-slop.md` | `anti-ai-slop` | Marketing pages, landing pages, decks |
 | `design-read.md` | `design-read` | Design-generating skills before writing HTML; classifies surface kind, audience, and variance/density dials |
 | `ai-tells.md` | `ai-tells` | Design-generating skills; universal copy/style tells for all pages, plus marketing-only quotas gated by the design read |
+| `image-prompts.md` | `image-prompts` | Image-generating commands (`fm-app-icon`, `fm-design` IMAGERY, `fm-brand-assets`); per-purpose prompt scaffolds (app-icon / illustration / hero / poster-bg / store-shot-bg) with locked-palette + anti-slop rules and the generated-image veto checklist |
 | `state-coverage.md` | `state-coverage` | Any skill with stateful UI (dashboards, mobile apps, forms, list/table views) |
 | `animation-discipline.md` | `animation-discipline` | Any skill that ships motion: mobile apps, multi-screen flows, gamified UI, transitions, microinteractions |
 | `accessibility-baseline.md` | `accessibility-baseline` | Any skill that ships interactive UI: dashboards, forms, mobile flows, anything with focus/labels/keyboard paths |

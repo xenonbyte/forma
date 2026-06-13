@@ -310,13 +310,14 @@ describe("buildDesignContext", () => {
 });
 
 describe("readAllCraftDocs", () => {
-  it("returns all craft docs (>=11) including ai-tells and design-read", async () => {
+  it("returns all craft docs (>=11) including ai-tells, design-read, and image-prompts", async () => {
     const store = await createTestStore();
     const docs = await readAllCraftDocs(store.styles);
 
     expect(docs.length).toBeGreaterThanOrEqual(11);
     expect(docs.some((d) => d.slug === "ai-tells")).toBe(true);
     expect(docs.some((d) => d.slug === "design-read")).toBe(true);
+    expect(docs.some((d) => d.slug === "image-prompts")).toBe(true);
   });
 
   it("each doc has slug and content fields", async () => {
