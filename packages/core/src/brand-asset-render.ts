@@ -41,12 +41,12 @@
 
 import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { launch, type Browser, type HTTPRequest } from "puppeteer";
 import { localizeArtifactAssets } from "./artifact-asset-pipeline.js";
 import { FormaError } from "./errors.js";
-import { isSameOrChildPath } from "./path-boundary.js";
+import { isSameOrChildPath, realpathWithMissingTail } from "./path-boundary.js";
 import { previewChromiumLaunchArgs } from "./preview-renderer.js";
 
 /** Dependencies the render sandbox needs. */
@@ -76,34 +76,16 @@ const BUNDLE_ENTRY = "index.html";
 /** Navigation/render timeout, mirroring preview-renderer. */
 const RENDER_TIMEOUT_MS = 30000;
 
-function assertPositiveDimension(value: number, field: "width" | "height"): void {
-  if (!Number.isInteger(value) || value < 1 || value > 16384) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", `Render ${field} must be a positive integer ≤ 16384`, {
-      field,
-      value,
-    });
-  }
-}
+// 16384 = Chromium's max canvas/texture dimension; larger viewports clip.
+const MAX_RENDER_DIMENSION = 16384;
 
-/**
- * realpath that tolerates a missing leaf: resolves the deepest existing
- * ancestor and re-appends the missing tail. This normalizes symlinked path
- * prefixes (macOS /var → /private/var) even when the leaf file does not exist,
- * so an in-bounds-but-not-yet-written reference still classifies as in-bounds
- * and an out-of-bounds reference (e.g. /etc/passwd) still resolves out.
- */
-async function realpathTolerant(path: string): Promise<string> {
-  const missingTail: string[] = [];
-  let current = resolve(path);
-  for (;;) {
-    try {
-      return resolve(await realpath(current), ...missingTail);
-    } catch {
-      const parent = dirname(current);
-      if (parent === current) return resolve(path); // no resolvable ancestor
-      missingTail.unshift(relative(parent, current));
-      current = parent;
-    }
+function assertPositiveDimension(value: number, field: "width" | "height"): void {
+  if (!Number.isInteger(value) || value < 1 || value > MAX_RENDER_DIMENSION) {
+    throw new FormaError(
+      "BRAND_ASSET_INVALID_INPUT",
+      `Render ${field} must be a positive integer ≤ ${MAX_RENDER_DIMENSION}`,
+      { field, value },
+    );
   }
 }
 
@@ -112,8 +94,17 @@ async function realpathTolerant(path: string): Promise<string> {
  * Returns null when the request is allowed, or a short category string when it
  * must be aborted (and the render failed). The category is deliberately coarse
  * so the thrown error never leaks an absolute internal path.
+ *
+ * Defense-in-depth Layer ②: the localizer (Layer ①) already rejects remote
+ * refs before the browser launches, so in practice only file:// children of the
+ * bundle reach here — but this independently re-validates every request, so a
+ * regression upstream cannot turn a remote/out-of-bundle ref into an allow.
+ *
+ * Boundary failures fail CLOSED: realpathWithMissingTail rethrows on EACCES /
+ * ELOOP (it only swallows ENOENT/ENOTDIR for a not-yet-written leaf), and the
+ * caller treats any thrown classify error as a violation — never a silent allow.
  */
-async function classifyRequest(url: string, bundleRealDir: string): Promise<string | null> {
+export async function classifyBrandAssetRequest(url: string, bundleRealDir: string): Promise<string | null> {
   // Remote + protocol-relative are never allowed.
   if (url.startsWith("http://") || url.startsWith("https://") || url.startsWith("//")) {
     return "remote";
@@ -134,7 +125,7 @@ async function classifyRequest(url: string, bundleRealDir: string): Promise<stri
   // boundary check compares like-with-like (macOS /var → /private/var). The
   // file may not exist yet; in that case realpath the existing parent prefix
   // and re-append the missing tail so the boundary check still holds.
-  const real = await realpathTolerant(candidate);
+  const real = await realpathWithMissingTail(candidate);
   if (!isSameOrChildPath(bundleRealDir, real)) return "out_of_bundle";
   return null;
 }
@@ -193,6 +184,10 @@ export async function renderBrandAssetHtml(deps: BrandAssetRenderDeps, input: Br
 
     const violations: string[] = [];
     const failed: string[] = [];
+    // Requests WE aborted. Used to tell our own aborts apart from genuine load
+    // failures in requestfailed — robust across Chromium versions, unlike
+    // string-matching errorText.
+    const abortedByUs = new WeakSet<HTTPRequest>();
 
     page.on("request", (req: HTTPRequest) => {
       const url = req.url();
@@ -201,7 +196,7 @@ export async function renderBrandAssetHtml(deps: BrandAssetRenderDeps, input: Br
         // request can only ever be allowed by an explicit `null` verdict.
         let category: string | null;
         try {
-          category = await classifyRequest(url, bundleRealDir);
+          category = await classifyBrandAssetRequest(url, bundleRealDir);
         } catch {
           category = "classify_error";
         }
@@ -209,6 +204,7 @@ export async function renderBrandAssetHtml(deps: BrandAssetRenderDeps, input: Br
           await req.continue().catch(() => undefined);
         } else {
           violations.push(category);
+          abortedByUs.add(req);
           await req.abort("blockedbyclient").catch(() => undefined);
         }
       })();
@@ -217,9 +213,7 @@ export async function renderBrandAssetHtml(deps: BrandAssetRenderDeps, input: Br
       // Aborts we triggered surface here too; the violations[] flag is the
       // authority for blocked requests. Track other genuine load failures of
       // sub-resources that were allowed (e.g. a referenced bundle file missing).
-      const url = req.url();
-      const wasBlocked = (req.failure()?.errorText ?? "").includes("BLOCKED");
-      if (!wasBlocked) failed.push(url);
+      if (!abortedByUs.has(req)) failed.push(req.url());
     });
 
     await page.goto(entryUrl, { waitUntil: "load", timeout: RENDER_TIMEOUT_MS });
@@ -238,8 +232,9 @@ export async function renderBrandAssetHtml(deps: BrandAssetRenderDeps, input: Br
       });
     }
 
-    const buf = await page.screenshot({ type: "png" });
-    return Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+    // page.screenshot returns Uint8Array (puppeteer ≥23); the brand-asset store
+    // chain is typed Buffer, so convert unconditionally.
+    return Buffer.from(await page.screenshot({ type: "png" }));
   } catch (err) {
     if (err instanceof FormaError) throw err;
     throw new FormaError(

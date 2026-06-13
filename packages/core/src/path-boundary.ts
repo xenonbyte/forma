@@ -120,7 +120,17 @@ async function readRealpathWithMissingTail(
   }
 }
 
-async function realpathWithMissingTail(path: string): Promise<string> {
+/**
+ * realpath that tolerates a missing leaf: resolves the deepest existing
+ * ancestor and re-appends the missing tail, normalizing symlinked path prefixes
+ * (e.g. macOS /var → /private/var) even when the leaf does not yet exist.
+ *
+ * Only ENOENT/ENOTDIR are swallowed (the leaf legitimately not existing yet);
+ * any other error (EACCES, ELOOP, …) rethrows. Callers that use this for a
+ * security boundary must treat a thrown error as a violation, never a silent
+ * allow — see brand-asset-render's fail-closed classifier.
+ */
+export async function realpathWithMissingTail(path: string): Promise<string> {
   const missingTail: string[] = [];
   let current = path;
   while (true) {

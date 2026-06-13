@@ -18,12 +18,17 @@
  * via request interception before any real fetch.
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import { renderBrandAssetHtml, type BrandAssetRenderDeps } from "../src/brand-asset-render.js";
+import {
+  classifyBrandAssetRequest,
+  renderBrandAssetHtml,
+  type BrandAssetRenderDeps,
+} from "../src/brand-asset-render.js";
 import { putStagedImage } from "../src/media/image-staging.js";
 import { resolveFormaImageRef } from "../src/media/image-staging.js";
 import { FormaError } from "../src/errors.js";
@@ -169,4 +174,85 @@ describe("renderBrandAssetHtml — localized forma-image refs render successfull
     expect(meta.width).toBe(800);
     expect(meta.height).toBe(600);
   }, 60000);
+});
+
+// ─── 5. classifier unit coverage (Layer ②, NO browser) ──────────────────────────
+//
+// The integration tests above all THROW in Layer ① (the localizer rejects remote
+// refs before Chromium launches), so the classifier's remote/data/non_file
+// branches get zero coverage there. These tests call classifyBrandAssetRequest
+// directly against a real temp bundle dir to lock the defense-in-depth verdict
+// independently of Layer ①. Category strings are asserted EXACTLY: a regression
+// flipping any branch to "allow" (null) fails here.
+
+describe("classifyBrandAssetRequest — defense-in-depth verdicts (no browser)", () => {
+  let bundleRoot: string;
+  let bundleRealDir: string;
+  let insideFileUrl: string;
+
+  beforeEach(async () => {
+    bundleRoot = await mkdtemp(join(tmpdir(), "forma-classify-"));
+    const bundleDir = join(bundleRoot, "bundle");
+    await mkdir(join(bundleDir, "assets"), { recursive: true });
+    // realpath the bundle root the same way the renderer does (macOS tmpdir is a
+    // symlink: /var → /private/var), so the boundary check compares like-with-like.
+    bundleRealDir = await realpath(bundleDir);
+    const insideFile = join(bundleDir, "assets", "logo.png");
+    await writeFile(insideFile, Buffer.from("\x89PNG\r\n\x1a\n"));
+    insideFileUrl = pathToFileURL(insideFile).href;
+  });
+
+  afterEach(async () => {
+    await rm(bundleRoot, { recursive: true, force: true });
+  });
+
+  it("ALLOWS (null) a file:// inside the bundle", async () => {
+    expect(await classifyBrandAssetRequest(insideFileUrl, bundleRealDir)).toBeNull();
+  });
+
+  it("ALLOWS (null) the bundle dir itself", async () => {
+    expect(await classifyBrandAssetRequest(pathToFileURL(bundleRealDir).href, bundleRealDir)).toBeNull();
+  });
+
+  it("ALLOWS (null) a not-yet-written file inside the bundle (missing leaf)", async () => {
+    const missing = pathToFileURL(join(bundleRealDir, "assets", "not-written-yet.png")).href;
+    expect(await classifyBrandAssetRequest(missing, bundleRealDir)).toBeNull();
+  });
+
+  it("rejects https:// → 'remote'", async () => {
+    expect(await classifyBrandAssetRequest("https://evil.example.com/x.png", bundleRealDir)).toBe("remote");
+  });
+
+  it("rejects http:// → 'remote'", async () => {
+    expect(await classifyBrandAssetRequest("http://evil.example.com/x.png", bundleRealDir)).toBe("remote");
+  });
+
+  it("rejects protocol-relative //host → 'remote'", async () => {
+    expect(await classifyBrandAssetRequest("//evil.example.com/x.png", bundleRealDir)).toBe("remote");
+  });
+
+  it("rejects data: → 'data'", async () => {
+    expect(await classifyBrandAssetRequest("data:image/png;base64,iVBORw0KGgo=", bundleRealDir)).toBe("data");
+  });
+
+  it("rejects a non-file non-http scheme (ftp:) → 'non_file'", async () => {
+    expect(await classifyBrandAssetRequest("ftp://host/x.png", bundleRealDir)).toBe("non_file");
+  });
+
+  it("rejects a file:// OUTSIDE the bundle (/etc/passwd) → 'out_of_bundle'", async () => {
+    expect(await classifyBrandAssetRequest("file:///etc/passwd", bundleRealDir)).toBe("out_of_bundle");
+  });
+
+  it("rejects a sibling-of-bundle file (prefix not a real child) → 'out_of_bundle'", async () => {
+    // bundleRoot/bundle-evil shares the bundleRealDir string prefix but is not a
+    // child; isSameOrChildPath must reject it.
+    const sibling = pathToFileURL(join(bundleRoot, "bundle-evil", "x.png")).href;
+    expect(await classifyBrandAssetRequest(sibling, bundleRealDir)).toBe("out_of_bundle");
+  });
+
+  it("rejects a file:// URL fileURLToPath can't parse → 'unparseable_file'", async () => {
+    // Starts with file:// (so it passes the scheme guards) but has invalid
+    // percent-encoding, so fileURLToPath throws → fail-closed 'unparseable_file'.
+    expect(await classifyBrandAssetRequest("file://%ZZ", bundleRealDir)).toBe("unparseable_file");
+  });
 });
