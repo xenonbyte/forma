@@ -361,19 +361,19 @@ async function renderOpenAICompatibleImage(
 
   const text = await resp.text();
   if (!resp.ok) {
-    throw providerError(resp.status, text);
+    throw providerError(resp.status, text, undefined, [cfg.apiKey]);
   }
 
   let data: unknown;
   try {
     data = JSON.parse(text);
   } catch {
-    throw providerError(resp.status, text, "Image provider response was not valid JSON");
+    throw providerError(resp.status, text, "Image provider response was not valid JSON", [cfg.apiKey]);
   }
 
   const entry = isRecord(data) && Array.isArray(data.data) ? data.data[0] : null;
   if (!isRecord(entry)) {
-    throw providerError(resp.status, text, "Image provider response had no data[0]");
+    throw providerError(resp.status, text, "Image provider response had no data[0]", [cfg.apiKey]);
   }
 
   let bytes: Buffer;
@@ -386,15 +386,17 @@ async function renderOpenAICompatibleImage(
     // assertSafeFetchUrl below.
     bytes = await fetchImageBytesGuarded(entry.url);
   } else {
-    throw providerError(resp.status, text, "Image provider response missing b64_json/url");
+    throw providerError(resp.status, text, "Image provider response missing b64_json/url", [cfg.apiKey]);
   }
+
+  const actual = await readImageDimensions(bytes);
 
   // gemini omits `size`, so the model chose its own dimensions: read them back
   // from the actual bytes (authoritative). volcengine/openai honour the
   // requested size, so they leave dims undefined and the scheduler keeps the
   // requested {width,height}.
   if (provider === "gemini") {
-    return { bytes, ...(await readImageDimensions(bytes)) };
+    return { bytes, ...actual };
   }
   return { bytes };
 }
@@ -439,7 +441,7 @@ function buildRequestBody(
 async function readImageDimensions(bytes: Buffer): Promise<{ width: number; height: number }> {
   let meta: import("sharp").Metadata;
   try {
-    meta = await sharp(bytes).metadata();
+    meta = await sharp(bytes, { limitInputPixels: SHARP_PIXEL_LIMIT }).metadata();
   } catch (err) {
     throw providerError(
       0,
@@ -460,6 +462,9 @@ async function readImageDimensions(bytes: Buffer): Promise<{ width: number; heig
 
 /** Hard ceiling on a downloaded provider image: 64 MiB. */
 const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+
+/** sharp decode ceiling for provider-returned bytes. */
+const SHARP_PIXEL_LIMIT = 64_000_000;
 
 /**
  * Validate `rawUrl` before it is fetched.
@@ -617,15 +622,31 @@ async function readCapped(resp: Response, cap: number): Promise<Buffer> {
 }
 
 /**
- * Build a MEDIA_PROVIDER_ERROR. The body is truncated to PROVIDER_BODY_LIMIT
- * chars; the api key is never part of `details` (the Authorization header is
- * built locally and the response body is provider-controlled, not our header).
+ * Build a MEDIA_PROVIDER_ERROR. The body is redacted and truncated to
+ * PROVIDER_BODY_LIMIT chars. Some custom OpenAI-compatible endpoints echo
+ * request headers in their response body, so redact the current request secret
+ * before surfacing provider-controlled text.
  */
-function providerError(status: number, body: string, message?: string): FormaError {
+function providerError(status: number, body: string, message?: string, secrets: readonly string[] = []): FormaError {
   return new FormaError("MEDIA_PROVIDER_ERROR", message ?? `Image provider returned ${status}`, {
     status,
-    body: truncate(body, PROVIDER_BODY_LIMIT),
+    body: truncate(redactSecrets(body, secrets), PROVIDER_BODY_LIMIT),
   });
+}
+
+function redactSecrets(value: string, secrets: readonly string[]): string {
+  let redacted = value;
+  for (const secret of secrets) {
+    if (!secret || secret.length < 8) continue;
+    const escaped = escapeRegExp(secret);
+    redacted = redacted.replace(new RegExp(`Bearer\\s+${escaped}`, "gi"), "[REDACTED:authorization]");
+    redacted = redacted.replace(new RegExp(escaped, "g"), "[REDACTED:api-key]");
+  }
+  return redacted;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function truncate(value: string, limit: number): string {

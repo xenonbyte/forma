@@ -21,7 +21,16 @@ import { FormaError, generateImages } from "@xenonbyte/forma-core";
 //     MEDIA_PROVIDER_ERROR with status + truncated body, NEVER the api key.
 // ---------------------------------------------------------------------------
 
-const ENV_VARS = ["FORMA_VOLCENGINE_API_KEY", "ARK_API_KEY", "VOLCENGINE_API_KEY"];
+const ENV_VARS = [
+  "FORMA_VOLCENGINE_API_KEY",
+  "ARK_API_KEY",
+  "VOLCENGINE_API_KEY",
+  "FORMA_OPENAI_API_KEY",
+  "OPENAI_API_KEY",
+  "FORMA_GEMINI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+];
 const PRODUCT_ID = "P-7e5701";
 
 let savedEnv: Record<string, string | undefined>;
@@ -297,10 +306,7 @@ describe("generateImages — configuration", () => {
 describe("generateImages — volcengine provider (mocked fetch)", () => {
   it("stages bytes from a 2xx b64_json response and POSTs the expected body", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
-    // A 1x1 PNG, base64.
-    const tinyPng = Buffer.from([
-      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-    ]);
+    const tinyPng = makeSolidPng(1, 1);
     const b64 = tinyPng.toString("base64");
 
     let capturedUrl = "";
@@ -346,7 +352,7 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
 
   it("makes count calls for count > 1", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
-    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const tinyPng = makeSolidPng(1, 1);
     const b64 = tinyPng.toString("base64");
     const fetchMock = vi.fn(
       async () =>
@@ -397,6 +403,32 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     expect(serialized.toLowerCase()).not.toContain("bearer");
   });
 
+  it("redacts the api key if a custom provider echoes Authorization in the error body", async () => {
+    await writeVolcengineConfig(home, "sk-super-secret-key-XYZ");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("upstream saw Authorization: Bearer sk-super-secret-key-XYZ", {
+            status: 401,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    const serialized = JSON.stringify((caught as FormaError).toJSON());
+    expect(serialized).not.toContain("sk-super-secret-key-XYZ");
+    expect(serialized.toLowerCase()).not.toContain("bearer");
+    expect(serialized).toContain("[REDACTED:authorization]");
+  });
+
   it("throws MEDIA_PROVIDER_ERROR when the 2xx body has no b64_json/url", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
     vi.stubGlobal(
@@ -414,12 +446,30 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     });
   });
 
+  it("rejects a 2xx b64_json payload that is not a readable image", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ b64_json: Buffer.from("not an image").toString("base64") }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+  });
+
   it("env-key-wins: FORMA_VOLCENGINE_API_KEY selects volcengine even when only stub is in the file", async () => {
     // File contains only stub; env key must override and select volcengine.
     await writeStubConfig(home);
     process.env.FORMA_VOLCENGINE_API_KEY = "sk-env-key-wins";
 
-    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const tinyPng = makeSolidPng(1, 1);
     const b64 = tinyPng.toString("base64");
     let capturedUrl = "";
     let capturedAuth = "";
@@ -457,7 +507,7 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
       "utf8",
     );
 
-    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const tinyPng = makeSolidPng(1, 1);
     const b64 = tinyPng.toString("base64");
     const fetchMock = vi.fn(
       async () =>
@@ -502,7 +552,7 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
 
   it("fetches the url when the response carries url instead of b64_json", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
-    const imgBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x99, 0x88]);
+    const imgBytes = makeSolidPng(1, 1);
     const fetchMock = vi.fn(async (url: string) => {
       if (url === "https://cdn.example.com/out.png") {
         return new Response(imgBytes, { status: 200 });
@@ -694,7 +744,7 @@ describe("generateImages — SSRF guard on the url second-fetch", () => {
   it("still works for a normal public https url (regression)", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
     const safeUrl = "https://cdn.example.com/ok.png";
-    const imgBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x10, 0x20]);
+    const imgBytes = makeSolidPng(1, 1);
     const fetchMock = vi.fn(async (url: string) => {
       if (url === safeUrl) return new Response(imgBytes, { status: 200 });
       return urlResponse(safeUrl);
@@ -832,6 +882,24 @@ describe("generateImages — openai provider (mocked fetch)", () => {
     const serialized = JSON.stringify((caught as FormaError).toJSON());
     expect(serialized).not.toContain("sk-openai-SECRET-9999");
     expect(serialized.toLowerCase()).not.toContain("bearer");
+  });
+
+  it("rejects an OpenAI 2xx b64_json payload that is not a readable image", async () => {
+    await writeOpenAIConfig(home, "sk-openai-123");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{ b64_json: Buffer.from("not an image").toString("base64") }] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+
+    await expect(
+      generateImages(home, { productId: PRODUCT_ID, purpose: "app-icon", prompt: "x" }),
+    ).rejects.toMatchObject({ code: "MEDIA_PROVIDER_ERROR" });
   });
 
   it("applies the SSRF guard to an openai url response (169.254 metadata)", async () => {
