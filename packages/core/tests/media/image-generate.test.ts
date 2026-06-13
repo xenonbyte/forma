@@ -278,6 +278,8 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     expect(body.prompt).toBe("a quiet harbour");
     expect(body.response_format).toBe("b64_json");
     expect(body.size).toBe("2848x1600");
+    // Watermark suppressed — Forma output is commercial brand material.
+    expect(body.watermark).toBe(false);
 
     // The staged bytes match the decoded response.
     const staged = await readFile(result.images[0].preview_path);

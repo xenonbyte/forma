@@ -292,6 +292,10 @@ async function renderVolcengineImage(input: RenderInput, cfg: ProviderConfig): P
     prompt: input.prompt,
     size: `${input.width}x${input.height}`,
     response_format: "b64_json",
+    // Volcengine stamps a visible "AI generated" watermark by default. Forma output is
+    // commercial brand material (icons, store shots, posters), so request without it.
+    // Any required AI-content labeling for a given distribution channel is the operator's call.
+    watermark: false,
   };
 
   const resp = await fetch(`${baseUrl}/images/generations`, {
