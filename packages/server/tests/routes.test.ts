@@ -4,6 +4,9 @@ import {
   FormaError,
   getArtifactVersionDir,
   getArtifactVziPath,
+  getBrandAssetsDir,
+  getBrandAssetsManifestPath,
+  getFormaPaths,
   type FormaStore,
   type ProductDeletionState,
 } from "@xenonbyte/forma-core";
@@ -149,6 +152,8 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
       provider_note: "stub/stub-image-1",
       warnings: [],
     })),
+    listBrandAssets: vi.fn(async () => []),
+    exportBrandAssetsZip: vi.fn(async () => Buffer.from("PK".padEnd(22, "\0"), "latin1")),
     readMediaConfig: vi.fn(async () => ({ configured: false as const, source: "none" as const })),
     writeMediaConfig: vi.fn(async () => ({ configured: false as const, source: "none" as const })),
     styles: {
@@ -2983,6 +2988,180 @@ describe("media routes (PLAN-TASK-011)", () => {
     const log = lines.join("\n");
     expect(log).not.toContain(FAKE_KEY);
     expect(log).not.toContain("secret-host.example");
+  });
+});
+
+describe("brand-assets routes (PLAN-TASK-018)", () => {
+  const PID = "P-abc123";
+  // A distinctive provider-key string we plant in media-config.yaml; the zip
+  // export and any file response must never contain it (credential exclusion).
+  const PLANTED_KEY = "sk-brand-secret-9999";
+  // Minimal valid 1x1 PNG (the bytes the file route should serve verbatim).
+  const PNG_BYTES = Buffer.from(
+    "89504e470d0a1a0a0000000d4948445200000001000000010802000000907753de0000000c4944415408d76360f8cf00000301010018dd8db00000000049454e44ae426082",
+    "hex",
+  );
+
+  async function brandStoreApp(): Promise<{ app: FormaServer; home: string }> {
+    const home = await mkdtemp(join(tmpdir(), "forma-brand-"));
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+    const app = await buildServer({ store });
+    apps.push(app);
+    await app.ready();
+    return { app, home };
+  }
+
+  // Seed the on-disk brand-assets tree directly (manifest + a real PNG file).
+  // This is deterministic and avoids the sharp/staging pipeline of saveBrandAsset.
+  async function seedAppIcon(home: string): Promise<{ brandRoot: string; iconAbs: string; iconRel: string }> {
+    const productsRoot = getFormaPaths(home).productsDir;
+    const brandRoot = getBrandAssetsDir(productsRoot, PID);
+    const iconRel = "app-icon/icon-512.png";
+    const iconAbs = join(brandRoot, iconRel);
+    await mkdir(join(brandRoot, "app-icon"), { recursive: true });
+    await writeFile(iconAbs, PNG_BYTES);
+    const manifest = {
+      assets: [
+        {
+          kind: "app-icon",
+          name: "primary",
+          files: [{ path: iconAbs, width: 512, height: 512 }],
+          brand_style: "linear-app",
+          model: "stub-image-1",
+          generated_at: "2026-06-13T00:00:00.000Z",
+        },
+      ],
+    };
+    await writeFile(getBrandAssetsManifestPath(productsRoot, PID), JSON.stringify(manifest, null, 2), "utf8");
+    return { brandRoot, iconAbs, iconRel };
+  }
+
+  it("GET .../brand-assets returns the asset list with brand_style", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets` });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.assets)).toBe(true);
+    expect(body.assets).toHaveLength(1);
+    expect(body.assets[0]).toMatchObject({
+      kind: "app-icon",
+      name: "primary",
+      brand_style: "linear-app",
+      model: "stub-image-1",
+      generated_at: "2026-06-13T00:00:00.000Z",
+    });
+    expect(Array.isArray(body.assets[0].files)).toBe(true);
+    expect(body.assets[0].files[0]).toMatchObject({ width: 512, height: 512 });
+    // Files are exposed brand-root-relative (usable as files/* paths), never as
+    // absolute on-disk paths.
+    expect(body.assets[0].files[0].path).toBe("app-icon/icon-512.png");
+    expect(JSON.stringify(body)).not.toContain(home);
+  });
+
+  it("GET .../brand-assets returns an empty list when no assets exist", async () => {
+    const { app } = await brandStoreApp();
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ assets: [] });
+  });
+
+  it("GET .../brand-assets/files/* serves a real file with the correct content-type", async () => {
+    const { app, home } = await brandStoreApp();
+    const { iconRel } = await seedAppIcon(home);
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets/files/${iconRel}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("image/png");
+    expect(res.rawPayload.equals(PNG_BYTES)).toBe(true);
+  });
+
+  it("GET .../brand-assets/files/* rejects traversal/absolute/out-of-boundary paths (never serves outside)", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+    // Plant a credential file at FORMA_HOME root — the prime traversal target.
+    await writeFile(
+      join(home, "media-config.yaml"),
+      ["providers:", "  volcengine:", `    api_key: "${PLANTED_KEY}"`].join("\n"),
+      "utf8",
+    );
+
+    for (const rel of [
+      "../../../../../media-config.yaml",
+      "..%2f..%2f..%2f..%2f..%2fmedia-config.yaml",
+      "app-icon/../../../../../media-config.yaml",
+      "/etc/passwd",
+      "%2Fetc%2Fpasswd",
+    ]) {
+      const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets/files/${rel}` });
+      expect([400, 404]).toContain(res.statusCode);
+      expect(res.payload).not.toContain(PLANTED_KEY);
+      expect(res.payload).not.toContain("root:");
+    }
+  });
+
+  it("GET .../brand-assets/files/* returns 404 for an in-bounds but missing file", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/products/${PID}/brand-assets/files/app-icon/does-not-exist.png`,
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it("GET .../brand-assets/export returns a zip of the brand-asset files", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets/export` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/zip");
+    expect(res.headers["content-disposition"]).toContain("attachment");
+    // Zip stores filenames as literal bytes in local file headers — substring
+    // check is reliable for both the manifest and the seeded derivative.
+    const zip = res.rawPayload;
+    expect(zip.subarray(0, 2).toString("latin1")).toBe("PK");
+    expect(zip.includes("manifest.json")).toBe(true);
+    expect(zip.includes("app-icon/icon-512.png")).toBe(true);
+  });
+
+  it("GET .../brand-assets/export excludes media-config.yaml and any provider key", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+    // Mirror the T011 credential-exclusion test: plant the credential file at
+    // FORMA_HOME root and assert it is absent from the brand-assets zip.
+    await writeFile(
+      join(home, "media-config.yaml"),
+      ["providers:", "  volcengine:", `    api_key: "${PLANTED_KEY}"`].join("\n"),
+      "utf8",
+    );
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets/export` });
+
+    expect(res.statusCode).toBe(200);
+    const zip = res.rawPayload;
+    expect(zip.includes("media-config.yaml")).toBe(false);
+    expect(zip.includes(PLANTED_KEY)).toBe(false);
+  });
+
+  it("GET .../brand-assets/export returns a valid (empty) zip when no assets exist", async () => {
+    const { app } = await brandStoreApp();
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets/export` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/zip");
+    // A valid (possibly empty) zip starts with the local-file/EOCD signature "PK".
+    expect(res.rawPayload.subarray(0, 2).toString("latin1")).toBe("PK");
   });
 });
 

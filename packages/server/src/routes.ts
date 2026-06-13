@@ -1,6 +1,6 @@
 import { access, readFile, realpath, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   getArtifactDir,
@@ -9,6 +9,7 @@ import {
   getArtifactVziPath,
   getArtifactVziDir,
   getArtifactIconsDir,
+  getBrandAssetsDir,
   listArchivedHandoffPages,
   getFormaPaths,
   isSameOrChildPath,
@@ -21,6 +22,8 @@ import {
   IMAGE_MODELS,
   IMAGE_PROVIDERS,
   type ArtifactManifest,
+  type BrandAssetKind,
+  type BrandAssetRecord,
   type BrandStyleContent,
   type DesignPointer,
   type ExportArchiveAssetsResult,
@@ -92,6 +95,8 @@ export interface FormaRoutesStore {
   };
   deleteProduct(input: { product_id: string; confirm_product_id: string }): Promise<unknown>;
   generateProductImage(input: GenerateImagesInput): Promise<GenerateImagesResult>;
+  listBrandAssets(productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]>;
+  exportBrandAssetsZip(productId: string): Promise<Buffer>;
   readMediaConfig(): Promise<MaskedMediaConfig>;
   writeMediaConfig(
     payload: MediaConfigInput,
@@ -859,6 +864,77 @@ export function registerRoutes(
     });
     return { ok: true, provider_note: result.provider_note };
   });
+
+  // ─── Brand-asset routes (SPEC-BEHAVIOR-008 / SPEC-BEHAVIOR-006) ─────────────
+
+  // List the product's brand assets (empty list when none). Each file path is
+  // exposed brand-root-relative (never the absolute on-disk path) so it drops
+  // straight into the `brand-assets/files/*` URL; the on-disk layout never leaks.
+  app.get<{ Params: { pid: string }; Querystring: { kind?: string } }>(
+    "/api/products/:pid/brand-assets",
+    async (request) => {
+      const { pid } = request.params;
+      const productsDir = getFormaPaths(store.home).productsDir;
+      const brandRoot = resolve(getBrandAssetsDir(productsDir, pid));
+      const records = await store.listBrandAssets(pid);
+      return { assets: records.map((record) => toBrandAssetView(record, brandRoot)) };
+    },
+  );
+
+  // Serve a single brand-asset file (e.g. app-icon/icon-512.png). Reuses the
+  // artifact file-serving boundary helper: the requested path must resolve to a
+  // child of the product's brand-assets dir (after lexical + realpath checks);
+  // traversal / absolute / out-of-boundary → 400/404, NEVER served.
+  app.get<{ Params: { pid: string; "*": string } }>(
+    "/api/products/:pid/brand-assets/files/*",
+    async (request, reply) => {
+      const { pid } = request.params;
+      const relPath = request.params["*"];
+      if (!relPath || relPath.startsWith("/") || relPath.includes("\0")) {
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid brand-asset path", details: {} });
+        return;
+      }
+      const productsDir = getFormaPaths(store.home).productsDir;
+      let brandRoot: string;
+      try {
+        brandRoot = getBrandAssetsDir(productsDir, pid);
+      } catch {
+        reply.status(400).send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Invalid product id", details: {} });
+        return;
+      }
+      const resolvedFile = resolve(brandRoot, relPath);
+      if (!isSameOrChildPath(resolve(brandRoot), resolvedFile)) {
+        reply
+          .status(400)
+          .send({ error_code: "ARTIFACT_INVALID_INPUT", message: "Path escapes brand-assets directory", details: {} });
+        return;
+      }
+      const servedFile = await resolveServedFile(brandRoot, resolvedFile);
+      if (!servedFile.ok) {
+        sendServedFileError(reply, servedFile);
+        return;
+      }
+      const content = await readFile(servedFile.path);
+      reply.header("Content-Type", contentTypeForPath(resolvedFile));
+      setArtifactCacheHeaders(reply, authenticatedApi);
+      setArtifactSecurityHeaders(reply);
+      reply.send(content);
+    },
+  );
+
+  // Export every brand-asset file as a zip download. The core walker only walks
+  // the product's brand-assets tree, so $FORMA_HOME/media-config.yaml (a sibling
+  // tree) can never be reached. Returns a valid (possibly empty) zip.
+  app.get<{ Params: { pid: string } }>("/api/products/:pid/brand-assets/export", async (request, reply) => {
+    const { pid } = request.params;
+    const zip = await store.exportBrandAssetsZip(pid);
+    reply.header("Content-Type", "application/zip");
+    reply.header("Content-Disposition", `attachment; filename="${encodeURIComponent(pid)}-brand-assets.zip"`);
+    setArtifactSecurityHeaders(reply);
+    reply.send(zip);
+  });
 }
 
 // Reserved staging id for the POST /api/media/test smoke check. generateImages
@@ -1172,6 +1248,31 @@ function vziContentUrl(productId: string, artifactId: string): string {
 
 function iconBaseUrl(productId: string, artifactId: string): string {
   return `/api/products/${encodeURIComponent(productId)}/artifacts/${encodeURIComponent(artifactId)}/icons/`;
+}
+
+/**
+ * Project a core BrandAssetRecord onto the client shape: each file's absolute
+ * on-disk `path` is rewritten to a brand-root-relative POSIX path (usable as a
+ * `brand-assets/files/*` segment). Absolute filesystem paths never leave core.
+ */
+function toBrandAssetView(record: BrandAssetRecord, brandRoot: string) {
+  return {
+    kind: record.kind,
+    name: record.name,
+    brand_style: record.brand_style,
+    ...(record.model !== undefined ? { model: record.model } : {}),
+    generated_at: record.generated_at,
+    files: record.files.map((file) => ({
+      path: brandRelativePath(brandRoot, file.path),
+      width: file.width,
+      height: file.height,
+    })),
+  };
+}
+
+function brandRelativePath(brandRoot: string, absPath: string): string {
+  const rel = relative(brandRoot, resolve(absPath));
+  return rel.split(sep).join("/");
 }
 
 const ICON_ALLOWED_CONTENT_TYPES = new Map<string, string>([
