@@ -9,7 +9,6 @@ import {
   artifactPreviewUrl,
   assetDensityPath,
   buildDesignContext,
-  readAllCraftDocs,
   extractIconAssets,
   getArtifactDir,
   getArtifactVersionDir,
@@ -20,6 +19,7 @@ import {
   normalizeFormaExtension,
   normalizeKind,
   platforms,
+  readAllCraftDocs,
   type ArtifactManifest,
   type FormaStore,
 } from "@xenonbyte/forma-core";
