@@ -13,10 +13,10 @@
 //   forma-image://brand/...   — brand assets (M3, not yet wired; returns
 //                               MEDIA_IMAGE_NOT_FOUND with brand-note details)
 //
-// Path safety: every resolved file path is checked with isSameOrChildPath
-// (packages/core/src/path-boundary.ts) before any I/O. A traversal attempt
-// (e.g. forma-image://../../etc/passwd) is treated as MEDIA_IMAGE_NOT_FOUND
-// (fail loud, no silent fallback).
+// Path safety: the tail is validated against a strict UUID regex before any
+// path is constructed. Non-UUID tails (traversal, absolute injection, etc.)
+// throw MEDIA_IMAGE_NOT_FOUND with reason "invalid_ref". isSameOrChildPath is
+// retained as defense-in-depth (fail loud, no silent fallback).
 //
 // uuid generation: node:crypto randomUUID() — consistent with other repo
 // modules that need a one-shot unique id (no project-wide IdKind registry for
@@ -104,9 +104,10 @@ function jsonPath(dir: string, uuid: string): string {
  * **Orphan recovery (TTL backstop):** A crash between the .png write and the
  * .json write leaves a .png with no sidecar. If the .json is missing or
  * unparseable, we fall back to `stat(pngPath).mtimeMs` so the orphan is not
- * permanent garbage. The same mtime fallback applies to a lone .json that has
- * no matching .png (rare, but swept if old). Both paths are deleted together
- * when both exist; if only one exists it is removed alone.
+ * permanent garbage. A lone .json with no matching .png is not iterated here
+ * (sweep only walks .png entries); it is not a problem in practice because
+ * png is always written first. Both paths are deleted together when both
+ * exist; if only the .png exists it is removed alone.
  *
  * Pairs are removed as png+json together. If one removal fails it is logged
  * as a warning but does not abort the sweep (matching artifact-tmp-cleanup.ts
@@ -254,10 +255,22 @@ export async function resolveFormaImageRef(home: string, productId: string, ref:
     });
   }
 
-  // ── 3. Path boundary check ────────────────────────────────────────────────
-  // The tail is the UUID. We construct the expected path and verify it stays
-  // inside the staging dir using isSameOrChildPath (handles ".." segments,
-  // absolute-path injection, etc.).
+  // ── 3. UUID shape validation ──────────────────────────────────────────────
+  // Reject any tail that does not match the randomUUID format BEFORE touching
+  // the filesystem. This catches traversal ("../../etc/passwd"), absolute-path
+  // injection ("/etc/passwd"), and arbitrary garbage up front rather than
+  // relying on isSameOrChildPath (which is kept as defense-in-depth below).
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  if (!UUID_RE.test(tail)) {
+    throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Invalid forma-image:// reference: tail is not a UUID", {
+      ref,
+      reason: "invalid_ref",
+    });
+  }
+
+  // ── 4. Path boundary check (defense-in-depth) ─────────────────────────────
+  // The tail passed UUID validation; construct the path and double-check it
+  // stays inside the staging dir via isSameOrChildPath.
   const dir = stagingDir(home, productId);
   const candidate = pngPath(dir, tail);
 
@@ -268,7 +281,7 @@ export async function resolveFormaImageRef(home: string, productId: string, ref:
     });
   }
 
-  // ── 4. Read bytes ─────────────────────────────────────────────────────────
+  // ── 5. Read bytes ─────────────────────────────────────────────────────────
   try {
     const buf = await readFile(candidate);
     // Return a copy so the caller cannot mutate our internal buffer.

@@ -150,20 +150,32 @@ describe("resolveFormaImageRef — malformed ref", () => {
   });
 });
 
-describe("resolveFormaImageRef — path traversal", () => {
-  it("throws MEDIA_IMAGE_NOT_FOUND for a traversal attempt (../../etc/passwd style)", async () => {
+describe("resolveFormaImageRef — rejects non-UUID tails before path construction", () => {
+  it("rejects a dot-dot traversal tail (../../etc/passwd) with reason invalid_ref", async () => {
     const traversalRef = "forma-image://../../etc/passwd";
-    await expect(resolveFormaImageRef(home, PRODUCT_ID, traversalRef)).rejects.toSatisfy(
-      (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
-    );
+    let caught: FormaError | undefined;
+    try {
+      await resolveFormaImageRef(home, PRODUCT_ID, traversalRef);
+    } catch (err) {
+      if (err instanceof FormaError) caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.code).toBe("MEDIA_IMAGE_NOT_FOUND");
+    expect(caught?.details.reason).toBe("invalid_ref");
   });
 
-  it("throws MEDIA_IMAGE_NOT_FOUND for a traversal with absolute path injection", async () => {
-    // After stripping the scheme, the tail would be an absolute path
+  it("rejects an absolute-path injection tail (/etc/passwd) with reason invalid_ref", async () => {
+    // After stripping the scheme "forma-image://", the tail is "/etc/passwd"
     const absoluteRef = `forma-image:///etc/passwd`;
-    await expect(resolveFormaImageRef(home, PRODUCT_ID, absoluteRef)).rejects.toSatisfy(
-      (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
-    );
+    let caught: FormaError | undefined;
+    try {
+      await resolveFormaImageRef(home, PRODUCT_ID, absoluteRef);
+    } catch (err) {
+      if (err instanceof FormaError) caught = err;
+    }
+    expect(caught).toBeDefined();
+    expect(caught?.code).toBe("MEDIA_IMAGE_NOT_FOUND");
+    expect(caught?.details.reason).toBe("invalid_ref");
   });
 });
 
