@@ -211,21 +211,31 @@ describe("resolveFormaImageRef — brand/ prefix", () => {
 // ---------------------------------------------------------------------------
 // Finding 3a — putStagedImage must validate productId before joining a path.
 //
-// productId is joined into data/<productId>/image-staging. A malformed id
-// (traversal, separators, absolute, NUL, wrong shape) must be rejected before
-// any directory is created, so nothing escapes the staging tree.
+// productId is joined into data/<productId>/image-staging. The security
+// boundary is PATH SAFETY, not product-id SHAPE: staging only needs a safe
+// single-segment directory name. A path-unsafe id (traversal, separators,
+// absolute, NUL, control chars, over-length) must be rejected before any
+// directory is created, so nothing escapes the staging tree. A path-safe
+// non-product segment (e.g. the "media-config-test" smoke-test sentinel) is
+// allowed — product existence is the caller's concern, not staging's.
 // ---------------------------------------------------------------------------
 
 describe("putStagedImage — productId validation (path-traversal guard)", () => {
+  // All of these are PATH-UNSAFE: they would let the staged dir escape the
+  // per-product tree (or carry a NUL/control char into a filesystem path).
   const BAD_IDS: Array<[string, string]> = [
     ["dot-dot traversal", "../../evil"],
-    ["separator", "a/b"],
+    ["bare dot-dot", ".."],
+    ["bare dot", "."],
+    ["forward separator", "a/b"],
+    ["backslash separator", "a\\b"],
     ["empty string", ""],
     ["absolute path", "/etc/passwd"],
-    ["NUL byte", "P-abc1 2"],
-    ["wrong shape (non-hex)", "P-XYZ123"],
-    ["wrong shape (too long)", "P-abc1234"],
-    ["arbitrary name", "not-a-product"],
+    ["windows drive", "C:\\windows"],
+    ["UNC path", "\\\\server\\share"],
+    ["NUL byte", "P-abc1\x002"],
+    ["control char (tab)", "P-abc\t12"],
+    ["over-length", `P-${"a".repeat(200)}`],
   ];
 
   for (const [label, bad] of BAD_IDS) {
@@ -250,6 +260,31 @@ describe("putStagedImage — productId validation (path-traversal guard)", () =>
 
   it("accepts a well-formed productId (regression)", async () => {
     const result = await putStagedImage(home, "P-abc123", SAMPLE_BYTES, SAMPLE_META);
+    expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it("accepts the path-safe non-product sentinel 'media-config-test' and stages correctly", async () => {
+    // The POST /api/media/test smoke check stages a throwaway image under a
+    // non-product sentinel id. It is path-safe (single segment, no separators),
+    // so staging must accept it even though it is not the P-<6hex> shape.
+    const sentinel = "media-config-test";
+    const result = await putStagedImage(home, sentinel, SAMPLE_BYTES, SAMPLE_META);
+    expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+
+    const stagingDir = join(home, "data", sentinel, "image-staging");
+    const entries = await readdir(stagingDir);
+    expect(entries).toContain(`${result.id}.png`);
+    expect(entries).toContain(`${result.id}.json`);
+
+    // Roundtrips through resolve under the same sentinel.
+    const resolved = await resolveFormaImageRef(home, sentinel, result.ref);
+    expect(resolved).toEqual(SAMPLE_BYTES);
+  });
+
+  it("accepts a path-safe id with dots/dashes/underscores (not P-shaped)", async () => {
+    // Path-safety, not product-shape, is the boundary: a plain safe segment
+    // like "my_bucket-1.0" has no separators/traversal and must be allowed.
+    const result = await putStagedImage(home, "my_bucket-1.0", SAMPLE_BYTES, SAMPLE_META);
     expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });

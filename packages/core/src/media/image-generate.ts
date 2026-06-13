@@ -38,10 +38,9 @@
 
 import { deflateSync } from "node:zlib";
 import { FormaError } from "../errors.js";
-import { productIdSchema } from "../product.js";
 import { resolveActiveImageConfig, type ResolvedImageConfig } from "./image-config.js";
 import { ASPECT_RATIOS, type AspectRatio, findImageModel, resolveSize } from "./image-models.js";
-import { putStagedImage } from "./image-staging.js";
+import { assertSafeStagingSegment, putStagedImage } from "./image-staging.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -154,11 +153,14 @@ const RENDERERS: Record<string, ImageRenderer> = {
  */
 export async function generateImages(home: string, input: GenerateImagesInput): Promise<GenerateImagesResult> {
   // 0. Validate the agent-facing productId BEFORE any I/O or provider call.
-  //    productId is joined into the per-product staging path, so a malformed
-  //    value (traversal / separators / absolute / NUL / wrong shape) must be
-  //    rejected up front (Finding 3a). Mirrors the shared product-id shape used
-  //    by artifact-paths/product-mutation-lock.
-  validateProductId(input.productId);
+  //    productId is joined into the per-product staging path, so a path-unsafe
+  //    value (traversal / separators / absolute / NUL / control / over-length)
+  //    must be rejected up front (Finding 3a). The boundary is PATH SAFETY, not
+  //    product-id shape: the staging dir name just has to stay a single safe
+  //    segment, and the /api/media/test probe stages under a non-product
+  //    sentinel. assertSafeStagingSegment is the shared validator used by the
+  //    staging layer too.
+  assertSafeStagingSegment(input.productId);
 
   // 1. Resolve the active config (provider + model + creds). Unconfigured →
   //    MEDIA_NOT_CONFIGURED (raised inside resolveActiveImageConfig).
@@ -213,17 +215,6 @@ export async function generateImages(home: string, input: GenerateImagesInput): 
 // ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Reject a productId that is not the canonical `P-<6 hex>` shape before it is
- * joined into a filesystem path. This guards the agent-facing generate_image
- * input (the MCP schema only enforces a non-empty string). See Finding 3a.
- */
-function validateProductId(productId: string): void {
-  if (!productIdSchema.safeParse(productId).success) {
-    throw new FormaError("MEDIA_INVALID_INPUT", "Invalid product id", { product_id: productId });
-  }
-}
 
 /** Ensure the configured model is in the catalogue and matches its provider. */
 function validateConfiguredModel(config: ResolvedImageConfig): void {

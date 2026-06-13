@@ -650,10 +650,28 @@ describe("generateImages — SSRF guard on the url second-fetch", () => {
 
 // ---------------------------------------------------------------------------
 // Finding 3a — productId is joined into the staging path; validate it.
+//
+// The security boundary is PATH SAFETY, not product-id SHAPE. A path-unsafe id
+// (traversal / separators / absolute / NUL / control / over-length) must be
+// rejected before any provider call. A path-safe non-product segment (e.g. the
+// "media-config-test" smoke-test sentinel) is allowed — product existence is
+// the caller's concern, not the staging directory-name boundary.
 // ---------------------------------------------------------------------------
 
 describe("generateImages — productId validation (path-traversal guard)", () => {
-  const BAD_IDS = ["../../evil", "a/b", "", "/etc/passwd", "P-test01 ", "P-XYZ", "not-a-product"];
+  // PATH-UNSAFE ids — every one would let the staging dir escape the per-product
+  // tree or smuggle a NUL/control char into a filesystem path.
+  const BAD_IDS = [
+    "../../evil",
+    "..",
+    "a/b",
+    "a\\b",
+    "",
+    "/etc/passwd",
+    "C:\\windows",
+    "P-test01\x00",
+    `P-${"a".repeat(200)}`,
+  ];
 
   for (const bad of BAD_IDS) {
     it(`rejects productId ${JSON.stringify(bad)} before any provider call`, async () => {
@@ -669,6 +687,18 @@ describe("generateImages — productId validation (path-traversal guard)", () =>
   it("accepts a well-formed productId (regression)", async () => {
     await writeStubConfig(home);
     const result = await generateImages(home, { productId: "P-abc123", purpose: "hero", prompt: "x" });
+    expect(result.images).toHaveLength(1);
+  });
+
+  it("accepts the path-safe non-product sentinel 'media-config-test'", async () => {
+    // POST /api/media/test runs the connectivity probe through generateImages
+    // with this throwaway sentinel bucket. It is path-safe, so it must pass.
+    await writeStubConfig(home);
+    const result = await generateImages(home, {
+      productId: "media-config-test",
+      purpose: "app-icon",
+      prompt: "smoke test",
+    });
     expect(result.images).toHaveLength(1);
   });
 });

@@ -28,7 +28,6 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { FormaError } from "../errors.js";
 import { isSameOrChildPath } from "../path-boundary.js";
-import { productIdSchema } from "../product.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -79,22 +78,54 @@ export type StagedImage = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/** Upper bound on a staging segment length — a sane single-segment dir name. */
+const MAX_STAGING_SEGMENT_LEN = 128;
+
 /**
- * Reject a productId that is not the canonical `P-<6 hex>` shape before it is
- * joined into a staging path (Finding 3a). This guards the agent-facing
- * generate_image input, whose MCP schema only enforces a non-empty string;
- * without it a value like "../../evil" would write outside the staging tree.
- * Mirrors the shared product-id shape used by artifact-paths/product-mutation-lock.
+ * Validate that `productId` is safe to use as a SINGLE path segment under
+ * `data/` before it is joined into a staging directory (Finding 3a).
+ *
+ * The genuine security boundary here is PATH SAFETY, not product-id SHAPE.
+ * Staging is a per-bucket directory-name boundary: all it needs is a segment
+ * that cannot escape `data/<segment>/image-staging`. Whether a real product
+ * with that id exists is the caller's concern, never the staging layer's — and
+ * the connectivity-probe endpoint (POST /api/media/test) deliberately stages
+ * under a non-product sentinel ("media-config-test") that is path-safe but not
+ * the canonical `P-<6 hex>` shape. A strict product-shape check would
+ * over-reject that legitimate internal bucket, so we check path-safety instead.
+ *
+ * Rejected (MEDIA_INVALID_INPUT): empty, "." / "..", anything containing a path
+ * separator (`/` or `\`), a NUL or any other control char, an absolute path or
+ * Windows drive/UNC prefix, or an over-length value. Normal product ids
+ * (`P-xxxxxx`) and path-safe sentinels pass.
+ *
+ * Errors echo the productId itself (it is the offending segment, not a
+ * filesystem path) but never any constructed/absolute path.
  */
-function assertValidProductId(productId: string): void {
-  if (!productIdSchema.safeParse(productId).success) {
-    throw new FormaError("MEDIA_INVALID_INPUT", "Invalid product id", { product_id: productId });
-  }
+export function assertSafeStagingSegment(productId: string): void {
+  const reject = (reason: string): never => {
+    throw new FormaError("MEDIA_INVALID_INPUT", "Invalid staging product id", {
+      product_id: productId,
+      reason,
+    });
+  };
+
+  if (typeof productId !== "string" || productId.length === 0) reject("empty");
+  if (productId.length > MAX_STAGING_SEGMENT_LEN) reject("too_long");
+  if (productId === "." || productId === "..") reject("dot_segment");
+  // Path separators (POSIX + Windows) would split the segment into a sub-path.
+  if (productId.includes("/") || productId.includes("\\")) reject("separator");
+  // NUL and other control chars (0x00–0x1F, 0x7F) — never valid in a safe name.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: rejecting them is the point.
+  if (/[\x00-\x1f\x7f]/.test(productId)) reject("control_char");
+  // Windows drive prefix like "C:" — only meaningful with a separator, but the
+  // colon would have escaped above only via "\\"; guard it explicitly anyway.
+  if (/^[a-z]:/i.test(productId)) reject("drive_prefix");
 }
 
 /** Returns the staging directory for a product: data/<productId>/image-staging/. */
 function stagingDir(home: string, productId: string): string {
-  assertValidProductId(productId);
+  assertSafeStagingSegment(productId);
   return join(home, "data", productId, "image-staging");
 }
 
