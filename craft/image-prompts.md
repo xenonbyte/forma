@@ -75,6 +75,15 @@ one"; regenerate with a tightened prompt.
 
 ---
 
+## How to read each purpose below
+
+Each purpose gives **Intent / Composition / Include / Avoid** — compose these
+into the generation prompt (Avoid items become explicit negatives) — plus a
+**Per-purpose veto** that *extends* the shared Read-inspection checklist above
+for that purpose. The veto items are inspection criteria, not prompt text.
+
+---
+
 ## `app-icon` — default `1:1`
 
 The launcher mark `fm-app-icon` stages as the master icon. This is the most
@@ -83,8 +92,9 @@ constrained purpose; get it right.
 - **Intent:** one memorable, brand-color-forward symbol that reads instantly.
 - **Composition:** single clear subject, centered, generous even padding so it
   survives platform mask/rounding. Must stay legible scaled down to ~24px.
-- **Include:** flat or *subtly* dimensional treatment; the brand's primary
-  accent doing the heavy lifting.
+- **Include:** flat, or at most a single soft depth cue (no gloss, gel, or
+  chrome — see the anti-slop bans); the brand's primary accent doing the
+  heavy lifting.
 - **Avoid:** **no text or letterforms**, no mockup/device frame, no
   app-store-listing chrome, no multiple competing subjects, no fine detail
   that dissolves at small sizes, no realistic photography.
