@@ -230,13 +230,20 @@ describe("android surface", () => {
     const variants = await deriveAppIconVariants(input);
     const mono = variants.find((v) => v.variant === "android-monochrome");
     expect(mono).toBeDefined();
-    const meta = await sharp(mono?.png ?? Buffer.alloc(0)).metadata();
+    const png = mono?.png ?? Buffer.alloc(0);
+    const meta = await sharp(png).metadata();
     expect(meta.channels).toBe(4); // has alpha
-    // Sample a non-transparent pixel from the disc centre.
-    const means = await channelMeans(mono?.png ?? Buffer.alloc(0));
-    // For a black tint mono image: R, G, B should all be very low and similar.
-    expect(Math.abs(means.r - means.g)).toBeLessThan(10);
-    expect(Math.abs(means.r - means.b)).toBeLessThan(10);
+
+    // Explicit pixel sampling on the 1080² disc — avoids transparent pixels
+    // dragging channel means toward false equality.
+    // Centre pixel (540,540) must be opaque AND dark (default black tint).
+    const centre = await getPixel(png, 540, 540);
+    expect(centre.a).toBeGreaterThan(200); // opaque — inside the disc
+    expect(centre.r).toBeLessThan(30); // dark under black tint
+
+    // Corner pixel (0,0) must be transparent — outside the circular disc.
+    const corner = await getPixel(png, 0, 0);
+    expect(corner.a).toBeLessThan(10);
   });
 
   it("android-foreground preserves transparency (has alpha)", async () => {
@@ -323,6 +330,42 @@ describe("ios surface (mobile)", () => {
     // outside the disc — alpha must be 0.
     const corner = await getPixel(tinted?.png ?? Buffer.alloc(0), 0, 0);
     expect(corner.a).toBe(0);
+  });
+});
+
+// ─── iOS surface (tablet) ─────────────────────────────────────────────────────
+
+describe("ios surface (tablet)", () => {
+  async function makeIosTabletInput(): Promise<DeriveIconInput> {
+    return {
+      surface: "ios",
+      platform: "tablet",
+      logo: await logoWithAlpha(200, { r: 0, g: 100, b: 200 }),
+      background: await solidPng(200, { r: 240, g: 240, b: 240 }),
+      safeLogo: await safeAreaPng({ r: 0, g: 100, b: 200 }),
+    };
+  }
+
+  it("ios-standard appears at tablet sizes [1024, 167, 152]", async () => {
+    const input = await makeIosTabletInput();
+    const variants = await deriveAppIconVariants(input);
+    const stdSizes = variants.filter((v) => v.variant === "ios-standard").map((v) => v.width);
+    // IOS_SIZES_TABLET = [1024, 167, 152] — UNCONFIRMED platform candidates.
+    expect(stdSizes).toContain(1024);
+    expect(stdSizes).toContain(167);
+    expect(stdSizes).toContain(152);
+    expect(stdSizes).toHaveLength(3);
+  });
+
+  it("ios-dark and ios-tinted are produced at 1024×1024 for tablet", async () => {
+    const input = await makeIosTabletInput();
+    const variants = await deriveAppIconVariants(input);
+    const dark = variants.find((v) => v.variant === "ios-dark");
+    const tinted = variants.find((v) => v.variant === "ios-tinted");
+    expect(dark?.width).toBe(1024);
+    expect(dark?.height).toBe(1024);
+    expect(tinted?.width).toBe(1024);
+    expect(tinted?.height).toBe(1024);
   });
 });
 
@@ -413,6 +456,67 @@ describe("desktop platform (no surface)", () => {
   });
 });
 
+// ─── colors overrides ─────────────────────────────────────────────────────────
+
+describe("colors overrides", () => {
+  it("colors.mono red tint: android-monochrome centre pixel has R significantly > B", async () => {
+    const input: DeriveIconInput = {
+      surface: "android",
+      platform: "mobile",
+      logo: await logoWithAlpha(200, { r: 200, g: 200, b: 200 }),
+      background: await solidPng(200, { r: 100, g: 100, b: 100 }),
+      safeLogo: await safeAreaPng({ r: 200, g: 200, b: 200 }),
+      colors: { mono: "#ff0000" },
+    };
+    const variants = await deriveAppIconVariants(input);
+    const mono = variants.find((v) => v.variant === "android-monochrome");
+    expect(mono).toBeDefined();
+    const centre = await getPixel(mono?.png ?? Buffer.alloc(0), 540, 540);
+    // Centre pixel must be opaque and red-dominant.
+    expect(centre.a).toBeGreaterThan(200);
+    expect(centre.r).toBeGreaterThan(centre.b + 50);
+  });
+
+  it("colors.tint overrides ios-tinted independently of colors.mono", async () => {
+    const input: DeriveIconInput = {
+      surface: "ios",
+      platform: "mobile",
+      logo: await logoWithAlpha(200, { r: 200, g: 200, b: 200 }),
+      background: await solidPng(200, { r: 240, g: 240, b: 240 }),
+      safeLogo: await safeAreaPng({ r: 200, g: 200, b: 200 }),
+      // tint = blue, mono = red; ios-tinted should use tint (blue).
+      colors: { mono: "#ff0000", tint: "#0000ff" },
+    };
+    const variants = await deriveAppIconVariants(input);
+    const tinted = variants.find((v) => v.variant === "ios-tinted");
+    expect(tinted).toBeDefined();
+    // Centre of the safe-area disc (within 1024² output — disc is roughly centred).
+    const centre = await getPixel(tinted?.png ?? Buffer.alloc(0), 512, 512);
+    // Must be opaque and blue-dominant.
+    expect(centre.a).toBeGreaterThan(200);
+    expect(centre.b).toBeGreaterThan(centre.r + 50);
+  });
+
+  it("colors.dark_bg overrides ios-dark background colour", async () => {
+    const input: DeriveIconInput = {
+      surface: "ios",
+      platform: "mobile",
+      logo: await logoWithAlpha(200, { r: 200, g: 200, b: 200 }),
+      background: await solidPng(200, { r: 240, g: 240, b: 240 }),
+      safeLogo: await safeAreaPng({ r: 200, g: 200, b: 200 }),
+      // Use a highly saturated red background so it's easily detectable.
+      colors: { dark_bg: "#ff0000" },
+    };
+    const variants = await deriveAppIconVariants(input);
+    const dark = variants.find((v) => v.variant === "ios-dark");
+    expect(dark).toBeDefined();
+    // Corner pixel (0,0) is outside the logo disc, so it shows the background.
+    const corner = await getPixel(dark?.png ?? Buffer.alloc(0), 0, 0);
+    expect(corner.a).toBeGreaterThan(200); // opaque background
+    expect(corner.r).toBeGreaterThan(corner.b + 50); // red-dominant background
+  });
+});
+
 // ─── Validation: missing safeLogo ─────────────────────────────────────────────
 
 describe("validation: missing safeLogo for mobile/tablet surfaces", () => {
@@ -437,6 +541,31 @@ describe("validation: missing safeLogo for mobile/tablet surfaces", () => {
       logo: await logoWithAlpha(64, { r: 0, g: 200, b: 100 }),
       background: await solidPng(64, { r: 240, g: 240, b: 240 }),
       // safeLogo intentionally omitted
+    };
+    await expect(deriveAppIconVariants(input)).rejects.toMatchObject({
+      code: "MEDIA_INVALID_INPUT",
+    });
+  });
+
+  it("throws FormaError(MEDIA_INVALID_INPUT) for platform=mobile without surface set", async () => {
+    // Previously this silently fell through to web derivation producing wrong sizes.
+    const input: DeriveIconInput = {
+      platform: "mobile",
+      logo: await logoWithAlpha(64, { r: 255, g: 0, b: 0 }),
+      background: await solidPng(64, { r: 0, g: 0, b: 255 }),
+      // surface intentionally omitted
+    };
+    await expect(deriveAppIconVariants(input)).rejects.toMatchObject({
+      code: "MEDIA_INVALID_INPUT",
+    });
+  });
+
+  it("throws FormaError(MEDIA_INVALID_INPUT) for platform=tablet without surface set", async () => {
+    const input: DeriveIconInput = {
+      platform: "tablet",
+      logo: await logoWithAlpha(64, { r: 255, g: 0, b: 0 }),
+      background: await solidPng(64, { r: 0, g: 0, b: 255 }),
+      // surface intentionally omitted
     };
     await expect(deriveAppIconVariants(input)).rejects.toMatchObject({
       code: "MEDIA_INVALID_INPUT",

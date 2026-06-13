@@ -63,7 +63,7 @@ export interface DerivedIconVariant {
 /** Working canvas size — all masters are normalised here before derivation. */
 const WORKING_SIZE = 1080;
 
-/** sharp decode ceiling — keeps in sync with the rest of the core package. */
+/** sharp decode ceiling — keep in sync with brand-assets.ts / artifact-asset-pipeline.ts / image-generate.ts. */
 const SHARP_PIXEL_LIMIT = 64_000_000;
 
 /**
@@ -148,7 +148,6 @@ async function greyscaleWithTint(src: Buffer, tintHex: string): Promise<Buffer> 
   );
   const tinted = await sharp(grey, { limitInputPixels: SHARP_PIXEL_LIMIT })
     .composite([{ input: tintBuf, blend: "multiply" }])
-    .ensureAlpha()
     .png()
     .toBuffer();
 
@@ -159,7 +158,6 @@ async function greyscaleWithTint(src: Buffer, tintHex: string): Promise<Buffer> 
   //    channel, making dest-in a no-op in libvips.
   return sharp(tinted, { limitInputPixels: SHARP_PIXEL_LIMIT })
     .composite([{ input: src, blend: "dest-in" }])
-    .ensureAlpha()
     .png()
     .toBuffer();
 }
@@ -239,11 +237,7 @@ async function deriveIos(
   const darkBgSvg = Buffer.from(
     `<svg width="${WORKING_SIZE}" height="${WORKING_SIZE}"><rect width="${WORKING_SIZE}" height="${WORKING_SIZE}" fill="${darkBgHex}"/></svg>`,
   );
-  const darkBgBuf = await sharp(darkBgSvg, { limitInputPixels: SHARP_PIXEL_LIMIT })
-    .resize(WORKING_SIZE, WORKING_SIZE)
-    .removeAlpha()
-    .png()
-    .toBuffer();
+  const darkBgBuf = await sharp(darkBgSvg, { limitInputPixels: SHARP_PIXEL_LIMIT }).removeAlpha().png().toBuffer();
   const tintedLogo = await greyscaleWithTint(logo, tintHex);
   const darkComposite = await compositeOver(tintedLogo, darkBgBuf);
   const dark1024 = await resizeTo(darkComposite, 1024);
@@ -321,6 +315,16 @@ export async function deriveAppIconVariants(input: DeriveIconInput): Promise<Der
   if (surface === "ios") {
     const normSafe = await normalise(requireSafeLogo(), WORKING_SIZE);
     return deriveIos(normLogo, normBg, normSafe, platform, tintHex, darkBgHex);
+  }
+
+  // Guard: mobile/tablet must specify a surface — falling through to web derivation
+  // would silently produce wrong sizes.
+  if (platform === "mobile" || platform === "tablet") {
+    throw new FormaError(
+      "MEDIA_INVALID_INPUT",
+      `deriveAppIconVariants: platform="${platform}" requires surface to be set`,
+      { platform },
+    );
   }
 
   // web / desktop — single surface (surface undefined). safeLogo not required.
