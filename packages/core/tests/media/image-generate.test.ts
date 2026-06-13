@@ -1,0 +1,376 @@
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FormaError, generateImages } from "@xenonbyte/forma-core";
+
+// ---------------------------------------------------------------------------
+// SPEC-BEHAVIOR-001 / SPEC-BEHAVIOR-002 — image generation scheduler.
+//
+// Covers:
+//   stub full chain — offline, deterministic PNG bytes encode width/height
+//   purpose -> default aspect mapping
+//   explicit aspect override + invalid aspect -> MEDIA_INVALID_INPUT
+//   unknown purpose -> MEDIA_INVALID_INPUT
+//   count default 1, count > 4 -> MEDIA_INVALID_INPUT (no silent truncation)
+//   count > 1 -> N distinct staged images
+//   no key configured -> MEDIA_NOT_CONFIGURED
+//   bad configured model (not in catalogue / wrong provider) -> MEDIA_INVALID_INPUT
+//   volcengine renderer (mocked fetch): 2xx b64_json staged; non-2xx ->
+//     MEDIA_PROVIDER_ERROR with status + truncated body, NEVER the api key.
+// ---------------------------------------------------------------------------
+
+const ENV_VARS = ["FORMA_VOLCENGINE_API_KEY", "ARK_API_KEY", "VOLCENGINE_API_KEY"];
+const PRODUCT_ID = "P-test01";
+
+let savedEnv: Record<string, string | undefined>;
+let home: string;
+
+async function makeHome(): Promise<string> {
+  return mkdtemp(join(tmpdir(), "forma-image-generate-"));
+}
+
+function clearEnv(): void {
+  for (const name of ENV_VARS) delete process.env[name];
+}
+
+/** Write a media-config.yaml selecting the deterministic stub provider/model. */
+async function writeStubConfig(h: string): Promise<void> {
+  await writeFile(join(h, "media-config.yaml"), "providers:\n  stub:\n    model: stub-image-1\n", "utf8");
+}
+
+/** Write a media-config.yaml selecting volcengine with a file api_key. */
+async function writeVolcengineConfig(h: string, apiKey: string): Promise<void> {
+  await writeFile(
+    join(h, "media-config.yaml"),
+    `providers:\n  volcengine:\n    api_key: ${apiKey}\n    model: doubao-seedream-5-0-260128\n`,
+    "utf8",
+  );
+}
+
+beforeEach(async () => {
+  savedEnv = {};
+  for (const name of ENV_VARS) savedEnv[name] = process.env[name];
+  clearEnv();
+  home = await makeHome();
+});
+
+afterEach(() => {
+  for (const name of ENV_VARS) {
+    if (savedEnv[name] === undefined) delete process.env[name];
+    else process.env[name] = savedEnv[name];
+  }
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+// ---------------------------------------------------------------------------
+// stub full chain — offline, deterministic
+// ---------------------------------------------------------------------------
+
+describe("generateImages — stub provider (offline)", () => {
+  it("stages one image by default and returns ref/preview_path/dimensions", async () => {
+    await writeStubConfig(home);
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "app-icon",
+      prompt: "a friendly robot mascot",
+    });
+
+    // Never touched the network.
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    expect(result.images).toHaveLength(1);
+    const img = result.images[0];
+    expect(img.ref).toMatch(/^forma-image:\/\/[0-9a-f-]{36}$/);
+    expect(img.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    // app-icon default aspect is 1:1 -> 2048x2048 for the stub 2K table.
+    expect(img.width).toBe(2048);
+    expect(img.height).toBe(2048);
+    expect(img.preview_path).toContain(join("data", PRODUCT_ID, "image-staging"));
+    expect(img.preview_path.endsWith(".png")).toBe(true);
+    expect(typeof result.provider_note).toBe("string");
+    expect(Array.isArray(result.warnings)).toBe(true);
+  });
+
+  it("writes a real PNG whose IHDR encodes the resolved width/height", async () => {
+    await writeStubConfig(home);
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "hero", // default 16:9 -> 2848x1600
+      prompt: "city skyline",
+    });
+    const img = result.images[0];
+    expect(img.width).toBe(2848);
+    expect(img.height).toBe(1600);
+
+    const bytes = await readFile(img.preview_path);
+    // PNG signature.
+    expect(bytes.subarray(0, 8)).toEqual(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    // IHDR length(4)+"IHDR"(4) starts at offset 8; width/height are the next two big-endian u32s.
+    expect(bytes.readUInt32BE(16)).toBe(2848);
+    expect(bytes.readUInt32BE(20)).toBe(1600);
+  });
+
+  it("maps each purpose to its default aspect", async () => {
+    await writeStubConfig(home);
+    const cases: Array<[string, number, number]> = [
+      ["app-icon", 2048, 2048], // 1:1
+      ["illustration", 2304, 1728], // 4:3
+      ["hero", 2848, 1600], // 16:9
+      ["poster-bg", 1600, 2848], // 9:16
+      ["store-shot-bg", 1600, 2848], // 9:16
+    ];
+    for (const [purpose, w, h] of cases) {
+      const result = await generateImages(home, {
+        productId: PRODUCT_ID,
+        // biome-ignore lint/suspicious/noExplicitAny: exercising the purpose union via table
+        purpose: purpose as any,
+        prompt: "x",
+      });
+      expect([result.images[0].width, result.images[0].height]).toEqual([w, h]);
+    }
+  });
+
+  it("honours an explicit aspect override", async () => {
+    await writeStubConfig(home);
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "hero", // would default 16:9
+      aspect: "1:1",
+      prompt: "x",
+    });
+    expect([result.images[0].width, result.images[0].height]).toEqual([2048, 2048]);
+  });
+
+  it("produces N distinct staged images for count > 1", async () => {
+    await writeStubConfig(home);
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "illustration",
+      prompt: "x",
+      count: 3,
+    });
+    expect(result.images).toHaveLength(3);
+    const ids = new Set(result.images.map((i) => i.id));
+    expect(ids.size).toBe(3);
+    // Each maps to a distinct on-disk png.
+    const dir = join(home, "data", PRODUCT_ID, "image-staging");
+    const pngs = (await readdir(dir)).filter((f) => f.endsWith(".png"));
+    expect(pngs).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validation
+// ---------------------------------------------------------------------------
+
+describe("generateImages — input validation", () => {
+  it("rejects an unknown purpose with MEDIA_INVALID_INPUT", async () => {
+    await writeStubConfig(home);
+    await expect(
+      generateImages(home, {
+        productId: PRODUCT_ID,
+        // biome-ignore lint/suspicious/noExplicitAny: deliberately invalid
+        purpose: "banner" as any,
+        prompt: "x",
+      }),
+    ).rejects.toMatchObject({ code: "MEDIA_INVALID_INPUT" });
+  });
+
+  it("rejects an invalid aspect with MEDIA_INVALID_INPUT", async () => {
+    await writeStubConfig(home);
+    await expect(
+      generateImages(home, {
+        productId: PRODUCT_ID,
+        purpose: "hero",
+        // biome-ignore lint/suspicious/noExplicitAny: deliberately invalid
+        aspect: "21:9" as any,
+        prompt: "x",
+      }),
+    ).rejects.toMatchObject({ code: "MEDIA_INVALID_INPUT" });
+  });
+
+  it("rejects count > 4 with MEDIA_INVALID_INPUT (no silent truncation)", async () => {
+    await writeStubConfig(home);
+    await expect(
+      generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x", count: 5 }),
+    ).rejects.toMatchObject({ code: "MEDIA_INVALID_INPUT" });
+  });
+
+  it("rejects count < 1 with MEDIA_INVALID_INPUT", async () => {
+    await writeStubConfig(home);
+    await expect(
+      generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x", count: 0 }),
+    ).rejects.toMatchObject({ code: "MEDIA_INVALID_INPUT" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// configuration errors
+// ---------------------------------------------------------------------------
+
+describe("generateImages — configuration", () => {
+  it("throws MEDIA_NOT_CONFIGURED when nothing is configured", async () => {
+    // no media-config.yaml, no env keys
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_NOT_CONFIGURED",
+    });
+  });
+
+  it("throws MEDIA_INVALID_INPUT when the configured model is not in the catalogue", async () => {
+    await writeFile(
+      join(home, "media-config.yaml"),
+      "providers:\n  volcengine:\n    api_key: sk-test\n    model: not-a-real-model\n",
+      "utf8",
+    );
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_INVALID_INPUT",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// volcengine renderer (mocked fetch)
+// ---------------------------------------------------------------------------
+
+describe("generateImages — volcengine provider (mocked fetch)", () => {
+  it("stages bytes from a 2xx b64_json response and POSTs the expected body", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    // A 1x1 PNG, base64.
+    const tinyPng = Buffer.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    ]);
+    const b64 = tinyPng.toString("base64");
+
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedInit = init;
+        return new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "hero",
+      prompt: "a quiet harbour",
+    });
+
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].width).toBe(2848);
+    expect(result.images[0].height).toBe(1600);
+
+    // Endpoint + auth + body shape.
+    expect(capturedUrl).toBe("https://ark.cn-beijing.volces.com/api/v3/images/generations");
+    const headers = capturedInit?.headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer sk-secret-123");
+    const body = JSON.parse(String(capturedInit?.body));
+    expect(body.model).toBe("doubao-seedream-5-0-260128");
+    expect(body.prompt).toBe("a quiet harbour");
+    expect(body.response_format).toBe("b64_json");
+    expect(body.size).toBe("2848x1600");
+
+    // The staged bytes match the decoded response.
+    const staged = await readFile(result.images[0].preview_path);
+    expect(staged).toEqual(tinyPng);
+  });
+
+  it("makes count calls for count > 1", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const b64 = tinyPng.toString("base64");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "hero",
+      prompt: "x",
+      count: 2,
+    });
+    expect(result.images).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("throws MEDIA_PROVIDER_ERROR on non-2xx with status + truncated body, never the key", async () => {
+    await writeVolcengineConfig(home, "sk-super-secret-key-XYZ");
+    const longBody = `error: bad request ${"A".repeat(2000)}`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(longBody, { status: 401, headers: { "content-type": "text/plain" } })),
+    );
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    const err = caught as FormaError;
+    expect(err.code).toBe("MEDIA_PROVIDER_ERROR");
+    expect(err.details).toMatchObject({ status: 401 });
+
+    // Body present but truncated to <= 500 chars.
+    const detailBody = (err.details as { body?: string }).body ?? "";
+    expect(detailBody.length).toBeLessThanOrEqual(500);
+    expect(detailBody).toContain("error: bad request");
+
+    // No api key anywhere in the serialized error.
+    const serialized = JSON.stringify({ message: err.message, details: err.details });
+    expect(serialized).not.toContain("sk-super-secret-key-XYZ");
+    expect(serialized.toLowerCase()).not.toContain("bearer");
+  });
+
+  it("throws MEDIA_PROVIDER_ERROR when the 2xx body has no b64_json/url", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ data: [{}] }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
+      ),
+    );
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+  });
+
+  it("fetches the url when the response carries url instead of b64_json", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const imgBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x99, 0x88]);
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "https://cdn.example.com/out.png") {
+        return new Response(imgBytes, { status: 200 });
+      }
+      return new Response(JSON.stringify({ data: [{ url: "https://cdn.example.com/out.png" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    const staged = await readFile(result.images[0].preview_path);
+    expect(staged).toEqual(imgBytes);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

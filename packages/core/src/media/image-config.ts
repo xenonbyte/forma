@@ -33,7 +33,7 @@
 //       model: "doubao-seedream-5-0-260128"                    # optional
 // ---------------------------------------------------------------------------
 
-import { chmod, stat, writeFile } from "node:fs/promises";
+import { chmod, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { FormaError } from "../errors.js";
 import { readYamlUnknown, writeYamlAtomic } from "../yaml.js";
@@ -43,11 +43,7 @@ import { IMAGE_MODELS, IMAGE_PROVIDERS } from "./image-models.js";
 const PROVIDER_VOLCENGINE = "volcengine";
 
 /** Env vars that supply the volcengine api_key, in precedence order. */
-const VOLCENGINE_ENV_KEYS = [
-  "FORMA_VOLCENGINE_API_KEY",
-  "ARK_API_KEY",
-  "VOLCENGINE_API_KEY",
-] as const;
+const VOLCENGINE_ENV_KEYS = ["FORMA_VOLCENGINE_API_KEY", "ARK_API_KEY", "VOLCENGINE_API_KEY"] as const;
 
 const MEDIA_CONFIG_FILENAME = "media-config.yaml";
 const CONFIG_FILE_MODE = 0o600;
@@ -215,11 +211,10 @@ export async function writeMediaConfig(
   const priorHadConfig = Boolean(priorApiKey || trimmedString(prior.base_url) || trimmedString(prior.model));
 
   if (wouldBeEmpty && priorHadConfig && !opts.force) {
-    throw new FormaError(
-      "MEDIA_NOT_CONFIGURED",
-      "Refusing to clear existing media credentials without force",
-      { provider: PROVIDER_VOLCENGINE, requires_force: true },
-    );
+    throw new FormaError("MEDIA_NOT_CONFIGURED", "Refusing to clear existing media credentials without force", {
+      provider: PROVIDER_VOLCENGINE,
+      requires_force: true,
+    });
   }
 
   const next: ProviderEntry = {};
@@ -231,20 +226,57 @@ export async function writeMediaConfig(
   return readMediaConfig(home);
 }
 
+/** The deterministic offline test provider. Resolves without a real key. */
+const PROVIDER_STUB = "stub";
+
+/** Resolved plaintext credentials a renderer needs. */
+export type ResolvedProviderConfig = { apiKey: string; baseUrl: string; model: string };
+
+/** Resolved active image config: which provider is selected plus its creds. */
+export type ResolvedImageConfig = ResolvedProviderConfig & { providerId: string };
+
 /**
- * Resolve the plaintext credentials a renderer needs. Env wins over the
- * stored file. base_url / model fall back to the provider catalogue defaults.
+ * Read a single provider entry generically from the YAML file. Unlike
+ * readStoredEntry (volcengine-only), this honours any `providers.<id>` key so
+ * the scheduler can resolve the offline `stub` provider in tests. Returns {}
+ * when the file is absent/malformed or the provider is not present.
+ */
+async function readProviderEntry(home: string, providerId: string): Promise<ProviderEntry> {
+  let parsed: unknown;
+  try {
+    parsed = await readYamlUnknown(configFile(home));
+  } catch (err) {
+    if (errorCode(err) === "ENOENT") return {};
+    throw err;
+  }
+  if (!isRecord(parsed) || !isRecord(parsed.providers)) return {};
+  const entry = parsed.providers[providerId];
+  return isRecord(entry) ? (entry as ProviderEntry) : {};
+}
+
+/**
+ * Resolve the plaintext credentials a renderer needs for a SPECIFIC provider.
+ * Env wins over the stored file (volcengine only). base_url / model fall back
+ * to the provider catalogue defaults. The `stub` provider needs no real key —
+ * it resolves with a sentinel apiKey so offline tests run the full chain.
  * Throws MEDIA_NOT_CONFIGURED (no plaintext in the error) when no key is
  * available from either source.
  */
-export async function resolveProviderConfig(
-  home: string,
-  providerId: string,
-): Promise<{ apiKey: string; baseUrl: string; model: string }> {
-  const entry = providerId === PROVIDER_VOLCENGINE ? await readStoredEntry(home) : {};
+export async function resolveProviderConfig(home: string, providerId: string): Promise<ResolvedProviderConfig> {
+  const entry = await readProviderEntry(home, providerId);
   const envKey = providerId === PROVIDER_VOLCENGINE ? readEnvKey() : "";
-  const apiKey = envKey || trimmedString(entry.api_key);
 
+  // The stub provider is a deterministic offline renderer; it carries no real
+  // credential, so its mere presence in config is enough to "configure" it.
+  if (providerId === PROVIDER_STUB) {
+    return {
+      apiKey: trimmedString(entry.api_key) || "stub",
+      baseUrl: trimmedString(entry.base_url) || defaultBaseUrl(providerId),
+      model: trimmedString(entry.model) || defaultModel(providerId),
+    };
+  }
+
+  const apiKey = envKey || trimmedString(entry.api_key);
   if (!apiKey) {
     throw new FormaError("MEDIA_NOT_CONFIGURED", `No API key configured for provider: ${providerId}`, {
       provider: providerId,
@@ -254,4 +286,38 @@ export async function resolveProviderConfig(
   const baseUrl = trimmedString(entry.base_url) || defaultBaseUrl(providerId);
   const model = trimmedString(entry.model) || defaultModel(providerId);
   return { apiKey, baseUrl, model };
+}
+
+/**
+ * Resolve the ACTIVE image config — which provider is currently selected plus
+ * its plaintext credentials. The scheduler (generateImages) needs to learn the
+ * configured provider+model before it can validate input and pick a renderer.
+ *
+ * Selection order:
+ *   1. An env-supplied volcengine key always wins (operators export ARK_API_KEY
+ *      etc. to drive the real provider without touching the file).
+ *   2. Otherwise, the first provider entry present in media-config.yaml — in v1
+ *      that's `volcengine` (real) or `stub` (offline tests). Probing a fixed
+ *      ordered list keeps selection deterministic without depending on YAML key
+ *      order.
+ *
+ * Throws MEDIA_NOT_CONFIGURED (no plaintext in the error) when nothing is
+ * configured.
+ */
+export async function resolveActiveImageConfig(home: string): Promise<ResolvedImageConfig> {
+  if (readEnvKey()) {
+    return { providerId: PROVIDER_VOLCENGINE, ...(await resolveProviderConfig(home, PROVIDER_VOLCENGINE)) };
+  }
+  for (const providerId of [PROVIDER_VOLCENGINE, PROVIDER_STUB]) {
+    const entry = await readProviderEntry(home, providerId);
+    const hasEntry = Boolean(
+      trimmedString(entry.api_key) || trimmedString(entry.model) || trimmedString(entry.base_url),
+    );
+    if (hasEntry) {
+      return { providerId, ...(await resolveProviderConfig(home, providerId)) };
+    }
+  }
+  throw new FormaError("MEDIA_NOT_CONFIGURED", "No image-generation provider is configured", {
+    checkedProviders: [PROVIDER_VOLCENGINE, PROVIDER_STUB],
+  });
 }
