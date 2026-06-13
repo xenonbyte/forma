@@ -1,6 +1,7 @@
 import {
   FormaError,
   MAX_TOKENS_CSS_BYTES,
+  createStrictFormaStore,
   getArtifactDir,
   getArtifactIconsDir,
   getArtifactVziPath,
@@ -243,6 +244,19 @@ function fakeStore(overrides: Record<string, unknown> = {}) {
       artifact_id: "ABCDEFGHIJ123456",
       version: 1,
       preview_status: "pending",
+    })),
+    generateProductImage: vi.fn(async () => ({
+      images: [
+        {
+          id: "img-uuid-0001",
+          ref: "forma-image://img-uuid-0001",
+          preview_path: "/tmp/forma/staged/img-uuid-0001.png",
+          width: 512,
+          height: 512,
+        },
+      ],
+      provider_note: "stub/stub-image-1 · 1:1 · 512x512 · 1 image",
+      warnings: [],
     })),
     products: {
       createProduct: vi.fn(async () => ({ id: "P-123abc", name: "App", description: "Demo" })),
@@ -5947,5 +5961,191 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
     expect(textPayload(uiNode).error_code).toBe("REQUIREMENT_NOT_FINALIZED");
     expect(searchUi.isError).toBe(true);
     expect(textPayload(searchUi).error_code).toBe("REQUIREMENT_NOT_FINALIZED");
+  });
+});
+
+// ─── generate_image tool (PLAN-TASK-010) ─────────────────────────────────────
+
+describe("generate_image tool (PLAN-TASK-010)", () => {
+  // ── Schema tests ────────────────────────────────────────────────────────────
+
+  it("schema: accepts all valid purposes", () => {
+    for (const purpose of ["app-icon", "illustration", "hero", "poster-bg", "store-shot-bg"] as const) {
+      expectSchemaSuccess("generate_image", {
+        product_id: "P-123abc",
+        purpose,
+        prompt: "a vibrant blue icon",
+      });
+    }
+  });
+
+  it("schema: rejects invalid purpose", () => {
+    expectSchemaFailure("generate_image", {
+      product_id: "P-123abc",
+      purpose: "banner",
+      prompt: "some prompt",
+    });
+  });
+
+  it("schema: accepts all valid aspects", () => {
+    for (const aspect of ["1:1", "16:9", "9:16", "4:3", "3:4"] as const) {
+      expectSchemaSuccess("generate_image", {
+        product_id: "P-123abc",
+        purpose: "hero",
+        prompt: "hero image",
+        aspect,
+      });
+    }
+  });
+
+  it("schema: rejects invalid aspect", () => {
+    expectSchemaFailure("generate_image", {
+      product_id: "P-123abc",
+      purpose: "hero",
+      prompt: "hero image",
+      aspect: "2:1",
+    });
+  });
+
+  it("schema: accepts count 1..4", () => {
+    for (const count of [1, 2, 3, 4]) {
+      expectSchemaSuccess("generate_image", {
+        product_id: "P-123abc",
+        purpose: "illustration",
+        prompt: "nature scene",
+        count,
+      });
+    }
+  });
+
+  it("schema: rejects count 0", () => {
+    expectSchemaFailure("generate_image", {
+      product_id: "P-123abc",
+      purpose: "illustration",
+      prompt: "nature scene",
+      count: 0,
+    });
+  });
+
+  it("schema: rejects count 5", () => {
+    expectSchemaFailure("generate_image", {
+      product_id: "P-123abc",
+      purpose: "illustration",
+      prompt: "nature scene",
+      count: 5,
+    });
+  });
+
+  it("schema: rejects empty prompt", () => {
+    expectSchemaFailure("generate_image", {
+      product_id: "P-123abc",
+      purpose: "app-icon",
+      prompt: "",
+    });
+  });
+
+  it("schema: aspect and count are optional", () => {
+    expectSchemaSuccess("generate_image", {
+      product_id: "P-123abc",
+      purpose: "app-icon",
+      prompt: "a clean icon",
+    });
+  });
+
+  // ── Delegation test (fakeStore) ──────────────────────────────────────────────
+
+  it("delegates to store.generateProductImage with correct input mapping", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_image({
+      product_id: "P-123abc",
+      purpose: "hero",
+      prompt: "sunset over the mountains",
+      aspect: "16:9",
+      count: 2,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(store.generateProductImage).toHaveBeenCalledWith({
+      productId: "P-123abc",
+      purpose: "hero",
+      prompt: "sunset over the mountains",
+      aspect: "16:9",
+      count: 2,
+    });
+    const payload = textPayload(result);
+    expect(payload).toMatchObject({
+      images: expect.arrayContaining([
+        expect.objectContaining({
+          ref: expect.stringContaining("forma-image://"),
+          preview_path: expect.any(String),
+        }),
+      ]),
+      provider_note: expect.any(String),
+      warnings: expect.any(Array),
+    });
+  });
+
+  it("maps FormaError from store.generateProductImage to structured MCP error", async () => {
+    const store = fakeStore({
+      generateProductImage: vi.fn(async () => {
+        throw new FormaError("MEDIA_NOT_CONFIGURED", "No image provider configured");
+      }),
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.generate_image({
+      product_id: "P-123abc",
+      purpose: "app-icon",
+      prompt: "minimal icon",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toEqual({
+      error_code: "MEDIA_NOT_CONFIGURED",
+      message: "No image provider configured",
+      details: {},
+    });
+  });
+
+  it("generate_image appears in formaToolNames", () => {
+    expect(formaToolNames).toContain("generate_image");
+  });
+
+  // ── Full-chain test with stub provider ────────────────────────────────────────
+
+  it("full chain: stub provider generates images with ref and preview_path on disk", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-mcp-generate-image-"));
+    try {
+      // Write media-config.yaml with stub provider
+      await writeFile(join(home, "media-config.yaml"), "providers:\n  stub:\n    model: stub-image-1\n", "utf8");
+
+      const store = createStrictFormaStore({ home });
+      const tools = createFormaTools(store);
+
+      const result = await tools.generate_image({
+        product_id: "P-123abc",
+        purpose: "app-icon",
+        prompt: "a bold blue circle on white",
+        count: 1,
+      });
+
+      expect(result.isError).toBeUndefined();
+      const payload = textPayload(result);
+      expect(payload.images).toHaveLength(1);
+      const img = payload.images[0];
+      // ref must be a forma-image:// URI
+      expect(img.ref).toMatch(/^forma-image:\/\//);
+      // preview_path must be a real absolute path that exists on disk
+      const { access: fsAccess } = await import("node:fs/promises");
+      await expect(fsAccess(img.preview_path)).resolves.toBeUndefined();
+      expect(img.width).toBeGreaterThan(0);
+      expect(img.height).toBeGreaterThan(0);
+      expect(payload.provider_note).toContain("stub");
+      expect(payload.warnings).toEqual([]);
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
   });
 });

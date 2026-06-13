@@ -59,6 +59,7 @@ export const formaToolNames = [
   "export_artifact",
   "generate_requirement_design",
   "generate_components",
+  "generate_image",
   "get_design_context",
   "get_design_handoff",
   "get_page_ui",
@@ -312,6 +313,16 @@ const generateComponentsSchema = z
     }
   });
 
+const generateImageSchema = z
+  .object({
+    product_id: z.string().min(1),
+    purpose: z.enum(["app-icon", "illustration", "hero", "poster-bg", "store-shot-bg"]),
+    prompt: z.string().min(1),
+    aspect: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
+    count: z.int().min(1).max(4).optional(),
+  })
+  .strict();
+
 const getDesignContextSchema = z
   .object({
     product_id: z.string().min(1),
@@ -386,6 +397,7 @@ export const formaToolInputSchemas = {
   export_artifact: exportArtifactSchema,
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
+  generate_image: generateImageSchema,
   get_design_context: getDesignContextSchema,
   get_design_handoff: mcpGetDesignHandoffSchema,
   get_page_ui: mcpGetPageUiSchema,
@@ -418,6 +430,8 @@ const descriptions = {
   export_artifact: "Export an open-design artifact to html, svg, png, zip (self-contained bundle), icons, or vzi.",
   generate_requirement_design: "Save an AI-generated static HTML design artifact for a requirement page.",
   generate_components: "Save an AI-generated static HTML component-library artifact.",
+  generate_image:
+    "Generate product images via the configured AI image provider. Returns images[].preview_path (absolute local path — use the Read tool to visually inspect each candidate) and images[].ref (forma-image://<uuid> — use this reference when embedding in design HTML or passing to save_brand_asset).",
   get_design_context:
     "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
   get_design_handoff:
@@ -546,6 +560,15 @@ export function createFormaTools(store: FormaStore): FormaTools {
       };
       return store.generateComponents(input.product_id as string, gcInput);
     }),
+    generate_image: tool("generate_image", async (input) =>
+      store.generateProductImage({
+        productId: input.product_id,
+        purpose: input.purpose,
+        prompt: input.prompt,
+        aspect: input.aspect,
+        count: input.count,
+      }),
+    ),
     get_design_context: tool("get_design_context", async (input) => {
       const ctx = await buildDesignContext(
         {
