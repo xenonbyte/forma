@@ -3,6 +3,7 @@ import { createArtifactStore, type ArtifactStore } from "./artifact-store.js";
 import { CopyService } from "./copy.js";
 import { saveDesignArtifact } from "./design-save.js";
 import { FormaError } from "./errors.js";
+import { generateImages, type GenerateImagesInput, type GenerateImagesResult } from "./media/image-generate.js";
 import {
   deleteProductLocked,
   recoverPendingProductDeletesLocked,
@@ -79,6 +80,7 @@ export interface FormaStore {
     productId: string,
     input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
+  generateProductImage(input: GenerateImagesInput): Promise<GenerateImagesResult>;
   products: ProductService;
   recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
   requirements: RequirementService;
@@ -260,6 +262,11 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     });
   }
 
+  // generateProductImage routes directly to the media scheduler — no product-
+  // mutation lock because image generation does not mutate product state.
+  const generateProductImage = (input: GenerateImagesInput): Promise<GenerateImagesResult> =>
+    generateImages(options.home, input);
+
   return {
     home: options.home,
     artifacts,
@@ -267,6 +274,7 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     deleteProduct,
     generateRequirementDesign,
     generateComponents,
+    generateProductImage,
     products,
     recoverPendingProductDeletes,
     requirements,
