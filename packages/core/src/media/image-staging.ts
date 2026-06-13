@@ -99,8 +99,14 @@ function jsonPath(dir: string, uuid: string): string {
  * Age is determined by the `created_at` ISO timestamp in the .json sidecar
  * (not mtime). Using the stored timestamp makes sweep behaviour deterministic
  * and independent of filesystem clock resolution, copy operations, and backup
- * tools that reset mtime. A missing or malformed .json file means we cannot
- * determine the entry's age, so it is left alone (fail-safe).
+ * tools that reset mtime.
+ *
+ * **Orphan recovery (TTL backstop):** A crash between the .png write and the
+ * .json write leaves a .png with no sidecar. If the .json is missing or
+ * unparseable, we fall back to `stat(pngPath).mtimeMs` so the orphan is not
+ * permanent garbage. The same mtime fallback applies to a lone .json that has
+ * no matching .png (rare, but swept if old). Both paths are deleted together
+ * when both exist; if only one exists it is removed alone.
  *
  * Pairs are removed as png+json together. If one removal fails it is logged
  * as a warning but does not abort the sweep (matching artifact-tmp-cleanup.ts
@@ -120,22 +126,35 @@ async function sweepExpired(dir: string): Promise<void> {
 
   for (const pngFile of pngFiles) {
     const uuid = pngFile.slice(0, -4); // strip ".png"
+    const pPath = pngPath(dir, uuid);
     const jPath = jsonPath(dir, uuid);
 
-    let record: StagedImageRecord | null = null;
+    let ageMs: number | null = null;
+
+    // Primary path: read created_at from the JSON sidecar.
     try {
       const raw = await readFile(jPath, "utf8");
-      record = JSON.parse(raw) as StagedImageRecord;
+      const record = JSON.parse(raw) as StagedImageRecord;
+      const createdAt = Date.parse(record.created_at);
+      if (Number.isFinite(createdAt)) {
+        ageMs = now - createdAt;
+      }
     } catch {
-      // Missing or malformed sidecar — skip this entry.
-      continue;
+      // Sidecar missing or unparseable — fall back to .png mtime below.
     }
 
-    const createdAt = Date.parse(record.created_at);
-    if (!Number.isFinite(createdAt)) continue; // malformed timestamp — skip
+    // Fallback path: use .png mtime for sidecar-less orphans.
+    if (ageMs === null) {
+      try {
+        const s = await stat(pPath);
+        ageMs = now - s.mtimeMs;
+      } catch {
+        // Cannot stat the .png (race with concurrent removal) — skip.
+        continue;
+      }
+    }
 
-    if (now - createdAt >= STAGING_TTL_MS) {
-      const pPath = pngPath(dir, uuid);
+    if (ageMs >= STAGING_TTL_MS) {
       try {
         await rm(pPath, { force: true });
       } catch (err) {
@@ -144,6 +163,8 @@ async function sweepExpired(dir: string): Promise<void> {
       try {
         await rm(jPath, { force: true });
       } catch (err) {
+        // jPath may not exist for a sidecar-less orphan — force:true already
+        // suppresses ENOENT, so this only fires for unexpected errors.
         console.warn(`[forma] image-staging: failed to remove ${jPath}:`, err);
       }
     }
@@ -211,11 +232,7 @@ export async function putStagedImage(
  * The resolved path is checked with isSameOrChildPath before I/O to prevent
  * directory traversal even on non-POSIX systems.
  */
-export async function resolveFormaImageRef(
-  home: string,
-  productId: string,
-  ref: string,
-): Promise<Buffer> {
+export async function resolveFormaImageRef(home: string, productId: string, ref: string): Promise<Buffer> {
   // ── 1. Validate scheme ────────────────────────────────────────────────────
   if (!ref.startsWith(FORMA_IMAGE_SCHEME)) {
     throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Invalid forma-image:// reference", {

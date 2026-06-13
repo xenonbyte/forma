@@ -2,10 +2,9 @@ import { mkdir, readdir, utimes, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   FormaError,
-  type StagedImage,
   type StagedImageMeta,
   STAGING_TTL_MS,
   putStagedImage,
@@ -58,9 +57,7 @@ describe("putStagedImage — files on disk", () => {
   it("returns a StagedImage with the correct ref format", async () => {
     const result = await putStagedImage(home, PRODUCT_ID, SAMPLE_BYTES, SAMPLE_META);
     expect(result.ref).toBe(`forma-image://${result.id}`);
-    expect(result.id).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
-    );
+    expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 
   it("returns a path pointing to the actual .png file", async () => {
@@ -271,18 +268,40 @@ describe("TTL sweep", () => {
     expect(entries).toContain(`${newEntry.id}.json`);
   });
 
-  it("tolerates a missing sidecar (.json absent) without crashing", async () => {
+  it("sweeps an orphan .png (no .json) whose mtime is past TTL", async () => {
     const dir = join(home, "data", PRODUCT_ID, "image-staging");
     await mkdir(dir, { recursive: true });
     const orphanUUID = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee";
-    // Write png but no json sidecar
-    await writeFile(join(dir, `${orphanUUID}.png`), Buffer.from("orphan-png"));
+    const orphanPng = join(dir, `${orphanUUID}.png`);
 
-    // Should not throw
-    await expect(putStagedImage(home, PRODUCT_ID, SAMPLE_BYTES, SAMPLE_META)).resolves.toBeDefined();
-    // Orphan png is left alone (cannot determine age)
+    // Write png but no json sidecar
+    await writeFile(orphanPng, Buffer.from("orphan-png"));
+
+    // Backdate mtime so the orphan is older than TTL
+    const oldTime = new Date(Date.now() - (STAGING_TTL_MS + 60_000));
+    await utimes(orphanPng, oldTime, oldTime);
+
+    // Trigger sweep via put
+    await putStagedImage(home, PRODUCT_ID, SAMPLE_BYTES, SAMPLE_META);
+
     const entries = await readdir(dir);
-    expect(entries).toContain(`${orphanUUID}.png`);
+    expect(entries).not.toContain(`${orphanUUID}.png`);
+  });
+
+  it("keeps an orphan .png (no .json) whose mtime is within TTL", async () => {
+    const dir = join(home, "data", PRODUCT_ID, "image-staging");
+    await mkdir(dir, { recursive: true });
+    const freshOrphanUUID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
+    const freshOrphanPng = join(dir, `${freshOrphanUUID}.png`);
+
+    // Write png but no json sidecar — mtime is current (within TTL)
+    await writeFile(freshOrphanPng, Buffer.from("fresh-orphan-png"));
+
+    // Trigger sweep via put
+    await putStagedImage(home, PRODUCT_ID, SAMPLE_BYTES, SAMPLE_META);
+
+    const entries = await readdir(dir);
+    expect(entries).toContain(`${freshOrphanUUID}.png`);
   });
 
   it("STAGING_TTL_MS equals 24 hours in ms", () => {
