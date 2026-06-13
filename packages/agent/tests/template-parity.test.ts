@@ -175,4 +175,21 @@ describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
       });
     }
   }
+
+  // Regression guard: fabricated error codes must never appear (PLAN-TASK-021)
+  for (const platform of platforms) {
+    it(`fm-app-icon on ${platform} does NOT contain fabricated PRODUCT_NOT_CONFIGURED`, () => {
+      const body = readTemplate(platform, "fm-app-icon");
+      expect(body, `fm-app-icon/${platform} must NOT reference the non-existent PRODUCT_NOT_CONFIGURED code`).not.toContain(
+        "PRODUCT_NOT_CONFIGURED",
+      );
+    });
+
+    it(`fm-app-icon on ${platform} contains real BRAND_ASSET_INVALID_INPUT error code`, () => {
+      const body = readTemplate(platform, "fm-app-icon");
+      expect(body, `fm-app-icon/${platform} must reference the real BRAND_ASSET_INVALID_INPUT code`).toContain(
+        "BRAND_ASSET_INVALID_INPUT",
+      );
+    });
+  }
 });
