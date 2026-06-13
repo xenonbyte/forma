@@ -3287,6 +3287,52 @@ describe("brand-assets routes (PLAN-TASK-018)", () => {
     expect(res.statusCode).toBe(400);
     expect(res.json().error_code).toBe("BRAND_ASSET_INVALID_INPUT");
   });
+
+  it("toBrandAssetView threads surface + variant into the response when present (T9)", async () => {
+    const { app, home } = await brandStoreApp();
+    const productsRoot = getFormaPaths(home).productsDir;
+    const brandRoot = getBrandAssetsDir(productsRoot, PID);
+    await mkdir(join(brandRoot, "store-shots"), { recursive: true });
+    const shotPath = join(brandRoot, "store-shots", "home-shot.png");
+    await writeFile(shotPath, PNG_BYTES);
+    const manifest = {
+      assets: [
+        {
+          kind: "store-shot",
+          name: "home",
+          surface: "android",
+          variant: "portrait",
+          files: [{ path: shotPath, width: 1080, height: 1920 }],
+          brand_style: "linear-app",
+          generated_at: "2026-06-14T00:00:00.000Z",
+        },
+      ],
+    };
+    await writeFile(getBrandAssetsManifestPath(productsRoot, PID), JSON.stringify(manifest, null, 2), "utf8");
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets` });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.assets[0]).toMatchObject({
+      kind: "store-shot",
+      surface: "android",
+      variant: "portrait",
+    });
+  });
+
+  it("toBrandAssetView omits surface + variant when absent (T9)", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+
+    const res = await app.inject({ method: "GET", url: `/api/products/${PID}/brand-assets` });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    // app-icon record has no surface or variant — must not appear in the wire response.
+    expect(body.assets[0]).not.toHaveProperty("surface");
+    expect(body.assets[0]).not.toHaveProperty("variant");
+  });
 });
 
 describe("api bearer auth (non-loopback protection)", () => {

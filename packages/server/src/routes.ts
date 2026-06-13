@@ -1315,6 +1315,8 @@ function toBrandAssetView(record: BrandAssetRecord, brandRoot: string) {
     brand_style: record.brand_style,
     ...(record.model !== undefined ? { model: record.model } : {}),
     generated_at: record.generated_at,
+    ...(record.surface !== undefined ? { surface: record.surface } : {}),
+    ...(record.variant !== undefined ? { variant: record.variant } : {}),
     files: record.files.map((file) => ({
       path: brandRelativePath(brandRoot, file.path),
       width: file.width,

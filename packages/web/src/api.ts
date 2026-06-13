@@ -534,12 +534,23 @@ export interface BrandAssetFileView {
 
 /** Client view of a brand-asset manifest record (mirrors server toBrandAssetView). */
 export interface BrandAssetView {
-  /** Manifest kind — drives dynamic grouping (app-icon now; store-shot/poster in M5). */
+  /** Manifest kind — drives dynamic grouping (app-icon / store-shot / banner / poster). */
   kind: string;
   name: string;
   brand_style: string;
   model?: string;
   generated_at: string;
+  /**
+   * Platform surface this asset targets ("android" | "ios"). Present for
+   * mobile/tablet app-icon, store-shot, and banner records; absent for
+   * web/desktop (single surface) and for poster (platform-agnostic).
+   */
+  surface?: "android" | "ios";
+  /**
+   * Optional variant discriminator (icon layer name, poster style, etc.).
+   * Absent when not applicable.
+   */
+  variant?: string;
   files: BrandAssetFileView[];
 }
 
