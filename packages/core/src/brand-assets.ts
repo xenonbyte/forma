@@ -39,7 +39,10 @@ import { resolveFormaImageRef } from "./media/image-staging.js";
 import { getFormaPaths } from "./paths.js";
 import { isSameOrChildPath } from "./path-boundary.js";
 import { getProductMutationLock } from "./product-mutation-lock.js";
-import type { Platform } from "./schemas.js";
+import type { BrandSurface, Platform } from "./schemas.js";
+
+// Re-export BrandSurface as the canonical definition lives in schemas.ts.
+export type { BrandSurface } from "./schemas.js";
 
 // ─── Public constants ──────────────────────────────────────────────────────────
 
@@ -136,12 +139,13 @@ const SHARP_PIXEL_LIMIT = 64_000_000;
 const KIND_SUBDIR = {
   "app-icon": "app-icon",
   "store-shot": "store-shots",
+  banner: "banners",
   poster: "posters",
 } as const;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-export const BRAND_ASSET_KINDS = ["app-icon", "store-shot", "poster"] as const;
+export const BRAND_ASSET_KINDS = ["app-icon", "store-shot", "banner", "poster"] as const;
 export type BrandAssetKind = (typeof BRAND_ASSET_KINDS)[number];
 
 /** A single emitted brand-asset file (bundle-relative path + pixel dims). */
@@ -161,6 +165,17 @@ export interface BrandAssetRecord {
   brand_style: string;
   model?: string;
   generated_at: string;
+  /**
+   * The platform surface this asset targets. Omitted for web/desktop (single
+   * surface) and for poster (platform-agnostic). Present for mobile/tablet
+   * app-icon, store-shot, and banner records.
+   */
+  surface?: BrandSurface;
+  /**
+   * Optional variant discriminator: icon layer name, poster style, etc.
+   * Omitted when not applicable.
+   */
+  variant?: string;
 }
 
 /** Source for a brand asset — EXACTLY ONE of image_ref / html. */
@@ -250,6 +265,8 @@ const brandAssetRecordSchema = z
     brand_style: z.string().min(1),
     model: z.string().min(1).optional(),
     generated_at: z.string().refine((v) => Number.isFinite(Date.parse(v))),
+    surface: z.enum(["android", "ios"]).optional(),
+    variant: z.string().min(1).optional(),
   })
   .strict();
 

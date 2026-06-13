@@ -29,9 +29,12 @@ import {
   putStagedImage,
   APP_ICON_SIZES,
   STORE_SHOT_PRESETS,
+  BRAND_ASSET_KINDS,
+  brandSurfacesForPlatform,
   type BrandAssetDeps,
   type SavedBrandAsset,
   type BrandAssetRecord,
+  type BrandSurface,
 } from "@xenonbyte/forma-core";
 import { FormaError } from "../src/errors.js";
 import { renderBrandAssetHtml } from "../src/brand-asset-render.js";
@@ -215,7 +218,7 @@ describe("saveBrandAsset — BRAND_ASSET_INVALID_INPUT", () => {
     await expectInvalid({
       product_id: PRODUCT_ID,
       // biome-ignore lint/suspicious/noExplicitAny: deliberately bad kind
-      kind: "banner" as any,
+      kind: "splash-screen" as any,
       name: "x",
       brand_style: "ant",
       source: { image_ref: ref },
@@ -656,6 +659,69 @@ describe("APP_ICON_SIZES", () => {
     expect(APP_ICON_SIZES.ios).toEqual([1024, 180, 120]);
     expect(APP_ICON_SIZES.android).toEqual([512, 192, 144, 96, 72, 48]);
     expect(APP_ICON_SIZES.web).toEqual([512, 192, 32, 16]);
+  });
+});
+
+// ─── BRAND_ASSET_KINDS includes "banner" (SPEC-DATA-001) ─────────────────────
+
+describe("BRAND_ASSET_KINDS", () => {
+  it("includes banner as a valid kind", () => {
+    expect(BRAND_ASSET_KINDS).toContain("banner");
+  });
+
+  it("contains all four expected kinds", () => {
+    const kinds = [...BRAND_ASSET_KINDS].sort();
+    expect(kinds).toEqual(["app-icon", "banner", "poster", "store-shot"]);
+  });
+});
+
+// ─── brandSurfacesForPlatform (SPEC-BEHAVIOR-002) ─────────────────────────────
+
+describe("brandSurfacesForPlatform", () => {
+  it("mobile → ['android', 'ios']", () => {
+    expect(brandSurfacesForPlatform("mobile")).toEqual(["android", "ios"]);
+  });
+
+  it("tablet → ['android', 'ios']", () => {
+    expect(brandSurfacesForPlatform("tablet")).toEqual(["android", "ios"]);
+  });
+
+  it("web → [] (single surface, no surface field)", () => {
+    expect(brandSurfacesForPlatform("web")).toEqual([]);
+  });
+
+  it("desktop → [] (single surface, no surface field)", () => {
+    expect(brandSurfacesForPlatform("desktop")).toEqual([]);
+  });
+});
+
+// ─── BrandAssetRecord surface + variant optional fields ───────────────────────
+
+describe("BrandAssetRecord — surface and variant are optional", () => {
+  it("a record without surface/variant validates correctly in the manifest", async () => {
+    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
+    await saveBrandAsset(makeDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "app-icon",
+      name: "primary",
+      brand_style: "ant",
+      source: { image_ref: ref },
+      platform: "web",
+    });
+    const records = await listBrandAssets(home, PRODUCT_ID, "app-icon");
+    expect(records).toHaveLength(1);
+    // surface and variant must be absent (undefined) for a web single-surface asset
+    expect(records[0].surface).toBeUndefined();
+    expect(records[0].variant).toBeUndefined();
+  });
+});
+
+// ─── BrandSurface type guard ──────────────────────────────────────────────────
+
+describe("BrandSurface type", () => {
+  it("is assignable from 'android' and 'ios'", () => {
+    const surfaces: BrandSurface[] = ["android", "ios"];
+    expect(surfaces).toHaveLength(2);
   });
 });
 
