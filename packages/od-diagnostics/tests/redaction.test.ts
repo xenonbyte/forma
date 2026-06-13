@@ -140,6 +140,12 @@ describe("media credential red lines (PLAN-TASK-011)", () => {
     expect(isSensitiveConfigFile("logs/daemon/latest.log")).toBe(false);
     expect(isSensitiveConfigFile("media-config.yaml.bak")).toBe(false);
   });
+
+  it("matches the sensitive config basename case-insensitively", () => {
+    expect(isSensitiveConfigFile("Media-Config.yaml")).toBe(true);
+    expect(isSensitiveConfigFile("MEDIA-CONFIG.YAML")).toBe(true);
+    expect(isSensitiveConfigFile("forma/Media-Config.YAML")).toBe(true);
+  });
 });
 
 describe("redactJsonText", () => {

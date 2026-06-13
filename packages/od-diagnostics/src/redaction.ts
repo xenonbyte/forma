@@ -43,7 +43,7 @@ const SENSITIVE_CONFIG_BASENAMES = new Set(["media-config.yaml"]);
  * line-level redaction alone.
  */
 export function isSensitiveConfigFile(name: string): boolean {
-  const base = name.split(/[\\/]/).pop() ?? name;
+  const base = (name.split(/[\\/]/).pop() ?? name).toLowerCase();
   return SENSITIVE_CONFIG_BASENAMES.has(base);
 }
 
