@@ -854,6 +854,16 @@ function BrandAssetSettingsForm({
   const [saveError, setSaveError] = useState<ApiErrorInfo | null>(null);
   const [saved, setSaved] = useState(false);
 
+  useEffect(() => {
+    if (!saved) {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      setSaved(false);
+    }, 3000);
+    return () => window.clearTimeout(timeout);
+  }, [saved]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (saving) {
@@ -900,7 +910,7 @@ function BrandAssetSettingsForm({
         </label>
 
         <fieldset className="grid gap-2">
-          <legend className="text-sm font-medium text-zinc-700">{t("brandAssets.title")}</legend>
+          <legend className="text-sm font-medium text-zinc-700">{t("brandAssets.settings.legend")}</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
               <input

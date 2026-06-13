@@ -802,6 +802,8 @@ describe("BrandAssetSettingsForm (AC-008)", () => {
     const { container, root } = createTestRoot();
 
     await act(async () => {
+      // updateBrandAssetSettings is called and its return value is passed to the
+      // onProductUpdated callback inside BrandAssetSettingsForm, which updates parent state.
       root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
       await flushPromises();
     });
@@ -816,7 +818,11 @@ describe("BrandAssetSettingsForm (AC-008)", () => {
       await flushPromises();
     });
 
-    // After save, a success message should appear
+    // The client must have been called with the product id
+    expect(client.updateBrandAssetSettings).toHaveBeenCalledWith("P-123abc", expect.any(Object));
+    // The server response is forwarded to the parent (product id still rendered in the DOM)
+    expect(container.textContent).toContain(configuredProduct.id);
+    // After save, a success flash should appear
     expect(container.textContent).toContain("Settings saved");
   });
 

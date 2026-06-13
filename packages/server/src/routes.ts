@@ -25,6 +25,7 @@ import {
   type ArtifactManifest,
   type BrandAssetKind,
   type BrandAssetRecord,
+  type BrandAssetsSettings,
   type BrandStyleContent,
   type DesignPointer,
   type ExportArchiveAssetsResult,
@@ -123,13 +124,7 @@ export interface FormaRoutesStore {
     listDesignPointers(productId: string): Promise<DesignPointer[]>;
     updateBrandAssetSettings(
       productId: string,
-      patch: Partial<{
-        store_shot_count: number;
-        banner: boolean;
-        poster_portrait: boolean;
-        poster_landscape: boolean;
-        poster_square: boolean;
-      }>,
+      patch: Partial<BrandAssetsSettings>,
     ): Promise<{ id: string; [key: string]: unknown }>;
   };
   requirements: {
@@ -891,24 +886,8 @@ export function registerRoutes(
     async (request, reply) => {
       if (!checkMutationOrigin(request, reply)) return;
       const body = objectBody(request.body);
-      const allowedFields = new Set([
-        "store_shot_count",
-        "banner",
-        "poster_portrait",
-        "poster_landscape",
-        "poster_square",
-      ]);
-      const extraFields = Object.keys(body).filter((f) => !allowedFields.has(f));
-      if (extraFields.length > 0) {
-        throw new RouteInputError("Unexpected request fields", { fields: extraFields });
-      }
-      const patch: Partial<{
-        store_shot_count: number;
-        banner: boolean;
-        poster_portrait: boolean;
-        poster_landscape: boolean;
-        poster_square: boolean;
-      }> = {};
+      requireOnlyFields(body, ["store_shot_count", "banner", "poster_portrait", "poster_landscape", "poster_square"]);
+      const patch: Partial<BrandAssetsSettings> = {};
       if (body["store_shot_count"] !== undefined) {
         const v = body["store_shot_count"];
         if (typeof v !== "number" || !Number.isInteger(v) || v < 3 || v > 8) {
@@ -918,6 +897,8 @@ export function registerRoutes(
         }
         patch.store_shot_count = v;
       }
+      // Boolean fields are validated inline (not via optionalBoolean) because this is a PATCH:
+      // undefined must mean "leave unchanged", whereas optionalBoolean collapses undefined→false.
       for (const boolField of ["banner", "poster_portrait", "poster_landscape", "poster_square"] as const) {
         if (body[boolField] !== undefined) {
           if (typeof body[boolField] !== "boolean") {
