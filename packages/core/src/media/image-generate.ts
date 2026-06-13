@@ -90,6 +90,15 @@ export type GenerateImagesResult = {
 // Constants
 // ---------------------------------------------------------------------------
 
+/** The supported image purposes, in canonical order. */
+export const IMAGE_PURPOSES = [
+  "app-icon",
+  "illustration",
+  "hero",
+  "poster-bg",
+  "store-shot-bg",
+] as const satisfies readonly ImagePurpose[];
+
 /** Default aspect ratio per purpose (SPEC-BEHAVIOR-001). */
 const PURPOSE_DEFAULT_ASPECT: Record<ImagePurpose, AspectRatio> = {
   "app-icon": "1:1",
@@ -98,8 +107,6 @@ const PURPOSE_DEFAULT_ASPECT: Record<ImagePurpose, AspectRatio> = {
   "poster-bg": "9:16",
   "store-shot-bg": "9:16",
 };
-
-const VALID_PURPOSES = Object.keys(PURPOSE_DEFAULT_ASPECT) as ImagePurpose[];
 
 /** Inclusive count bounds. */
 const COUNT_MIN = 1;
@@ -218,10 +225,10 @@ function validateConfiguredModel(config: ResolvedImageConfig): void {
 }
 
 function validatePurpose(purpose: ImagePurpose): ImagePurpose {
-  if (!VALID_PURPOSES.includes(purpose)) {
+  if (!IMAGE_PURPOSES.includes(purpose)) {
     throw new FormaError("MEDIA_INVALID_INPUT", `Unknown image purpose: ${purpose}`, {
       purpose,
-      validPurposes: VALID_PURPOSES,
+      validPurposes: IMAGE_PURPOSES,
     });
   }
   return purpose;

@@ -11,7 +11,7 @@ import {
   getFormaPaths,
   type FormaStore,
 } from "@xenonbyte/forma-core";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -5967,7 +5967,7 @@ describe("regression: existing MCP tools are NOT gated by archive status", () =>
 // ─── generate_image tool (PLAN-TASK-010) ─────────────────────────────────────
 
 describe("generate_image tool (PLAN-TASK-010)", () => {
-  // ── Schema tests ────────────────────────────────────────────────────────────
+  // ─── Schema tests ───────────────────────────────────────────────────────────
 
   it("schema: accepts all valid purposes", () => {
     for (const purpose of ["app-icon", "illustration", "hero", "poster-bg", "store-shot-bg"] as const) {
@@ -6052,7 +6052,7 @@ describe("generate_image tool (PLAN-TASK-010)", () => {
     });
   });
 
-  // ── Delegation test (fakeStore) ──────────────────────────────────────────────
+  // ─── Delegation test (fakeStore) ────────────────────────────────────────────
 
   it("delegates to store.generateProductImage with correct input mapping", async () => {
     const store = fakeStore();
@@ -6109,11 +6109,7 @@ describe("generate_image tool (PLAN-TASK-010)", () => {
     });
   });
 
-  it("generate_image appears in formaToolNames", () => {
-    expect(formaToolNames).toContain("generate_image");
-  });
-
-  // ── Full-chain test with stub provider ────────────────────────────────────────
+  // ─── Full-chain test with stub provider ─────────────────────────────────────
 
   it("full chain: stub provider generates images with ref and preview_path on disk", async () => {
     const home = await mkdtemp(join(tmpdir(), "forma-mcp-generate-image-"));
@@ -6138,8 +6134,7 @@ describe("generate_image tool (PLAN-TASK-010)", () => {
       // ref must be a forma-image:// URI
       expect(img.ref).toMatch(/^forma-image:\/\//);
       // preview_path must be a real absolute path that exists on disk
-      const { access: fsAccess } = await import("node:fs/promises");
-      await expect(fsAccess(img.preview_path)).resolves.toBeUndefined();
+      await expect(access(img.preview_path)).resolves.toBeUndefined();
       expect(img.width).toBeGreaterThan(0);
       expect(img.height).toBeGreaterThan(0);
       expect(payload.provider_note).toContain("stub");

@@ -2,8 +2,10 @@ import { access, copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promis
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  ASPECT_RATIOS,
   COMPONENT_BASELINES,
   FormaError,
+  IMAGE_PURPOSES,
   MAX_TOKENS_CSS_BYTES,
   artifactBundleUrl,
   artifactPreviewUrl,
@@ -316,9 +318,9 @@ const generateComponentsSchema = z
 const generateImageSchema = z
   .object({
     product_id: z.string().min(1),
-    purpose: z.enum(["app-icon", "illustration", "hero", "poster-bg", "store-shot-bg"]),
+    purpose: z.enum(IMAGE_PURPOSES),
     prompt: z.string().min(1),
-    aspect: z.enum(["1:1", "16:9", "9:16", "4:3", "3:4"]).optional(),
+    aspect: z.enum(ASPECT_RATIOS).optional(),
     count: z.int().min(1).max(4).optional(),
   })
   .strict();
