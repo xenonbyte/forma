@@ -41,6 +41,7 @@ export * from "./design-context.js";
 export * from "./component-baseline.js";
 export * from "./media/image-models.js";
 export * from "./media/image-config.js";
+export * from "./media/image-staging.js";
 export * from "./artifact-urls.js";
 export * from "./requirement-handoff-content.js";
 export * from "./doctor.js";
