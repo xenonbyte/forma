@@ -6836,10 +6836,18 @@ describe("get_brand_asset_plan / delete_brand_asset tools (T7)", () => {
     expect(serialized).not.toContain("providers");
   });
 
-  it("tool registry serialization does not contain api_key or credential fields", () => {
-    const tools = createFormaTools(fakeStore());
-    const serialized = JSON.stringify(Object.keys(tools));
-    expect(serialized).not.toContain("api_key");
-    expect(serialized).not.toContain("media-config");
+  it("actual tool output from get_brand_asset_plan and delete_brand_asset does not contain credential fields", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const planResult = await tools.get_brand_asset_plan({ product_id: "P-123abc" });
+    const deleteResult = await tools.delete_brand_asset({ product_id: "P-123abc", kind: "app-icon", name: "primary" });
+
+    const combinedSerialized = JSON.stringify([planResult, deleteResult]);
+    expect(combinedSerialized).not.toContain("api_key");
+    expect(combinedSerialized).not.toContain("api_key_tail");
+    expect(combinedSerialized).not.toContain("base_url");
+    expect(combinedSerialized).not.toContain("media-config");
+    expect(combinedSerialized).not.toContain("providers");
   });
 });

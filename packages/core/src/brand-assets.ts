@@ -35,7 +35,7 @@
 
 import { mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import AdmZip from "adm-zip";
 import { z } from "zod";
 import { getBrandAssetKindDir, getBrandAssetsDir, getBrandAssetsManifestPath } from "./artifact-paths.js";
@@ -606,25 +606,44 @@ export async function deleteBrandAsset(
     const next = manifest.assets.filter((a) => !(a.kind === input.kind && a.name === input.name));
     await writeManifest(deps.home, input.product_id, { assets: next });
 
-    // Collect the containing directories before deleting so we can best-effort
-    // remove any that become empty after the files are gone.
-    const containingDirs = new Set(record.files.map((f) => join(f.path, "..")));
+    // Collect the immediate containing directories before deleting so we can
+    // best-effort walk up the ancestor chain after the files are gone.
+    const startDirs = new Set(record.files.map((f) => dirname(f.path)));
 
     for (const file of record.files) {
       await rm(file.path, { force: true });
     }
 
-    // Best-effort empty-dir cleanup: remove each containing directory if it is
-    // now empty. rmdir fails with ENOTEMPTY when siblings still own files (skip),
-    // and with ENOENT when already gone (skip). Any other error propagates.
-    for (const dir of containingDirs) {
-      // Only remove dirs that are under the kindDir (safety: don't remove kindDir itself).
-      if (dir === kindDir || !isSameOrChildPath(kindDir, dir)) continue;
-      try {
-        await rmdir(dir);
-      } catch (err: unknown) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code !== "ENOTEMPTY" && code !== "ENOENT") throw err;
+    // Best-effort empty-dir cleanup: for each file's containing dir, attempt
+    // rmdir and then walk up ancestor dirs toward (but never including) kindDir.
+    // isSameOrChildPath is a lexical check — intentional here because brand-asset
+    // file paths are always machine-written into the manifest (trusted provenance).
+    // The symlink-hardened realpath check lives at the server file-serving boundary.
+    //
+    // Per-dir walk rules:
+    //   - Stop before reaching or exceeding kindDir (never rmdir kindDir itself).
+    //   - Stop if dir is the filesystem root (dirname(dir) === dir guard).
+    //   - ENOTEMPTY → stop walking this chain (siblings still present in parent).
+    //   - ENOENT    → continue to parent (dir may have been concurrently removed).
+    //   - Any other error → rethrow (unexpected; don't silently swallow).
+    for (const startDir of startDirs) {
+      let dir = startDir;
+      while (true) {
+        // Hard stop conditions.
+        if (dir === kindDir) break;
+        if (!isSameOrChildPath(kindDir, dir)) break;
+        const parent = dirname(dir);
+        if (parent === dir) break; // filesystem root guard
+
+        try {
+          await rmdir(dir);
+        } catch (err: unknown) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === "ENOTEMPTY") break; // siblings present — parent chain is non-empty too
+          if (code !== "ENOENT") throw err; // unexpected error propagates
+          // ENOENT: already gone — continue walking up (parent may now be empty)
+        }
+        dir = parent;
       }
     }
 

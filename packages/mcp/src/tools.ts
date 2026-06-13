@@ -524,7 +524,7 @@ const descriptions = {
   get_brand_asset_plan:
     "Return the desired-state brand asset plan for a product: platform, surfaces, and per-kind entries (dimensions, count, surface, variant, verifiedAt). Use this before generating brand assets to know what sizes/surfaces/variants to produce. Does not read media credentials.",
   delete_brand_asset:
-    "Delete one brand asset record (by kind + name) and its on-disk files. Fails loud if the record does not exist. Returns { deleted: true } on success.",
+    "Delete one brand asset record (by kind + name) and its on-disk files. Fails loud if the record does not exist — throws BRAND_ASSET_INVALID_INPUT (reason: not_found). Returns { deleted: true } on success.",
   search_icons:
     "Search the bundled Lucide icon set by name or tag. Returns { icons: [{ name, tags, svg }] } ranked name-prefix → substring → tag (svg is inline-ready Lucide markup with currentColor inheritance). Use this instead of hand-drawing functional icons; no match returns an empty array.",
   get_design_context:

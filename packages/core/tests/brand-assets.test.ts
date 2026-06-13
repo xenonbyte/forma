@@ -32,6 +32,8 @@ import {
   putStagedImage,
   BRAND_ASSET_KINDS,
   brandSurfacesForPlatform,
+  getFormaPaths,
+  getBrandAssetKindDir,
   type BrandAssetDeps,
   type SaveBrandAssetResult,
   type BrandAssetRecord,
@@ -564,6 +566,100 @@ describe("deleteBrandAsset", () => {
     expect((await listBrandAssets(home, PRODUCT_ID, "poster")).map((r) => r.name)).toContain("sibling-keep");
     await expect(access(r1.files[0].path)).resolves.toBeUndefined();
   }, 60000);
+
+  // ─── walk-up ancestor cleanup (TM-10 T7 review) ───────────────────────────
+
+  it("walk-up cleanup: deleting the LAST record removes generation dir AND name dir, but NOT kindDir", async () => {
+    // Build a kindDir/<name>/generation-.../image.png structure directly
+    // (bypasses render) and register it in the manifest.
+    const productsRoot = getFormaPaths(home).productsDir;
+    const kindDir = getBrandAssetKindDir(productsRoot, PRODUCT_ID, "posters");
+    const nameDir = join(kindDir, "walk-up-solo");
+    const generationDir = join(nameDir, "generation-001-aabbccdd");
+    const imageFile = join(generationDir, "image.png");
+    await mkdir(generationDir, { recursive: true });
+    await writeFile(imageFile, "fake-png");
+
+    // Register a manifest referencing this file.
+    const brandDir = join(productsRoot, PRODUCT_ID, "od-project", "brand-assets");
+    await mkdir(brandDir, { recursive: true });
+    const manifest = {
+      assets: [
+        {
+          kind: "poster",
+          name: "walk-up-solo",
+          files: [{ path: imageFile, width: 80, height: 120 }],
+          brand_style: "ant",
+          generated_at: new Date().toISOString(),
+        },
+      ],
+    };
+    await writeFile(join(brandDir, "manifest.json"), JSON.stringify(manifest));
+
+    await deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "walk-up-solo" });
+
+    // File gone.
+    await expect(access(imageFile)).rejects.toBeInstanceOf(Error);
+    // generation dir gone (direct containing dir).
+    await expect(access(generationDir)).rejects.toBeInstanceOf(Error);
+    // name dir gone (walk-up ancestor).
+    await expect(access(nameDir)).rejects.toBeInstanceOf(Error);
+    // kindDir MUST still exist (walk-up stops at kindDir).
+    await expect(access(kindDir)).resolves.toBeUndefined();
+  });
+
+  it("walk-up cleanup: deleting one record leaves still-populated sibling name dirs intact", async () => {
+    // Two records under different name dirs within the same kindDir.
+    const productsRoot = getFormaPaths(home).productsDir;
+    const kindDir = getBrandAssetKindDir(productsRoot, PRODUCT_ID, "posters");
+    const keepNameDir = join(kindDir, "walk-up-keep");
+    const dropNameDir = join(kindDir, "walk-up-drop");
+    const keepGenDir = join(keepNameDir, "generation-001-aaaaaaaa");
+    const dropGenDir = join(dropNameDir, "generation-002-bbbbbbbb");
+    const keepFile = join(keepGenDir, "image.png");
+    const dropFile = join(dropGenDir, "image.png");
+    await mkdir(keepGenDir, { recursive: true });
+    await mkdir(dropGenDir, { recursive: true });
+    await writeFile(keepFile, "fake-png-keep");
+    await writeFile(dropFile, "fake-png-drop");
+
+    const brandDir = join(productsRoot, PRODUCT_ID, "od-project", "brand-assets");
+    await mkdir(brandDir, { recursive: true });
+    const manifest = {
+      assets: [
+        {
+          kind: "poster",
+          name: "walk-up-keep",
+          files: [{ path: keepFile, width: 80, height: 120 }],
+          brand_style: "ant",
+          generated_at: new Date().toISOString(),
+        },
+        {
+          kind: "poster",
+          name: "walk-up-drop",
+          files: [{ path: dropFile, width: 80, height: 120 }],
+          brand_style: "ant",
+          generated_at: new Date().toISOString(),
+        },
+      ],
+    };
+    await writeFile(join(brandDir, "manifest.json"), JSON.stringify(manifest));
+
+    await deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "walk-up-drop" });
+
+    // Dropped record files and dirs gone.
+    await expect(access(dropFile)).rejects.toBeInstanceOf(Error);
+    await expect(access(dropGenDir)).rejects.toBeInstanceOf(Error);
+    await expect(access(dropNameDir)).rejects.toBeInstanceOf(Error);
+    // kindDir still present (walk-up stops at it, and it has keep's subtree).
+    await expect(access(kindDir)).resolves.toBeUndefined();
+    // keepNameDir and keepFile unaffected.
+    await expect(access(keepNameDir)).resolves.toBeUndefined();
+    await expect(access(keepFile)).resolves.toBeUndefined();
+    // Manifest now only has the keep record.
+    const remaining = await listBrandAssets(home, PRODUCT_ID, "poster");
+    expect(remaining.map((r) => r.name)).toEqual(["walk-up-keep"]);
+  });
 });
 
 // ─── zip export ───────────────────────────────────────────────────────────────
