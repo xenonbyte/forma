@@ -19,9 +19,11 @@
 //   * The plaintext api_key NEVER appears in any FormaError message/details or
 //     in the masked-read response. (resolveProviderConfig is the only path that
 //     returns the plaintext key, by design, to the in-process renderer.)
-//   * The file is created with mode 0600; an existing file looser than 0600 is
-//     tightened on every write. Permission semantics are skipped on win32
-//     (POSIX mode bits are not meaningful there).
+//   * The temp file is born with mode 0600 on POSIX (passed to writeYamlAtomic)
+//     so there is no window where media-config.yaml is readable at 0644.
+//     Any pre-existing file that was created looser than 0600 is also tightened
+//     by enforceFileMode after the rename. Permission semantics are skipped on
+//     win32 (POSIX mode bits are not meaningful there).
 //
 // On-disk shape:
 //   providers:
@@ -128,7 +130,7 @@ async function writeStoredEntry(home: string, entry: ProviderEntry): Promise<voi
   const providers: Record<string, ProviderEntry> = {};
   const hasContent = Boolean(entry.api_key || entry.base_url || entry.model);
   if (hasContent) providers[PROVIDER_VOLCENGINE] = entry;
-  await writeYamlAtomic(configFile(home), { providers });
+  await writeYamlAtomic(configFile(home), { providers }, { mode: CONFIG_FILE_MODE });
   await enforceFileMode(configFile(home));
 }
 

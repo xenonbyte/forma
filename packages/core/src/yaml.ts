@@ -22,13 +22,16 @@ export async function readYaml<T>(file: string): Promise<T> {
   return (await readYamlUnknown(file)) as T;
 }
 
-export async function writeYamlAtomic(file: string, value: unknown): Promise<void> {
+export async function writeYamlAtomic(file: string, value: unknown, opts?: { mode?: number }): Promise<void> {
   const parentDir = dirname(file);
   await mkdir(parentDir, { recursive: true });
 
   const tempFile = join(parentDir, `.${randomBytes(8).toString("hex")}.tmp`);
   try {
-    await writeFile(tempFile, yaml.dump(value, { noRefs: true, sortKeys: true }), "utf8");
+    const writeOpts: Parameters<typeof writeFile>[2] = opts?.mode != null
+      ? { encoding: "utf8", mode: opts.mode }
+      : "utf8";
+    await writeFile(tempFile, yaml.dump(value, { noRefs: true, sortKeys: true }), writeOpts);
     await rename(tempFile, file);
   } catch (error) {
     await rm(tempFile, { force: true });

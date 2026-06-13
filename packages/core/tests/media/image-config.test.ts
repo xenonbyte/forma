@@ -201,6 +201,38 @@ describe("file permissions", () => {
   });
 });
 
+describe("readMediaConfig — whitespace-only api_key", () => {
+  it("treats whitespace-only api_key as unconfigured", async () => {
+    const home = await makeHome();
+    const file = join(home, "media-config.yaml");
+    await writeFile(
+      file,
+      "providers:\n  volcengine:\n    api_key: \"   \"\n",
+      "utf8",
+    );
+    const masked = await readMediaConfig(home);
+    expect(masked).toEqual({ configured: false, source: "none" });
+  });
+
+  it("resolveProviderConfig throws MEDIA_NOT_CONFIGURED for whitespace-only api_key", async () => {
+    const home = await makeHome();
+    const file = join(home, "media-config.yaml");
+    await writeFile(
+      file,
+      "providers:\n  volcengine:\n    api_key: \"   \"\n",
+      "utf8",
+    );
+    let thrown: unknown;
+    try {
+      await resolveProviderConfig(home, "volcengine");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(FormaError);
+    expect((thrown as FormaError).code).toBe("MEDIA_NOT_CONFIGURED");
+  });
+});
+
 describe("resolveProviderConfig", () => {
   it("throws MEDIA_NOT_CONFIGURED when no key from env or file", async () => {
     const home = await makeHome();
