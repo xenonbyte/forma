@@ -134,22 +134,28 @@ describe("fm-refine-components template", () => {
     }
   });
 
-  it("reads persisted productIcon shape fields from manifest as camelCase", async () => {
+  it("requires an app icon as a hard precondition instead of producing a product ICON unit (D6)", async () => {
     const t = await loadCommand("fm-refine-components");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      expect(body).toContain("shapeId");
-      expect(body).toContain("sourceVersion");
-      expect(body).toContain("shape_id");
-      expect(body).toContain("source_version");
+      const lc = body.toLowerCase();
+      // App-icon hard precondition: gate on list_brand_assets(kind="app-icon"), STOP + guide fm-app-icon
+      expect(lc).toContain('list_brand_assets(product_id, kind="app-icon")');
+      expect(lc).toContain("fm-app-icon");
+      // The icon unit is retired and must not be emitted
+      expect(body).toContain("NO icon unit");
+      expect(body).toMatch(/Do NOT submit `product_icon`/);
     }
   });
 
-  it("treats missing productIcon metadata on an existing library as icon initial creation", async () => {
+  it("treats a legacy library without productIcon metadata as a valid refinement source without re-emitting an icon", async () => {
     const t = await loadCommand("fm-refine-components");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      expect(body).toMatch(/manifest\.forma\.productIcon.*missing/i);
-      expect(body).toMatch(/initial icon creation/i);
-      expect(body).toMatch(/preserve.*source_html/i);
+      // Legacy intent preserved: a library lacking productIcon metadata is still a valid refinement source
+      expect(body).toMatch(/valid refinement source regardless.*legacy `forma\.productIcon` metadata/i);
+      // source_html is preserved
+      expect(body).toMatch(/preserve the exported `source_html`/i);
+      // The product ICON unit is never re-emitted (icon unit retired — D6)
+      expect(body).toMatch(/never re-emit a product ICON unit/i);
     }
   });
 });
@@ -182,13 +188,16 @@ describe("fm-change-style template", () => {
     }
   });
 
-  it("reads persisted productIcon shape fields from manifest as camelCase", async () => {
+  it("does not re-emit a product ICON unit and flags the app icon as stale after a style change (D6/D11)", async () => {
     const t = await loadCommand("fm-change-style");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      expect(body).toContain("shapeId");
-      expect(body).toContain("sourceVersion");
-      expect(body).toContain("shape_id");
-      expect(body).toContain("source_version");
+      const lc = body.toLowerCase();
+      // The icon unit is retired (D6): no icon unit, and product_icon must not be submitted
+      expect(body).toContain("NO icon unit");
+      expect(body).toMatch(/Do NOT submit `product_icon`/);
+      // Stale-asset reminder (D11): a style change does not auto-regenerate the app icon; point at fm-app-icon
+      expect(lc).toContain("fm-app-icon");
+      expect(body).toMatch(/stale-asset reminder/i);
     }
   });
 
@@ -208,12 +217,15 @@ describe("fm-change-style template", () => {
     }
   });
 
-  it("keeps existing source_html while creating an icon for legacy libraries without productIcon", async () => {
+  it("keeps existing source_html as a valid re-skin source for legacy libraries without productIcon (no icon re-emit)", async () => {
     const t = await loadCommand("fm-change-style");
     for (const body of [t.claude, t.codex, t.gemini]) {
-      expect(body).toMatch(/manifest\.forma\.productIcon.*missing/i);
-      expect(body).toMatch(/initial icon creation/i);
-      expect(body).toMatch(/preserve.*source_html/i);
+      // Legacy intent preserved: a library lacking productIcon metadata is still a valid re-skin source
+      expect(body).toMatch(/valid re-skin source regardless.*legacy `forma\.productIcon` metadata/i);
+      // The icon unit is retired (D6) and is never re-emitted here
+      expect(body).toMatch(/the icon unit is retired \(D6\) and is never re-emitted here/i);
+      // Existing component markup (source_html) is preserved and only re-themed via tokens_css
+      expect(body).toMatch(/PRESERVE each component's existing structure\/markup/);
     }
   });
 
