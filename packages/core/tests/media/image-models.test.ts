@@ -56,6 +56,26 @@ import {
 //     example omits size; output is ~1024px square by default). The table mirrors the
 //     OpenAI sizes only so resolveSize doesn't throw; MP3 reads ACTUAL dimensions from
 //     the returned PNG. These are bookkeeping placeholders, not a verified contract.
+//
+// T6 additions — expanded OpenAI + Gemini models (2026-06-14):
+//   OpenAI gpt-image-2 — confirmed real model ID. Source:
+//     https://developers.openai.com/api/docs/models/gpt-image-2
+//     Supports arbitrary WxH (div by 16, ratio 1:3..3:1, max 3840x2160) plus standard
+//     presets. Standard sizes: 1024x1024, 1536x1024, 1024x1536.  VERIFIED.
+//   OpenAI gpt-image-1.5 — confirmed real model ID. Source:
+//     https://developers.openai.com/api/docs/models/gpt-image-1.5
+//     Same standard sizes as gpt-image-1.  VERIFIED.
+//   openai default changed to gpt-image-1.5 (T6 / SPEC-BEHAVIOR-001 update).
+//   Gemini gemini-3.1-flash-image — confirmed stable model ID. Source:
+//     https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image
+//     VERIFIED model ID; size contract via /images/generations endpoint: UNCONFIRMED.
+//   Gemini gemini-3-pro-image — confirmed stable model ID. Source:
+//     https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image
+//     VERIFIED model ID; size contract via /images/generations endpoint: UNCONFIRMED.
+//   Gemini default: UNCHANGED (gemini-2.5-flash-image). DECISION-002 A: OpenAI-compat
+//     /images/generations endpoint compatibility for Gemini 3.x models is unconfirmed
+//     (user reports + docs indicate 404 on that endpoint for image models). A native
+//     generateContent renderer is a deferred follow-up.
 // ---------------------------------------------------------------------------
 
 const EXPECTED_VOLCENGINE_MODEL_IDS = [
@@ -122,18 +142,50 @@ describe("IMAGE_MODELS catalogue", () => {
     expect(volcengineIds.sort()).toEqual([...EXPECTED_VOLCENGINE_MODEL_IDS].sort());
   });
 
-  it("registers gpt-image-1 under openai as its default", () => {
-    const model = findImageModel("gpt-image-1");
+  // T6: openai default moved to gpt-image-1.5 (SPEC-BEHAVIOR-001 update, 2026-06-14).
+  it("registers gpt-image-1.5 under openai as its default (T6)", () => {
+    const model = findImageModel("gpt-image-1.5");
     expect(model).toBeDefined();
     expect(model?.provider).toBe("openai");
     expect(model?.default).toBe(true);
   });
 
-  it("registers gemini-2.5-flash-image under gemini as its default", () => {
+  it("registers gpt-image-1 under openai as non-default (demoted in T6)", () => {
+    const model = findImageModel("gpt-image-1");
+    expect(model).toBeDefined();
+    expect(model?.provider).toBe("openai");
+    expect(model?.default).toBeFalsy();
+  });
+
+  it("registers gpt-image-2 under openai as non-default (T6)", () => {
+    const model = findImageModel("gpt-image-2");
+    expect(model).toBeDefined();
+    expect(model?.provider).toBe("openai");
+    expect(model?.default).toBeFalsy();
+  });
+
+  // T6: gemini default UNCHANGED per DECISION-002 A — OpenAI-compat /images/generations
+  // endpoint compatibility of new gemini-3.x models could not be confirmed (reports of
+  // 404; native generateContent renderer is deferred). gemini-2.5-flash-image stays default.
+  it("registers gemini-2.5-flash-image under gemini as its default (DECISION-002 A, T6)", () => {
     const model = findImageModel("gemini-2.5-flash-image");
     expect(model).toBeDefined();
     expect(model?.provider).toBe("gemini");
     expect(model?.default).toBe(true);
+  });
+
+  it("registers gemini-3.1-flash-image under gemini as non-default (T6)", () => {
+    const model = findImageModel("gemini-3.1-flash-image");
+    expect(model).toBeDefined();
+    expect(model?.provider).toBe("gemini");
+    expect(model?.default).toBeFalsy();
+  });
+
+  it("registers gemini-3-pro-image under gemini as non-default (T6)", () => {
+    const model = findImageModel("gemini-3-pro-image");
+    expect(model).toBeDefined();
+    expect(model?.provider).toBe("gemini");
+    expect(model?.default).toBeFalsy();
   });
 
   it("has exactly one default model per visible provider, with the verified primary volcengine default", () => {
@@ -258,6 +310,72 @@ describe("resolveSize — openai gpt-image-1 (nearest-allowed sizes)", () => {
   for (const [aspect, expected] of cases) {
     it(`${aspect} -> ${expected.width}x${expected.height}`, () => {
       expect(resolveSize("gpt-image-1", aspect)).toEqual(expected);
+    });
+  }
+});
+
+describe("resolveSize — openai gpt-image-1.5 (verified standard sizes, T6)", () => {
+  // Verified 2026-06-14: same standard preset sizes as gpt-image-1.
+  // Source: https://developers.openai.com/api/docs/models/gpt-image-1.5
+  const cases: Array<[AspectRatio, { width: number; height: number }]> = [
+    ["1:1", { width: 1024, height: 1024 }],
+    ["16:9", { width: 1536, height: 1024 }],
+    ["9:16", { width: 1024, height: 1536 }],
+    ["4:3", { width: 1536, height: 1024 }],
+    ["3:4", { width: 1024, height: 1536 }],
+  ];
+
+  for (const [aspect, expected] of cases) {
+    it(`${aspect} -> ${expected.width}x${expected.height}`, () => {
+      expect(resolveSize("gpt-image-1.5", aspect)).toEqual(expected);
+    });
+  }
+});
+
+describe("resolveSize — openai gpt-image-2 (verified standard sizes, T6)", () => {
+  // Verified 2026-06-14: mapped to standard presets (arbitrary WxH also supported).
+  // Source: https://developers.openai.com/api/docs/models/gpt-image-2
+  const cases: Array<[AspectRatio, { width: number; height: number }]> = [
+    ["1:1", { width: 1024, height: 1024 }],
+    ["16:9", { width: 1536, height: 1024 }],
+    ["9:16", { width: 1024, height: 1536 }],
+    ["4:3", { width: 1536, height: 1024 }],
+    ["3:4", { width: 1024, height: 1536 }],
+  ];
+
+  for (const [aspect, expected] of cases) {
+    it(`${aspect} -> ${expected.width}x${expected.height}`, () => {
+      expect(resolveSize("gpt-image-2", aspect)).toEqual(expected);
+    });
+  }
+});
+
+describe("resolveSize — gemini-3.1-flash-image (NOMINAL / UNCONFIRMED placeholders, T6)", () => {
+  // Model ID verified 2026-06-14; size values are UNCONFIRMED for /images/generations.
+  // Source: https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-image
+  // Tests assert positive integers only — do NOT assert specific pixel values.
+  for (const aspect of ASPECT_RATIOS) {
+    it(`${aspect} -> positive integers (placeholder, not a verified contract)`, () => {
+      const size = resolveSize("gemini-3.1-flash-image", aspect);
+      expect(size.width).toBeGreaterThan(0);
+      expect(size.height).toBeGreaterThan(0);
+      expect(Number.isInteger(size.width)).toBe(true);
+      expect(Number.isInteger(size.height)).toBe(true);
+    });
+  }
+});
+
+describe("resolveSize — gemini-3-pro-image (NOMINAL / UNCONFIRMED placeholders, T6)", () => {
+  // Model ID verified 2026-06-14; size values are UNCONFIRMED for /images/generations.
+  // Source: https://ai.google.dev/gemini-api/docs/models/gemini-3-pro-image
+  // Tests assert positive integers only — do NOT assert specific pixel values.
+  for (const aspect of ASPECT_RATIOS) {
+    it(`${aspect} -> positive integers (placeholder, not a verified contract)`, () => {
+      const size = resolveSize("gemini-3-pro-image", aspect);
+      expect(size.width).toBeGreaterThan(0);
+      expect(size.height).toBeGreaterThan(0);
+      expect(Number.isInteger(size.width)).toBe(true);
+      expect(Number.isInteger(size.height)).toBe(true);
     });
   }
 });
