@@ -39,10 +39,8 @@ import { resolveFormaImageRef } from "./media/image-staging.js";
 import { getFormaPaths } from "./paths.js";
 import { isSameOrChildPath } from "./path-boundary.js";
 import { getProductMutationLock } from "./product-mutation-lock.js";
+import { brandSurfaces } from "./schemas.js";
 import type { BrandSurface, Platform } from "./schemas.js";
-
-// Re-export BrandSurface as the canonical definition lives in schemas.ts.
-export type { BrandSurface } from "./schemas.js";
 
 // ─── Public constants ──────────────────────────────────────────────────────────
 
@@ -141,7 +139,7 @@ const KIND_SUBDIR = {
   "store-shot": "store-shots",
   banner: "banners",
   poster: "posters",
-} as const;
+} as const satisfies Record<BrandAssetKind, string>;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -265,7 +263,7 @@ const brandAssetRecordSchema = z
     brand_style: z.string().min(1),
     model: z.string().min(1).optional(),
     generated_at: z.string().refine((v) => Number.isFinite(Date.parse(v))),
-    surface: z.enum(["android", "ios"]).optional(),
+    surface: z.enum(brandSurfaces).optional(),
     variant: z.string().min(1).optional(),
   })
   .strict();

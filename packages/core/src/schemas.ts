@@ -10,7 +10,8 @@ export type Platform = (typeof platforms)[number];
  * "android" and "ios" are the two surfaces. An empty surfaces array means the
  * platform has a single surface (omit the `surface` field on the record).
  */
-export type BrandSurface = "android" | "ios";
+export const brandSurfaces = ["android", "ios"] as const;
+export type BrandSurface = (typeof brandSurfaces)[number];
 
 /**
  * Returns the brand surfaces applicable to a platform (SPEC-BEHAVIOR-002).

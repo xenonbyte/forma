@@ -172,21 +172,15 @@ describe("brand_assets settings schema — defaults and boundary values", () => 
     expect(updated.brand_assets?.poster_square).toBe(true);
   });
 
-  it("updateBrandAssetSettings goes through the product-mutation lock (serializes writes)", async () => {
+  it("updateBrandAssetSettings patch merge preserves prior values (sequential)", async () => {
     const store = await createTestStore();
     const product = await store.products.createProduct({ name: "Test", description: "" });
-    // Concurrent updates should not corrupt state.
-    await Promise.all([
-      store.products.updateBrandAssetSettings(product.id, { store_shot_count: 5 }),
-      store.products.updateBrandAssetSettings(product.id, { banner: true }),
-    ]);
+    // Write two distinct fields sequentially — the second write must NOT clobber the first.
+    await store.products.updateBrandAssetSettings(product.id, { banner: true });
+    await store.products.updateBrandAssetSettings(product.id, { store_shot_count: 5 });
     const final = await store.products.getProduct(product.id);
-    // Both writes completed without throwing — product is in a valid state.
-    expect(final.brand_assets).toBeDefined();
-    // At least one of the two values is set (order depends on lock serialization).
-    const count = final.brand_assets?.store_shot_count ?? 3;
-    expect(count).toBeGreaterThanOrEqual(3);
-    expect(count).toBeLessThanOrEqual(8);
+    expect(final.brand_assets?.banner).toBe(true);
+    expect(final.brand_assets?.store_shot_count).toBe(5);
   });
 });
 

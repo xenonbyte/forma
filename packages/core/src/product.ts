@@ -246,7 +246,7 @@ export class ProductService {
   }
 
   async updateBrandAssetSettings(productId: string, patch: Partial<BrandAssetsSettings>): Promise<Product> {
-    return this.runProductMutation({ operation: "update-brand-asset-settings", product_id: productId }, async () =>
+    return this.runProductMutation({ operation: "update_brand_asset_settings", product_id: productId }, async () =>
       this.updateBrandAssetSettingsLocked(productId, patch),
     );
   }
