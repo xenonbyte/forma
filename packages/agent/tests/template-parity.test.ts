@@ -373,5 +373,19 @@ describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
         "fm-design",
       );
     });
+
+    it(`fm-brand-assets on ${platform} specifies data: URI as the sandbox-allowed page screenshot embedding form (PLAN-TASK-025)`, () => {
+      const body = readTemplate(platform, "fm-brand-assets");
+      // The store-shot composition step must tell the agent HOW to embed the page preview.
+      // The render sandbox rejects remote URLs; there is no forma-image:// namespace for
+      // product page previews, so data: URI is the only valid embedding form.
+      expect(body, `fm-brand-assets/${platform} must specify data: URI embedding for the page screenshot`).toContain(
+        "data:",
+      );
+      expect(
+        body,
+        `fm-brand-assets/${platform} must state the sandbox rejects remote URLs`,
+      ).toContain("rejects remote");
+    });
   }
 });
