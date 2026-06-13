@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 type PackageJson = {
@@ -14,6 +15,15 @@ const repoUrl = (path: string): URL => new URL(`../../../${path}`, import.meta.u
 
 async function readJson(path: string): Promise<PackageJson> {
   return JSON.parse(await readFile(repoUrl(path), "utf8")) as PackageJson;
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(repoUrl(path), constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("VZI runtime release packaging", () => {
@@ -73,5 +83,40 @@ describe("VZI runtime release packaging", () => {
       expect(publishIndex).toBeLessThan(publishScript.indexOf("--filter @xenonbyte/forma-core publish"));
       expect(publishIndex).toBeLessThan(publishScript.indexOf("--filter @xenonbyte/forma-mcp publish"));
     }
+  });
+});
+
+describe("Lucide icon library release packaging", () => {
+  // PLAN-TASK-013 Option A: the vendored lucide-icons.json lives at
+  // packages/core/assets/, core's `files` whitelist stays ["dist"], and the
+  // core build copies assets/ into dist/assets/ so the JSON ships in the npm
+  // tarball. These assertions lock that contract so the runtime lazy-load can
+  // never silently break in a published install.
+
+  it("commits the vendored lucide-icons.json under packages/core/assets", async () => {
+    expect(await fileExists("packages/core/assets/lucide-icons.json")).toBe(true);
+
+    const raw = await readFile(repoUrl("packages/core/assets/lucide-icons.json"), "utf8");
+    const table = JSON.parse(raw) as Record<string, { svg: string; tags: string[]; categories: string[] }>;
+    const names = Object.keys(table);
+    expect(names.length).toBeGreaterThan(1000);
+
+    const sample = table[names[0]];
+    expect(typeof sample.svg).toBe("string");
+    expect(sample.svg).toContain("<svg");
+    expect(Array.isArray(sample.tags)).toBe(true);
+    expect(Array.isArray(sample.categories)).toBe(true);
+  });
+
+  it("ships the JSON inside dist via the core build asset-copy step", async () => {
+    const corePackage = await readJson("packages/core/package.json");
+    // The whitelist must stay dist-only; assets/ ships only through dist/assets/.
+    expect(corePackage.files).toEqual(["dist"]);
+    // The build script must copy assets into dist so the whitelist still includes them.
+    expect(corePackage.scripts?.build ?? "").toContain("copy-core-assets.mjs");
+
+    // After a build, the JSON must be present at the shippable dist/assets path.
+    // (Verification runs the core build before these targeted tests.)
+    expect(await fileExists("packages/core/dist/assets/lucide-icons.json")).toBe(true);
   });
 });

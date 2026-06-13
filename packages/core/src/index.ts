@@ -46,4 +46,5 @@ export * from "./media/image-generate.js";
 export * from "./artifact-urls.js";
 export * from "./requirement-handoff-content.js";
 export * from "./doctor.js";
+export * from "./icon-search.js";
 export { isSameOrChildPath } from "./path-boundary.js";
