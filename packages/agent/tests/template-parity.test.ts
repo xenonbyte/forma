@@ -222,7 +222,9 @@ describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
     ["forma-image://brand/app-icon", "the brand ref that resolves to the primary record"],
     ["count=3", "the three-candidate generation"],
     ["overwrite", "the existing-icon overwrite semantics"],
+    ["/products/<product_id>/brand-assets", "the brand-assets canvas URL"],
   ];
+  const forbiddenHashBrandAssetsUrl = "#/products/<product_id>/brand-assets";
 
   for (const platform of platforms) {
     for (const [needle, why] of required) {
@@ -231,15 +233,23 @@ describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
         expect(body, `fm-app-icon/${platform} must contain ${JSON.stringify(needle)} — ${why}`).toContain(needle);
       });
     }
+
+    it(`fm-app-icon on ${platform} reports the real non-hash brand-assets route`, () => {
+      const body = readTemplate(platform, "fm-app-icon");
+      expect(body, `fm-app-icon/${platform} must not report the old hash-only brand-assets URL`).not.toContain(
+        forbiddenHashBrandAssetsUrl,
+      );
+    });
   }
 
   // Regression guard: fabricated error codes must never appear (PLAN-TASK-021)
   for (const platform of platforms) {
     it(`fm-app-icon on ${platform} does NOT contain fabricated PRODUCT_NOT_CONFIGURED`, () => {
       const body = readTemplate(platform, "fm-app-icon");
-      expect(body, `fm-app-icon/${platform} must NOT reference the non-existent PRODUCT_NOT_CONFIGURED code`).not.toContain(
-        "PRODUCT_NOT_CONFIGURED",
-      );
+      expect(
+        body,
+        `fm-app-icon/${platform} must NOT reference the non-existent PRODUCT_NOT_CONFIGURED code`,
+      ).not.toContain("PRODUCT_NOT_CONFIGURED");
     });
 
     it(`fm-app-icon on ${platform} contains real BRAND_ASSET_INVALID_INPUT error code`, () => {
@@ -335,8 +345,9 @@ describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
     ["veto", "the Read-inspection veto step for generated material"],
     ["craft/image-prompts.md", "the bg/illustration prompt scaffold source"],
     ["1080×1920", "the poster spec dimensions (explicit target, not a preset)"],
-    ["#/products/<product_id>/brand-assets", "the brand-assets canvas URL"],
+    ["/products/<product_id>/brand-assets", "the brand-assets canvas URL"],
   ];
+  const forbiddenHashBrandAssetsUrl = "#/products/<product_id>/brand-assets";
 
   for (const platform of platforms) {
     for (const [needle, why] of required) {
@@ -345,6 +356,13 @@ describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
         expect(body, `fm-brand-assets/${platform} must contain ${JSON.stringify(needle)} — ${why}`).toContain(needle);
       });
     }
+
+    it(`fm-brand-assets on ${platform} reports the real non-hash brand-assets route`, () => {
+      const body = readTemplate(platform, "fm-brand-assets");
+      expect(body, `fm-brand-assets/${platform} must not report the old hash-only brand-assets URL`).not.toContain(
+        forbiddenHashBrandAssetsUrl,
+      );
+    });
 
     it(`fm-brand-assets on ${platform} calls list_store_shot_presets BEFORE save_brand_asset`, () => {
       const body = readTemplate(platform, "fm-brand-assets");
@@ -382,10 +400,9 @@ describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
       expect(body, `fm-brand-assets/${platform} must specify data: URI embedding for the page screenshot`).toContain(
         "data:",
       );
-      expect(
-        body,
-        `fm-brand-assets/${platform} must state the sandbox rejects remote URLs`,
-      ).toContain("rejects remote");
+      expect(body, `fm-brand-assets/${platform} must state the sandbox rejects remote URLs`).toContain(
+        "rejects remote",
+      );
     });
   }
 });

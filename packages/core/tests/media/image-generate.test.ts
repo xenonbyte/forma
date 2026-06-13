@@ -640,6 +640,27 @@ describe("generateImages — SSRF guard on the url second-fetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects bracketed IPv6 loopback and unique-local literals before second-fetch", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    for (const ip of ["http://[::1]:9200/admin", "http://[fd00::1]/admin"]) {
+      let secondFetched = false;
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === ip) {
+          secondFetched = true;
+          return new Response(Buffer.from("LOCAL"), { status: 200 });
+        }
+        return urlResponse(ip);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject(
+        { code: "MEDIA_PROVIDER_ERROR" },
+      );
+      expect(secondFetched).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("rejects a private-range IP (10.x / 192.168.x / 172.16.x)", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
     for (const ip of ["http://10.0.0.5/x", "http://192.168.1.1/x", "http://172.16.0.1/x"]) {

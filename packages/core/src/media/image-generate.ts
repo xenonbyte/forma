@@ -494,8 +494,7 @@ function assertSafeFetchUrl(rawUrl: string): URL {
     throw providerError(0, "", `Image provider url scheme not allowed: ${url.protocol}`);
   }
 
-  // URL.hostname strips the brackets from IPv6 literals and lowercases the host.
-  const host = url.hostname.toLowerCase();
+  const host = normalizeUrlHostname(url.hostname);
 
   if (
     host === "localhost" ||
@@ -513,6 +512,15 @@ function assertSafeFetchUrl(rawUrl: string): URL {
   return url;
 }
 
+/** Normalize WHATWG URL hostnames before literal-IP range checks. */
+function normalizeUrlHostname(hostname: string): string {
+  const host = hostname.toLowerCase();
+  if (host.startsWith("[") && host.endsWith("]")) {
+    return host.slice(1, -1);
+  }
+  return host;
+}
+
 /** True if `host` is a literal IP in a private/loopback/link-local/etc. range. */
 function isBlockedLiteralIp(host: string): boolean {
   // IPv4 dotted quad.
@@ -523,7 +531,7 @@ function isBlockedLiteralIp(host: string): boolean {
     return isBlockedIpv4(octets as [number, number, number, number]);
   }
 
-  // IPv6 literal (already de-bracketed by URL.hostname).
+  // IPv6 literal.
   if (host.includes(":")) {
     // IPv4-mapped / -embedded IPv6 (e.g. ::ffff:127.0.0.1, ::ffff:169.254.0.1).
     const mapped = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(host);

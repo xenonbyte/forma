@@ -107,7 +107,7 @@ Vitest with `environment: "node"` and workspace aliases (vitest.config.ts resolv
 
 ### Web routing
 
-The SPA uses a custom hash-based router (packages/web/src/routes.tsx) with `RouteDefinition[]`. Navigation dispatches `forma:navigation` custom events and listens for `popstate`. No React Router dependency.
+The SPA uses a custom History-API (pushState) router (packages/web/src/routes.tsx) with `RouteDefinition[]`; routes match on `window.location.pathname` (the URL `#…` part is treated as an in-page fragment, not the route). Navigation dispatches `forma:navigation` custom events and listens for `popstate`. No React Router dependency.
 
 ### Design handoff
 
@@ -115,4 +115,4 @@ The SPA uses a custom hash-based router (packages/web/src/routes.tsx) with `Rout
 
 ### Brand assets canvas (web)
 
-The web SPA renders generated brand assets at `#/products/:pid/brand-assets` (`packages/web/src/pages/BrandAssets.tsx` + viewer `AssetTile`). It groups assets by manifest `kind` dynamically (app-icon / store-shot / poster appear as their data lands — no per-kind code), shows a "may be stale" badge when `asset.brand_style !== product.brand_style` (D11: flagged, never auto-regenerated), and offers per-file download + "export all" (zip).
+The web SPA renders generated brand assets at `/products/<product_id>/brand-assets` (`packages/web/src/pages/BrandAssets.tsx` + viewer `AssetTile`). It groups assets by manifest `kind` dynamically (app-icon / store-shot / poster appear as their data lands — no per-kind code), shows a "may be stale" badge when `asset.brand_style !== product.brand_style` (D11: flagged, never auto-regenerated), and offers per-file download + "export all" (zip).
