@@ -350,14 +350,21 @@ async function renderOpenAICompatibleImage(
   const baseUrl = (cfg.baseUrl || "https://ark.cn-beijing.volces.com/api/v3").replace(/\/$/, "");
   const body = buildRequestBody(input, cfg, provider);
 
-  const resp = await fetch(`${baseUrl}/images/generations`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${cfg.apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch(`${baseUrl}/images/generations`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${cfg.apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw providerError(0, "", `Image provider request failed: ${err instanceof Error ? err.message : "error"}`, [
+      cfg.apiKey,
+    ]);
+  }
 
   const text = await resp.text();
   if (!resp.ok) {
@@ -697,7 +704,7 @@ function providerError(status: number, body: string, message?: string, secrets: 
 function redactSecrets(value: string, secrets: readonly string[]): string {
   let redacted = value;
   for (const secret of secrets) {
-    if (!secret || secret.length < 8) continue;
+    if (!secret) continue;
     const escaped = escapeRegExp(secret);
     redacted = redacted.replace(new RegExp(`Bearer\\s+${escaped}`, "gi"), "[REDACTED:authorization]");
     redacted = redacted.replace(new RegExp(escaped, "g"), "[REDACTED:api-key]");

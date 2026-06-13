@@ -403,6 +403,21 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     expect(serialized.toLowerCase()).not.toContain("bearer");
   });
 
+  it("throws MEDIA_PROVIDER_ERROR when the provider request fails before a response exists", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("fetch failed");
+      }),
+    );
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+      details: { status: 0 },
+    });
+  });
+
   it("redacts the api key if a custom provider echoes Authorization in the error body", async () => {
     await writeVolcengineConfig(home, "sk-super-secret-key-XYZ");
     vi.stubGlobal(
@@ -427,6 +442,33 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     expect(serialized).not.toContain("sk-super-secret-key-XYZ");
     expect(serialized.toLowerCase()).not.toContain("bearer");
     expect(serialized).toContain("[REDACTED:authorization]");
+  });
+
+  it("redacts short api keys echoed by provider-controlled error bodies", async () => {
+    await writeVolcengineConfig(home, "abcd");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response("upstream echoed Authorization: Bearer abcd and token abcd", {
+            status: 401,
+            headers: { "content-type": "text/plain" },
+          }),
+      ),
+    );
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    const serialized = JSON.stringify((caught as FormaError).toJSON());
+    expect(serialized).not.toContain("abcd");
+    expect(serialized.toLowerCase()).not.toContain("bearer");
+    expect(serialized).toContain("[REDACTED:authorization]");
+    expect(serialized).toContain("[REDACTED:api-key]");
   });
 
   it("throws MEDIA_PROVIDER_ERROR when the 2xx body has no b64_json/url", async () => {
