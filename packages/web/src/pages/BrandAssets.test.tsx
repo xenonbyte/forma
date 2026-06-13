@@ -412,6 +412,24 @@ describe("BrandAssets", () => {
     }
   });
 
+  it("a11y: surface-grouped section carries aria-label with the kind label (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => mobileSurfaceList }));
+
+    // The outer <section data-kind="store-shot"> must have aria-label = localized kind label.
+    const section = container.querySelector("[data-testid='asset-group'][data-kind='store-shot']");
+    expect(section).not.toBeNull();
+    expect(section?.getAttribute("aria-label")).toBe("Store screenshots");
+  });
+
+  it("a11y: non-surface section has NO aria-label (already has visible h3) (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => webNoSurfaceList }));
+
+    const section = container.querySelector("[data-testid='asset-group'][data-kind='store-shot']");
+    expect(section).not.toBeNull();
+    // Non-surface path: visible h3 is present so aria-label is not added.
+    expect(section?.getAttribute("aria-label")).toBeNull();
+  });
+
   it("reports the product name via onBreadcrumbLabel", async () => {
     const labels: Record<string, string> = {};
     const { container: _c, root } = createTestRoot();

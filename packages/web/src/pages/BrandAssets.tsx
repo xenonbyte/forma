@@ -135,9 +135,18 @@ function BrandAssetsReady({ assets, client, product, productId }: BrandAssetsRea
         {groups.map((group) => {
           const surfaceGroups = groupBySurface(group.assets);
           // If any asset in this kind group carries a surface, render surface sub-groups.
+          // Note: if a kind group mixes surfaced and non-surfaced assets the undefined-surface
+          // bucket still renders (composedGroupLabel falls back to the plain kind label).
           const hasSurfaces = surfaceGroups.some((sg) => sg.surface !== undefined);
           return (
-            <section data-testid="asset-group" data-kind={group.kind} key={group.kind}>
+            // aria-label names the kind so screen readers announce the section even though
+            // hasSurfaces=true suppresses the visible kind-level h3.
+            <section
+              data-testid="asset-group"
+              data-kind={group.kind}
+              key={group.kind}
+              aria-label={hasSurfaces ? kindLabel(t, group.kind) : undefined}
+            >
               {hasSurfaces ? (
                 // Mobile/tablet: sub-group by surface with composed "Android Store screenshots" label.
                 surfaceGroups.map((sg) => (
@@ -182,7 +191,7 @@ interface KindGroup {
 }
 
 interface SurfaceGroup {
-  surface: string | undefined;
+  surface: "android" | "ios" | undefined;
   assets: BrandAssetView[];
 }
 
@@ -205,12 +214,15 @@ function groupByKind(assets: BrandAssetView[]): KindGroup[] {
 /**
  * Within a kind group, sub-group by surface, preserving first-seen order.
  * Assets without a surface land in a single group with surface=undefined.
+ * Defensive: if a kind group mixes surfaced and non-surfaced assets, the
+ * undefined-surface bucket renders under the kind label via composedGroupLabel's
+ * fallback — it will not be silently dropped.
  */
 function groupBySurface(assets: BrandAssetView[]): SurfaceGroup[] {
-  const order: (string | undefined)[] = [];
-  const bySurface = new Map<string | undefined, BrandAssetView[]>();
+  const order: ("android" | "ios" | undefined)[] = [];
+  const bySurface = new Map<"android" | "ios" | undefined, BrandAssetView[]>();
   for (const asset of assets) {
-    const key = asset.surface;
+    const key = asset.surface; // "android" | "ios" | undefined
     const bucket = bySurface.get(key);
     if (bucket) {
       bucket.push(asset);
