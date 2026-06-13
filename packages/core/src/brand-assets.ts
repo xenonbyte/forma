@@ -28,7 +28,7 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
-import JSZip from "jszip";
+import AdmZip from "adm-zip";
 import sharp from "sharp";
 import { z } from "zod";
 import { getBrandAssetKindDir, getBrandAssetsDir, getBrandAssetsManifestPath } from "./artifact-paths.js";
@@ -517,7 +517,7 @@ export async function resolveBrandImageRef(home: string, productId: string, ref:
 export async function exportBrandAssetsZip(home: string, productId: string): Promise<Buffer> {
   const productsRoot = getFormaPaths(home).productsDir;
   const brandRoot = getBrandAssetsDir(productsRoot, productId);
-  const zip = new JSZip();
+  const zip = new AdmZip();
 
   async function walk(absDir: string, relPrefix: string): Promise<void> {
     let entries: import("node:fs").Dirent[];
@@ -535,11 +535,11 @@ export async function exportBrandAssetsZip(home: string, productId: string): Pro
       if (entry.isDirectory()) {
         await walk(abs, rel);
       } else if (entry.isFile()) {
-        zip.file(rel, await readFile(abs));
+        zip.addFile(rel, await readFile(abs));
       }
     }
   }
 
   await walk(brandRoot, "");
-  return zip.generateAsync({ type: "nodebuffer" });
+  return zip.toBuffer();
 }

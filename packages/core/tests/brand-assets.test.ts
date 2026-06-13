@@ -19,7 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
-import JSZip from "jszip";
+import AdmZip from "adm-zip";
 import {
   saveBrandAsset,
   listBrandAssets,
@@ -441,8 +441,10 @@ describe("exportBrandAssetsZip", () => {
     });
 
     const zipBuf = await exportBrandAssetsZip(home, PRODUCT_ID);
-    const zip = await JSZip.loadAsync(zipBuf);
-    const names = Object.keys(zip.files).filter((n) => !zip.files[n].dir);
+    const names = new AdmZip(zipBuf)
+      .getEntries()
+      .filter((e) => !e.isDirectory)
+      .map((e) => e.entryName);
 
     // manifest + every derivative present
     expect(names).toContain("manifest.json");

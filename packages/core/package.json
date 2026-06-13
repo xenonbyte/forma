@@ -43,11 +43,14 @@
     "@vzi-core/parser": "workspace:*",
     "@vzi-core/transformer": "workspace:*",
     "@vzi-core/types": "workspace:*",
+    "adm-zip": "^0.5.16",
     "js-yaml": "^4.1.0",
-    "jszip": "3.10.1",
     "node-html-parser": "^7.1.0",
     "puppeteer": "^25.1.0",
     "sharp": "^0.34.5",
     "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.7"
   }
 }
