@@ -480,7 +480,7 @@ describe("Settings — image model section", () => {
       expect(payload.model).toBe("gpt-image-1");
     });
 
-    it("env-source provider never sends a key or preserve flag (managed outside the app)", async () => {
+    it("env-source provider preserves any existing file key when saving model/base URL without a new key", async () => {
       const saveSpy = vi.fn<(input: MediaConfigInput) => Promise<MediaConfig>>(async () => configEnv);
       const { container } = await renderSettings(
         fakeClient({ getMediaConfig: async () => configEnv, saveMediaConfig: saveSpy }),
@@ -496,7 +496,7 @@ describe("Settings — image model section", () => {
       const payload = saveSpy.mock.calls[0][0];
       expect(payload.provider).toBe("volcengine");
       expect(payload.api_key).toBeUndefined();
-      expect(payload.preserve_api_key).toBeUndefined();
+      expect(payload.preserve_api_key).toBe(true);
       expect(payload.model).toBe("doubao-seedream-5-0-lite-260128");
     });
   });

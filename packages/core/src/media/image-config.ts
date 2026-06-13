@@ -306,7 +306,8 @@ export async function readMediaConfig(home: string): Promise<MaskedMediaConfig> 
  *   MEDIA_INVALID_INPUT and writes nothing.
  * - `preserveApiKey`: when the payload omits api_key, keep that provider's
  *   existing stored key instead of clearing it (per-provider).
- * - `make_active`: also set the top-level `active_provider` to this provider.
+ * - `make_active`: also set the top-level `active_provider` to this provider,
+ *   but only when the provider has a usable file/env key after this write.
  * - Wipe-guard (per provider): if the write would clear this provider's only
  *   existing config (payload empties everything for it), throw unless `force` is
  *   set. The code is MEDIA_NOT_CONFIGURED (the same 409-mapped code the resolve
@@ -357,6 +358,12 @@ export async function writeMediaConfig(
     delete config.providers[provider];
   }
   if (payload.make_active) {
+    if (!apiKey && !readEnvKey(provider)) {
+      throw new FormaError("MEDIA_NOT_CONFIGURED", `Cannot set active media provider without an API key: ${provider}`, {
+        provider,
+        requires_api_key: true,
+      });
+    }
     config.active_provider = provider;
   }
 

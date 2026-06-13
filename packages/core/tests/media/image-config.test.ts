@@ -239,8 +239,13 @@ describe("resolveActiveImageConfig — selection + fallback", () => {
 
   it("throws MEDIA_NOT_CONFIGURED naming the provider when active is set but unconfigured", async () => {
     const home = await makeHome();
-    // Write a base_url-only entry plus active_provider, but no key for it.
-    await writeMediaConfig(home, { provider: "openai", base_url: "https://x", make_active: true }, { force: true });
+    // A hand-written or legacy file can still contain active_provider plus a
+    // base_url-only entry. The resolver must not silently fall back in that case.
+    await writeFile(
+      join(home, "media-config.yaml"),
+      "active_provider: openai\nproviders:\n  openai:\n    base_url: https://x\n",
+      "utf8",
+    );
     let thrown: unknown;
     try {
       await resolveActiveImageConfig(home);
@@ -305,6 +310,52 @@ describe("writeMediaConfig — provider-targeted", () => {
     expect(masked.active_provider).toBeNull();
     const raw = await readFile(join(home, "media-config.yaml"), "utf8");
     expect(raw).not.toContain("active_provider");
+  });
+
+  it("rejects make_active when the provider has no file or env api key", async () => {
+    const home = await makeHome();
+    let thrown: unknown;
+    try {
+      await writeMediaConfig(
+        home,
+        { provider: "openai", base_url: "https://custom.example/v1", model: "gpt-image-1", make_active: true },
+        {},
+      );
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).toBeInstanceOf(FormaError);
+    const err = thrown as FormaError;
+    expect(err.code).toBe("MEDIA_NOT_CONFIGURED");
+    expect(err.details).toMatchObject({ provider: "openai", requires_api_key: true });
+    expect(await readMediaConfig(home)).toEqual({
+      active_provider: null,
+      providers: {
+        volcengine: NONE,
+        openai: NONE,
+        gemini: NONE,
+      },
+    });
+  });
+
+  it("allows make_active when the provider key comes from env", async () => {
+    const home = await makeHome();
+    process.env.OPENAI_API_KEY = "sk-openai-env";
+    const masked = await writeMediaConfig(
+      home,
+      { provider: "openai", base_url: "https://custom.example/v1", model: "gpt-image-1", make_active: true },
+      {},
+    );
+
+    expect(masked.active_provider).toBe("openai");
+    expect(masked.providers.openai).toMatchObject({
+      configured: true,
+      source: "env",
+      base_url: "https://custom.example/v1",
+      model: "gpt-image-1",
+    });
+    expect(masked.providers.openai).not.toHaveProperty("api_key_tail");
   });
 
   it("preserveApiKey keeps the existing key for that provider only", async () => {

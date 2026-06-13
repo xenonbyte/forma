@@ -459,6 +459,32 @@ describe("exportBrandAssetsZip", () => {
     expect(names.some((n) => n.includes("api_key") || n.includes("secret"))).toBe(false);
   });
 
+  it("exports manifest file paths as brand-assets-relative paths, never absolute host paths", async () => {
+    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
+    const saved = await saveBrandAsset(makeDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "app-icon",
+      name: "primary",
+      brand_style: "ant",
+      source: { image_ref: ref },
+      platform: "web",
+    });
+
+    const zip = new AdmZip(await exportBrandAssetsZip(home, PRODUCT_ID));
+    const exported = JSON.parse(zip.readAsText("manifest.json")) as {
+      assets: Array<{ files: Array<{ path: string; width: number; height: number }> }>;
+    };
+    const exportedPaths = exported.assets.flatMap((asset) => asset.files.map((file) => file.path));
+
+    expect(exportedPaths).toHaveLength(saved.files.length);
+    for (const path of exportedPaths) {
+      expect(path.startsWith("/")).toBe(false);
+      expect(path).not.toContain(home);
+      expect(path).not.toContain("brand-assets/");
+      expect(path).toMatch(/^app-icon\/primary\//);
+    }
+  });
+
   it("returns a zip for an empty brand-assets dir (manifest only / nothing)", async () => {
     const zipBuf = await exportBrandAssetsZip(home, PRODUCT_ID);
     expect(Buffer.isBuffer(zipBuf)).toBe(true);

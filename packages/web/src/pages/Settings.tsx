@@ -168,8 +168,8 @@ function ImageModelSection({ client }: SettingsProps) {
       if (newKey) {
         // Operator entered a fresh key for THIS provider — send it; no preserve flag.
         input.api_key = newKey;
-      } else if (keyConfigured && !keyFromEnv) {
-        // Editing model/base_url without re-entering the file-stored key — keep it.
+      } else if (keyConfigured) {
+        // Editing model/base_url without re-entering a key keeps any existing file-stored key.
         input.preserve_api_key = true;
       }
       if (makeActive) {

@@ -640,6 +640,27 @@ describe("generateImages — SSRF guard on the url second-fetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects blocked hostnames with a trailing DNS root dot", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    for (const blockedUrl of ["http://localhost.:8080/admin", "http://metadata.google.internal./computeMetadata/v1"]) {
+      let secondFetched = false;
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === blockedUrl) {
+          secondFetched = true;
+          return new Response(Buffer.from("LOCAL"), { status: 200 });
+        }
+        return urlResponse(blockedUrl);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject(
+        { code: "MEDIA_PROVIDER_ERROR" },
+      );
+      expect(secondFetched).toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
   it("rejects bracketed IPv6 loopback and unique-local literals before second-fetch", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
     for (const ip of ["http://[::1]:9200/admin", "http://[fd00::1]/admin"]) {
@@ -659,6 +680,26 @@ describe("generateImages — SSRF guard on the url second-fetch", () => {
       expect(secondFetched).toBe(false);
       expect(fetchMock).toHaveBeenCalledTimes(1);
     }
+  });
+
+  it("rejects IPv4-mapped IPv6 loopback literals even after URL hostname normalization", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const mappedLoopback = "http://[::ffff:127.0.0.1]:9200/admin";
+    let secondFetched = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === mappedLoopback) {
+        secondFetched = true;
+        return new Response(Buffer.from("LOCAL"), { status: 200 });
+      }
+      return urlResponse(mappedLoopback);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+    expect(secondFetched).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a private-range IP (10.x / 192.168.x / 172.16.x)", async () => {

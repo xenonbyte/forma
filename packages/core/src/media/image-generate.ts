@@ -514,7 +514,7 @@ function assertSafeFetchUrl(rawUrl: string): URL {
 
 /** Normalize WHATWG URL hostnames before literal-IP range checks. */
 function normalizeUrlHostname(hostname: string): string {
-  const host = hostname.toLowerCase();
+  const host = hostname.toLowerCase().replace(/\.+$/, "");
   if (host.startsWith("[") && host.endsWith("]")) {
     return host.slice(1, -1);
   }
@@ -533,25 +533,77 @@ function isBlockedLiteralIp(host: string): boolean {
 
   // IPv6 literal.
   if (host.includes(":")) {
-    // IPv4-mapped / -embedded IPv6 (e.g. ::ffff:127.0.0.1, ::ffff:169.254.0.1).
-    const mapped = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(host);
-    const embedded = mapped?.[1];
-    if (embedded) {
-      const octets = embedded.split(".").map(Number);
-      if (octets.length === 4 && octets.every((o) => o <= 255)) {
-        return isBlockedIpv4(octets as [number, number, number, number]);
-      }
-    }
     const h = host.replace(/%.*$/, ""); // strip zone id
-    if (h === "::1" || h === "::") return true; // loopback / unspecified
-    if (h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb")) {
-      return true; // fe80::/10 link-local
-    }
-    if (h.startsWith("fc") || h.startsWith("fd")) return true; // fc00::/7 unique-local
+    const parts = parseIpv6Hextets(h);
+    if (!parts) return true; // malformed literal → reject
+
+    // IPv4-mapped / -compatible IPv6 after WHATWG normalization
+    // (e.g. ::ffff:127.0.0.1 becomes ::ffff:7f00:1).
+    const embedded = ipv4FromIpv6(parts);
+    if (embedded && isBlockedIpv4(embedded)) return true;
+
+    if (parts.every((part) => part === 0)) return true; // unspecified
+    if (parts.slice(0, 7).every((part) => part === 0) && parts[7] === 1) return true; // loopback
+    if ((parts[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    if ((parts[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 unique-local
     return false;
   }
 
   return false;
+}
+
+function parseIpv4DottedQuad(value: string): [number, number, number, number] | null {
+  const match = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(value);
+  if (!match) return null;
+  const octets = match.slice(1, 5).map(Number);
+  if (octets.some((o) => o > 255)) return null;
+  return octets as [number, number, number, number];
+}
+
+function parseIpv6Side(side: string): number[] | null {
+  if (!side) return [];
+  const groups = side.split(":");
+  const parts: number[] = [];
+  for (let i = 0; i < groups.length; i++) {
+    const group = groups[i];
+    if (!group) return null;
+    if (group.includes(".")) {
+      if (i !== groups.length - 1) return null;
+      const octets = parseIpv4DottedQuad(group);
+      if (!octets) return null;
+      parts.push((octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]);
+      continue;
+    }
+    if (!/^[0-9a-f]{1,4}$/i.test(group)) return null;
+    parts.push(Number.parseInt(group, 16));
+  }
+  return parts;
+}
+
+function parseIpv6Hextets(host: string): [number, number, number, number, number, number, number, number] | null {
+  const doubleColon = host.split("::");
+  if (doubleColon.length > 2) return null;
+
+  if (doubleColon.length === 1) {
+    const parts = parseIpv6Side(host);
+    return parts?.length === 8 ? (parts as [number, number, number, number, number, number, number, number]) : null;
+  }
+
+  const left = parseIpv6Side(doubleColon[0]);
+  const right = parseIpv6Side(doubleColon[1]);
+  if (!left || !right || left.length + right.length > 7) return null;
+  const parts = [...left, ...Array(8 - left.length - right.length).fill(0), ...right];
+  return parts as [number, number, number, number, number, number, number, number];
+}
+
+function ipv4FromIpv6(
+  parts: [number, number, number, number, number, number, number, number],
+): [number, number, number, number] | null {
+  const firstFiveZero = parts.slice(0, 5).every((part) => part === 0);
+  const isMapped = firstFiveZero && parts[5] === 0xffff;
+  const isCompatible = firstFiveZero && parts[5] === 0;
+  if (!isMapped && !isCompatible) return null;
+  return [(parts[6] >> 8) & 0xff, parts[6] & 0xff, (parts[7] >> 8) & 0xff, parts[7] & 0xff];
 }
 
 /** True if the IPv4 octets fall in a blocked range. */

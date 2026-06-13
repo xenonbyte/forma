@@ -29,7 +29,7 @@
 
 import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
 import { z } from "zod";
@@ -255,6 +255,41 @@ const brandAssetRecordSchema = z
 const brandManifestSchema = z.object({ assets: z.array(brandAssetRecordSchema) }).strict();
 
 type BrandManifest = z.infer<typeof brandManifestSchema>;
+
+function toPortablePath(path: string): string {
+  return path.split(sep).join("/");
+}
+
+function brandAssetExportPath(brandRoot: string, filePath: string): string {
+  if (!isSameOrChildPath(brandRoot, filePath)) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset manifest contains an unsafe file path", {
+      reason: "path_traversal",
+    });
+  }
+  return toPortablePath(relative(brandRoot, filePath));
+}
+
+function sanitizeManifestForExport(brandRoot: string, raw: Buffer): Buffer {
+  let manifest: BrandManifest;
+  try {
+    manifest = brandManifestSchema.parse(JSON.parse(raw.toString("utf8")));
+  } catch (err) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset manifest is corrupt", {
+      cause: String(err),
+    });
+  }
+
+  const exported: BrandManifest = {
+    assets: manifest.assets.map((asset) => ({
+      ...asset,
+      files: asset.files.map((file) => ({
+        ...file,
+        path: brandAssetExportPath(brandRoot, file.path),
+      })),
+    })),
+  };
+  return Buffer.from(JSON.stringify(exported, null, 2));
+}
 
 // ─── Name / kind validation ────────────────────────────────────────────────────
 
@@ -739,7 +774,8 @@ export async function exportBrandAssetsZip(home: string, productId: string): Pro
       if (entry.isDirectory()) {
         await walk(abs, rel);
       } else if (entry.isFile()) {
-        zip.addFile(rel, await readFile(abs));
+        const bytes = await readFile(abs);
+        zip.addFile(rel, rel === "manifest.json" ? sanitizeManifestForExport(brandRoot, bytes) : bytes);
       }
     }
   }
