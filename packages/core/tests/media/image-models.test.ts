@@ -212,3 +212,24 @@ describe("ASPECT_RATIOS", () => {
     expect([...ASPECT_RATIOS].sort()).toEqual(["1:1", "16:9", "3:4", "4:3", "9:16"].sort());
   });
 });
+
+describe("drift-guard — every IMAGE_MODELS entry has a size-table entry", () => {
+  // This test iterates the full catalogue cross-product so that any model
+  // registered in IMAGE_MODELS but missing from the module-private
+  // MODEL_SIZE_TABLES will fail the suite here rather than exploding at runtime.
+  for (const model of IMAGE_MODELS) {
+    describe(model.id, () => {
+      for (const aspect of ASPECT_RATIOS) {
+        it(`resolveSize("${model.id}", "${aspect}") returns positive integers`, () => {
+          const size = resolveSize(model.id, aspect);
+          expect(size.width).toBeTypeOf("number");
+          expect(size.height).toBeTypeOf("number");
+          expect(size.width).toBeGreaterThan(0);
+          expect(size.height).toBeGreaterThan(0);
+          expect(Number.isInteger(size.width)).toBe(true);
+          expect(Number.isInteger(size.height)).toBe(true);
+        });
+      }
+    });
+  }
+});

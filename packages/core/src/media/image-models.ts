@@ -138,6 +138,7 @@ const MODEL_SIZE_TABLES: Record<string, SizeTable> = {
   "doubao-seedream-4-5-251128": SEEDREAM_2K_SIZES,
   "doubao-seedream-4-0-250828": SEEDREAM_2K_SIZES,
   "doubao-seedream-3-0-t2i-250415": SEEDREAM_3_0_T2I_SIZES,
+  // stub: reuses the 2K profile for deterministic tests; not doc-derived
   "stub-image-1": SEEDREAM_2K_SIZES,
 };
 
