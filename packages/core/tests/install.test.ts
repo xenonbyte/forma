@@ -12,6 +12,7 @@ const commands = [
   "fm-refine-components",
   "fm-change-style",
   "fm-app-icon",
+  "fm-brand-assets",
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
