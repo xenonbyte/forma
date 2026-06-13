@@ -464,8 +464,12 @@ export interface MediaCatalogue {
   models: MediaModel[];
 }
 
-/** Masked read of the active media credentials. Never carries the plaintext key. */
-export interface MediaConfig {
+/**
+ * Masked read of a single provider's stored credentials. Never carries the
+ * plaintext key. `api_key_tail` is omitted entirely for env-sourced keys.
+ * Mirrors core `MaskedProviderConfig`.
+ */
+export interface MaskedProviderConfig {
   configured: boolean;
   source: "env" | "file" | "none";
   model?: string;
@@ -474,12 +478,28 @@ export interface MediaConfig {
   api_key_tail?: string;
 }
 
-/** PUT /api/media/config body. Omit `api_key` + set `preserve_api_key` to keep the stored key. */
+/**
+ * Masked multi-provider read (GET /api/media/config). `active_provider` is the
+ * stored top-level selector (`null` = auto/fallback). `providers` carries the
+ * masked status of every visible provider. Mirrors core `MaskedMediaConfig`.
+ */
+export interface MediaConfig {
+  active_provider: string | null;
+  providers: Record<string, MaskedProviderConfig>;
+}
+
+/**
+ * PUT /api/media/config body. `provider` selects which provider entry to write.
+ * Omit `api_key` + set `preserve_api_key` to keep the stored key. `make_active`
+ * additionally promotes the provider to the active one.
+ */
 export interface MediaConfigInput {
+  provider: string;
   api_key?: string;
   base_url?: string;
   model?: string;
   preserve_api_key?: boolean;
+  make_active?: boolean;
   force?: boolean;
 }
 

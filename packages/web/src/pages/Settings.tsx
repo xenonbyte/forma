@@ -4,6 +4,7 @@ import {
   formatApiError,
   type ApiErrorInfo,
   type FormaApiClient,
+  type MaskedProviderConfig,
   type MediaCatalogue,
   type MediaConfig,
   type MediaConfigInput,
@@ -37,6 +38,8 @@ const primaryButtonClasses =
 const secondaryButtonClasses =
   "inline-flex items-center justify-center rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 shadow-sm transition hover:bg-zinc-50 active:scale-95 disabled:cursor-not-allowed disabled:text-zinc-400 disabled:active:scale-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
 
+const NONE_PROVIDER_CONFIG: MaskedProviderConfig = { configured: false, source: "none" };
+
 export function Settings({ client }: SettingsProps) {
   const t = useT();
 
@@ -58,12 +61,17 @@ function ImageModelSection({ client }: SettingsProps) {
   const t = useT();
   const [load, setLoad] = useState<LoadState>({ status: "loading" });
 
-  // Form fields. `apiKeyDraft` holds a NEW key the operator typed; it is only
-  // ever sent on save, never derived back from the masked read.
+  // The provider whose config panel is shown. Independent of the active
+  // provider — the operator can inspect/edit any provider's credentials.
   const [providerId, setProviderId] = useState("");
+
+  // Per selected-provider form fields. `apiKeyDraft` holds a NEW key the
+  // operator typed; it is only ever sent on save, never derived from the masked
+  // read. `makeActive` reflects an explicit "set as active provider" choice.
   const [modelId, setModelId] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [makeActive, setMakeActive] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -78,18 +86,18 @@ function ImageModelSection({ client }: SettingsProps) {
       const [catalogue, config] = await Promise.all([client.getMediaCatalogue(), client.getMediaConfig()]);
       if (cancelled) return;
 
-      const provider = catalogue.providers.find((p) => p.default) ?? catalogue.providers[0];
-      const initialProvider = provider?.id ?? "";
-      const providerModels = catalogue.models.filter((m) => m.provider === initialProvider);
-      const configuredModel =
-        config.model && providerModels.some((m) => m.id === config.model) ? config.model : undefined;
-      const initialModel = configuredModel ?? providerModels.find((m) => m.default)?.id ?? providerModels[0]?.id ?? "";
-      const initialBaseUrl = config.base_url ?? provider?.defaultBaseUrl ?? "";
+      // Land on the active provider when set, else the catalogue default.
+      const active = config.active_provider ?? "";
+      const fallback = catalogue.providers.find((p) => p.default) ?? catalogue.providers[0];
+      const initialProvider =
+        (active && catalogue.providers.some((p) => p.id === active) ? active : fallback?.id) ?? "";
 
+      const fields = providerFormFields(catalogue, config, initialProvider);
       setProviderId(initialProvider);
-      setModelId(initialModel);
-      setBaseUrl(initialBaseUrl);
+      setModelId(fields.model);
+      setBaseUrl(fields.baseUrl);
       setApiKeyDraft("");
+      setMakeActive(false);
       setLoad({ status: "ready", catalogue, config });
     }
 
@@ -128,16 +136,23 @@ function ImageModelSection({ client }: SettingsProps) {
   }
 
   const { catalogue, config } = load;
-  const source = config.source;
+  const providerConfig = config.providers[providerId] ?? NONE_PROVIDER_CONFIG;
+  const source = providerConfig.source;
   const keyFromEnv = source === "env";
-  const keyConfigured = config.configured;
+  const keyConfigured = providerConfig.configured;
+  const activeProvider = config.active_provider;
+  const isActive = activeProvider === providerId;
+  const activeLabel =
+    (activeProvider && catalogue.providers.find((p) => p.id === activeProvider)?.label) ?? activeProvider;
 
   function handleProviderChange(nextProvider: string) {
     setProviderId(nextProvider);
-    const nextModels = catalogue.models.filter((m) => m.provider === nextProvider);
-    setModelId(nextModels.find((m) => m.default)?.id ?? nextModels[0]?.id ?? "");
-    const provider = catalogue.providers.find((p) => p.id === nextProvider);
-    setBaseUrl(provider?.defaultBaseUrl ?? "");
+    const fields = providerFormFields(catalogue, config, nextProvider);
+    setModelId(fields.model);
+    setBaseUrl(fields.baseUrl);
+    setApiKeyDraft("");
+    setMakeActive(false);
+    setSaveFeedback(null);
   }
 
   async function handleSave() {
@@ -146,20 +161,29 @@ function ImageModelSection({ client }: SettingsProps) {
     try {
       const newKey = apiKeyDraft.trim();
       const input: MediaConfigInput = {
+        provider: providerId,
         model: modelId,
         base_url: baseUrl.trim(),
       };
       if (newKey) {
-        // Operator entered a fresh key — send it; no preserve flag.
+        // Operator entered a fresh key for THIS provider — send it; no preserve flag.
         input.api_key = newKey;
-      } else if (keyConfigured) {
-        // Editing model/base_url without re-entering the key — keep the stored key.
+      } else if (keyConfigured && !keyFromEnv) {
+        // Editing model/base_url without re-entering the file-stored key — keep it.
         input.preserve_api_key = true;
+      }
+      if (makeActive) {
+        input.make_active = true;
       }
 
       const next = await client.saveMediaConfig(input);
       setLoad({ status: "ready", catalogue, config: next });
+      // Re-seed the form from the fresh masked read for the selected provider.
+      const fields = providerFormFields(catalogue, next, providerId);
+      setModelId(fields.model);
+      setBaseUrl(fields.baseUrl);
       setApiKeyDraft("");
+      setMakeActive(false);
       setSaveFeedback({ kind: "success", message: t("settings.saved") });
     } catch (error: unknown) {
       const info = formatApiError(error);
@@ -187,6 +211,17 @@ function ImageModelSection({ client }: SettingsProps) {
   return (
     <Panel title={t("settings.imageModel")}>
       <p className="text-sm text-zinc-500">{t("settings.imageModelHelp")}</p>
+
+      <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-700" data-testid="active-provider">
+        <span className="font-medium">{t("settings.activeProvider")}:</span>
+        {activeLabel ? (
+          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
+            {activeLabel}
+          </span>
+        ) : (
+          <span className="text-zinc-500">{t("settings.activeProviderNone")}</span>
+        )}
+      </div>
 
       <label className="grid gap-1 text-sm font-medium text-zinc-700">
         {t("settings.provider")}
@@ -229,16 +264,20 @@ function ImageModelSection({ client }: SettingsProps) {
           name="api_key"
           onChange={(event) => setApiKeyDraft(event.target.value)}
           placeholder={
-            keyFromEnv ? "" : config.api_key_tail ? `••••${config.api_key_tail}` : t("settings.apiKeyPlaceholder")
+            keyFromEnv
+              ? ""
+              : providerConfig.api_key_tail
+                ? `••••${providerConfig.api_key_tail}`
+                : t("settings.apiKeyPlaceholder")
           }
           type="password"
           value={apiKeyDraft}
         />
         {keyFromEnv ? (
           <span className="text-xs font-normal text-zinc-500">{t("settings.apiKeyEnv")}</span>
-        ) : config.api_key_tail ? (
+        ) : providerConfig.api_key_tail ? (
           <span className="text-xs font-normal text-zinc-500">
-            ••••{config.api_key_tail} — {t("settings.apiKeyConfigured")}
+            ••••{providerConfig.api_key_tail} — {t("settings.apiKeyConfigured")}
           </span>
         ) : null}
       </label>
@@ -253,6 +292,25 @@ function ImageModelSection({ client }: SettingsProps) {
           value={baseUrl}
         />
       </label>
+
+      {isActive ? (
+        <p className="text-xs font-normal text-emerald-700" data-testid="provider-is-active">
+          {t("settings.providerIsActive")}
+        </p>
+      ) : (
+        <label className="flex items-center gap-2 text-sm font-medium text-zinc-700">
+          <input
+            checked={makeActive}
+            className="h-4 w-4 rounded border-zinc-300 text-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            name="make_active"
+            onChange={(event) => setMakeActive(event.target.checked)}
+            type="checkbox"
+          />
+          {t("settings.setActive")}
+        </label>
+      )}
+
+      <p className="text-xs font-normal text-zinc-500">{t("settings.testUsesActive")}</p>
 
       <div className="flex flex-wrap items-center gap-3">
         <button
@@ -287,6 +345,28 @@ function ImageModelSection({ client }: SettingsProps) {
       ) : null}
     </Panel>
   );
+}
+
+/**
+ * Derive the model + base_url form fields for a provider from the catalogue and
+ * masked config. Guards against an orphaned config model id (removed from the
+ * catalogue) by falling back to the provider's default model.
+ */
+function providerFormFields(
+  catalogue: MediaCatalogue,
+  config: MediaConfig,
+  providerId: string,
+): { model: string; baseUrl: string } {
+  const providerModels = catalogue.models.filter((m) => m.provider === providerId);
+  const providerConfig = config.providers[providerId];
+  const configuredModel =
+    providerConfig?.model && providerModels.some((m) => m.id === providerConfig.model)
+      ? providerConfig.model
+      : undefined;
+  const model = configuredModel ?? providerModels.find((m) => m.default)?.id ?? providerModels[0]?.id ?? "";
+  const provider = catalogue.providers.find((p) => p.id === providerId);
+  const baseUrl = providerConfig?.base_url ?? provider?.defaultBaseUrl ?? "";
+  return { model, baseUrl };
 }
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
