@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { deflateSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FormaError, generateImages } from "@xenonbyte/forma-core";
 
@@ -46,6 +47,63 @@ async function writeVolcengineConfig(h: string, apiKey: string): Promise<void> {
     `providers:\n  volcengine:\n    api_key: ${apiKey}\n    model: doubao-seedream-5-0-260128\n`,
     "utf8",
   );
+}
+
+/** Write a media-config.yaml selecting openai (gpt-image-1) as the active provider. */
+async function writeOpenAIConfig(h: string, apiKey: string): Promise<void> {
+  await writeFile(
+    join(h, "media-config.yaml"),
+    `active_provider: openai\nproviders:\n  openai:\n    api_key: ${apiKey}\n    model: gpt-image-1\n`,
+    "utf8",
+  );
+}
+
+/** Write a media-config.yaml selecting gemini (gemini-2.5-flash-image) as the active provider. */
+async function writeGeminiConfig(h: string, apiKey: string): Promise<void> {
+  await writeFile(
+    join(h, "media-config.yaml"),
+    `active_provider: gemini\nproviders:\n  gemini:\n    api_key: ${apiKey}\n    model: gemini-2.5-flash-image\n`,
+    "utf8",
+  );
+}
+
+// --- A real, decodable solid-colour RGB PNG with known dimensions. ---------
+// Mirrors the scheduler's stub encoder so sharp can read back exact width/height
+// (used to assert gemini reads ACTUAL dims from the bytes, not the nominal table).
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function crc32(buf: Buffer): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? (crc >>> 1) ^ 0xedb88320 : crc >>> 1;
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const typeBuf = Buffer.from(type, "ascii");
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(Buffer.concat([typeBuf, data])), 0);
+  return Buffer.concat([length, typeBuf, data, crc]);
+}
+
+function makeSolidPng(width: number, height: number): Buffer {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type RGB
+  const raw = Buffer.alloc((1 + width * 3) * height);
+  const idat = deflateSync(raw);
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk("IHDR", ihdr),
+    pngChunk("IDAT", idat),
+    pngChunk("IEND", Buffer.alloc(0)),
+  ]);
 }
 
 beforeEach(async () => {
@@ -702,5 +760,170 @@ describe("generateImages — productId validation (path-traversal guard)", () =>
       prompt: "smoke test",
     });
     expect(result.images).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MP3 — openai provider (gpt-image-1) via the shared OpenAI-compatible renderer.
+//   Request shape: { model, prompt, size } — NO response_format, NO watermark.
+//   gpt-image-1 honours the requested size (OpenAI size table).
+// ---------------------------------------------------------------------------
+
+describe("generateImages — openai provider (mocked fetch)", () => {
+  it("POSTs the OpenAI body shape (size, no response_format, no watermark) and stages bytes", async () => {
+    await writeOpenAIConfig(home, "sk-openai-123");
+    const png = makeSolidPng(1024, 1024);
+    const b64 = png.toString("base64");
+
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedInit = init;
+        return new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "app-icon", // 1:1 -> OpenAI table 1024x1024
+      prompt: "a friendly robot mascot",
+    });
+
+    expect(result.images).toHaveLength(1);
+    expect(result.images[0].width).toBe(1024);
+    expect(result.images[0].height).toBe(1024);
+
+    expect(capturedUrl).toBe("https://api.openai.com/v1/images/generations");
+    const headers = capturedInit?.headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer sk-openai-123");
+    const body = JSON.parse(String(capturedInit?.body));
+    expect(body.model).toBe("gpt-image-1");
+    expect(body.prompt).toBe("a friendly robot mascot");
+    expect(body.size).toBe("1024x1024");
+    // gpt-image-1 rejects response_format and has no watermark control.
+    expect(body.response_format).toBeUndefined();
+    expect(body.watermark).toBeUndefined();
+
+    const staged = await readFile(result.images[0].preview_path);
+    expect(staged).toEqual(png);
+  });
+
+  it("throws MEDIA_PROVIDER_ERROR on non-2xx and never leaks the openai key", async () => {
+    await writeOpenAIConfig(home, "sk-openai-SECRET-9999");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("unauthorized", { status: 401, headers: { "content-type": "text/plain" } })),
+    );
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "app-icon", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    expect((caught as FormaError).code).toBe("MEDIA_PROVIDER_ERROR");
+    const serialized = JSON.stringify((caught as FormaError).toJSON());
+    expect(serialized).not.toContain("sk-openai-SECRET-9999");
+    expect(serialized.toLowerCase()).not.toContain("bearer");
+  });
+
+  it("applies the SSRF guard to an openai url response (169.254 metadata)", async () => {
+    await writeOpenAIConfig(home, "sk-openai-123");
+    const metadataUrl = "http://169.254.169.254/latest/meta-data/";
+    let secondFetched = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === metadataUrl) {
+        secondFetched = true;
+        return new Response(Buffer.from("STOLEN"), { status: 200 });
+      }
+      return new Response(JSON.stringify({ data: [{ url: metadataUrl }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      generateImages(home, { productId: PRODUCT_ID, purpose: "app-icon", prompt: "x" }),
+    ).rejects.toMatchObject({ code: "MEDIA_PROVIDER_ERROR" });
+    expect(secondFetched).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MP3 — gemini provider (gemini-2.5-flash-image) via the OpenAI-compat endpoint.
+//   Request shape: { model, prompt, response_format } — NO size (size handling
+//   UNCONFIRMED; let the model default). Dimensions are read back from the
+//   ACTUAL returned bytes, not the nominal gemini size table.
+// ---------------------------------------------------------------------------
+
+describe("generateImages — gemini provider (mocked fetch)", () => {
+  it("POSTs without size and reports the ACTUAL returned dimensions (not the nominal table)", async () => {
+    await writeGeminiConfig(home, "sk-gemini-123");
+    // Return a PNG whose real dims (900x1600) differ from the nominal 16:9 table.
+    const png = makeSolidPng(900, 1600);
+    const b64 = png.toString("base64");
+
+    let capturedUrl = "";
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedInit = init;
+        return new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const result = await generateImages(home, {
+      productId: PRODUCT_ID,
+      purpose: "hero",
+      prompt: "a wide landscape",
+    });
+
+    expect(capturedUrl).toBe("https://generativelanguage.googleapis.com/v1beta/openai/images/generations");
+    const body = JSON.parse(String(capturedInit?.body));
+    expect(body.model).toBe("gemini-2.5-flash-image");
+    expect(body.response_format).toBe("b64_json");
+    // Size is NOT sent — Gemini's OpenAI-compat size handling is unverified.
+    expect(body.size).toBeUndefined();
+    expect(body.watermark).toBeUndefined();
+
+    // Dimensions come from the actual decoded bytes, NOT the nominal 16:9 table (1536x1024).
+    expect(result.images[0].width).toBe(900);
+    expect(result.images[0].height).toBe(1600);
+
+    const staged = await readFile(result.images[0].preview_path);
+    expect(staged).toEqual(png);
+  });
+
+  it("throws MEDIA_PROVIDER_ERROR (no key leak) on non-2xx", async () => {
+    await writeGeminiConfig(home, "sk-gemini-SECRET-7777");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("bad", { status: 400, headers: { "content-type": "text/plain" } })),
+    );
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    expect((caught as FormaError).code).toBe("MEDIA_PROVIDER_ERROR");
+    const serialized = JSON.stringify((caught as FormaError).toJSON());
+    expect(serialized).not.toContain("sk-gemini-SECRET-7777");
   });
 });

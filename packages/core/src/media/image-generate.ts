@@ -27,8 +27,21 @@
 // Renderers (provider id → fn):
 //   volcengine  POST {baseUrl}/images/generations, Bearer auth, b64_json.
 //               Ported from the open-design daemon's renderVolcengineImage.
+//   openai      POST {baseUrl}/images/generations, Bearer auth, b64_json.
+//               gpt-image-1: same OpenAI shape, but NO response_format / NO
+//               watermark (gpt-image-1 400s on response_format and always
+//               returns b64_json).
+//   gemini      POST {baseUrl}/images/generations, Bearer auth, b64_json.
+//               gemini-2.5-flash-image via the OpenAI-compat endpoint: sends
+//               response_format but NO size (size handling is UNCONFIRMED, the
+//               official example omits it); actual dimensions are read back from
+//               the decoded PNG.
 //   stub        deterministic offline PNG (width/height encoded in real IHDR
 //               bytes); never touches the network. Used by tests.
+//
+// volcengine/openai/gemini all share one OpenAI-compatible renderer
+// (renderOpenAICompatibleImage) that branches on providerId for the documented
+// per-provider dialect differences (body fields + dimension source).
 //
 // Security: a provider error NEVER carries the api key. Non-2xx / unparseable
 // responses throw MEDIA_PROVIDER_ERROR with the HTTP status and a body
@@ -37,6 +50,7 @@
 // ---------------------------------------------------------------------------
 
 import { deflateSync } from "node:zlib";
+import sharp from "sharp";
 import { FormaError } from "../errors.js";
 import { resolveActiveImageConfig, type ResolvedImageConfig } from "./image-config.js";
 import { ASPECT_RATIOS, type AspectRatio, findImageModel, resolveSize } from "./image-models.js";
@@ -134,11 +148,25 @@ type ProviderConfig = { apiKey: string; baseUrl: string; model: string };
 /** A renderer turns one RenderInput into one image's raw PNG bytes. */
 type ImageRenderer = (input: RenderInput, cfg: ProviderConfig) => Promise<RenderedImage>;
 
-/** Raw bytes produced by a renderer. */
-type RenderedImage = { bytes: Buffer };
+/**
+ * Raw bytes produced by a renderer. `width`/`height` are OPTIONAL authoritative
+ * dimensions the renderer read back from the actual decoded image (used by
+ * gemini, whose request omits `size` so the model picks its own dimensions).
+ * When absent, the scheduler keeps the requested {width,height}.
+ */
+type RenderedImage = { bytes: Buffer; width?: number; height?: number };
 
+/**
+ * The three real providers all speak the OpenAI-compatible images API, so they
+ * share renderOpenAICompatibleImage with the providerId baked into a closure.
+ * The closure threads the dialect (which body fields to send, where the
+ * dimensions come from) without widening the ImageRenderer signature. `stub`
+ * stays its own pure-JS offline renderer.
+ */
 const RENDERERS: Record<string, ImageRenderer> = {
-  volcengine: renderVolcengineImage,
+  volcengine: (input, cfg) => renderOpenAICompatibleImage(input, cfg, "volcengine"),
+  openai: (input, cfg) => renderOpenAICompatibleImage(input, cfg, "openai"),
+  gemini: (input, cfg) => renderOpenAICompatibleImage(input, cfg, "gemini"),
   stub: renderStubImage,
 };
 
@@ -191,18 +219,30 @@ export async function generateImages(home: string, input: GenerateImagesInput): 
   const renderInput: RenderInput = { prompt: input.prompt, aspect, model: config.model, width, height };
   const cfg: ProviderConfig = { apiKey: config.apiKey, baseUrl: config.baseUrl, model: config.model };
 
-  // 6. Render N images sequentially and stage each one.
+  // 6. Render N images sequentially and stage each one. A renderer may report
+  //    authoritative dimensions it read back from the actual decoded image
+  //    (gemini, whose request omits `size`); when it does, those win over the
+  //    nominal table value. volcengine/openai honour the requested size, so
+  //    their renderer leaves these undefined and we keep {width,height}.
   const images: GeneratedImage[] = [];
   for (let i = 0; i < count; i++) {
-    const { bytes } = await renderer(renderInput, cfg);
-    const staged = await putStagedImage(home, input.productId, bytes, {
+    const rendered = await renderer(renderInput, cfg);
+    const actualWidth = rendered.width ?? width;
+    const actualHeight = rendered.height ?? height;
+    const staged = await putStagedImage(home, input.productId, rendered.bytes, {
       purpose,
       prompt: input.prompt,
       model: config.model,
-      width,
-      height,
+      width: actualWidth,
+      height: actualHeight,
     });
-    images.push({ id: staged.id, ref: staged.ref, preview_path: staged.path, width, height });
+    images.push({
+      id: staged.id,
+      ref: staged.ref,
+      preview_path: staged.path,
+      width: actualWidth,
+      height: actualHeight,
+    });
   }
 
   return {
@@ -268,35 +308,47 @@ function validateCount(count: number | undefined): number {
 }
 
 // ---------------------------------------------------------------------------
-// volcengine renderer — ported from open-design daemon renderVolcengineImage
+// OpenAI-compatible renderer — serves volcengine + openai + gemini
+// (volcengine path ported from the open-design daemon renderVolcengineImage)
 // ---------------------------------------------------------------------------
 
+/** Providers that share the OpenAI-compatible images endpoint. */
+type OpenAICompatProvider = "volcengine" | "openai" | "gemini";
+
 /**
- * Volcengine Seedream images. OpenAI-compatible payload:
+ * One image via the OpenAI-compatible images API, shared by volcengine, openai,
+ * and gemini:
  *   POST {baseUrl}/images/generations
  *   Authorization: Bearer <key>
- *   { model, prompt, size: "WxH", response_format: "b64_json" }
+ *   body: provider-specific (see buildRequestBody)
  *
- * Parses data[0].b64_json (preferred) or data[0].url (second GET for bytes),
- * matching the od source. Any non-2xx or unparseable response throws
- * MEDIA_PROVIDER_ERROR carrying the status and a truncated body — never the key.
+ * Parses data[0].b64_json (preferred) or data[0].url (second GET for bytes,
+ * SSRF-guarded). Any non-2xx or unparseable response throws MEDIA_PROVIDER_ERROR
+ * carrying the status and a truncated body — never the key.
+ *
+ * Per-provider dialect (verified differences):
+ *   volcengine — { model, prompt, size:"WxH", response_format:"b64_json",
+ *                  watermark:false }. UNCHANGED from v1 (M1-verified). Honours
+ *                  the requested size, so dims = requested {width,height}.
+ *   openai     — { model, prompt, size:"WxH" }. NO response_format (gpt-image-1
+ *                  400s on it and always returns b64_json), NO watermark.
+ *                  Honours size, so dims = requested {width,height}.
+ *   gemini     — { model, prompt, response_format:"b64_json" }. NO size
+ *                  (OpenAI-compat size handling UNCONFIRMED; official example
+ *                  omits it), NO watermark. The model picks its own dimensions,
+ *                  so we read the ACTUAL width/height back from the decoded PNG.
  */
-async function renderVolcengineImage(input: RenderInput, cfg: ProviderConfig): Promise<RenderedImage> {
+async function renderOpenAICompatibleImage(
+  input: RenderInput,
+  cfg: ProviderConfig,
+  provider: OpenAICompatProvider,
+): Promise<RenderedImage> {
   if (!cfg.apiKey) {
     // resolveProviderConfig already guards this, but keep the renderer honest.
-    throw new FormaError("MEDIA_NOT_CONFIGURED", "No Volcengine API key", { provider: "volcengine" });
+    throw new FormaError("MEDIA_NOT_CONFIGURED", `No ${provider} API key`, { provider });
   }
   const baseUrl = (cfg.baseUrl || "https://ark.cn-beijing.volces.com/api/v3").replace(/\/$/, "");
-  const body = {
-    model: cfg.model,
-    prompt: input.prompt,
-    size: `${input.width}x${input.height}`,
-    response_format: "b64_json",
-    // Volcengine stamps a visible "AI generated" watermark by default. Forma output is
-    // commercial brand material (icons, store shots, posters), so request without it.
-    // Any required AI-content labeling for a given distribution channel is the operator's call.
-    watermark: false,
-  };
+  const body = buildRequestBody(input, cfg, provider);
 
   const resp = await fetch(`${baseUrl}/images/generations`, {
     method: "POST",
@@ -316,29 +368,94 @@ async function renderVolcengineImage(input: RenderInput, cfg: ProviderConfig): P
   try {
     data = JSON.parse(text);
   } catch {
-    throw providerError(resp.status, text, "Volcengine image response was not valid JSON");
+    throw providerError(resp.status, text, "Image provider response was not valid JSON");
   }
 
   const entry = isRecord(data) && Array.isArray(data.data) ? data.data[0] : null;
   if (!isRecord(entry)) {
-    throw providerError(resp.status, text, "Volcengine image response had no data[0]");
+    throw providerError(resp.status, text, "Image provider response had no data[0]");
   }
 
+  let bytes: Buffer;
   if (typeof entry.b64_json === "string" && entry.b64_json) {
-    return { bytes: Buffer.from(entry.b64_json, "base64") };
-  }
-  if (typeof entry.url === "string" && entry.url) {
+    bytes = Buffer.from(entry.b64_json, "base64");
+  } else if (typeof entry.url === "string" && entry.url) {
     // The url is fully provider-controlled, so this second fetch is an SSRF
     // sink: screen it (scheme + literal private/loopback IPs + no redirects +
     // size cap) before the request is allowed to run. See Finding 4a and
     // assertSafeFetchUrl below.
-    return { bytes: await fetchImageBytesGuarded(entry.url) };
+    bytes = await fetchImageBytesGuarded(entry.url);
+  } else {
+    throw providerError(resp.status, text, "Image provider response missing b64_json/url");
   }
-  throw providerError(resp.status, text, "Volcengine image response missing b64_json/url");
+
+  // gemini omits `size`, so the model chose its own dimensions: read them back
+  // from the actual bytes (authoritative). volcengine/openai honour the
+  // requested size, so they leave dims undefined and the scheduler keeps the
+  // requested {width,height}.
+  if (provider === "gemini") {
+    return { bytes, ...(await readImageDimensions(bytes)) };
+  }
+  return { bytes };
+}
+
+/**
+ * Build the provider-specific request body. The three providers diverge only in
+ * which of {size, response_format, watermark} they accept (see the function
+ * doc on renderOpenAICompatibleImage for the verified rationale per field).
+ */
+function buildRequestBody(
+  input: RenderInput,
+  cfg: ProviderConfig,
+  provider: OpenAICompatProvider,
+): Record<string, unknown> {
+  const base: Record<string, unknown> = { model: cfg.model, prompt: input.prompt };
+  switch (provider) {
+    case "volcengine":
+      // UNCHANGED from v1 (M1-verified). Volcengine stamps a visible "AI
+      // generated" watermark by default; Forma output is commercial brand
+      // material (icons, store shots, posters), so request without it. Any
+      // required AI-content labeling for a channel is the operator's call.
+      return { ...base, size: `${input.width}x${input.height}`, response_format: "b64_json", watermark: false };
+    case "openai":
+      // gpt-image-1 rejects response_format (always returns b64_json) and has
+      // no watermark control. It honours size from the OpenAI size table.
+      return { ...base, size: `${input.width}x${input.height}` };
+    case "gemini":
+      // gemini's OpenAI-compat endpoint accepts response_format but its size
+      // handling is UNCONFIRMED (official example omits size), so we let the
+      // model use its default and read the actual dims back from the bytes.
+      return { ...base, response_format: "b64_json" };
+  }
+}
+
+/**
+ * Read the actual pixel dimensions from decoded image bytes via sharp (already a
+ * core dependency). Throws MEDIA_PROVIDER_ERROR (never the api key) when sharp
+ * cannot determine the dimensions — we fail loud rather than guess, since the
+ * gemini nominal size table is bookkeeping-only and there is no trustworthy
+ * fallback for a gemini render.
+ */
+async function readImageDimensions(bytes: Buffer): Promise<{ width: number; height: number }> {
+  let meta: import("sharp").Metadata;
+  try {
+    meta = await sharp(bytes).metadata();
+  } catch (err) {
+    throw providerError(
+      0,
+      "",
+      `Image provider returned bytes sharp could not read: ${err instanceof Error ? err.message : "error"}`,
+    );
+  }
+  if (!Number.isFinite(meta.width) || !Number.isFinite(meta.height) || !meta.width || !meta.height) {
+    throw providerError(0, "", "Image provider returned an image with no readable dimensions");
+  }
+  return { width: meta.width, height: meta.height };
 }
 
 // ---------------------------------------------------------------------------
-// SSRF guard for the provider-controlled url second-fetch (Finding 4a)
+// SSRF guard for the provider-controlled url second-fetch (Finding 4a).
+// Applies to ALL providers' data[0].url responses (volcengine/openai/gemini).
 // ---------------------------------------------------------------------------
 
 /** Hard ceiling on a downloaded provider image: 64 MiB. */
@@ -365,11 +482,11 @@ function assertSafeFetchUrl(rawUrl: string): URL {
   try {
     url = new URL(rawUrl);
   } catch {
-    throw providerError(0, "", "Volcengine image url is not a valid URL");
+    throw providerError(0, "", "Image provider url is not a valid URL");
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw providerError(0, "", `Volcengine image url scheme not allowed: ${url.protocol}`);
+    throw providerError(0, "", `Image provider url scheme not allowed: ${url.protocol}`);
   }
 
   // URL.hostname strips the brackets from IPv6 literals and lowercases the host.
@@ -381,11 +498,11 @@ function assertSafeFetchUrl(rawUrl: string): URL {
     host === "metadata" ||
     host === "metadata.google.internal"
   ) {
-    throw providerError(0, "", "Volcengine image url targets a blocked host");
+    throw providerError(0, "", "Image provider url targets a blocked host");
   }
 
   if (isBlockedLiteralIp(host)) {
-    throw providerError(0, "", "Volcengine image url targets a private/loopback address");
+    throw providerError(0, "", "Image provider url targets a private/loopback address");
   }
 
   return url;
@@ -451,17 +568,17 @@ async function fetchImageBytesGuarded(rawUrl: string): Promise<Buffer> {
     // Pass the original raw string (URL.toString() can re-encode the path).
     imgResp = await fetch(rawUrl, { redirect: "error" });
   } catch (err) {
-    throw providerError(0, "", `Volcengine image url fetch failed: ${err instanceof Error ? err.message : "error"}`);
+    throw providerError(0, "", `Image provider url fetch failed: ${err instanceof Error ? err.message : "error"}`);
   }
 
   if (!imgResp.ok) {
-    throw providerError(imgResp.status, "", "Volcengine image url fetch failed");
+    throw providerError(imgResp.status, "", "Image provider url fetch failed");
   }
 
   // Reject up front if the server advertises an oversized payload.
   const declared = Number(imgResp.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
-    throw providerError(imgResp.status, "", `Volcengine image exceeds ${MAX_IMAGE_BYTES} byte cap`);
+    throw providerError(imgResp.status, "", `Image provider response exceeds ${MAX_IMAGE_BYTES} byte cap`);
   }
 
   return await readCapped(imgResp, MAX_IMAGE_BYTES);
@@ -477,7 +594,7 @@ async function readCapped(resp: Response, cap: number): Promise<Buffer> {
   if (!body || typeof body.getReader !== "function") {
     const buf = Buffer.from(await resp.arrayBuffer());
     if (buf.length > cap) {
-      throw providerError(resp.status, "", `Volcengine image exceeds ${cap} byte cap`);
+      throw providerError(resp.status, "", `Image provider response exceeds ${cap} byte cap`);
     }
     return buf;
   }
@@ -492,7 +609,7 @@ async function readCapped(resp: Response, cap: number): Promise<Buffer> {
     total += value.byteLength;
     if (total > cap) {
       await reader.cancel().catch(() => undefined);
-      throw providerError(resp.status, "", `Volcengine image exceeds ${cap} byte cap`);
+      throw providerError(resp.status, "", `Image provider response exceeds ${cap} byte cap`);
     }
     chunks.push(value);
   }
@@ -505,7 +622,7 @@ async function readCapped(resp: Response, cap: number): Promise<Buffer> {
  * built locally and the response body is provider-controlled, not our header).
  */
 function providerError(status: number, body: string, message?: string): FormaError {
-  return new FormaError("MEDIA_PROVIDER_ERROR", message ?? `Volcengine image provider returned ${status}`, {
+  return new FormaError("MEDIA_PROVIDER_ERROR", message ?? `Image provider returned ${status}`, {
     status,
     body: truncate(body, PROVIDER_BODY_LIMIT),
   });
