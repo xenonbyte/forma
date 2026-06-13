@@ -350,8 +350,9 @@ const brandAssetSourceSchema = z
   });
 
 // target: optional XOR — { width, height } (both positive ints) OR { preset }.
-// Preset resolution is M5/T024; the shape is accepted here and core fails loud
-// with preset_unsupported until then.
+// Preset resolution (T024) is live: core resolves a known preset id through
+// STORE_SHOT_PRESETS to its exact pixels, and fails loud with
+// BRAND_ASSET_INVALID_INPUT (reason: "unknown_preset") for an unknown id.
 const brandAssetTargetSchema = z.union([
   z.object({ width: z.int().positive(), height: z.int().positive() }).strict(),
   z.object({ preset: z.string().min(1) }).strict(),

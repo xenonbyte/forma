@@ -28,6 +28,7 @@ import {
   resolveFormaImageRef,
   putStagedImage,
   APP_ICON_SIZES,
+  STORE_SHOT_PRESETS,
   type BrandAssetDeps,
   type SavedBrandAsset,
   type BrandAssetRecord,
@@ -555,7 +556,7 @@ describe("saveBrandAsset — store-shot / poster (html render, public path)", ()
     ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
   });
 
-  it("defers preset targets to M5 (fails loud rather than guessing a size)", async () => {
+  it("rejects an UNKNOWN preset id with BRAND_ASSET_INVALID_INPUT (not preset_unsupported)", async () => {
     await expect(
       saveBrandAsset(makeRenderDeps(home), {
         product_id: PRODUCT_ID,
@@ -565,8 +566,35 @@ describe("saveBrandAsset — store-shot / poster (html render, public path)", ()
         source: { html: "<!doctype html><html><body></body></html>" },
         target: { preset: "app-store-6.7" },
       }),
-    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
+    ).rejects.toSatisfy(
+      (err: unknown) =>
+        err instanceof FormaError &&
+        err.code === "BRAND_ASSET_INVALID_INPUT" &&
+        (err.details as { reason?: string } | undefined)?.reason === "unknown_preset",
+    );
   });
+
+  it("renders a store-shot at the EXACT pixels of a known preset (target.preset)", async () => {
+    const preset = STORE_SHOT_PRESETS["web-og"];
+    const saved = await saveBrandAsset(makeRenderDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "store-shot",
+      name: "og-shot",
+      brand_style: "ant",
+      source: { html: "<!doctype html><html><body style='margin:0;background:#0a2540'></body></html>" },
+      target: { preset: "web-og" },
+    });
+
+    const file = saved.files[0];
+    expect(file.width).toBe(preset.width);
+    expect(file.height).toBe(preset.height);
+
+    // Pixel-exact: the PNG on disk equals the preset's declared dimensions.
+    const meta = await sharp(await readFile(file.path)).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(preset.width); // 1200
+    expect(meta.height).toBe(preset.height); // 630
+  }, 60000);
 });
 
 // ─── APP_ICON_SIZES shape ─────────────────────────────────────────────────────
