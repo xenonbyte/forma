@@ -488,6 +488,31 @@ export interface MediaTestResult {
   provider_note?: string;
 }
 
+// ── Brand assets (image-generation output) — SPEC-BEHAVIOR-008 ───────────────────
+
+/** One emitted brand-asset file: brand-root-relative path + intrinsic pixel dims. */
+export interface BrandAssetFileView {
+  /** brand-assets/files/* relative path (POSIX, server-projected from the on-disk path). */
+  path: string;
+  width: number;
+  height: number;
+}
+
+/** Client view of a brand-asset manifest record (mirrors server toBrandAssetView). */
+export interface BrandAssetView {
+  /** Manifest kind — drives dynamic grouping (app-icon now; store-shot/poster in M5). */
+  kind: string;
+  name: string;
+  brand_style: string;
+  model?: string;
+  generated_at: string;
+  files: BrandAssetFileView[];
+}
+
+export interface BrandAssetsList {
+  assets: BrandAssetView[];
+}
+
 export interface FormaApiClient {
   archiveRequirement(productId: string, requirementId: string): Promise<ArchiveRequirementResult>;
   applyProductComponentOperations(
@@ -575,6 +600,12 @@ export interface FormaApiClient {
     pageId?: string,
   ): Promise<RequirementDesignHistoryEntry[]>;
   getStyle(name: string): Promise<BrandStyleContent>;
+  /** SPEC-BEHAVIOR-008: list a product's generated brand assets, grouped client-side by kind. */
+  getBrandAssets(productId: string): Promise<BrandAssetsList>;
+  /** Pure URL builder for a served brand-asset file (GET .../brand-assets/files/<relative-path>). */
+  getBrandAssetFileUrl(productId: string, relativePath: string): string;
+  /** Pure URL builder for the brand-assets zip export download (GET .../brand-assets/export). */
+  getBrandAssetsExportUrl(productId: string): string;
   getMediaCatalogue(): Promise<MediaCatalogue>;
   getMediaConfig(): Promise<MediaConfig>;
   saveMediaConfig(input: MediaConfigInput): Promise<MediaConfig>;
@@ -848,6 +879,17 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     },
     getStyle: (name) =>
       apiRecord<BrandStyleContent>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
+    getBrandAssets: (productId) =>
+      apiRecord<BrandAssetsList>(
+        `/api/products/${encodeURIComponent(productId)}/brand-assets`,
+        requestOptions(fetcher),
+      ),
+    getBrandAssetFileUrl: (productId, relativePath) =>
+      `/api/products/${encodeURIComponent(productId)}/brand-assets/files/${relativePath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/")}`,
+    getBrandAssetsExportUrl: (productId) => `/api/products/${encodeURIComponent(productId)}/brand-assets/export`,
     getMediaCatalogue: () => apiRecord<MediaCatalogue>("/api/media/models", requestOptions(fetcher)),
     getMediaConfig: () => apiRecord<MediaConfig>("/api/media/config", requestOptions(fetcher)),
     saveMediaConfig: (input) =>

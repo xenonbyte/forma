@@ -4,7 +4,7 @@ import type { ViewerModel } from "@xenonbyte/forma-viewer";
 
 import { formatApiError, type ApiErrorInfo, type FormaApiClient, type Product, type ArtifactDetail } from "../api.js";
 import { useT } from "../LocaleContext.js";
-import { StatePanel } from "../components/Layout.js";
+import { PrimaryActionLink, StatePanel } from "../components/Layout.js";
 import { mapComponentLibraryUnits, type ComponentLibraryUnit } from "../viewer/componentLibraryMapper.js";
 import { createWebResourceResolver } from "../viewer/resolver.js";
 
@@ -156,6 +156,9 @@ export function BrandResources({ client, onBreadcrumbLabel, params }: BrandResou
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-white" data-testid="brand-tile">
+      <div className="absolute right-4 top-4 z-10">
+        <PrimaryActionLink href={`/products/${productId}/brand-assets`}>{t("action.brandAssets")}</PrimaryActionLink>
+      </div>
       <Canvas model={state.model} mode="design" resolver={resolver} />
     </div>
   );

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { apiClient } from "./api.js";
 import { PrimaryActionLink, StatePanel } from "./components/Layout.js";
 import { BaselineView } from "./pages/BaselineView.js";
+import { BrandAssets } from "./pages/BrandAssets.js";
 import { BrandResources } from "./pages/BrandResources.js";
 import { ProductDetail, type ProductDeleteNavigationState } from "./pages/ProductDetail.js";
 import { ProductList } from "./pages/ProductList.js";
@@ -84,6 +85,13 @@ export const routeTable: RouteDefinition[] = [
     navGroup: "products",
     path: "/products/:productId/brand",
     title: ({ productId }) => `${productId} brand`,
+  },
+  {
+    component: BrandAssetsRoute,
+    context: "Brand assets",
+    navGroup: "products",
+    path: "/products/:productId/brand-assets",
+    title: ({ productId }) => `${productId} brand assets`,
   },
   {
     chrome: "fullscreen",
@@ -252,6 +260,10 @@ function AnnotationPageRoute(props: RoutePageProps) {
       params={props.params as { productId: string; reqId: string }}
     />
   );
+}
+
+function BrandAssetsRoute(props: RoutePageProps) {
+  return <BrandAssets client={apiClient} onBreadcrumbLabel={props.onBreadcrumbLabel} params={props.params} />;
 }
 
 function BrandResourcesRoute(props: RoutePageProps) {
