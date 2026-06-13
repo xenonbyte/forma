@@ -3266,7 +3266,6 @@ describe("get_design_context (P4.6 pre-generation knowledge delivery)", () => {
     expect(Array.isArray(payload.componentBaseline.components)).toBe(true);
     expect(payload.componentBaseline.components.length).toBeGreaterThan(0);
     expect(payload.componentBaseline.foundations).toBeDefined();
-    expect(payload.componentBaseline.productIcon).toBeDefined();
   });
 
   it("get_design_context returns componentLibrary resolved via designSystemArtifactId pointer (not updated_at/order)", async () => {
@@ -3419,7 +3418,6 @@ describe("get_component_baseline (T006 SPEC-DATA-005)", () => {
     expect(Array.isArray(payload.baseline.components)).toBe(true);
     expect(payload.baseline.components.length).toBeGreaterThan(0);
     expect(payload.baseline.foundations).toBeDefined();
-    expect(payload.baseline.productIcon).toBeDefined();
   });
 
   it("get_component_baseline returns mobile baseline for mobile product", async () => {

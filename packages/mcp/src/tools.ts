@@ -488,7 +488,7 @@ const descriptions = {
   confirm_product_id: "Confirm that a product id exists and optionally verify its name.",
   get_product_baseline: "Read the current functional baseline pages and navigation for a product.",
   get_component_baseline:
-    "Read the component baseline spec (foundations, productIcon spec, component list with states/variants) for a product's platform. Use before generate_components to know what to build.",
+    "Read the component baseline spec (foundations, component list with states/variants) for a product's platform. Use before generate_components to know what to build.",
   get_baseline_page: "Read one baseline page from the product's current baseline artifact.",
   get_baseline_image: "Get the preview image path for the product's current baseline artifact.",
   get_requirement_history: "List product requirement history.",
