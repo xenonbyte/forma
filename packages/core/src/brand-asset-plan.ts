@@ -78,97 +78,71 @@ type ResolutionEntry = {
 
 /**
  * Store-shot pixel dimensions per (platform, surface).
- * Single-surface platforms (web/desktop) use the empty-string surface key "".
+ * Multi-surface platforms (mobile/tablet) use "android"/"ios" inner keys.
+ * Single-surface platforms (web/desktop) use "" as the inner key.
  * ALL values are UNCONFIRMED candidates from requirement §6.4.
+ *
+ * Typed as Record<Platform, Record<BrandSurface | "", ResolutionEntry>> so that
+ * adding a new Platform or BrandSurface becomes a compile error if the table is
+ * not updated. For single-surface rows the "android"/"ios" inner keys are filled
+ * with the platform's representative size (unreachable at runtime).
  */
-const STORE_SHOT_RESOLUTION: Record<string, ResolutionEntry> = {
-  "mobile:android": {
-    width: 1080,
-    height: 1920,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+const STORE_SHOT_RESOLUTION: Record<Platform, Record<BrandSurface | "", ResolutionEntry>> = {
+  mobile: {
+    android: { width: 1080, height: 1920, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 1320, height: 2868, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1080, height: 1920, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
-  "mobile:ios": {
-    width: 1320,
-    height: 2868,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+  tablet: {
+    android: { width: 2560, height: 1600, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 2752, height: 2064, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 2560, height: 1600, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
-  "tablet:android": {
-    width: 2560,
-    height: 1600,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+  web: {
+    android: { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
-  "tablet:ios": {
-    width: 2752,
-    height: 2064,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
-  },
-  "web:": {
-    width: 1920,
-    height: 1080,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
-  },
-  "desktop:": {
-    width: 1920,
-    height: 1080,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+  desktop: {
+    android: { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
 };
 
 /**
  * Banner pixel dimensions per (platform, surface). UNCONFIRMED candidates §6.4.
+ * Same structure as STORE_SHOT_RESOLUTION — see its comment for key conventions.
  */
-const BANNER_RESOLUTION: Record<string, ResolutionEntry> = {
-  "mobile:android": {
-    width: 1024,
-    height: 500,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+const BANNER_RESOLUTION: Record<Platform, Record<BrandSurface | "", ResolutionEntry>> = {
+  mobile: {
+    android: { width: 1024, height: 500, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 4320, height: 2160, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1024, height: 500, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
-  "mobile:ios": {
-    width: 4320,
-    height: 2160,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+  tablet: {
+    android: { width: 1024, height: 500, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 2752, height: 2064, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1024, height: 500, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
-  "tablet:android": {
-    width: 1024,
-    height: 500,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+  web: {
+    android: { width: 1920, height: 450, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 1920, height: 450, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1920, height: 450, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
-  "tablet:ios": {
-    width: 2752,
-    height: 2064,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
-  },
-  "web:": {
-    width: 1920,
-    height: 450,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
-  },
-  "desktop:": {
-    width: 1920,
-    height: 1080,
-    source: "requirement §6.4 (candidate)",
-    verifiedAt: undefined,
+  desktop: {
+    android: { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    ios: { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
+    "": { width: 1920, height: 1080, source: "requirement §6.4 (candidate)", verifiedAt: undefined },
   },
 };
 
 /**
- * App-icon "largest" dimension used as the plan entry size (plan entry only;
- * full per-size derivation is Task 3's concern). UNCONFIRMED candidates §6.4.
+ * App-icon "largest" dimension for single-surface platforms (web/desktop).
+ * Mobile/tablet sizes are handled inline in appIconPlanSize via surface.
+ * UNCONFIRMED candidates §6.4.
  */
-const APP_ICON_PLAN_SIZE: Record<Platform, number> = {
-  mobile: 512, // surface-split: android=512, ios=1024 — see appIconPlanSize
-  tablet: 512, // surface-split: android=512, ios=1024
+const APP_ICON_PLAN_SIZE: Record<"web" | "desktop", number> = {
   web: 512, // single-surface largest = 512
   desktop: 1024, // single-surface largest = 1024
 };
@@ -179,7 +153,7 @@ function appIconPlanSize(platform: Platform, surface?: BrandSurface): number {
   if (surface === "android") return 512;
   if (surface === "ios") return 1024;
   // Single-surface: web or desktop
-  return APP_ICON_PLAN_SIZE[platform] ?? 512;
+  return APP_ICON_PLAN_SIZE[platform as "web" | "desktop"];
 }
 
 // ─── App-icon variant tables ──────────────────────────────────────────────────
@@ -188,7 +162,7 @@ function appIconPlanSize(platform: Platform, surface?: BrandSurface): number {
  * Derived variant names per surface (or "" for no-surface platforms).
  * These match the derivation matrix in Task 3.
  */
-const APP_ICON_VARIANTS: Record<string, string[]> = {
+const APP_ICON_VARIANTS: Record<BrandSurface | "", string[]> = {
   android: ["android-standard", "android-foreground", "android-background", "android-monochrome"],
   ios: ["ios-standard", "ios-dark", "ios-tinted"],
   // web and desktop are single-surface (no surface field)
@@ -207,27 +181,22 @@ function baseImagesForSurface(surface: BrandSurface | undefined): ("a" | "b" | "
 // ─── Resolution table lookup helpers ─────────────────────────────────────────
 
 function storeShotResolution(platform: Platform, surface: BrandSurface | undefined): ResolutionEntry {
-  const key = surface !== undefined ? `${platform}:${surface}` : `${platform}:`;
-  return (
-    STORE_SHOT_RESOLUTION[key] ?? {
-      width: 1920,
-      height: 1080,
-      source: "requirement §6.4 (candidate, fallback)",
-      verifiedAt: undefined,
-    }
-  );
+  return STORE_SHOT_RESOLUTION[platform][surface ?? ""];
 }
 
 function bannerResolution(platform: Platform, surface: BrandSurface | undefined): ResolutionEntry {
-  const key = surface !== undefined ? `${platform}:${surface}` : `${platform}:`;
-  return (
-    BANNER_RESOLUTION[key] ?? {
-      width: 1920,
-      height: 1080,
-      source: "requirement §6.4 (candidate, fallback)",
-      verifiedAt: undefined,
-    }
-  );
+  return BANNER_RESOLUTION[platform][surface ?? ""];
+}
+
+// ─── Surface iteration helper ─────────────────────────────────────────────────
+
+/**
+ * Returns the surfaces to iterate over when building per-surface plan entries.
+ * Multi-surface platforms (mobile/tablet) → ["android", "ios"].
+ * Single-surface platforms (web/desktop)  → [undefined].
+ */
+function surfaceList(surfaces: BrandSurface[]): (BrandSurface | undefined)[] {
+  return surfaces.length > 0 ? surfaces : [undefined];
 }
 
 // ─── Default settings values ──────────────────────────────────────────────────
@@ -269,57 +238,35 @@ export function getBrandAssetPlan(product: Product): BrandAssetPlan {
   // ── Store-shot ────────────────────────────────────────────────────────────
   // Multi-surface: one entry per surface (android / ios).
   // Single-surface: one entry with no surface field.
-  if (surfaces.length > 0) {
-    for (const surface of surfaces) {
-      const res = storeShotResolution(platform, surface);
-      entries.push({
-        kind: "store-shot",
-        surface,
-        width: res.width,
-        height: res.height,
-        count: storeShotCount,
-        source: res.source,
-        verifiedAt: res.verifiedAt,
-      });
-    }
-  } else {
-    const res = storeShotResolution(platform, undefined);
-    entries.push({
+  for (const surface of surfaceList(surfaces)) {
+    const res = storeShotResolution(platform, surface);
+    const entry: BrandAssetPlanEntry = {
       kind: "store-shot",
       width: res.width,
       height: res.height,
       count: storeShotCount,
       source: res.source,
       verifiedAt: res.verifiedAt,
-    });
+    };
+    if (surface !== undefined) entry.surface = surface;
+    entries.push(entry);
   }
 
   // ── Banner ────────────────────────────────────────────────────────────────
   // Produced only when enabled. Same surface split as store-shot.
   if (bannerEnabled) {
-    if (surfaces.length > 0) {
-      for (const surface of surfaces) {
-        const res = bannerResolution(platform, surface);
-        entries.push({
-          kind: "banner",
-          surface,
-          width: res.width,
-          height: res.height,
-          count: 1,
-          source: res.source,
-          verifiedAt: res.verifiedAt,
-        });
-      }
-    } else {
-      const res = bannerResolution(platform, undefined);
-      entries.push({
+    for (const surface of surfaceList(surfaces)) {
+      const res = bannerResolution(platform, surface);
+      const entry: BrandAssetPlanEntry = {
         kind: "banner",
         width: res.width,
         height: res.height,
         count: 1,
         source: res.source,
         verifiedAt: res.verifiedAt,
-      });
+      };
+      if (surface !== undefined) entry.surface = surface;
+      entries.push(entry);
     }
   }
 
@@ -342,29 +289,18 @@ export function getBrandAssetPlan(product: Product): BrandAssetPlan {
   // ── App-icon ──────────────────────────────────────────────────────────────
   // Multi-surface: one entry per surface with surface field.
   // Single-surface: one entry with no surface field, variants = ["standard"].
-  if (surfaces.length > 0) {
-    for (const surface of surfaces) {
-      const size = appIconPlanSize(platform, surface);
-      entries.push({
-        kind: "app-icon",
-        surface,
-        width: size,
-        height: size,
-        count: 1,
-        baseImages: baseImagesForSurface(surface),
-        variants: APP_ICON_VARIANTS[surface] ?? ["standard"],
-      });
-    }
-  } else {
-    const size = appIconPlanSize(platform, undefined);
-    entries.push({
+  for (const surface of surfaceList(surfaces)) {
+    const size = appIconPlanSize(platform, surface);
+    const entry: BrandAssetPlanEntry = {
       kind: "app-icon",
       width: size,
       height: size,
       count: 1,
-      baseImages: baseImagesForSurface(undefined),
-      variants: APP_ICON_VARIANTS[""] ?? ["standard"],
-    });
+      baseImages: baseImagesForSurface(surface),
+      variants: APP_ICON_VARIANTS[surface ?? ""],
+    };
+    if (surface !== undefined) entry.surface = surface;
+    entries.push(entry);
   }
 
   return { productId: product.id, platform, surfaces, entries };

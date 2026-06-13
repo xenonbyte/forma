@@ -354,21 +354,15 @@ describe("getBrandAssetPlan — poster", () => {
     );
     // All should produce the same poster variant set with the same dimensions
     for (const plan of plans) {
-      const portrait = entriesOfKind(plan, "poster").find((e) => e.variant === "portrait");
-      const landscape = entriesOfKind(plan, "poster").find((e) => e.variant === "landscape");
-      const square = entriesOfKind(plan, "poster").find((e) => e.variant === "square");
-      if (portrait) {
-        expect(portrait.width).toBe(1080);
-        expect(portrait.height).toBe(1920);
-      }
-      if (landscape) {
-        expect(landscape.width).toBe(1920);
-        expect(landscape.height).toBe(1080);
-      }
-      if (square) {
-        expect(square.width).toBe(1080);
-        expect(square.height).toBe(1080);
-      }
+      const portrait = findEntry(plan, "poster", (e) => e.variant === "portrait");
+      const landscape = findEntry(plan, "poster", (e) => e.variant === "landscape");
+      const square = findEntry(plan, "poster", (e) => e.variant === "square");
+      expect(portrait.width).toBe(1080);
+      expect(portrait.height).toBe(1920);
+      expect(landscape.width).toBe(1920);
+      expect(landscape.height).toBe(1080);
+      expect(square.width).toBe(1080);
+      expect(square.height).toBe(1080);
     }
   });
 });
@@ -530,5 +524,11 @@ describe("getBrandAssetPlan — store-shot (structure only, NOT pixel values)", 
     const plan = getBrandAssetPlan(makeProduct({ platform: "mobile" }));
     const android = findEntry(plan, "store-shot", (e) => e.surface === "android");
     expect(android.height).toBeGreaterThan(android.width);
+  });
+
+  it("tablet store-shot entries are landscape (width > height) — candidate direction", () => {
+    const plan = getBrandAssetPlan(makeProduct({ platform: "tablet" }));
+    const shots = entriesOfKind(plan, "store-shot");
+    expect(shots.every((e) => e.width > e.height)).toBe(true);
   });
 });
