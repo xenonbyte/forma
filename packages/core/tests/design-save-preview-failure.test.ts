@@ -37,7 +37,7 @@ describe("design save when preview rendering fails (R11)", () => {
     const product = await store.products.createProduct({ name: "Preview Fail", description: "d" });
 
     const result = await saveDesignArtifact(
-      { artifacts: store.artifacts, products: store.products, productsRoot: getFormaPaths(home).productsDir },
+      { artifacts: store.artifacts, products: store.products, productsRoot: getFormaPaths(home).productsDir, home },
       {
         productId: product.id,
         kind: "component-library",

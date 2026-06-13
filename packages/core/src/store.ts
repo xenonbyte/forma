@@ -150,7 +150,7 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     });
 
   const productsRoot = getFormaPaths(options.home).productsDir;
-  const saveDesignDeps = { artifacts, products, runProductMutation, productsRoot };
+  const saveDesignDeps = { artifacts, products, runProductMutation, productsRoot, home: options.home };
 
   async function generateRequirementDesign(
     productId: string,

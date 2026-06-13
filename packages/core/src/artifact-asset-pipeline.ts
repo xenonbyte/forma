@@ -9,6 +9,12 @@
  * Entry points walked:
  *   <img src|srcset>, <source src|srcset>, <link href>, <image href|xlink:href>,
  *   poster attr, inline <style> blocks, style="..." attrs, css url(data:) / @import url(data:)
+ *
+ * forma-image:// references (SPEC-BEHAVIOR-004) are intercepted at every surface
+ * that classifies a data: reference, resolved to bytes via the optional
+ * `resolveFormaImage` resolver, and fed through the identical data: handling flow
+ * (down-sampling, budgets, manifest accounting). A forma-image:// reference with
+ * no resolver — or a resolver that rejects — fails loud with MEDIA_IMAGE_NOT_FOUND.
  */
 
 import { createHash } from "node:crypto";
@@ -54,10 +60,23 @@ export function assertArtifactAssetBudgets(files: ReadonlyMap<string, Buffer>): 
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
+/**
+ * Resolves a `forma-image://` reference (staging uuid or brand asset) to raw
+ * image bytes. Both namespaces are handled by the resolver itself — the pipeline
+ * does not distinguish them. Throws MEDIA_IMAGE_NOT_FOUND when the reference
+ * cannot be resolved (unknown id, traversal, brand asset missing).
+ */
+export type ResolveFormaImage = (ref: string) => Promise<Buffer>;
+
 export interface LocalizeInput {
   html: string;
   /** default 'assets' */
   assetDirName?: string;
+  /**
+   * Optional resolver for `forma-image://` references. When omitted, any
+   * `forma-image://` reference fails loud with MEDIA_IMAGE_NOT_FOUND.
+   */
+  resolveFormaImage?: ResolveFormaImage;
 }
 
 export interface LocalizeResult {
@@ -82,6 +101,8 @@ interface Context {
   assetDir: string;
   files: Map<string, Buffer>;
   assets: Map<string, ArtifactAssetEntry>; // keyed by canonical @1x / single path
+  /** Optional forma-image:// resolver; absent ⇒ such refs fail loud. */
+  resolveFormaImage?: ResolveFormaImage;
 }
 
 // ─── MIME → extension table ───────────────────────────────────────────────────
@@ -176,6 +197,78 @@ function rejectRemote(url: string): void {
       url: trimmed,
     });
   }
+}
+
+// ─── forma-image:// resolution (SPEC-BEHAVIOR-004) ────────────────────────────
+
+const FORMA_IMAGE_SCHEME = "forma-image:";
+
+/** True for any `forma-image:` reference (staging uuid or brand asset). */
+function isFormaImageRef(url: string): boolean {
+  return url.trim().startsWith(FORMA_IMAGE_SCHEME);
+}
+
+/** sharp output format → MIME used by the data: localization flow. */
+const SHARP_FORMAT_TO_MIME: Record<string, string> = {
+  png: "image/png",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  avif: "image/avif",
+  svg: "image/svg+xml",
+};
+
+/**
+ * Resolves a `forma-image:` reference to a ParsedDataUrl so it can re-use the
+ * exact same localization path a data: image takes (down-sampling, dedup,
+ * budgets, manifest accounting). The MIME is derived from the resolved bytes via
+ * sharp so the canonical extension matches the actual format.
+ *
+ * Fails loud:
+ *   - no resolver configured ⇒ MEDIA_IMAGE_NOT_FOUND (details.reason="no_resolver")
+ *   - resolver rejection (unknown id / traversal / brand missing) propagates as-is
+ *   - unreadable / unsupported bytes ⇒ the sharp-failure wrap (ARTIFACT_INVALID_INPUT)
+ */
+async function resolveFormaImageRef(url: string, ctx: Context): Promise<ParsedDataUrl> {
+  const ref = url.trim();
+  if (!ctx.resolveFormaImage) {
+    throw new FormaError("MEDIA_IMAGE_NOT_FOUND", `No forma-image resolver available for reference: ${ref}`, {
+      ref,
+      reason: "no_resolver",
+    });
+  }
+
+  const payload = await ctx.resolveFormaImage(ref);
+
+  let format: string | undefined;
+  try {
+    format = (await sharp(payload, { limitInputPixels: SHARP_PIXEL_LIMIT }).metadata()).format;
+  } catch (err) {
+    throw new FormaError("ARTIFACT_INVALID_INPUT", "Raster image metadata read failed", {
+      budget: "SHARP_PIXEL_LIMIT",
+      cause: String(err),
+    });
+  }
+  const mime = (format && SHARP_FORMAT_TO_MIME[format]) ?? "application/octet-stream";
+
+  return { mime, isBase64: true, payload };
+}
+
+/**
+ * Classifies one reference value the pipeline encounters at a localization
+ * surface (img src/poster/href, link href, srcset candidate, css url()):
+ *   - http(s) / protocol-relative ⇒ throws ARTIFACT_REMOTE_RESOURCE
+ *   - forma-image: ⇒ resolves to bytes (or fails loud) and returns a ParsedDataUrl
+ *   - data: ⇒ returns the parsed data url
+ *   - anything else (relative/absolute local path) ⇒ returns null (left as-is)
+ */
+async function classifyLocalizableRef(url: string, ctx: Context): Promise<ParsedDataUrl | null> {
+  if (isFormaImageRef(url)) {
+    return resolveFormaImageRef(url, ctx);
+  }
+  rejectRemote(url);
+  return parseDataUrl(url);
 }
 
 // ─── Raster down-sampling ─────────────────────────────────────────────────────
@@ -278,9 +371,8 @@ async function localizeCssText(css: string, ctx: Context): Promise<string> {
   URL_PATTERN.lastIndex = 0;
   while ((m = URL_PATTERN.exec(css)) !== null) {
     const url = m[2].trim();
-    rejectRemote(url);
 
-    const parsed = parseDataUrl(url);
+    const parsed = await classifyLocalizableRef(url, ctx);
     if (!parsed) continue; // relative local ref, leave as-is
 
     const localPath = await localizeDataUrl(parsed, ctx);
@@ -514,11 +606,16 @@ async function localizeRasterSingle(parsed: ParsedDataUrl, ctx: Context, density
 
 // ─── Main localization walk ───────────────────────────────────────────────────
 
-export async function localizeArtifactCss(css: string, assetDirName = "assets"): Promise<LocalizeCssResult> {
+export async function localizeArtifactCss(
+  css: string,
+  assetDirName = "assets",
+  resolveFormaImage?: ResolveFormaImage,
+): Promise<LocalizeCssResult> {
   const ctx: Context = {
     assetDir: assetDirName,
     files: new Map(),
     assets: new Map(),
+    ...(resolveFormaImage ? { resolveFormaImage } : {}),
   };
   const localizedCss = await localizeCssText(css, ctx);
   assertArtifactAssetBudgets(ctx.files);
@@ -530,7 +627,7 @@ export async function localizeArtifactCss(css: string, assetDirName = "assets"):
 }
 
 export async function localizeArtifactAssets(input: LocalizeInput): Promise<LocalizeResult> {
-  const { html, assetDirName = "assets" } = input;
+  const { html, assetDirName = "assets", resolveFormaImage } = input;
 
   const htmlBytes = Buffer.byteLength(html, "utf8");
   if (htmlBytes > MAX_HTML_BYTES) {
@@ -545,6 +642,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
     assetDir: assetDirName,
     files: new Map(),
     assets: new Map(),
+    ...(resolveFormaImage ? { resolveFormaImage } : {}),
   };
 
   const root = parse(html, { comment: true });
@@ -556,8 +654,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
     // src attribute
     const src = el.getAttribute("src");
     if (src) {
-      rejectRemote(src);
-      const parsed = parseDataUrl(src);
+      const parsed = await classifyLocalizableRef(src, ctx);
       if (parsed) {
         if (RASTER_MIMES.has(parsed.mime)) {
           const { src: newSrc, srcset } = await buildSrcset(parsed, ctx);
@@ -577,8 +674,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
       const newParts: string[] = [];
       let changed = false;
       for (const { url, descriptor } of candidates) {
-        rejectRemote(url);
-        const parsed = parseDataUrl(url);
+        const parsed = await classifyLocalizableRef(url, ctx);
         if (parsed) {
           // Store the candidate at its declared density (default 1x) so the
           // descriptor keeps pointing at the exact image the author provided.
@@ -599,8 +695,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
     // poster attribute
     const poster = el.getAttribute("poster");
     if (poster) {
-      rejectRemote(poster);
-      const parsed = parseDataUrl(poster);
+      const parsed = await classifyLocalizableRef(poster, ctx);
       if (parsed) {
         const path = await localizeDataUrl(parsed, ctx);
         el.setAttribute("poster", path);
@@ -611,8 +706,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
     for (const hrefAttr of ["href", "xlink:href"]) {
       const href = el.getAttribute(hrefAttr);
       if (href) {
-        rejectRemote(href);
-        const parsed = parseDataUrl(href);
+        const parsed = await classifyLocalizableRef(href, ctx);
         if (parsed) {
           if (RASTER_MIMES.has(parsed.mime)) {
             const { src: newSrc, srcset } = await buildSrcset(parsed, ctx);
@@ -633,8 +727,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
   for (const el of links) {
     const href = el.getAttribute("href");
     if (href) {
-      rejectRemote(href);
-      const parsed = parseDataUrl(href);
+      const parsed = await classifyLocalizableRef(href, ctx);
       if (parsed) {
         const path = await localizeDataUrl(parsed, ctx);
         el.setAttribute("href", path);
@@ -648,8 +741,7 @@ export async function localizeArtifactAssets(input: LocalizeInput): Promise<Loca
   for (const el of videos) {
     const poster = el.getAttribute("poster");
     if (poster) {
-      rejectRemote(poster);
-      const parsed = parseDataUrl(poster);
+      const parsed = await classifyLocalizableRef(poster, ctx);
       if (parsed) {
         const path = await localizeDataUrl(parsed, ctx);
         el.setAttribute("poster", path);

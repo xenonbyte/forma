@@ -33,6 +33,7 @@ import type {
 } from "./artifact-manifest.js";
 import { validateSupportingPath } from "./artifact-manifest.js";
 import { assertArtifactAssetBudgets, localizeArtifactAssets, localizeArtifactCss } from "./artifact-asset-pipeline.js";
+import { resolveFormaImageRef } from "./media/image-staging.js";
 import { validateStaticArtifact } from "./artifact-static-validation.js";
 import { renderArtifactPreview } from "./preview-renderer.js";
 import { lintCraft } from "./quality/craft-lint.js";
@@ -120,6 +121,11 @@ export interface SaveDesignDeps {
   artifacts: ArtifactStore;
   products: ProductService;
   productsRoot: string;
+  /**
+   * $FORMA_HOME root — used to resolve `forma-image://` references against the
+   * saving product's image-staging area during localization (SPEC-BEHAVIOR-004).
+   */
+  home: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -206,7 +212,7 @@ function normalizeBundlePath(path: string, label: string): string {
 const UNIT_ID_REGEX = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
 
 function composeUnitDocument(tokensHref: string, bodyHtml: string, title: string): string {
@@ -220,9 +226,7 @@ function composeUnitDocument(tokensHref: string, bodyHtml: string, title: string
  * Returns a Map<path, Buffer> ready to be merged into finalFiles.
  * Throws FormaError("INVALID_INPUT") on any violation.
  */
-function validateAndDecodeSupportingFiles(
-  supportingFiles: SupportingFileInput[] | undefined,
-): Map<string, Buffer> {
+function validateAndDecodeSupportingFiles(supportingFiles: SupportingFileInput[] | undefined): Map<string, Buffer> {
   const result = new Map<string, Buffer>();
   if (!supportingFiles || supportingFiles.length === 0) return result;
 
@@ -288,8 +292,13 @@ async function writeBundleFiles(rootDir: string, files: Map<string, Buffer>): Pr
 }
 
 export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesignInput): Promise<SaveDesignResult> {
-  const { artifacts, products } = deps;
+  const { artifacts, products, home } = deps;
   const { productId, kind, title, forma } = input;
+
+  // Resolver for `forma-image://` references encountered during localization,
+  // bound to the saving product's staging area (SPEC-BEHAVIOR-004). Failures to
+  // resolve (unknown id, traversal, brand asset missing) fail the whole save.
+  const resolveFormaImage = (ref: string): Promise<Buffer> => resolveFormaImageRef(home, productId, ref);
 
   // ── Step 0a: Normalize units input → composed index.html + per-unit docs ─────
   type ComposedUnit = {
@@ -376,11 +385,15 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   }
 
   // ── Step 1: localizeArtifactAssets (pure, no lock) ───────────────────────────
-  const { html: localizedHtml, files, assets } = await localizeArtifactAssets({ html });
+  const { html: localizedHtml, files, assets } = await localizeArtifactAssets({ html, resolveFormaImage });
   assertNoSupportingFileCollision(callerFiles, files);
 
   if (tokensFile !== undefined) {
-    const tokensLocalized = await localizeArtifactCss(decodeUtf8(tokensFile, "tokens.css"));
+    const tokensLocalized = await localizeArtifactCss(
+      decodeUtf8(tokensFile, "tokens.css"),
+      "assets",
+      resolveFormaImage,
+    );
     for (const [path, buf] of tokensLocalized.files) {
       files.set(path, buf);
     }
@@ -391,7 +404,7 @@ export async function saveDesignArtifact(deps: SaveDesignDeps, input: SaveDesign
   // Localize each composed unit document and collect their assets into the shared file map
   const localizedUnitDocs = new Map<string, string>();
   for (const u of composedUnits) {
-    const unitLocalized = await localizeArtifactAssets({ html: u.doc });
+    const unitLocalized = await localizeArtifactAssets({ html: u.doc, resolveFormaImage });
     // Merge localized unit assets into the shared files map
     for (const [path, buf] of unitLocalized.files) {
       files.set(path, buf);

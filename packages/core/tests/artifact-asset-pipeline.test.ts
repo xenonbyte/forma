@@ -560,3 +560,89 @@ describe("input budgets (R3)", () => {
     expect(result.files.size).toBe(0);
   });
 });
+
+// ─── PLAN-TASK-009: forma-image:// resolution (SPEC-BEHAVIOR-004) ─────────────
+
+describe("forma-image:// resolution", () => {
+  const STAGED_REF = "forma-image://11111111-2222-3333-4444-555555555555";
+
+  it('resolves <img src="forma-image://..."> bytes through the same data: flow (3 density tiers + srcset)', async () => {
+    const resolveFormaImage = async (ref: string): Promise<Buffer> => {
+      expect(ref).toBe(STAGED_REF);
+      return pngBuffer;
+    };
+    const html = `<img src="${STAGED_REF}" alt="staged">`;
+    const result = await localizeArtifactAssets({ html, resolveFormaImage });
+
+    // Identical treatment to a data: PNG: one asset entry, density [1,2,3]
+    expect(result.assets).toHaveLength(1);
+    const asset = result.assets[0];
+    expect(asset.density).toEqual([1, 2, 3]);
+    expect(asset.role).toBe("image");
+    expect(asset.degraded).toBeFalsy();
+
+    // Files keyed by content hash of the resolved master, all 3 tiers present.
+    const hash = shortHash(pngBuffer);
+    expect(result.files.has(`assets/${hash}@1x.png`)).toBe(true);
+    expect(result.files.has(`assets/${hash}@2x.png`)).toBe(true);
+    expect(result.files.has(`assets/${hash}@3x.png`)).toBe(true);
+    expect(asset.path).toBe(`assets/${hash}@1x.png`);
+
+    // The forma-image:// ref is gone from the output; srcset rewritten.
+    expect(result.html).not.toContain("forma-image://");
+    expect(result.html).toContain("srcset=");
+    expect(result.html).toContain(`src="assets/${hash}@1x.png"`);
+  });
+
+  it("resolves a forma-image:// ref inside css url() in an inline <style>", async () => {
+    const resolveFormaImage = async (): Promise<Buffer> => pngBuffer;
+    const html = `<style>.hero { background: url('${STAGED_REF}'); }</style>`;
+    const result = await localizeArtifactAssets({ html, resolveFormaImage });
+
+    expect(result.assets).toHaveLength(1);
+    expect(result.html).not.toContain("forma-image://");
+    const hash = shortHash(pngBuffer);
+    expect(result.files.has(`assets/${hash}@1x.png`)).toBe(true);
+  });
+
+  it("propagates MEDIA_IMAGE_NOT_FOUND when the resolver rejects (unknown id)", async () => {
+    const resolveFormaImage = async (ref: string): Promise<Buffer> => {
+      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Staged image not found", { ref, reason: "not_found" });
+    };
+    const html = `<img src="${STAGED_REF}">`;
+    await expect(localizeArtifactAssets({ html, resolveFormaImage })).rejects.toSatisfy(
+      (e: unknown) => e instanceof FormaError && e.code === "MEDIA_IMAGE_NOT_FOUND",
+    );
+  });
+
+  it("fails loud with MEDIA_IMAGE_NOT_FOUND when no resolver is passed", async () => {
+    const html = `<img src="${STAGED_REF}">`;
+    await expect(localizeArtifactAssets({ html })).rejects.toSatisfy(
+      (e: unknown) =>
+        e instanceof FormaError && e.code === "MEDIA_IMAGE_NOT_FOUND" && typeof e.details.reason === "string",
+    );
+  });
+
+  it("enforces the asset budget on resolved bytes (fail loud over MAX_TOTAL_ASSET_BYTES)", async () => {
+    // Resolver returns a real PNG larger than the asset budget so the @3x master
+    // (and tiers) push total localized bytes past MAX_TOTAL_ASSET_BYTES.
+    const huge = await sharp({
+      create: {
+        width: 8000,
+        height: 8000,
+        channels: 3,
+        background: { r: 12, g: 34, b: 56 },
+      },
+    })
+      .png({ compressionLevel: 0 })
+      .toBuffer();
+    // Sanity: the master alone must already exceed the budget so the tiers tip it over.
+    expect(huge.byteLength).toBeGreaterThan(MAX_TOTAL_ASSET_BYTES);
+    const resolveFormaImage = async (): Promise<Buffer> => huge;
+    const html = `<img src="${STAGED_REF}">`;
+    await expect(localizeArtifactAssets({ html, resolveFormaImage })).rejects.toMatchObject({
+      code: "ARTIFACT_INVALID_INPUT",
+      details: expect.objectContaining({ budget: "MAX_TOTAL_ASSET_BYTES" }),
+    });
+  });
+});

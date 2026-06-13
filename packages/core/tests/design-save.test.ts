@@ -17,6 +17,7 @@ import { FormaError } from "../src/errors.js";
 import { getFormaPaths } from "../src/paths.js";
 import { validateStaticArtifact } from "../src/artifact-static-validation.js";
 import { MAX_ASSET_COUNT } from "../src/artifact-asset-pipeline.js";
+import { putStagedImage } from "../src/media/image-staging.js";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ function makeDeps() {
     products: store.products,
     runProductMutation: store.runProductMutation.bind(store),
     productsRoot: productsDir,
+    home,
   };
 }
 
@@ -184,9 +186,7 @@ describe("saveDesignArtifact", () => {
       (err: unknown) => err instanceof FormaError && err.code === "ARTIFACT_WRITE_FAIL",
     );
 
-    await expect(
-      store.products.getDesignPointer(productId, "req-001", "page-001", "default"),
-    ).resolves.toBeUndefined();
+    await expect(store.products.getDesignPointer(productId, "req-001", "page-001", "default")).resolves.toBeUndefined();
     await expect(store.artifacts.listArtifacts(productId)).resolves.toEqual([]);
   }, 90000);
 
@@ -208,9 +208,10 @@ describe("saveDesignArtifact", () => {
     );
 
     await expect(store.artifacts.listArtifactVersions(productId, first.artifactId)).resolves.toEqual([1]);
-    await expect(
-      store.products.getDesignPointer(productId, "req-001", "page-001", "default"),
-    ).resolves.toMatchObject({ artifactId: first.artifactId, version: 1 });
+    await expect(store.products.getDesignPointer(productId, "req-001", "page-001", "default")).resolves.toMatchObject({
+      artifactId: first.artifactId,
+      version: 1,
+    });
   }, 90000);
 
   it("HTML with <script> → throws ARTIFACT_NOT_STATIC", async () => {
@@ -521,7 +522,11 @@ describe("saveDesignArtifact", () => {
       title: "Library With Referenced Asset",
       forma: { brandStyle: "ant" },
       supportingFiles: [
-        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(svgText).toString("base64") },
+        {
+          path: "assets/icon.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from(svgText).toString("base64"),
+        },
       ],
     });
 
@@ -659,7 +664,11 @@ describe("saveDesignArtifact", () => {
         },
       },
       supportingFiles: [
-        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from("not svg").toString("base64") },
+        {
+          path: "assets/icon.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from("not svg").toString("base64"),
+        },
         {
           path: "assets/icon-mono.svg",
           contentType: "image/svg+xml",
@@ -692,7 +701,11 @@ describe("saveDesignArtifact", () => {
         },
       },
       supportingFiles: [
-        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(oversized).toString("base64") },
+        {
+          path: "assets/icon.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from(oversized).toString("base64"),
+        },
         {
           path: "assets/icon-mono.svg",
           contentType: "image/svg+xml",
@@ -820,7 +833,11 @@ describe("saveDesignArtifact", () => {
       title: "Unsafe supporting SVG",
       forma: { brandStyle: "ant" },
       supportingFiles: [
-        { path: "assets/icon.svg", contentType: "image/svg+xml", contentBase64: Buffer.from(svgWithScript).toString("base64") },
+        {
+          path: "assets/icon.svg",
+          contentType: "image/svg+xml",
+          contentBase64: Buffer.from(svgWithScript).toString("base64"),
+        },
       ],
     };
 
@@ -871,23 +888,36 @@ describe("saveDesignArtifact", () => {
       title: "Lib",
       tokensCss: ":root{--fg:#111}\n.btn{color:var(--fg)}",
       units: [
-        { id: "foundations", title: "Foundations", role: "foundations", bodyHtml: "<section data-od-id=\"foundations\"><h2>Color</h2></section>" },
-        { id: "button", title: "Button", role: "component", bodyHtml: "<section data-od-id=\"components\"><button class=\"btn\">A</button></section>" },
+        {
+          id: "foundations",
+          title: "Foundations",
+          role: "foundations",
+          bodyHtml: '<section data-od-id="foundations"><h2>Color</h2></section>',
+        },
+        {
+          id: "button",
+          title: "Button",
+          role: "component",
+          bodyHtml: '<section data-od-id="components"><button class="btn">A</button></section>',
+        },
       ],
       forma: { brandStyle: "apple", platform: "mobile" },
     });
     const dir = artifactVersionDir(deps, productId, result.artifactId, result.version);
     const manifest = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8"));
     expect(manifest.entry).toBe("index.html");
-    expect(manifest.forma.units.map((u: { entry: string }) => u.entry)).toEqual(["unit-foundations.html", "unit-button.html"]);
+    expect(manifest.forma.units.map((u: { entry: string }) => u.entry)).toEqual([
+      "unit-foundations.html",
+      "unit-button.html",
+    ]);
     const tokens = await readFile(join(dir, "tokens.css"), "utf8");
     expect(tokens).toContain("--fg:#111");
     const indexHtml = await readFile(join(dir, "index.html"), "utf8");
     expect(indexHtml).toContain("Color");
-    expect(indexHtml).toContain("class=\"btn\"");
-    expect(indexHtml).toContain("href=\"tokens.css\"");
+    expect(indexHtml).toContain('class="btn"');
+    expect(indexHtml).toContain('href="tokens.css"');
     const unitBtn = await readFile(join(dir, "unit-button.html"), "utf8");
-    expect(unitBtn).toContain("class=\"btn\"");
+    expect(unitBtn).toContain('class="btn"');
     expect(unitBtn).not.toContain("Color");
   }, 90000);
 
@@ -930,7 +960,14 @@ describe("saveDesignArtifact", () => {
       kind: "component-library",
       title: "Lib",
       tokensCss: ":root{--fg:#111}",
-      units: [{ id: "button", title: "Button", role: "component", bodyHtml: `<section><img src="${dataPng}" alt="Button"></section>` }],
+      units: [
+        {
+          id: "button",
+          title: "Button",
+          role: "component",
+          bodyHtml: `<section><img src="${dataPng}" alt="Button"></section>`,
+        },
+      ],
       forma: { brandStyle: "apple", platform: "mobile" },
     });
     const dir = artifactVersionDir(deps, productId, result.artifactId, result.version);
@@ -938,7 +975,9 @@ describe("saveDesignArtifact", () => {
     const unitBtn = await readFile(join(dir, "unit-button.html"), "utf8");
     expect(unitBtn).not.toContain("data:image/png;base64,");
     expect(unitBtn).toMatch(/src="assets\/[^"]+\.png"/);
-    expect(validateStaticArtifact({ html: unitBtn, cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({ ok: true });
+    expect(validateStaticArtifact({ html: unitBtn, cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({
+      ok: true,
+    });
   }, 90000);
 
   it("localizes data assets inside tokensCss before static validation", async () => {
@@ -959,7 +998,9 @@ describe("saveDesignArtifact", () => {
     expect(tokens).not.toContain("data:image/png;base64,");
     expect(assetPath).toBeDefined();
     await expect(readFile(join(dir, assetPath!))).resolves.toBeInstanceOf(Buffer);
-    expect(validateStaticArtifact({ html: "<html><body></body></html>", cssFiles: new Map([["tokens.css", tokens]]) })).toEqual({
+    expect(
+      validateStaticArtifact({ html: "<html><body></body></html>", cssFiles: new Map([["tokens.css", tokens]]) }),
+    ).toEqual({
       ok: true,
     });
   }, 90000);
@@ -1000,9 +1041,55 @@ describe("saveDesignArtifact", () => {
         kind: "component-library",
         title: "Lib",
         tokensCss: ":root{--fg:#111}",
-        units: [{ id: "button", title: "Button", role: "component", bodyHtml: "<img src=\"https://example.com/bad.png\">" }],
+        units: [
+          { id: "button", title: "Button", role: "component", bodyHtml: '<img src="https://example.com/bad.png">' },
+        ],
         forma: { brandStyle: "apple", platform: "mobile" },
       }),
     ).rejects.toMatchObject({ code: "ARTIFACT_REMOTE_RESOURCE" });
+  }, 30000);
+
+  // ── PLAN-TASK-009: forma-image:// resolution via the staging resolver ──────────
+
+  it("resolves a forma-image:// ref against the saving product's staging area into assets/", async () => {
+    const deps = makeDeps();
+    const pngBytes = await sharp({
+      create: { width: 9, height: 9, channels: 3, background: { r: 10, g: 20, b: 30 } },
+    })
+      .png()
+      .toBuffer();
+    const staged = await putStagedImage(home, productId, pngBytes, {
+      purpose: "page-hero",
+      prompt: "a hero image",
+      model: "test-model",
+      width: 9,
+      height: 9,
+    });
+
+    const html = `<!doctype html><html><body style="margin:0"><img src="${staged.ref}" alt="hero"></body></html>`;
+    const result = await saveDesignArtifact(deps, await makeCleanInput({ html }));
+
+    const versionDir = join(deps.productsRoot, productId, "od-project", "artifacts", result.artifactId, "v1");
+    const indexHtml = await readFile(join(versionDir, "index.html"), "utf8");
+    // The forma-image:// ref is gone — replaced by localized assets/ paths.
+    expect(indexHtml).not.toContain("forma-image://");
+    expect(indexHtml).toMatch(/assets\/[0-9a-f]+@1x\.png/);
+
+    // Manifest records the localized image asset with the data: density treatment.
+    const manifest = await readManifest(deps.productsRoot, result.artifactId);
+    const imageAssets = manifest.forma.assets.filter((a: { role: string }) => a.role === "image");
+    expect(imageAssets.length).toBeGreaterThan(0);
+    expect(imageAssets[0].density).toEqual([1, 2, 3]);
+
+    // Source is copied, not removed — the staged file still exists.
+    expect(await readFile(staged.path)).toBeTruthy();
+  }, 90000);
+
+  it("fails the whole save with MEDIA_IMAGE_NOT_FOUND for an unknown forma-image:// id", async () => {
+    const deps = makeDeps();
+    const html = `<!doctype html><html><body><img src="forma-image://00000000-0000-0000-0000-000000000000"></body></html>`;
+    await expect(saveDesignArtifact(deps, await makeCleanInput({ html }))).rejects.toSatisfy(
+      (e: unknown) => e instanceof FormaError && e.code === "MEDIA_IMAGE_NOT_FOUND",
+    );
   }, 30000);
 });
