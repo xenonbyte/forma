@@ -525,6 +525,45 @@ describe("deleteBrandAsset", () => {
     const names = (await listBrandAssets(home, PRODUCT_ID, "poster")).map((r) => r.name).sort();
     expect(names).toEqual(["keep-1", "keep-2"]);
   }, 60000);
+
+  it("empty-dir cleanup: deleting the last record in a containing dir removes that dir", async () => {
+    const record = await savedPoster("solo");
+    const filePath = record.files[0].path;
+    const containingDir = join(filePath, "..");
+
+    // The containing dir must exist before deletion.
+    await expect(access(containingDir)).resolves.toBeUndefined();
+
+    await deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "solo" });
+
+    // File gone.
+    await expect(access(filePath)).rejects.toBeInstanceOf(Error);
+    // Containing dir also gone (best-effort empty-dir cleanup).
+    await expect(access(containingDir)).rejects.toBeInstanceOf(Error);
+  }, 60000);
+
+  it("empty-dir cleanup: deleting one of several records does NOT remove the still-populated dir", async () => {
+    const r1 = await savedPoster("sibling-keep");
+    const r2 = await savedPoster("sibling-drop");
+    const keepDir = join(r1.files[0].path, "..");
+    const dropDir = join(r2.files[0].path, "..");
+
+    await deleteBrandAsset(makeDeps(home), { product_id: PRODUCT_ID, kind: "poster", name: "sibling-drop" });
+
+    // If the two records share the same containing dir, keepDir still exists.
+    // If they have different containing dirs, only dropDir is gone.
+    if (keepDir === dropDir) {
+      // Shared dir: must survive because sibling-keep still has files there.
+      await expect(access(keepDir)).resolves.toBeUndefined();
+    } else {
+      // Different dirs: sibling-keep's dir survives; sibling-drop's dir is gone.
+      await expect(access(keepDir)).resolves.toBeUndefined();
+      await expect(access(dropDir)).rejects.toBeInstanceOf(Error);
+    }
+    // sibling-keep's record and file must still be intact.
+    expect((await listBrandAssets(home, PRODUCT_ID, "poster")).map((r) => r.name)).toContain("sibling-keep");
+    await expect(access(r1.files[0].path)).resolves.toBeUndefined();
+  }, 60000);
 });
 
 // ─── zip export ───────────────────────────────────────────────────────────────

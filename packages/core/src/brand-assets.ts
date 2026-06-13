@@ -33,7 +33,7 @@
  * (list / resolve / zip export) are lock-free and home-bound.
  */
 
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
 import { join, relative, sep } from "node:path";
 import AdmZip from "adm-zip";
@@ -587,6 +587,9 @@ export async function deleteBrandAsset(
     }
 
     // Boundary check every recorded file before removing anything.
+    // isSameOrChildPath is a lexical check — intentional here because brand-asset
+    // file paths are always machine-written into the manifest (trusted provenance).
+    // The symlink-hardened realpath check lives at the server file-serving boundary.
     for (const file of record.files) {
       if (!isSameOrChildPath(kindDir, file.path)) {
         throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset file path escapes its kind directory", {
@@ -602,8 +605,27 @@ export async function deleteBrandAsset(
     // manifest never references the deleted files.
     const next = manifest.assets.filter((a) => !(a.kind === input.kind && a.name === input.name));
     await writeManifest(deps.home, input.product_id, { assets: next });
+
+    // Collect the containing directories before deleting so we can best-effort
+    // remove any that become empty after the files are gone.
+    const containingDirs = new Set(record.files.map((f) => join(f.path, "..")));
+
     for (const file of record.files) {
       await rm(file.path, { force: true });
+    }
+
+    // Best-effort empty-dir cleanup: remove each containing directory if it is
+    // now empty. rmdir fails with ENOTEMPTY when siblings still own files (skip),
+    // and with ENOENT when already gone (skip). Any other error propagates.
+    for (const dir of containingDirs) {
+      // Only remove dirs that are under the kindDir (safety: don't remove kindDir itself).
+      if (dir === kindDir || !isSameOrChildPath(kindDir, dir)) continue;
+      try {
+        await rmdir(dir);
+      } catch (err: unknown) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOTEMPTY" && code !== "ENOENT") throw err;
+      }
     }
 
     return { deleted: true };

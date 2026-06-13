@@ -18,6 +18,7 @@ import {
   getArtifactVersionDir,
   getArtifactVersionPreviewPath,
   getFormaPaths,
+  getBrandAssetPlan,
   languages,
   mapToComponentPlatform,
   normalizeFormaExtension,
@@ -67,6 +68,8 @@ export const formaToolNames = [
   "generate_image",
   "save_brand_asset",
   "list_brand_assets",
+  "get_brand_asset_plan",
+  "delete_brand_asset",
   "search_icons",
   "get_design_context",
   "get_design_handoff",
@@ -380,6 +383,16 @@ const listBrandAssetsSchema = z
   })
   .strict();
 
+const getBrandAssetPlanSchema = z.object({ product_id: z.string().min(1) }).strict();
+
+const deleteBrandAssetSchema = z
+  .object({
+    product_id: z.string().min(1),
+    kind: z.enum(BRAND_ASSET_KINDS),
+    name: z.string().min(1),
+  })
+  .strict();
+
 // limit cap of 50: comfortably above core's default of 10 without letting an
 // agent request the entire ~1,964-icon set in one call. Whitespace-only query
 // passes min(1) here and hits core searchIcons' INVALID_INPUT throw.
@@ -467,6 +480,8 @@ export const formaToolInputSchemas = {
   generate_image: generateImageSchema,
   save_brand_asset: saveBrandAssetSchema,
   list_brand_assets: listBrandAssetsSchema,
+  get_brand_asset_plan: getBrandAssetPlanSchema,
+  delete_brand_asset: deleteBrandAssetSchema,
   search_icons: searchIconsSchema,
   get_design_context: getDesignContextSchema,
   get_design_handoff: mcpGetDesignHandoffSchema,
@@ -506,6 +521,10 @@ const descriptions = {
     "Persist a brand asset for a product (discriminated by kind). kind=app-icon takes logo_ref + bg_ref (and safe_logo_ref for mobile/tablet), each a forma-image://<uuid> staged via generate_image; it derives the full per-surface variant matrix locally and ATOMICALLY REPLACES the product's whole app-icon set — returns { kind:'app-icon', assets:[{kind,name,files,variant,surface?,...}] }. kind=store-shot/banner/poster take name + source.html + target={width,height} (and optional surface/variant) and render to a PNG through the localize+sandbox path — returns { kind, asset:{name,files,...} }. brand_style and platform are read from the product config.",
   list_brand_assets:
     "List a product's saved brand assets, optionally filtered by kind (app-icon, store-shot, poster). Returns { assets: [{ kind, name, files, brand_style, model?, generated_at }] }.",
+  get_brand_asset_plan:
+    "Return the desired-state brand asset plan for a product: platform, surfaces, and per-kind entries (dimensions, count, surface, variant, verifiedAt). Use this before generating brand assets to know what sizes/surfaces/variants to produce. Does not read media credentials.",
+  delete_brand_asset:
+    "Delete one brand asset record (by kind + name) and its on-disk files. Fails loud if the record does not exist. Returns { deleted: true } on success.",
   search_icons:
     "Search the bundled Lucide icon set by name or tag. Returns { icons: [{ name, tags, svg }] } ranked name-prefix → substring → tag (svg is inline-ready Lucide markup with currentColor inheritance). Use this instead of hand-drawing functional icons; no match returns an empty array.",
   get_design_context:
@@ -652,6 +671,13 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_brand_assets: tool("list_brand_assets", async (input) => ({
       assets: await store.listBrandAssets(input.product_id, input.kind),
     })),
+    get_brand_asset_plan: tool("get_brand_asset_plan", async (input) => {
+      const product = await store.products.getProduct(input.product_id);
+      return getBrandAssetPlan(product);
+    }),
+    delete_brand_asset: tool("delete_brand_asset", async (input) =>
+      store.deleteBrandAsset({ product_id: input.product_id, kind: input.kind, name: input.name }),
+    ),
     // search_icons has no store dependency: it calls the core searchIcons
     // function directly against the bundled Lucide set.
     search_icons: tool("search_icons", async (input) => ({ icons: searchIcons(input.query, input.limit) })),

@@ -6704,3 +6704,142 @@ describe("save_brand_asset / list_brand_assets tools (PLAN-TASK-017)", () => {
     }
   }, 60000);
 });
+
+// ─── get_brand_asset_plan / delete_brand_asset (T7) ──────────────────────────
+
+describe("get_brand_asset_plan / delete_brand_asset tools (T7)", () => {
+  // ─── Registration ─────────────────────────────────────────────────────────
+  it("both tools appear in formaToolNames", () => {
+    expect(formaToolNames).toContain("get_brand_asset_plan");
+    expect(formaToolNames).toContain("delete_brand_asset");
+  });
+
+  // ─── Schema: get_brand_asset_plan ─────────────────────────────────────────
+  it("schema: get_brand_asset_plan accepts { product_id }", () => {
+    expectSchemaSuccess("get_brand_asset_plan", { product_id: "P-123abc" });
+  });
+
+  it("schema: get_brand_asset_plan rejects empty product_id", () => {
+    expectSchemaFailure("get_brand_asset_plan", { product_id: "" });
+  });
+
+  it("schema: get_brand_asset_plan rejects extra keys", () => {
+    expectSchemaFailure("get_brand_asset_plan", { product_id: "P-123abc", extra: "nope" });
+  });
+
+  // ─── Schema: delete_brand_asset ───────────────────────────────────────────
+  it("schema: delete_brand_asset accepts valid kind enum + non-empty name", () => {
+    expectSchemaSuccess("delete_brand_asset", { product_id: "P-123abc", kind: "app-icon", name: "primary" });
+    expectSchemaSuccess("delete_brand_asset", { product_id: "P-123abc", kind: "store-shot", name: "hero" });
+    expectSchemaSuccess("delete_brand_asset", { product_id: "P-123abc", kind: "banner", name: "promo" });
+    expectSchemaSuccess("delete_brand_asset", { product_id: "P-123abc", kind: "poster", name: "launch" });
+  });
+
+  it("schema: delete_brand_asset rejects unknown kind", () => {
+    expectSchemaFailure("delete_brand_asset", { product_id: "P-123abc", kind: "splash-screen", name: "x" });
+  });
+
+  it("schema: delete_brand_asset rejects empty name", () => {
+    expectSchemaFailure("delete_brand_asset", { product_id: "P-123abc", kind: "poster", name: "" });
+  });
+
+  it("schema: delete_brand_asset rejects extra keys", () => {
+    expectSchemaFailure("delete_brand_asset", { product_id: "P-123abc", kind: "poster", name: "x", extra: true });
+  });
+
+  // ─── Delegation: get_brand_asset_plan ─────────────────────────────────────
+  it("wrapper loads the product and returns a BrandAssetPlan", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_brand_asset_plan({ product_id: "P-123abc" });
+
+    expect(result.isError).toBeUndefined();
+    expect(store.products.getProduct).toHaveBeenCalledWith("P-123abc");
+    const payload = textPayload(result);
+    // fakeStore product has platform: "web"
+    expect(payload).toMatchObject({
+      productId: "P-123abc",
+      platform: "web",
+      surfaces: [],
+      entries: expect.any(Array),
+    });
+    // web platform → store-shot + 3 poster variants + app-icon (no banner by default)
+    const kinds = (payload.entries as Array<{ kind: string }>).map((e) => e.kind);
+    expect(kinds).toContain("store-shot");
+    expect(kinds).toContain("poster");
+    expect(kinds).toContain("app-icon");
+  });
+
+  // ─── Delegation: delete_brand_asset ───────────────────────────────────────
+  it("wrapper calls store.deleteBrandAsset and returns { deleted }", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.delete_brand_asset({ product_id: "P-123abc", kind: "poster", name: "launch" });
+
+    expect(result.isError).toBeUndefined();
+    expect(store.deleteBrandAsset).toHaveBeenCalledWith({
+      product_id: "P-123abc",
+      kind: "poster",
+      name: "launch",
+    });
+    expect(textPayload(result)).toEqual({ deleted: true });
+  });
+
+  it("delete_brand_asset propagates a FormaError as a structured MCP error", async () => {
+    const store = fakeStore({
+      deleteBrandAsset: vi.fn(async () => {
+        throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset not found", {
+          product_id: "P-123abc",
+          kind: "poster",
+          name: "ghost",
+          reason: "not_found",
+        });
+      }),
+    });
+    const tools = createFormaTools(store);
+
+    const result = await tools.delete_brand_asset({ product_id: "P-123abc", kind: "poster", name: "ghost" });
+
+    expect(result.isError).toBe(true);
+    expect(textPayload(result)).toMatchObject({
+      error_code: "BRAND_ASSET_INVALID_INPUT",
+      details: { reason: "not_found" },
+    });
+  });
+
+  // ─── No-credential-leak assertions ────────────────────────────────────────
+  it("get_brand_asset_plan output does not contain api_key or credential fields", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.get_brand_asset_plan({ product_id: "P-123abc" });
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("api_key");
+    expect(serialized).not.toContain("api_key_tail");
+    expect(serialized).not.toContain("media-config");
+    expect(serialized).not.toContain("providers");
+  });
+
+  it("delete_brand_asset output does not contain api_key or credential fields", async () => {
+    const store = fakeStore();
+    const tools = createFormaTools(store);
+
+    const result = await tools.delete_brand_asset({ product_id: "P-123abc", kind: "app-icon", name: "primary" });
+
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("api_key");
+    expect(serialized).not.toContain("api_key_tail");
+    expect(serialized).not.toContain("media-config");
+    expect(serialized).not.toContain("providers");
+  });
+
+  it("tool registry serialization does not contain api_key or credential fields", () => {
+    const tools = createFormaTools(fakeStore());
+    const serialized = JSON.stringify(Object.keys(tools));
+    expect(serialized).not.toContain("api_key");
+    expect(serialized).not.toContain("media-config");
+  });
+});
