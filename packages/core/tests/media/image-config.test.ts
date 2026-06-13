@@ -172,6 +172,26 @@ describe("readMediaConfig — env precedence per provider", () => {
 });
 
 describe("readMediaConfig — multi-provider view", () => {
+  it("preserves non-secret model/base_url in the masked view without an api key", async () => {
+    const home = await makeHome();
+    const masked = await writeMediaConfig(
+      home,
+      { provider: "openai", base_url: "https://custom.example/v1", model: "custom-image-model" },
+      {},
+    );
+
+    expect(masked.providers.openai).toEqual({
+      configured: false,
+      source: "none",
+      base_url: "https://custom.example/v1",
+      model: "custom-image-model",
+    });
+
+    await expect(resolveProviderConfig(home, "openai")).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "MEDIA_NOT_CONFIGURED",
+    );
+  });
+
   it("mixes file-configured volcengine with env-configured openai", async () => {
     const home = await makeHome();
     await writeMediaConfig(home, { provider: "volcengine", api_key: "sk-volc-WXYZ" }, {});

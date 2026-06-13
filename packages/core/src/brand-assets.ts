@@ -38,6 +38,7 @@ import { FormaError } from "./errors.js";
 import { resolveFormaImageRef } from "./media/image-staging.js";
 import { getFormaPaths } from "./paths.js";
 import { isSameOrChildPath } from "./path-boundary.js";
+import { getProductMutationLock } from "./product-mutation-lock.js";
 import type { Platform } from "./schemas.js";
 
 // ─── Public constants ──────────────────────────────────────────────────────────
@@ -269,16 +270,7 @@ function brandAssetExportPath(brandRoot: string, filePath: string): string {
   return toPortablePath(relative(brandRoot, filePath));
 }
 
-function sanitizeManifestForExport(brandRoot: string, raw: Buffer): Buffer {
-  let manifest: BrandManifest;
-  try {
-    manifest = brandManifestSchema.parse(JSON.parse(raw.toString("utf8")));
-  } catch (err) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset manifest is corrupt", {
-      cause: String(err),
-    });
-  }
-
+function sanitizeManifestForExport(brandRoot: string, manifest: BrandManifest): Buffer {
   const exported: BrandManifest = {
     assets: manifest.assets.map((asset) => ({
       ...asset,
@@ -386,24 +378,58 @@ function planAppIconSizes(platform: string | undefined): { sizes: number[]; favi
   return { sizes: [...sizeSet].sort((a, b) => b - a), faviconSizes: [...FAVICON_SIZES] };
 }
 
-// ─── Atomic kind-dir write ──────────────────────────────────────────────────────
+// ─── Durable generation write ──────────────────────────────────────────────────
 
 /**
- * Atomically (re)writes the file set for one kind+name into a temp dir, then
- * renames it over the destination `<kind>/<name>/`. This gives overwrite
- * semantics without leaving a half-written asset on failure.
+ * Writes a complete immutable generation for one kind+name, then atomically
+ * makes that generation directory visible under `<kind>/<name>/`.
+ *
+ * The previous generation is not touched here. The manifest is switched only
+ * after this returns, so lock-free crash recovery never observes a manifest
+ * that points at files deleted by a failed replacement.
  */
-async function writeAssetDirAtomic(destDir: string, files: Map<string, Buffer>): Promise<void> {
+async function writeAssetDirAtomic(destDir: string, files: Map<string, Buffer>): Promise<string> {
   const tmpDir = `${destDir}.tmp-${randomBytes(4).toString("hex")}`;
+  const generationDir = join(destDir, `generation-${Date.now()}-${randomBytes(4).toString("hex")}`);
   try {
     await mkdir(tmpDir, { recursive: true });
     for (const [relName, buf] of files) {
       await writeFile(join(tmpDir, relName), buf);
     }
-    await rm(destDir, { recursive: true, force: true });
-    await rename(tmpDir, destDir);
+    await mkdir(destDir, { recursive: true });
+    await rename(tmpDir, generationDir);
+    return generationDir;
   } finally {
     await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+async function pruneAssetDir(assetDir: string, keepDir: string): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await readdir(assetDir, { withFileTypes: true });
+  } catch (err) {
+    if (err instanceof Error && "code" in err && (err as { code: string }).code === "ENOENT") return;
+    throw err;
+  }
+
+  for (const entry of entries) {
+    const abs = join(assetDir, entry.name);
+    if (abs === keepDir || !isSameOrChildPath(assetDir, abs)) continue;
+    await rm(abs, { recursive: true, force: true });
+  }
+}
+
+function cleanupWarning(err: unknown): string {
+  const code = err instanceof Error && "code" in err ? (err as { code?: unknown }).code : undefined;
+  return typeof code === "string" ? `Brand asset cleanup skipped (${code})` : "Brand asset cleanup skipped";
+}
+
+async function warnOnPruneFailure(context: { warnings: string[] }, assetDir: string, keepDir: string): Promise<void> {
+  try {
+    await pruneAssetDir(assetDir, keepDir);
+  } catch (err) {
+    context.warnings.push(cleanupWarning(err));
   }
 }
 
@@ -525,9 +551,9 @@ async function saveRenderedBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsse
     }
 
     const fileBytes = new Map<string, Buffer>([["image.png", png]]);
-    await writeAssetDirAtomic(assetDir, fileBytes);
+    const assetWriteDir = await writeAssetDirAtomic(assetDir, fileBytes);
 
-    const files: BrandAssetFile[] = [{ path: join(assetDir, "image.png"), width, height }];
+    const files: BrandAssetFile[] = [{ path: join(assetWriteDir, "image.png"), width, height }];
 
     const record: BrandAssetRecord = {
       kind: input.kind,
@@ -542,6 +568,7 @@ async function saveRenderedBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsse
     const next = manifest.assets.filter((a) => !(a.kind === record.kind && a.name === record.name));
     next.push(record);
     await writeManifest(deps.home, input.product_id, { assets: next });
+    await warnOnPruneFailure(context, assetDir, assetWriteDir);
 
     return {
       kind: record.kind,
@@ -604,10 +631,10 @@ export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsset
       });
     }
 
-    await writeAssetDirAtomic(assetDir, fileBytes);
+    const assetWriteDir = await writeAssetDirAtomic(assetDir, fileBytes);
 
     const files: BrandAssetFile[] = fileDims.map(({ relName, size }) => ({
-      path: join(assetDir, relName),
+      path: join(assetWriteDir, relName),
       width: size,
       height: size,
     }));
@@ -626,6 +653,7 @@ export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsset
     const next = manifest.assets.filter((a) => !(a.kind === record.kind && a.name === record.name));
     next.push(record);
     await writeManifest(deps.home, input.product_id, { assets: next });
+    await warnOnPruneFailure(context, assetDir, assetWriteDir);
 
     return {
       kind: record.kind,
@@ -645,8 +673,10 @@ export async function listBrandAssets(
   kind?: BrandAssetKind,
 ): Promise<BrandAssetRecord[]> {
   if (kind !== undefined) assertValidKind(kind);
-  const manifest = await readManifest(home, productId);
-  return kind === undefined ? manifest.assets : manifest.assets.filter((a) => a.kind === kind);
+  return getProductMutationLock(home).run({ operation: "list_brand_assets", product_id: productId }, async () => {
+    const manifest = await readManifest(home, productId);
+    return kind === undefined ? manifest.assets : manifest.assets.filter((a) => a.kind === kind);
+  });
 }
 
 // ─── listStoreShotPresets ──────────────────────────────────────────────────────
@@ -703,83 +733,91 @@ export async function resolveBrandImageRef(home: string, productId: string, ref:
     size = Number(sizeToken);
   }
 
-  // Locate the primary app-icon record. v1 resolves the asset named "primary"
-  // when present, else the first/most-recent app-icon record.
-  const records = await listBrandAssets(home, productId, "app-icon");
-  const record = records.find((r) => r.name === "primary") ?? records.at(-1);
-  if (!record) {
-    throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "No app-icon brand asset", { ref, reason: "not_found" });
-  }
-
-  // Choose the file: master (no size) or the matching derivative.
-  const wantWidth = size ?? MASTER_SIZE;
-  const file = record.files.find((f) => f.width === wantWidth);
-  if (!file) {
-    throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset size not in set", {
-      ref,
-      reason: "size_not_in_set",
-      available: record.files.map((f) => f.width).sort((a, b) => a - b),
-    });
-  }
-
-  // Path-boundary: the recorded path must stay under the product's brand-assets.
-  const productsRoot = getFormaPaths(home).productsDir;
-  const brandRoot = getBrandAssetsDir(productsRoot, productId);
-  if (!isSameOrChildPath(brandRoot, file.path)) {
-    throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset path escapes brand-assets dir", {
-      ref,
-      reason: "path_traversal",
-    });
-  }
-
-  try {
-    return Buffer.from(await readFile(file.path));
-  } catch (err) {
-    const code = err instanceof Error && "code" in err ? (err as { code: string }).code : undefined;
-    if (code === "ENOENT") {
-      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset file missing on disk", { ref, reason: "not_found" });
+  return getProductMutationLock(home).run({ operation: "resolve_brand_asset", product_id: productId }, async () => {
+    // Locate the primary app-icon record. v1 resolves the asset named "primary"
+    // when present, else the first/most-recent app-icon record.
+    const manifest = await readManifest(home, productId);
+    const records = manifest.assets.filter((a) => a.kind === "app-icon");
+    const record = records.find((r) => r.name === "primary") ?? records.at(-1);
+    if (!record) {
+      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "No app-icon brand asset", { ref, reason: "not_found" });
     }
-    throw err;
-  }
+
+    // Choose the file: master (no size) or the matching derivative.
+    const wantWidth = size ?? MASTER_SIZE;
+    const file = record.files.find((f) => f.width === wantWidth);
+    if (!file) {
+      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset size not in set", {
+        ref,
+        reason: "size_not_in_set",
+        available: record.files.map((f) => f.width).sort((a, b) => a - b),
+      });
+    }
+
+    // Path-boundary: the recorded path must stay under the product's brand-assets.
+    const productsRoot = getFormaPaths(home).productsDir;
+    const brandRoot = getBrandAssetsDir(productsRoot, productId);
+    if (!isSameOrChildPath(brandRoot, file.path)) {
+      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset path escapes brand-assets dir", {
+        ref,
+        reason: "path_traversal",
+      });
+    }
+
+    try {
+      return Buffer.from(await readFile(file.path));
+    } catch (err) {
+      const code = err instanceof Error && "code" in err ? (err as { code: string }).code : undefined;
+      if (code === "ENOENT") {
+        throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset file missing on disk", { ref, reason: "not_found" });
+      }
+      throw err;
+    }
+  });
 }
 
 // ─── exportBrandAssetsZip ──────────────────────────────────────────────────────
 
 /**
- * Zips every file under the product's brand-assets/ dir (manifest + derivatives),
- * paths relative to brand-assets/. Returns an empty zip when nothing is present.
+ * Zips the current manifest plus every file it references, with paths relative
+ * to brand-assets/. Unreferenced generations left by interrupted replacements
+ * are intentionally ignored.
  *
- * Security: only files UNDER the product's brand-assets dir are walked — the
- * credential file ($FORMA_HOME/media-config.yaml) lives in a different tree and
- * can never be reached. Every entry is path-boundary checked before it is read.
+ * Security: only manifest paths UNDER the product's brand-assets dir are read —
+ * the credential file ($FORMA_HOME/media-config.yaml) lives in a different tree
+ * and can never be reached. Every entry is path-boundary checked first.
  */
 export async function exportBrandAssetsZip(home: string, productId: string): Promise<Buffer> {
-  const productsRoot = getFormaPaths(home).productsDir;
-  const brandRoot = getBrandAssetsDir(productsRoot, productId);
-  const zip = new AdmZip();
+  return getProductMutationLock(home).run({ operation: "export_brand_assets", product_id: productId }, async () => {
+    const productsRoot = getFormaPaths(home).productsDir;
+    const brandRoot = getBrandAssetsDir(productsRoot, productId);
+    const manifest = await readManifest(home, productId);
+    const zip = new AdmZip();
+    const seen = new Set<string>();
 
-  async function walk(absDir: string, relPrefix: string): Promise<void> {
-    let entries: import("node:fs").Dirent[];
-    try {
-      entries = await readdir(absDir, { withFileTypes: true });
-    } catch (err) {
-      if (err instanceof Error && "code" in err && (err as { code: string }).code === "ENOENT") return;
-      throw err;
-    }
-    for (const entry of entries) {
-      const abs = join(absDir, entry.name);
-      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
-      // Defense-in-depth: never escape the brand-assets root.
-      if (!isSameOrChildPath(brandRoot, abs)) continue;
-      if (entry.isDirectory()) {
-        await walk(abs, rel);
-      } else if (entry.isFile()) {
-        const bytes = await readFile(abs);
-        zip.addFile(rel, rel === "manifest.json" ? sanitizeManifestForExport(brandRoot, bytes) : bytes);
+    zip.addFile("manifest.json", sanitizeManifestForExport(brandRoot, manifest));
+
+    for (const asset of manifest.assets) {
+      for (const file of asset.files) {
+        const rel = brandAssetExportPath(brandRoot, file.path);
+        if (seen.has(rel)) continue;
+        seen.add(rel);
+        try {
+          zip.addFile(rel, await readFile(file.path));
+        } catch (err) {
+          const code = err instanceof Error && "code" in err ? (err as { code: string }).code : undefined;
+          if (code === "ENOENT") {
+            throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset file missing on disk", {
+              product_id: productId,
+              path: rel,
+              reason: "not_found",
+            });
+          }
+          throw err;
+        }
       }
     }
-  }
 
-  await walk(brandRoot, "");
-  return zip.toBuffer();
+    return zip.toBuffer();
+  });
 }

@@ -14,9 +14,9 @@
  * Spec: SPEC-BEHAVIOR-006, SPEC-BEHAVIOR-008, SPEC-BEHAVIOR-004.
  */
 
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import sharp from "sharp";
 import AdmZip from "adm-zip";
@@ -483,6 +483,32 @@ describe("exportBrandAssetsZip", () => {
       expect(path).not.toContain("brand-assets/");
       expect(path).toMatch(/^app-icon\/primary\//);
     }
+  });
+
+  it("does not export unreferenced files left by interrupted replacements", async () => {
+    const ref = await stageImage(home, PRODUCT_ID, await makeSquarePng(2048));
+    const saved = await saveBrandAsset(makeDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "app-icon",
+      name: "primary",
+      brand_style: "ant",
+      source: { image_ref: ref },
+      platform: "web",
+    });
+    const marker = `${sep}brand-assets${sep}`;
+    const markerIndex = saved.files[0].path.indexOf(marker);
+    if (markerIndex === -1) throw new Error("saved file is not under brand-assets");
+    const brandRoot = saved.files[0].path.slice(0, markerIndex + marker.length - 1);
+    const orphanDir = join(brandRoot, "app-icon", "primary", "orphan-generation");
+    await mkdir(orphanDir, { recursive: true });
+    await writeFile(join(orphanDir, "orphan.png"), await makeSquarePng(16, "#ff00ff"));
+
+    const names = new AdmZip(await exportBrandAssetsZip(home, PRODUCT_ID))
+      .getEntries()
+      .filter((e) => !e.isDirectory)
+      .map((e) => e.entryName);
+
+    expect(names.some((name) => name.includes("orphan-generation"))).toBe(false);
   });
 
   it("returns a zip for an empty brand-assets dir (manifest only / nothing)", async () => {

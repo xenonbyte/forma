@@ -274,7 +274,12 @@ function maskProvider(providerId: string, entry: ProviderEntry): MaskedProviderC
     };
   }
 
-  return { configured: false, source: "none" };
+  return {
+    configured: false,
+    source: "none",
+    ...(model ? { model } : {}),
+    ...(baseUrl ? { base_url: baseUrl } : {}),
+  };
 }
 
 /**
