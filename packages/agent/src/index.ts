@@ -11,6 +11,7 @@ export const formaAgentCommands = [
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
+  "fm-app-icon",
 ] as const;
 
 export type FormaAgentCommand = (typeof formaAgentCommands)[number];

@@ -1,10 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  formaAgentCommands,
-  formaAgentPlatformMetadata,
-} from "../src/index.js";
+import { formaAgentCommands, formaAgentPlatformMetadata } from "../src/index.js";
 
 // Resolve templates dir relative to THIS test file: packages/agent/tests/ → packages/agent/templates/
 const templatesDir = join(new URL(".", import.meta.url).pathname, "..", "templates");
@@ -115,11 +112,9 @@ describe("palette design-read step present", () => {
     for (const platform of platforms) {
       it(`${cmd} on ${platform} contains palette design-read step`, () => {
         const body = readTemplate(platform, cmd);
-        expect(body, `${cmd}/${platform} must contain "Palette design-read"`).toContain(
-          "Palette design-read"
-        );
+        expect(body, `${cmd}/${platform} must contain "Palette design-read"`).toContain("Palette design-read");
         expect(body, `${cmd}/${platform} must mention brass/clay/oxblood palette guard`).toContain(
-          "brass/clay/oxblood"
+          "brass/clay/oxblood",
         );
       });
     }
@@ -135,7 +130,7 @@ describe("no-hand-drawn-functional-icons hard rule present (PLAN-TASK-014)", () 
       it(`${cmd} on ${platform} contains the no-hand-drawn-functional-icons hard rule`, () => {
         const body = readTemplate(platform, cmd);
         expect(body, `${cmd}/${platform} must forbid hand-drawing functional icons`).toContain(
-          "never hand-draw functional icons"
+          "never hand-draw functional icons",
         );
         expect(body, `${cmd}/${platform} must point at search_icons`).toContain("search_icons");
       });
@@ -145,10 +140,39 @@ describe("no-hand-drawn-functional-icons hard rule present (PLAN-TASK-014)", () 
   it("shared SKILL.md self-review checklist requires icon-library functional icons", () => {
     const sharedSkill = readFileSync(join(templatesDir, "shared", "SKILL.md"), "utf8");
     expect(sharedSkill, "shared SKILL.md must list the functional-icon self-review item").toContain(
-      "functional icons all come from the icon library"
+      "functional icons all come from the icon library",
     );
     expect(sharedSkill, "shared SKILL.md must reference search_icons in the self-review item").toContain(
-      "search_icons"
+      "search_icons",
     );
   });
+});
+
+describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
+  const platforms = ["claude", "codex", "gemini"] as const;
+
+  // Each entry is a substring that MUST appear in every platform's fm-app-icon
+  // template. These pin the load-bearing conventions tying T015↔T021↔T022.
+  const required: ReadonlyArray<readonly [string, string]> = [
+    ['name="primary"', "the canonical app-icon name the brand/ ref resolves to"],
+    ['purpose="app-icon"', "the generate_image purpose for the launcher mark"],
+    ["save_brand_asset", "the brand-asset persist tool"],
+    ["generate_image", "the image generation tool"],
+    ["MEDIA_NOT_CONFIGURED", "the image-model precondition error surfaced from generate_image"],
+    ["Settings", "the web Settings guidance for the missing image model"],
+    ["veto", "the Read-inspection veto step"],
+    ["craft/image-prompts.md", "the app-icon prompt scaffold source"],
+    ["forma-image://brand/app-icon", "the brand ref that resolves to the primary record"],
+    ["count=3", "the three-candidate generation"],
+    ["overwrite", "the existing-icon overwrite semantics"],
+  ];
+
+  for (const platform of platforms) {
+    for (const [needle, why] of required) {
+      it(`fm-app-icon on ${platform} contains ${JSON.stringify(needle)} (${why})`, () => {
+        const body = readTemplate(platform, "fm-app-icon");
+        expect(body, `fm-app-icon/${platform} must contain ${JSON.stringify(needle)} — ${why}`).toContain(needle);
+      });
+    }
+  }
 });

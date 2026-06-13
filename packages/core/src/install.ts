@@ -15,6 +15,7 @@ export const formaInstallCommands = [
   "fm-design",
   "fm-refine-components",
   "fm-change-style",
+  "fm-app-icon",
 ] as const;
 
 export type FormaInstallCommand = (typeof formaInstallCommands)[number];
