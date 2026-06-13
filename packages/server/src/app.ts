@@ -247,12 +247,14 @@ function statusForError(error: unknown): number {
     return error.statusCode;
   }
   if (error instanceof FormaError) {
-    if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
+    if (
+      error.code === "PRODUCT_MUTATION_LOCKED" ||
+      error.code === "PRODUCT_DELETION_RECOVERY_FAILED" ||
+      error.code === "MEDIA_NOT_CONFIGURED"
+    ) {
       return 409;
     }
-    if (error.code === "MEDIA_NOT_CONFIGURED") {
-      return 409;
-    }
+    // Upstream media provider failure → Bad Gateway.
     if (error.code === "MEDIA_PROVIDER_ERROR") {
       return 502;
     }
