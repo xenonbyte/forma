@@ -57,6 +57,7 @@ Change Type: create
 TDD Applicable: yes
 Files:
 - packages/core/src/brand-asset-plan.ts
+- packages/core/src/index.ts
 - packages/core/tests/brand-asset-plan.test.ts
 Skeleton:
 ```ts
@@ -79,6 +80,7 @@ Steps:
 - [ ] (SCOPE-IN-004) poster：按 3 开关产 0/1 条、`variant`=样式名、surface 省略；横幅按 banner 开关每 surface 1 条
 - [ ] app-icon：每 surface 一条，附 `baseImages`（mobile/tablet=a/b/c，web/desktop=a/b）与 `variants` 清单
 - [ ] 分辨率表骨架：poster/桌面档/安全区写定值（可断言）；平台 store-shot/banner/icon 像素以 UNCONFIRMED 占位 + source/verifiedAt 字段位（实现期官方核实后填，未核实不进断言）
+- [ ] core index export `BrandAssetPlan` / `BrandAssetPlanEntry` / `getBrandAssetPlan`，供 workspace 包继续从 `@xenonbyte/forma-core` 导入
 - [ ] 单测：四端 × {store-shot,banner(on/off),poster(各开关),app-icon} 的结构（surface 套数/count/variant/baseImages/方向）；poster 像素断言
 Verification: npx vitest run packages/core/tests/brand-asset-plan.test.ts; pnpm typecheck
 
@@ -88,6 +90,7 @@ Change Type: create
 TDD Applicable: yes
 Files:
 - packages/core/src/brand-icon-derive.ts
+- packages/core/src/index.ts
 - packages/core/tests/brand-icon-derive.test.ts
 Skeleton:
 ```ts
@@ -108,6 +111,7 @@ export async function deriveAppIconVariants(input: DeriveIconInput): Promise<Der
 Steps:
 - [ ] (SCOPE-IN-005) 最小 spike + 不依赖 stub 单测：验证 greyscale/tint/composite dest-in/alpha 保留/resize/圆角（sharp 0.34.5 已核实支持）
 - [ ] 铺开三类 surface 的完整变体矩阵；mobile/tablet 缺 `safeLogo` 报错；web/desktop 仅 a/b
+- [ ] core index export `deriveAppIconVariants` 及相关类型，供 `brand-assets.ts`/下游包从公共入口复用
 - [ ] 单测断言各变体尺寸/alpha/圆角/tint 结果（确定性，不依赖网络/stub）
 Verification: npx vitest run packages/core/tests/brand-icon-derive.test.ts; pnpm typecheck
 
@@ -157,8 +161,8 @@ Skeleton:
 Steps:
 - [ ] (SCOPE-IN-007) 先 codegraph_impact + 全仓 grep 复核全部引用点（SPEC-DATA-008 为权威清单）
 - [ ] 按清单逐处删除源 + 测试；无关 "primary"（color-token/component-variant）不动
-- [ ] grep 全仓零残留：listStoreShotPresets/STORE_SHOT_PRESETS/PLATFORM_PRESET_MAP/StoreShotPreset/list_store_shot_presets
-Verification: pnpm typecheck; grep -rn "listStoreShotPresets\|STORE_SHOT_PRESETS\|PLATFORM_PRESET_MAP\|list_store_shot_presets" packages/ | grep -v dist; pnpm test
+- [ ] 活跃代码/模板/根指令零残留检查覆盖完整删除面：listStoreShotPresets/STORE_SHOT_PRESETS/PLATFORM_PRESET_MAP/StoreShotPreset/list_store_shot_presets/name="primary"（无关 primary 除外；历史需求 docs 不纳入零残留检查）
+Verification: pnpm typecheck; ! rg -n 'listStoreShotPresets|STORE_SHOT_PRESETS|PLATFORM_PRESET_MAP|StoreShotPreset|list_store_shot_presets|name\s*={1,3}\s*"primary"' packages craft CLAUDE.md --glob '*.{ts,tsx,md,toml}' --glob '!**/dist/**'; pnpm test
 
 ### PLAN-TASK-006 生图模型目录扩充 + Gemini 默认门控
 Spec References: SPEC-BEHAVIOR-001
@@ -188,6 +192,7 @@ TDD Applicable: yes
 Files:
 - packages/mcp/src/tools.ts
 - packages/mcp/tests/tools.test.ts
+- packages/core/src/index.ts
 Skeleton:
 ```ts
 // + get_brand_asset_plan(product_id) → BrandAssetPlan
@@ -207,42 +212,52 @@ TDD Applicable: yes
 Files:
 - packages/server/src/routes.ts
 - packages/server/tests/routes.test.ts
+- packages/web/src/api.ts
+- packages/web/src/api.test.ts
 - packages/web/src/pages/ProductDetail.tsx
 - packages/web/src/i18n.ts
 - packages/web/src/pages/ProductDetail.test.tsx
 Skeleton:
 ```tsx
-// server/routes.ts: + PUT /api/products/:pid/brand-asset-settings → store.updateBrandAssetSettings(pid, body)
+// server/routes.ts: + PUT /api/products/:pid/brand-asset-settings → store.products.updateBrandAssetSettings(pid, body)
 //   （沿用既有产品路由的鉴权/校验/FormaError→HTTP 映射；zod 校验 body = brandAssetsSettings patch）
-// web 客户端 api: putBrandAssetSettings(pid, patch)
+// web 客户端 api: updateBrandAssetSettings(pid, patch)
+// Product/BrandAssetSettings 类型：Product.brand_assets?: { store_shot_count; banner; poster_portrait; poster_landscape; poster_square }
 // ProductDetail：品牌资产设置区——store_shot_count 下拉(3..8) / banner 勾选 / 3 个 poster 勾选
-// 保存 → PUT /api/products/:pid/brand-asset-settings → updateBrandAssetSettings（T1 提供 core 方法）
+// 保存 → web API client → PUT /api/products/:pid/brand-asset-settings → store.products.updateBrandAssetSettings（T1 提供 ProductService 方法）
 // i18n: en/zh 两块加键（设置标签/选项）
 ```
 Steps:
-- [ ] (SCOPE-IN-008) server 增 `PUT /api/products/:pid/brand-asset-settings` 路由（接 T1 的 `updateBrandAssetSettings`）+ 路由测试（AC-008 持久化所需）
-- [ ] ProductDetail 设置控件 + 保存联动（调新路由）；en/zh 文案齐全
+- [ ] (SCOPE-IN-008) server 增 `PUT /api/products/:pid/brand-asset-settings` 路由（接 `store.products.updateBrandAssetSettings`）+ 路由测试/route store interface mock（AC-008 持久化所需）
+- [ ] web API 增 `BrandAssetsSettings` / `Product.brand_assets` 类型与 `updateBrandAssetSettings` client；api 单测覆盖 URL、payload、返回 product
+- [ ] ProductDetail 设置控件 + 保存联动（调 web API client）；en/zh 文案齐全
 - [ ] 组件单测：交互+保存调用；保存后计划随设置变化
-Verification: npx vitest run packages/server/tests/routes.test.ts packages/web/src/pages/ProductDetail.test.tsx; pnpm typecheck
+Verification: npx vitest run packages/server/tests/routes.test.ts packages/web/src/api.test.ts packages/web/src/pages/ProductDetail.test.tsx; pnpm typecheck
 
 ### PLAN-TASK-009 品牌资产画布 surface 分组 + banner
 Spec References: SPEC-BEHAVIOR-008
 Change Type: modify
 TDD Applicable: yes
 Files:
+- packages/server/src/routes.ts
+- packages/server/tests/routes.test.ts
+- packages/web/src/api.ts
+- packages/web/src/api.test.ts
 - packages/web/src/pages/BrandAssets.tsx
 - packages/web/src/i18n.ts
 - packages/web/src/pages/BrandAssets.test.tsx
 Skeleton:
 ```tsx
+// server toBrandAssetView + web BrandAssetView: 带出 surface?/variant?
 // 在 groupByKind 基础上按 asset.surface 再分子组：
 // mobile/tablet 显示 "Android商店截图/iOS商店截图"、"Android横幅/iOS横幅"、"Android应用ICON/iOS应用ICON"
 // 其余端无 surface 标签；banner kind 自动成组（动态分组天然支持）；stale 徽标沿用；i18n en/zh 键
 ```
 Steps:
+- [ ] server/API view 层带出 `surface?`/`variant?`，`BrandAssetView` 类型同步
 - [ ] (SCOPE-IN-009) surface 子分组 + 标签 + banner 组；其余端单组
 - [ ] 组件单测：mobile/tablet vs web/desktop 分组；banner 组；i18n 键齐全
-Verification: npx vitest run packages/web/src/pages/BrandAssets.test.tsx; pnpm typecheck
+Verification: npx vitest run packages/server/tests/routes.test.ts packages/web/src/api.test.ts packages/web/src/pages/BrandAssets.test.tsx; pnpm typecheck
 
 ### PLAN-TASK-010 agent 模板 + craft + CLAUDE.md 同步
 Spec References: SPEC-BEHAVIOR-009
@@ -252,26 +267,34 @@ Files:
 - packages/agent/templates/claude/fm-app-icon.md
 - packages/agent/templates/claude/fm-brand-assets.md
 - packages/agent/templates/claude/fm-design.md
+- packages/agent/templates/claude/fm-refine-components.md
 - packages/agent/templates/gemini/fm-app-icon.toml
 - packages/agent/templates/gemini/fm-brand-assets.toml
+- packages/agent/templates/gemini/fm-design.toml
+- packages/agent/templates/gemini/fm-refine-components.toml
 - packages/agent/templates/codex/fm-app-icon/SKILL.md
 - packages/agent/templates/codex/fm-brand-assets/SKILL.md
+- packages/agent/templates/codex/fm-design/SKILL.md
+- packages/agent/templates/codex/fm-refine-components/SKILL.md
 - craft/image-prompts.md
 - CLAUDE.md
+- packages/core/tests/craft.test.ts
 - packages/agent/tests/template-parity.test.ts
 Skeleton:
 ```md
 fm-app-icon：母图 a(透明logo)/b(不透明背景)/c(666²安全区) + 本地派生说明（retire 旧"逐尺寸"措辞）
 fm-brand-assets：store-shot 数量(按设置) + 横幅 + 海报 3 样式；按 get_brand_asset_plan 执行
-fm-* 纯命令（无描述）重跑 = 全量重生成对应资产 + 执行前二次确认
+fm-refine-components：纯命令重跑 = 全量重生成组件库 + 执行前二次确认；app-icon 前置移除旧 `primary` 命名偏好，改为任一 app-icon 记录满足
+fm-* 纯命令（无描述）重跑 = 全量重生成对应资产/组件库 + 执行前二次确认
 CLAUDE.md：banners kind / get_brand_asset_plan / delete_brand_asset / 移除 list_store_shot_presets 与 name="primary" 描述 / 画布 surface 分组
 注：源模板已无 fm-rollback-design（三平台各 8 命令，parity 成立）——仓内无需删除；用户旧安装清理属 out-of-repo
 ```
 Steps:
-- [ ] (SCOPE-IN-010) 三平台 fm-app-icon/fm-brand-assets/fm-design 同步更新，保持 parity
-- [ ] fm-* 重跑语义写入模板；craft/image-prompts.md 补 banner/poster/icon-母图 scaffold
+- [ ] (SCOPE-IN-010) 三平台 fm-app-icon/fm-brand-assets/fm-design/fm-refine-components 同步更新，保持 parity
+- [ ] fm-* 重跑语义写入模板；fm-refine-components 同步二次确认/全量重生成措辞并移除旧 `primary` app-icon guidance；`template-parity.test.ts` 覆盖三平台模板一致性
+- [ ] craft/image-prompts.md 补 banner/poster/icon-母图 scaffold；`craft.test.ts` 断言新增 scaffold slug/必需段落
 - [ ] CLAUDE.md 同步；确认源无 fm-rollback-design（OQ-001 已满足）
-Verification: npx vitest run packages/agent/tests/template-parity.test.ts; pnpm lint
+Verification: npx vitest run packages/core/tests/craft.test.ts packages/agent/tests/template-parity.test.ts; pnpm lint
 
 ### PLAN-TASK-011 全量验证
 Spec References: SPEC-BEHAVIOR-007
@@ -286,9 +309,9 @@ pnpm lint && pnpm typecheck && pnpm test && pnpm check:vzi-boundary
 Steps:
 - [ ] pnpm lint / pnpm typecheck / pnpm test 全绿
 - [ ] pnpm check:vzi-boundary 不回退
-- [ ] 全仓（含根 CLAUDE.md）grep 零残留：listStoreShotPresets/STORE_SHOT_PRESETS/PLATFORM_PRESET_MAP/list_store_shot_presets/name="primary"（无关 primary 除外）
+- [ ] 活跃代码/模板/根指令（packages/craft/CLAUDE.md，含 agent `.toml` 模板）零残留检查覆盖：listStoreShotPresets/STORE_SHOT_PRESETS/PLATFORM_PRESET_MAP/StoreShotPreset/list_store_shot_presets/name="primary"（无关 primary 除外；历史需求 docs 不纳入零残留检查）
 - [ ] 人工验收（真实 provider 生图）单列，不在自动路径
-Verification: pnpm lint; pnpm typecheck; pnpm test; pnpm check:vzi-boundary; grep -rn "list_store_shot_presets\|STORE_SHOT_PRESETS" . --include=*.md --include=*.ts | grep -v dist | grep -v .req-to-plan
+Verification: pnpm lint; pnpm typecheck; pnpm test; pnpm check:vzi-boundary; ! rg -n 'listStoreShotPresets|STORE_SHOT_PRESETS|PLATFORM_PRESET_MAP|StoreShotPreset|list_store_shot_presets|name\s*={1,3}\s*"primary"' packages craft CLAUDE.md --glob '*.{ts,tsx,md,toml}' --glob '!**/dist/**'
 
 ## Trace
 <!-- Map this stage's IDs to upstream/downstream. R3 derives & checks closure. -->
