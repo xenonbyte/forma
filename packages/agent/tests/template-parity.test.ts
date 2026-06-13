@@ -148,6 +148,63 @@ describe("no-hand-drawn-functional-icons hard rule present (PLAN-TASK-014)", () 
   });
 });
 
+describe("icon unit retired + app-icon brand reference (PLAN-TASK-022)", () => {
+  const platforms = ["claude", "codex", "gemini"] as const;
+
+  // fm-refine-components: icon unit + product_icon emission GONE; ICON hard precondition ADDED.
+  for (const platform of platforms) {
+    it(`fm-refine-components on ${platform} no longer emits an icon unit or product_icon`, () => {
+      const body = readTemplate(platform, "fm-refine-components");
+      expect(body, `${platform}: icon unit must be gone`).not.toContain(`role: "icon"`);
+      expect(body, `${platform}: product_icon save field must be gone`).not.toContain("`product_icon`:");
+      // The obsolete T014 carve-out for the product ICON mark in unit b must be removed.
+      expect(body, `${platform}: unit-b carve-out must be removed`).not.toContain("product ICON mark in unit b");
+    });
+
+    it(`fm-refine-components on ${platform} keeps the no-hand-drawn rule with NO carve-out`, () => {
+      const body = readTemplate(platform, "fm-refine-components");
+      expect(body, `${platform}: no-hand-drawn rule kept`).toContain("never hand-draw functional icons");
+      expect(body, `${platform}: no "This does not apply" exception`).not.toContain("This does not apply");
+    });
+
+    it(`fm-refine-components on ${platform} adds the app-icon hard precondition`, () => {
+      const body = readTemplate(platform, "fm-refine-components");
+      expect(body, `${platform}: must call list_brand_assets`).toContain(
+        `list_brand_assets(product_id, kind="app-icon")`,
+      );
+      expect(body, `${platform}: must guide to fm-app-icon`).toContain("fm-app-icon");
+    });
+  }
+
+  // fm-design: brand app-icon ref + conditional precondition; legacy productIcon SVG reuse GONE.
+  for (const platform of platforms) {
+    it(`fm-design on ${platform} references the brand app-icon and adds the conditional precondition`, () => {
+      const body = readTemplate(platform, "fm-design");
+      expect(body, `${platform}: must reference forma-image://brand/app-icon`).toContain(
+        "forma-image://brand/app-icon",
+      );
+      expect(body, `${platform}: must call list_brand_assets`).toContain(
+        `list_brand_assets(product_id, kind="app-icon")`,
+      );
+      expect(body, `${platform}: legacy productIcon SVG reuse must be gone`).not.toContain(
+        "reuse the product ICON SVG from",
+      );
+    });
+  }
+
+  // fm-change-style: stale-asset reminder; shape-reuse/recolor rules GONE.
+  for (const platform of platforms) {
+    it(`fm-change-style on ${platform} adds the stale-asset reminder and drops shape reuse`, () => {
+      const body = readTemplate(platform, "fm-change-style");
+      expect(body, `${platform}: must flag stale app icon / marketing assets`).toContain("Stale-asset reminder");
+      expect(body, `${platform}: must point to fm-app-icon`).toContain("fm-app-icon");
+      expect(body, `${platform}: icon shape geometry reuse rule must be gone`).not.toContain(
+        "Reuse that geometry exactly and only recolor",
+      );
+    });
+  }
+});
+
 describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
   const platforms = ["claude", "codex", "gemini"] as const;
 

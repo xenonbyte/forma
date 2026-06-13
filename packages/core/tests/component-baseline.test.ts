@@ -60,28 +60,15 @@ describe("foundations (both platforms)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Product icon spec (same for both platforms)
+// Product icon spec RETIRED (PLAN-TASK-022 / D6).
+// The icon unit is removed from the baseline; the app icon now flows through
+// fm-app-icon → brand assets. The baseline must NOT carry a productIcon spec.
 // ---------------------------------------------------------------------------
 
-describe("productIcon (both platforms)", () => {
+describe("productIcon spec removed (both platforms)", () => {
   for (const platform of ["web", "mobile"] as ComponentPlatform[]) {
-    it(`${platform}: variants is exactly ["primary","monochrome"]`, () => {
-      expect(COMPONENT_BASELINES[platform].productIcon.variants).toEqual([
-        "primary",
-        "monochrome",
-      ]);
-    });
-
-    it(`${platform}: derivation is "productName+brandStyle"`, () => {
-      expect(COMPONENT_BASELINES[platform].productIcon.derivation).toBe(
-        "productName+brandStyle",
-      );
-    });
-
-    it(`${platform}: shapeStability is "reuse-geometry-recolor"`, () => {
-      expect(COMPONENT_BASELINES[platform].productIcon.shapeStability).toBe(
-        "reuse-geometry-recolor",
-      );
+    it(`${platform}: baseline has no productIcon spec`, () => {
+      expect(COMPONENT_BASELINES[platform]).not.toHaveProperty("productIcon");
     });
   }
 });

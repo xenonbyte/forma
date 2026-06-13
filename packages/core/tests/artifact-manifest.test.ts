@@ -347,6 +347,67 @@ describe("SPEC-DATA-001: validateFormaExtension productIcon", () => {
   });
 });
 
+describe("PLAN-TASK-022 zero-migration: old productIcon manifests stay valid", () => {
+  // The icon unit is retired (D6): new component-library generations no longer
+  // emit forma.productIcon. But OLD artifacts persisted before the retirement
+  // still carry it, and manifest validation must accept them unchanged.
+  const legacyProductIcon = {
+    primary: "assets/icon.svg",
+    monochrome: "assets/icon-mono.svg",
+    shape: { shapeId: "acme-mark", geometry: "<path d='M0 0h8v8H0z'/>", sourceVersion: "v3" },
+  };
+
+  it("loads an OLD component-library manifest that still carries forma.productIcon (+ supportingFiles)", () => {
+    const oldManifest = {
+      version: 1,
+      id: "AbCdEfGhIjKlMnOp",
+      kind: "component-library",
+      renderer: "design-system",
+      title: "Legacy Library",
+      entry: "index.html",
+      status: "complete",
+      exports: ["index.html"],
+      supportingFiles: ["index.html", "assets/icon.svg", "assets/icon-mono.svg"],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      forma: { brandStyle: "ant", productIcon: legacyProductIcon },
+    };
+    const result = validateArtifactManifest(oldManifest);
+    expect(result.ok, result.ok ? "" : result.error).toBe(true);
+    if (result.ok) {
+      expect(result.value.forma?.productIcon?.primary).toBe("assets/icon.svg");
+    }
+  });
+
+  it("loads a NEW component-library manifest with no productIcon (post-retirement generations)", () => {
+    const newManifest = {
+      version: 1,
+      id: "A1b2C3d4E5f6G7h8",
+      kind: "component-library",
+      renderer: "design-system",
+      title: "Current Library",
+      entry: "index.html",
+      status: "complete",
+      exports: ["index.html"],
+      supportingFiles: ["index.html", "unit-foundations.html", "unit-button.html"],
+      createdAt: "2026-06-13T00:00:00.000Z",
+      updatedAt: "2026-06-13T00:00:00.000Z",
+      forma: {
+        brandStyle: "ant",
+        units: [
+          { id: "foundations", title: "Foundations", role: "foundations", entry: "unit-foundations.html" },
+          { id: "button", title: "Button", role: "component", entry: "unit-button.html" },
+        ],
+      },
+    };
+    const result = validateArtifactManifest(newManifest);
+    expect(result.ok, result.ok ? "" : result.error).toBe(true);
+    if (result.ok) {
+      expect(result.value.forma?.productIcon).toBeUndefined();
+    }
+  });
+});
+
 describe("D1 forma.units validation", () => {
   it("accepts forma.units with entries ⊆ supportingFiles and unique ids", () => {
     const r = validateArtifactManifest({

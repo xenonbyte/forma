@@ -23,13 +23,6 @@ export interface ComponentBaselineFoundations {
   functionalIconStyle: string;
 }
 
-/** Product icon spec — same for all platforms. */
-export interface ProductIconSpec {
-  variants: ["primary", "monochrome"];
-  derivation: "productName+brandStyle";
-  shapeStability: "reuse-geometry-recolor";
-}
-
 /** A single component entry in the baseline. */
 export interface ComponentEntry {
   group: string;
@@ -42,7 +35,6 @@ export interface ComponentEntry {
 /** Full baseline spec for one platform. */
 export interface ComponentBaselineSpec {
   foundations: ComponentBaselineFoundations;
-  productIcon: ProductIconSpec;
   components: ComponentEntry[];
 }
 
@@ -400,28 +392,21 @@ const FOUNDATIONS: ComponentBaselineFoundations = {
 };
 
 // ---------------------------------------------------------------------------
-// Shared product icon spec
-// ---------------------------------------------------------------------------
-
-const PRODUCT_ICON: ProductIconSpec = {
-  variants: ["primary", "monochrome"],
-  derivation: "productName+brandStyle",
-  shapeStability: "reuse-geometry-recolor",
-};
-
-// ---------------------------------------------------------------------------
 // Exported constant — SPEC-DATA-003
+//
+// The icon unit / productIcon spec is RETIRED (PLAN-TASK-022 / D6): the app
+// icon now flows through fm-app-icon → brand assets, not the component library.
+// Old artifacts carrying `manifest.forma.productIcon` remain valid (zero
+// migration); the baseline simply no longer prescribes producing one.
 // ---------------------------------------------------------------------------
 
 export const COMPONENT_BASELINES: Record<ComponentPlatform, ComponentBaselineSpec> = {
   web: {
     foundations: FOUNDATIONS,
-    productIcon: PRODUCT_ICON,
     components: WEB_COMPONENTS,
   },
   mobile: {
     foundations: FOUNDATIONS,
-    productIcon: PRODUCT_ICON,
     components: MOBILE_COMPONENTS,
   },
 };
