@@ -159,6 +159,7 @@ function createDetailClient() {
     getProduct: vi.fn(async () => product),
     listRequirements: vi.fn(async () => [] as RequirementWithDocument[]),
     listStyles: vi.fn(async () => [style]),
+    updateBrandAssetSettings: vi.fn(async () => product),
   } satisfies Pick<
     FormaApiClient,
     | "archiveRequirement"
@@ -169,6 +170,7 @@ function createDetailClient() {
     | "getProduct"
     | "listRequirements"
     | "listStyles"
+    | "updateBrandAssetSettings"
   >;
 }
 

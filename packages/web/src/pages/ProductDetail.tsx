@@ -6,6 +6,7 @@ import {
   languageOptions,
   type ApiErrorInfo,
   type ArchiveRequirementResult,
+  type BrandAssetsSettings,
   type DeleteProductResult,
   type FormaApiClient,
   type Language,
@@ -33,6 +34,7 @@ export interface ProductDetailProps {
     | "getProduct"
     | "listRequirements"
     | "listStyles"
+    | "updateBrandAssetSettings"
   >;
   hash?: string;
   onBreadcrumbLabel?: (key: string, label: string) => void;
@@ -337,6 +339,15 @@ export function ProductDetail({
           </form>
         </WorkSurface>
       </div>
+
+      <BrandAssetSettingsForm
+        client={client}
+        onProductUpdated={(product) =>
+          setState((current) => (current.status === "ready" ? { ...current, product } : current))
+        }
+        product={state.product}
+        productId={productId}
+      />
 
       <WorkSurface title={t("product.dangerZone")}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -810,3 +821,143 @@ const dangerButtonClasses =
 const summaryPanelClasses = "rounded-lg border border-zinc-200 bg-white p-4 shadow-sm";
 const textLinkClasses =
   "inline-flex rounded-md text-sm font-semibold text-zinc-950 underline-offset-4 hover:underline active:scale-95 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500";
+
+const BRAND_ASSETS_SETTINGS_DEFAULTS: BrandAssetsSettings = {
+  store_shot_count: 3,
+  banner: false,
+  poster_portrait: true,
+  poster_landscape: true,
+  poster_square: true,
+};
+
+const STORE_SHOT_COUNT_OPTIONS = [3, 4, 5, 6, 7, 8] as const;
+
+function BrandAssetSettingsForm({
+  client,
+  onProductUpdated,
+  product,
+  productId,
+}: {
+  client: Pick<FormaApiClient, "updateBrandAssetSettings">;
+  onProductUpdated: (product: Product) => void;
+  product: Product;
+  productId: string;
+}) {
+  const t = useT();
+  const current = product.brand_assets ?? BRAND_ASSETS_SETTINGS_DEFAULTS;
+  const [storeShotCount, setStoreShotCount] = useState(current.store_shot_count);
+  const [banner, setBanner] = useState(current.banner);
+  const [posterPortrait, setPosterPortrait] = useState(current.poster_portrait);
+  const [posterLandscape, setPosterLandscape] = useState(current.poster_landscape);
+  const [posterSquare, setPosterSquare] = useState(current.poster_square);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<ApiErrorInfo | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (saving) {
+      return;
+    }
+
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      const updated = await client.updateBrandAssetSettings(productId, {
+        store_shot_count: storeShotCount,
+        banner,
+        poster_portrait: posterPortrait,
+        poster_landscape: posterLandscape,
+        poster_square: posterSquare,
+      });
+      onProductUpdated(updated);
+      setSaved(true);
+    } catch (error: unknown) {
+      setSaveError(formatApiError(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <WorkSurface title={t("brandAssets.settings")}>
+      <form className="grid gap-4" data-brand-asset-settings-form="true" onSubmit={handleSubmit}>
+        <label className="grid gap-1 text-sm font-medium text-zinc-700">
+          {t("brandAssets.settings.storeShotCount")}
+          <select
+            className={inputClasses}
+            name="store_shot_count"
+            onChange={(event) => setStoreShotCount(Number(event.target.value))}
+            value={storeShotCount}
+          >
+            {STORE_SHOT_COUNT_OPTIONS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <fieldset className="grid gap-2">
+          <legend className="text-sm font-medium text-zinc-700">{t("brandAssets.title")}</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+              <input
+                checked={banner}
+                className="h-4 w-4 accent-amber-500"
+                name="banner"
+                onChange={(event) => setBanner(event.target.checked)}
+                type="checkbox"
+              />
+              {t("brandAssets.settings.banner")}
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+              <input
+                checked={posterPortrait}
+                className="h-4 w-4 accent-amber-500"
+                name="poster_portrait"
+                onChange={(event) => setPosterPortrait(event.target.checked)}
+                type="checkbox"
+              />
+              {t("brandAssets.settings.posterPortrait")}
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+              <input
+                checked={posterLandscape}
+                className="h-4 w-4 accent-amber-500"
+                name="poster_landscape"
+                onChange={(event) => setPosterLandscape(event.target.checked)}
+                type="checkbox"
+              />
+              {t("brandAssets.settings.posterLandscape")}
+            </label>
+            <label className="flex items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+              <input
+                checked={posterSquare}
+                className="h-4 w-4 accent-amber-500"
+                name="poster_square"
+                onChange={(event) => setPosterSquare(event.target.checked)}
+                type="checkbox"
+              />
+              {t("brandAssets.settings.posterSquare")}
+            </label>
+          </div>
+        </fieldset>
+
+        {saveError ? (
+          <p className="text-sm text-red-700">
+            {saveError.error_code} - {saveError.message}
+          </p>
+        ) : null}
+        {saved && !saveError ? <p className="text-sm text-green-700">{t("brandAssets.settings.saved")}</p> : null}
+
+        <div className="flex justify-end">
+          <button className={primaryButtonClasses} disabled={saving} type="submit">
+            {saving ? t("brandAssets.settings.saving") : t("brandAssets.settings.save")}
+          </button>
+        </div>
+      </form>
+    </WorkSurface>
+  );
+}

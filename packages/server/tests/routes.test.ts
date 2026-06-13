@@ -3384,3 +3384,134 @@ describe("GET /api/health (R5)", () => {
     expect(allowed.statusCode).toBe(200);
   });
 });
+
+describe("PUT /api/products/:pid/brand-asset-settings (AC-008)", () => {
+  async function settingsStoreApp(): Promise<{ app: FormaServer; store: FormaStore; pid: string }> {
+    const home = await mkdtemp(join(tmpdir(), "forma-ba-settings-"));
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+    const product = await store.products.createProduct({ name: "Settings App", description: "Test product" });
+    await store.products.initProductConfig(product.id, {
+      platform: "mobile",
+      languages: ["en"],
+      default_language: "en",
+      brand_style: "linear-app",
+    });
+    const app = await buildServer({ store });
+    apps.push(app);
+    await app.ready();
+    return { app, store, pid: product.id };
+  }
+
+  it("persists a valid patch and returns the updated product with brand_assets", async () => {
+    const { app, store, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { store_shot_count: 5, banner: true },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.brand_assets).toMatchObject({ store_shot_count: 5, banner: true });
+
+    // Round-trip: reading the product back should reflect the change.
+    const product = await store.products.getProduct(pid);
+    expect(product.brand_assets?.store_shot_count).toBe(5);
+    expect(product.brand_assets?.banner).toBe(true);
+  });
+
+  it("persists poster flags and reflects them on GET product", async () => {
+    const { app, store, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { poster_portrait: false, poster_landscape: false, poster_square: false },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const product = await store.products.getProduct(pid);
+    expect(product.brand_assets?.poster_portrait).toBe(false);
+    expect(product.brand_assets?.poster_landscape).toBe(false);
+    expect(product.brand_assets?.poster_square).toBe(false);
+  });
+
+  it("rejects store_shot_count below 3 with 400", async () => {
+    const { app, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { store_shot_count: 2 },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("INVALID_INPUT");
+  });
+
+  it("rejects store_shot_count above 8 with 400", async () => {
+    const { app, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { store_shot_count: 9 },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("INVALID_INPUT");
+  });
+
+  it("rejects unknown keys with 400", async () => {
+    const { app, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { unknown_field: true },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("INVALID_INPUT");
+  });
+
+  it("rejects a non-boolean value for banner with 400", async () => {
+    const { app, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { banner: "yes" },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("INVALID_INPUT");
+  });
+
+  it("rejects a non-integer store_shot_count with 400", async () => {
+    const { app, pid } = await settingsStoreApp();
+
+    const res = await app.inject({
+      method: "PUT",
+      url: `/api/products/${pid}/brand-asset-settings`,
+      payload: { store_shot_count: 4.5 },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("INVALID_INPUT");
+  });
+
+  it("returns 404 for an unknown product (valid-format ID, not in the store)", async () => {
+    const { app } = await settingsStoreApp();
+
+    // P-ffffff is valid format but not in this store's product index.
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/products/P-ffffff/brand-asset-settings",
+      payload: { banner: true },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+});

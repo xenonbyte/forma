@@ -11,6 +11,7 @@ import { ProductDetail } from "./ProductDetail.js";
 import {
   ApiError,
   type ArchiveRequirementResult,
+  type BrandAssetsSettings,
   type FormaApiClient,
   type Product,
   type ProductBaseline,
@@ -582,6 +583,18 @@ function createClient({ product, requirements }: { product: Product; requirement
     getProduct: vi.fn(async () => product),
     listRequirements: vi.fn(async () => requirements),
     listStyles: vi.fn(async () => [style]),
+    updateBrandAssetSettings: vi.fn(async (_productId, patch) => ({
+      ...product,
+      brand_assets: {
+        store_shot_count: 3,
+        banner: false,
+        poster_portrait: true,
+        poster_landscape: true,
+        poster_square: true,
+        ...product.brand_assets,
+        ...patch,
+      } satisfies BrandAssetsSettings,
+    })),
   } satisfies Pick<
     FormaApiClient,
     | "archiveRequirement"
@@ -593,6 +606,7 @@ function createClient({ product, requirements }: { product: Product; requirement
     | "getProduct"
     | "listRequirements"
     | "listStyles"
+    | "updateBrandAssetSettings"
   >;
 }
 
@@ -676,3 +690,158 @@ async function flushPromises() {
   await Promise.resolve();
   await Promise.resolve();
 }
+
+describe("BrandAssetSettingsForm (AC-008)", () => {
+  const productWithSettings: Product = {
+    ...configuredProduct,
+    brand_assets: {
+      store_shot_count: 5,
+      banner: true,
+      poster_portrait: false,
+      poster_landscape: true,
+      poster_square: false,
+    },
+  };
+
+  it("renders controls initialized from product.brand_assets", async () => {
+    const client = createClient({ product: productWithSettings, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-brand-asset-settings-form="true"]'),
+      "brand asset settings form",
+    );
+    const countSelect = required(
+      form.querySelector<HTMLSelectElement>('select[name="store_shot_count"]'),
+      "store shot count select",
+    );
+    expect(countSelect.value).toBe("5");
+
+    const bannerCheckbox = required(form.querySelector<HTMLInputElement>('input[name="banner"]'), "banner checkbox");
+    expect(bannerCheckbox.checked).toBe(true);
+
+    const portraitCheckbox = required(
+      form.querySelector<HTMLInputElement>('input[name="poster_portrait"]'),
+      "portrait checkbox",
+    );
+    expect(portraitCheckbox.checked).toBe(false);
+  });
+
+  it("falls back to defaults when product has no brand_assets", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-brand-asset-settings-form="true"]'),
+      "brand asset settings form",
+    );
+    const countSelect = required(
+      form.querySelector<HTMLSelectElement>('select[name="store_shot_count"]'),
+      "store shot count select",
+    );
+    // Default is 3
+    expect(countSelect.value).toBe("3");
+
+    const bannerCheckbox = required(form.querySelector<HTMLInputElement>('input[name="banner"]'), "banner checkbox");
+    expect(bannerCheckbox.checked).toBe(false);
+
+    const portraitCheckbox = required(
+      form.querySelector<HTMLInputElement>('input[name="poster_portrait"]'),
+      "portrait checkbox",
+    );
+    expect(portraitCheckbox.checked).toBe(true);
+  });
+
+  it("calls updateBrandAssetSettings with the right patch on save", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-brand-asset-settings-form="true"]'),
+      "brand asset settings form",
+    );
+
+    // Change store_shot_count to 6 and enable banner
+    await act(async () => {
+      setSelectValue(
+        required(form.querySelector<HTMLSelectElement>('select[name="store_shot_count"]'), "count select"),
+        "6",
+      );
+      required(form.querySelector<HTMLInputElement>('input[name="banner"]'), "banner checkbox").click();
+      await flushPromises();
+    });
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    expect(client.updateBrandAssetSettings).toHaveBeenCalledWith(
+      "P-123abc",
+      expect.objectContaining({ store_shot_count: 6, banner: true }),
+    );
+  });
+
+  it("reflects the updated product after a successful save", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-brand-asset-settings-form="true"]'),
+      "brand asset settings form",
+    );
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    // After save, a success message should appear
+    expect(container.textContent).toContain("Settings saved");
+  });
+
+  it("shows a save error message when updateBrandAssetSettings rejects", async () => {
+    const client = createClient({ product: configuredProduct, requirements: [] });
+    client.updateBrandAssetSettings.mockRejectedValueOnce(
+      new ApiError("PRODUCT_NOT_FOUND", "Product not found", {}, 404),
+    );
+    const { container, root } = createTestRoot();
+
+    await act(async () => {
+      root.render(<ProductDetail client={client} params={{ productId: "P-123abc" }} />);
+      await flushPromises();
+    });
+
+    const form = required(
+      container.querySelector<HTMLFormElement>('form[data-brand-asset-settings-form="true"]'),
+      "brand asset settings form",
+    );
+
+    await act(async () => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain("PRODUCT_NOT_FOUND - Product not found");
+  });
+});

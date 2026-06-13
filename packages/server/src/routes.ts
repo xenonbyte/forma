@@ -121,6 +121,16 @@ export interface FormaRoutesStore {
     initProductConfig(productId: string, config: unknown): Promise<unknown>;
     listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
     listDesignPointers(productId: string): Promise<DesignPointer[]>;
+    updateBrandAssetSettings(
+      productId: string,
+      patch: Partial<{
+        store_shot_count: number;
+        banner: boolean;
+        poster_portrait: boolean;
+        poster_landscape: boolean;
+        poster_square: boolean;
+      }>,
+    ): Promise<{ id: string; [key: string]: unknown }>;
   };
   requirements: {
     archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
@@ -870,6 +880,55 @@ export function registerRoutes(
     });
     return { ok: true, provider_note: result.provider_note };
   });
+
+  // ─── Brand-asset settings route (SPEC-BEHAVIOR-008) ──────────────────────────
+
+  // Update per-product brand-asset generation settings.
+  // Body is a partial patch of the brandAssetsSettings schema fields.
+  // Unknown keys and out-of-range values are rejected (400-class).
+  app.put<{ Params: { pid: string }; Body: unknown }>(
+    "/api/products/:pid/brand-asset-settings",
+    async (request, reply) => {
+      if (!checkMutationOrigin(request, reply)) return;
+      const body = objectBody(request.body);
+      const allowedFields = new Set([
+        "store_shot_count",
+        "banner",
+        "poster_portrait",
+        "poster_landscape",
+        "poster_square",
+      ]);
+      const extraFields = Object.keys(body).filter((f) => !allowedFields.has(f));
+      if (extraFields.length > 0) {
+        throw new RouteInputError("Unexpected request fields", { fields: extraFields });
+      }
+      const patch: Partial<{
+        store_shot_count: number;
+        banner: boolean;
+        poster_portrait: boolean;
+        poster_landscape: boolean;
+        poster_square: boolean;
+      }> = {};
+      if (body["store_shot_count"] !== undefined) {
+        const v = body["store_shot_count"];
+        if (typeof v !== "number" || !Number.isInteger(v) || v < 3 || v > 8) {
+          throw new RouteInputError("store_shot_count must be an integer between 3 and 8", {
+            field: "store_shot_count",
+          });
+        }
+        patch.store_shot_count = v;
+      }
+      for (const boolField of ["banner", "poster_portrait", "poster_landscape", "poster_square"] as const) {
+        if (body[boolField] !== undefined) {
+          if (typeof body[boolField] !== "boolean") {
+            throw new RouteInputError(`Field must be a boolean: ${boolField}`, { field: boolField });
+          }
+          patch[boolField] = body[boolField] as boolean;
+        }
+      }
+      return store.products.updateBrandAssetSettings(request.params.pid, patch);
+    },
+  );
 
   // ─── Brand-asset routes (SPEC-BEHAVIOR-008 / SPEC-BEHAVIOR-006) ─────────────
 
