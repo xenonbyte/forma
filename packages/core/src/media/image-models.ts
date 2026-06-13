@@ -1,6 +1,8 @@
 // ---------------------------------------------------------------------------
 // Image models catalogue — SPEC-BEHAVIOR-001 / SPEC-BEHAVIOR-002
 //
+// T6 (2026-06-14): openai provider default changed to gpt-image-1.5 (SPEC-BEHAVIOR-001).
+//
 // Single source of truth for the image-generation provider/model catalogue and
 // the aspect -> pixel-size resolution table. Pure data + lookups only: NO HTTP,
 // NO fetch, NO renderer logic (the scheduler/renderer is a separate task).
@@ -56,7 +58,7 @@ export const IMAGE_PROVIDERS: ImageProvider[] = [
   {
     id: "openai",
     label: "OpenAI",
-    hint: "OpenAI gpt-image-1 图片生成，需要 OpenAI API Key。",
+    hint: "OpenAI gpt-image-1.5 图片生成，需要 OpenAI API Key。",
     defaultBaseUrl: "https://api.openai.com/v1",
     docsUrl: "https://platform.openai.com/docs/api-reference/images",
   },
@@ -253,9 +255,9 @@ const GEMINI_2_5_FLASH_IMAGE_SIZES: SizeTable = {
  * (plus "auto") per the OpenAI API reference:
  *   https://developers.openai.com/api/docs/models/gpt-image-1.5
  *   https://platform.openai.com/docs/api-reference/images
- * Also supports custom resolutions (divisible by 16, ratio 1:3..3:1, max 4K) but
- * we map our 5 named aspects to the nearest standard preset to stay within confirmed
- * behavior. 4:3 / 3:4 collapse onto the landscape / portrait pair (no native option).
+ * Also supports custom resolutions (divisible by 16, ratio 1:3..3:1) but we map our
+ * 5 named aspects to the nearest standard preset to stay within confirmed behavior.
+ * 4:3 / 3:4 collapse onto the landscape / portrait pair (no native option).
  */
 const GPT_IMAGE_1_5_SIZES: SizeTable = {
   "1:1": { width: 1024, height: 1024 },
@@ -271,7 +273,7 @@ const GPT_IMAGE_1_5_SIZES: SizeTable = {
  * Verified 2026-06-14: gpt-image-2 supports 1024x1024, 1536x1024, 1024x1536
  * (plus arbitrary WxH divisible by 16, ratio 1:3..3:1, max 3840x2160) per:
  *   https://developers.openai.com/api/docs/models/gpt-image-2
- *   https://developers.openai.com/api/docs/api-reference/evals (size notes)
+ *   https://platform.openai.com/docs/api-reference/images
  * We map our 5 aspects to the standard preset sizes for consistency with sibling models.
  */
 const GPT_IMAGE_2_SIZES: SizeTable = {
