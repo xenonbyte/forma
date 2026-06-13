@@ -19,6 +19,7 @@ const formaCommands = [
   "fm-refine-components",
   "fm-change-style",
   "fm-app-icon",
+  "fm-brand-assets",
 ] as const;
 
 const removedRequirementCommands = ["fm-upload-requirement", "fm-update-requirement"] as const;
@@ -44,6 +45,8 @@ const codexSkillDescriptions = {
     "Change the brand/system style of a Forma product's design system by persisting config then fully regenerating the component library via MCP, then self-review.",
   "fm-app-icon":
     "Generate a product's app icon by AI image generation, veto by checklist, and persist as the canonical brand app-icon.",
+  "fm-brand-assets":
+    "Generate a product's marketing brand assets — app-store screenshots and posters — as rendered HTML compositions, veto generated material by checklist, and persist them as brand assets.",
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";

@@ -66,6 +66,7 @@ export const formaToolNames = [
   "generate_image",
   "save_brand_asset",
   "list_brand_assets",
+  "list_store_shot_presets",
   "search_icons",
   "get_design_context",
   "get_design_handoff",
@@ -387,6 +388,10 @@ const listBrandAssetsSchema = z
   })
   .strict();
 
+// list_store_shot_presets (PLAN-TASK-025): the agent passes only the product id;
+// the platform (which drives the preset set) is read from the product config.
+const listStoreShotPresetsSchema = z.object({ product_id: z.string().min(1) }).strict();
+
 // limit cap of 50: comfortably above core's default of 10 without letting an
 // agent request the entire ~1,964-icon set in one call. Whitespace-only query
 // passes min(1) here and hits core searchIcons' INVALID_INPUT throw.
@@ -474,6 +479,7 @@ export const formaToolInputSchemas = {
   generate_image: generateImageSchema,
   save_brand_asset: saveBrandAssetSchema,
   list_brand_assets: listBrandAssetsSchema,
+  list_store_shot_presets: listStoreShotPresetsSchema,
   search_icons: searchIconsSchema,
   get_design_context: getDesignContextSchema,
   get_design_handoff: mcpGetDesignHandoffSchema,
@@ -513,6 +519,8 @@ const descriptions = {
     "Persist a brand asset for a product. kind=app-icon takes source.image_ref (a forma-image://<uuid> staged via generate_image purpose=app-icon) and derives the per-platform icon size set + favicon. kind=store-shot/poster take source.html plus target={width,height} and render it to a PNG through the localize+sandbox render path. brand_style and platform are read from the product config. Returns { kind, name, files:[{path,width,height}], generated_at, warnings }. Files render onto the product canvas.",
   list_brand_assets:
     "List a product's saved brand assets, optionally filtered by kind (app-icon, store-shot, poster). Returns { assets: [{ kind, name, files, brand_style, model?, generated_at }] }.",
+  list_store_shot_presets:
+    "List the verified store-shot / sharing-image presets that apply to a product's platform (read from the product config). Returns { presets: [{ id, width, height, source, verified_at }] }. Pass a returned preset id to save_brand_asset(target={preset}) for store shots — do not hardcode preset ids.",
   search_icons:
     "Search the bundled Lucide icon set by name or tag. Returns { icons: [{ name, tags, svg }] } ranked name-prefix → substring → tag (svg is inline-ready Lucide markup with currentColor inheritance). Use this instead of hand-drawing functional icons; no match returns an empty array.",
   get_design_context:
@@ -656,6 +664,7 @@ export function createFormaTools(store: FormaStore): FormaTools {
     list_brand_assets: tool("list_brand_assets", async (input) => ({
       assets: await store.listBrandAssets(input.product_id, input.kind),
     })),
+    list_store_shot_presets: tool("list_store_shot_presets", async (input) => listStoreShotPresets(store, input)),
     // search_icons has no store dependency: it calls the core searchIcons
     // function directly against the bundled Lucide set.
     search_icons: tool("search_icons", async (input) => ({ icons: searchIcons(input.query, input.limit) })),
@@ -1240,6 +1249,29 @@ async function saveBrandAsset(store: FormaStore, input: z.infer<typeof saveBrand
     ...(product.platform !== undefined ? { platform: product.platform } : {}),
     ...(input.target !== undefined ? { target: input.target } : {}),
   });
+}
+
+async function listStoreShotPresets(store: FormaStore, input: z.infer<typeof listStoreShotPresetsSchema>) {
+  // The applicable preset set is derived from the product's configured platform
+  // (not supplied by the agent). A product with no platform yet has no verified
+  // store-shot size — fail loud rather than guessing one.
+  const product = await store.products.getProduct(input.product_id);
+  if (product.platform === undefined) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Product has no platform configured", {
+      product_id: input.product_id,
+      reason: "product_not_configured",
+    });
+  }
+  // Core StoreShotPreset uses verifiedAt (camelCase); the MCP wire shape uses
+  // verified_at (snake_case) — map it explicitly.
+  const presets = store.listStoreShotPresets(product.platform).map((preset) => ({
+    id: preset.id,
+    width: preset.width,
+    height: preset.height,
+    source: preset.source,
+    verified_at: preset.verifiedAt,
+  }));
+  return { presets };
 }
 
 async function confirmProductId(store: FormaStore, input: z.infer<typeof confirmProductIdSchema>) {

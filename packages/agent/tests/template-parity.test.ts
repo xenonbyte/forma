@@ -314,3 +314,64 @@ describe("fm-design IMAGERY judgment + explicit model-downgrade (PLAN-TASK-023)"
     );
   });
 });
+
+describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
+  const platforms = ["claude", "codex", "gemini"] as const;
+
+  // Substrings that MUST appear in every platform's fm-brand-assets template.
+  // These pin the marketing-assets contract: the preset query, the no-hardcode
+  // red line, both asset kinds, and the full 5.2 precondition matrix.
+  const required: ReadonlyArray<readonly [string, string]> = [
+    ["list_store_shot_presets", "the preset query tool"],
+    ["save_brand_asset", "the brand-asset persist tool"],
+    ["generate_image", "the background/illustration image generator"],
+    ['kind="store-shot"', "the store-shot asset kind"],
+    ['kind="poster"', "the poster asset kind"],
+    ["do not hardcode preset names", "the USER RED LINE against hardcoded preset ids"],
+    ["MEDIA_NOT_CONFIGURED", "the image-model HARD precondition surfaced from generate_image"],
+    ["Settings", "the web Settings guidance for the missing image model"],
+    ['list_brand_assets(product_id, kind="app-icon")', "the app-icon HARD precondition lookup"],
+    ["list_product_artifacts", "the store-shot design-preview HARD precondition lookup"],
+    ["veto", "the Read-inspection veto step for generated material"],
+    ["craft/image-prompts.md", "the bg/illustration prompt scaffold source"],
+    ["1080×1920", "the poster spec dimensions (explicit target, not a preset)"],
+    ["#/products/<product_id>/brand-assets", "the brand-assets canvas URL"],
+  ];
+
+  for (const platform of platforms) {
+    for (const [needle, why] of required) {
+      it(`fm-brand-assets on ${platform} contains ${JSON.stringify(needle)} (${why})`, () => {
+        const body = readTemplate(platform, "fm-brand-assets");
+        expect(body, `fm-brand-assets/${platform} must contain ${JSON.stringify(needle)} — ${why}`).toContain(needle);
+      });
+    }
+
+    it(`fm-brand-assets on ${platform} calls list_store_shot_presets BEFORE save_brand_asset`, () => {
+      const body = readTemplate(platform, "fm-brand-assets");
+      // The first mention of the preset query must precede the first save — the
+      // returned preset id is what feeds save_brand_asset(target={preset}).
+      const queryAt = body.indexOf("list_store_shot_presets");
+      const saveAt = body.indexOf("save_brand_asset");
+      expect(queryAt, `fm-brand-assets/${platform} must mention list_store_shot_presets`).toBeGreaterThan(-1);
+      expect(saveAt, `fm-brand-assets/${platform} must mention save_brand_asset`).toBeGreaterThan(-1);
+      expect(
+        queryAt,
+        `fm-brand-assets/${platform} must call list_store_shot_presets before save_brand_asset`,
+      ).toBeLessThan(saveAt);
+    });
+
+    it(`fm-brand-assets on ${platform} guides to fm-app-icon when the app icon is missing`, () => {
+      const body = readTemplate(platform, "fm-brand-assets");
+      expect(body, `fm-brand-assets/${platform} must guide to fm-app-icon for the missing app icon`).toContain(
+        "fm-app-icon",
+      );
+    });
+
+    it(`fm-brand-assets on ${platform} guides to fm-design when store-shot previews are missing`, () => {
+      const body = readTemplate(platform, "fm-brand-assets");
+      expect(body, `fm-brand-assets/${platform} must guide to fm-design for the missing design preview`).toContain(
+        "fm-design",
+      );
+    });
+  }
+});
