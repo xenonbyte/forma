@@ -4,6 +4,7 @@ import { CopyService } from "./copy.js";
 import { saveDesignArtifact } from "./design-save.js";
 import { FormaError } from "./errors.js";
 import { generateImages, type GenerateImagesInput, type GenerateImagesResult } from "./media/image-generate.js";
+import { renderBrandAssetHtml } from "./brand-asset-render.js";
 import {
   exportBrandAssetsZip,
   listBrandAssets,
@@ -14,6 +15,7 @@ import {
   type SaveBrandAssetInput,
   type SavedBrandAsset,
 } from "./brand-assets.js";
+import { resolveFormaImageRef } from "./media/image-staging.js";
 import {
   readMediaConfig,
   writeMediaConfig,
@@ -300,7 +302,18 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
 
   // Brand assets — saveBrandAsset takes the per-product mutation lock via the
   // shared runProductMutation; list/zip/resolve are home-bound, lock-free reads.
-  const brandAssetDeps = { home: options.home, runProductMutation };
+  // store-shot/poster saves render author HTML through the localize+interception
+  // sandbox (brand-asset-render.ts), with the product's own forma-image://
+  // resolver bound per render so staging + brand refs localize into the bundle.
+  const brandAssetDeps = {
+    home: options.home,
+    runProductMutation,
+    renderHtml: (input: { html: string; width: number; height: number; productId: string }): Promise<Buffer> =>
+      renderBrandAssetHtml(
+        { resolveFormaImage: (ref) => resolveFormaImageRef(options.home, input.productId, ref) },
+        input,
+      ),
+  };
   const saveBrandAssetBound = (input: SaveBrandAssetInput): Promise<SavedBrandAsset> =>
     saveBrandAsset(brandAssetDeps, input);
   const listBrandAssetsBound = (productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]> =>

@@ -144,11 +144,12 @@ export interface BrandAssetDeps {
   runProductMutation: RunProductMutation;
   /**
    * RENDER SEAM (task 016): resolves store-shot/poster `source.html` to a PNG
-   * buffer at the target size. Absent here; task 016 injects a puppeteer-backed
-   * renderer. When a store-shot/poster save is attempted without it, the save
-   * fails loud rather than silently producing nothing.
+   * buffer at the target size, through the localize + interception sandbox
+   * (brand-asset-render.ts). The store injects the puppeteer-backed renderer.
+   * When a store-shot/poster save is attempted without it, the save fails loud
+   * rather than silently producing nothing.
    */
-  renderHtml?: (input: { html: string; width: number; height: number }) => Promise<Buffer>;
+  renderHtml?: (input: { html: string; width: number; height: number; productId: string }) => Promise<Buffer>;
 }
 
 // ─── Manifest schema ───────────────────────────────────────────────────────────
@@ -321,6 +322,110 @@ async function writeManifest(home: string, productId: string, manifest: BrandMan
   await rename(tmp, manifestPath);
 }
 
+// ─── store-shot / poster render target resolution ─────────────────────────────
+
+/**
+ * Resolves the render target to explicit pixel dimensions.
+ *
+ * This task supports an explicit `{ width, height }` only. The `{ preset }`
+ * form (a named preset → pixel table, e.g. "app-store-6.7") is M5 / task 024:
+ * the preset table does not exist yet, so a preset target fails loud here
+ * instead of guessing a size. An explicit width/height drives the full
+ * end-to-end render path today.
+ */
+function resolveRenderTarget(
+  kind: BrandAssetKind,
+  target: BrandAssetTarget | undefined,
+): {
+  width: number;
+  height: number;
+} {
+  if (!target) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${kind} save requires a render target {width,height}`, {
+      kind,
+      reason: "missing_target",
+    });
+  }
+  if ("preset" in target) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Preset render targets are not yet supported (M5)", {
+      kind,
+      reason: "preset_unsupported",
+      preset: target.preset,
+    });
+  }
+  const { width, height } = target;
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Render target width/height must be positive integers", {
+      kind,
+      width,
+      height,
+    });
+  }
+  return { width, height };
+}
+
+/**
+ * store-shot / poster save: render the author HTML to a single PNG through the
+ * injected sandbox renderer (brand-asset-render.ts), then persist + record it
+ * exactly like the app-icon path. Render happens OUTSIDE the lock (it touches
+ * only the staging/brand read tree, never product state); only the file write +
+ * manifest update run under the per-product mutation lock.
+ */
+async function saveRenderedBrandAsset(deps: BrandAssetDeps, input: SaveBrandAssetInput): Promise<SavedBrandAsset> {
+  if (!deps.renderHtml) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${input.kind} rendering is not available`, {
+      kind: input.kind,
+      reason: "no_html_renderer",
+    });
+  }
+  // assertValidSource guaranteed a non-empty html for store-shot/poster.
+  const html = input.source.html ?? "";
+  const { width, height } = resolveRenderTarget(input.kind, input.target);
+
+  const png = await deps.renderHtml({ html, width, height, productId: input.product_id });
+
+  const generatedAt = new Date().toISOString();
+  const subdir = KIND_SUBDIR[input.kind];
+
+  return deps.runProductMutation({ operation: "save_brand_asset", product_id: input.product_id }, async (context) => {
+    const productsRoot = getFormaPaths(deps.home).productsDir;
+    const kindDir = getBrandAssetKindDir(productsRoot, input.product_id, subdir);
+    const assetDir = join(kindDir, input.name);
+    if (!isSameOrChildPath(kindDir, assetDir)) {
+      throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset name escapes its kind directory", {
+        name: input.name,
+      });
+    }
+
+    const fileBytes = new Map<string, Buffer>([["image.png", png]]);
+    await writeAssetDirAtomic(assetDir, fileBytes);
+
+    const files: BrandAssetFile[] = [{ path: join(assetDir, "image.png"), width, height }];
+
+    const record: BrandAssetRecord = {
+      kind: input.kind,
+      name: input.name,
+      files,
+      brand_style: input.brand_style,
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      generated_at: generatedAt,
+    };
+
+    const manifest = await readManifest(deps.home, input.product_id);
+    const next = manifest.assets.filter((a) => !(a.kind === record.kind && a.name === record.name));
+    next.push(record);
+    await writeManifest(deps.home, input.product_id, { assets: next });
+
+    return {
+      kind: record.kind,
+      name: record.name,
+      files: record.files,
+      generated_at: record.generated_at,
+      warnings: [...context.warnings],
+    } satisfies SavedBrandAsset;
+  });
+}
+
 // ─── saveBrandAsset ──────────────────────────────────────────────────────────
 
 export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAssetInput): Promise<SavedBrandAsset> {
@@ -329,17 +434,7 @@ export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsset
   assertValidSource(input.kind, input.source);
 
   if (input.kind !== "app-icon") {
-    // store-shot / poster (html render) — task 016. Without a renderer wired,
-    // fail loud rather than silently emitting nothing.
-    if (!deps.renderHtml) {
-      throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${input.kind} rendering is not yet available`, {
-        kind: input.kind,
-        reason: "no_html_renderer",
-      });
-    }
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${input.kind} save is not implemented in this task`, {
-      kind: input.kind,
-    });
+    return saveRenderedBrandAsset(deps, input);
   }
 
   // ── app-icon path ──────────────────────────────────────────────────────────

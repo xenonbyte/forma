@@ -33,6 +33,7 @@ import {
   type BrandAssetRecord,
 } from "@xenonbyte/forma-core";
 import { FormaError } from "../src/errors.js";
+import { renderBrandAssetHtml } from "../src/brand-asset-render.js";
 import { getProductMutationLock, runProductMutationWithWarnings } from "../src/product-mutation-lock.js";
 
 const PRODUCT_ID = "P-7e5701";
@@ -460,6 +461,111 @@ describe("exportBrandAssetsZip", () => {
   it("returns a zip for an empty brand-assets dir (manifest only / nothing)", async () => {
     const zipBuf = await exportBrandAssetsZip(home, PRODUCT_ID);
     expect(Buffer.isBuffer(zipBuf)).toBe(true);
+  });
+});
+
+// ─── store-shot / poster — HTML → PNG through the PUBLIC save path (task 016) ──
+
+describe("saveBrandAsset — store-shot / poster (html render, public path)", () => {
+  /** Deps with the real puppeteer-backed render sandbox wired in. */
+  function makeRenderDeps(homeDir: string): BrandAssetDeps {
+    const lock = getProductMutationLock(homeDir);
+    return {
+      home: homeDir,
+      runProductMutation: (input, fn) => runProductMutationWithWarnings(lock, input, fn, () => undefined),
+      renderHtml: (input) =>
+        renderBrandAssetHtml({ resolveFormaImage: (ref) => resolveFormaImageRef(homeDir, PRODUCT_ID, ref) }, input),
+    };
+  }
+
+  it("renders store-shot HTML to a PNG stored under store-shots/ + recorded in manifest", async () => {
+    const saved = await saveBrandAsset(makeRenderDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "store-shot",
+      name: "hero",
+      brand_style: "ant",
+      source: { html: "<!doctype html><html><body style='margin:0;background:#0a2540'></body></html>" },
+      target: { width: 320, height: 480 },
+    });
+
+    expect(saved.kind).toBe("store-shot");
+    expect(saved.files).toHaveLength(1);
+    const file = saved.files[0];
+    expect(file.width).toBe(320);
+    expect(file.height).toBe(480);
+    expect(file.path.includes("/store-shots/")).toBe(true);
+
+    // The PNG exists on disk at the recorded dims.
+    const buf = await readFile(file.path);
+    const meta = await sharp(buf).metadata();
+    expect(meta.format).toBe("png");
+    expect(meta.width).toBe(320);
+    expect(meta.height).toBe(480);
+
+    // Recorded in the manifest.
+    const records = await listBrandAssets(home, PRODUCT_ID, "store-shot");
+    expect(records.map((r) => r.name)).toContain("hero");
+  }, 60000);
+
+  it("renders poster HTML referencing a localized forma-image:// to a PNG (public path)", async () => {
+    const staged = await stageImage(home, PRODUCT_ID, await makeSquarePng(256, "#ff8800"));
+    const saved = await saveBrandAsset(makeRenderDeps(home), {
+      product_id: PRODUCT_ID,
+      kind: "poster",
+      name: "launch",
+      brand_style: "ant",
+      source: {
+        html: `<!doctype html><html><body style='margin:0'><img src="${staged}" style="width:100%"></body></html>`,
+      },
+      target: { width: 400, height: 600 },
+    });
+
+    expect(saved.kind).toBe("poster");
+    const file = saved.files[0];
+    expect(file.path.includes("/posters/")).toBe(true);
+    const meta = await sharp(await readFile(file.path)).metadata();
+    expect(meta.width).toBe(400);
+    expect(meta.height).toBe(600);
+  }, 60000);
+
+  it("fails loud when store-shot HTML references a remote resource (no PNG produced)", async () => {
+    await expect(
+      saveBrandAsset(makeRenderDeps(home), {
+        product_id: PRODUCT_ID,
+        kind: "store-shot",
+        name: "bad",
+        brand_style: "ant",
+        source: { html: '<!doctype html><html><body><img src="https://evil.example.com/x.png"></body></html>' },
+        target: { width: 100, height: 100 },
+      }),
+    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError);
+    // Nothing was recorded.
+    expect(await listBrandAssets(home, PRODUCT_ID, "store-shot")).toEqual([]);
+  }, 60000);
+
+  it("rejects a store-shot save with no render target (fail loud, preset deferred)", async () => {
+    await expect(
+      saveBrandAsset(makeRenderDeps(home), {
+        product_id: PRODUCT_ID,
+        kind: "store-shot",
+        name: "notarget",
+        brand_style: "ant",
+        source: { html: "<!doctype html><html><body></body></html>" },
+      }),
+    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
+  });
+
+  it("defers preset targets to M5 (fails loud rather than guessing a size)", async () => {
+    await expect(
+      saveBrandAsset(makeRenderDeps(home), {
+        product_id: PRODUCT_ID,
+        kind: "poster",
+        name: "presetonly",
+        brand_style: "ant",
+        source: { html: "<!doctype html><html><body></body></html>" },
+        target: { preset: "app-store-6.7" },
+      }),
+    ).rejects.toSatisfy((err: unknown) => err instanceof FormaError && err.code === "BRAND_ASSET_INVALID_INPUT");
   });
 });
 
