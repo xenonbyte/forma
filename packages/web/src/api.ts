@@ -438,6 +438,56 @@ export interface ProductComponentOperationInput {
   tool: "batch_design" | "set_variables";
 }
 
+// ── Media (image-generation) config — SPEC-BEHAVIOR-003 ─────────────────────────
+
+/** Catalogue provider entry (visible only; mirrors core ImageProvider sans `hidden`). */
+export interface MediaProvider {
+  id: string;
+  label: string;
+  hint: string;
+  defaultBaseUrl?: string;
+  docsUrl?: string;
+  default?: boolean;
+}
+
+/** Catalogue model entry (visible only; mirrors core ImageModel sans `hidden`). */
+export interface MediaModel {
+  id: string;
+  label: string;
+  hint: string;
+  provider: string;
+  default?: boolean;
+}
+
+export interface MediaCatalogue {
+  providers: MediaProvider[];
+  models: MediaModel[];
+}
+
+/** Masked read of the active media credentials. Never carries the plaintext key. */
+export interface MediaConfig {
+  configured: boolean;
+  source: "env" | "file" | "none";
+  model?: string;
+  base_url?: string;
+  /** Last 4 chars of a file-sourced key; omitted entirely for env-sourced keys. */
+  api_key_tail?: string;
+}
+
+/** PUT /api/media/config body. Omit `api_key` + set `preserve_api_key` to keep the stored key. */
+export interface MediaConfigInput {
+  api_key?: string;
+  base_url?: string;
+  model?: string;
+  preserve_api_key?: boolean;
+  force?: boolean;
+}
+
+export interface MediaTestResult {
+  ok: boolean;
+  provider_note?: string;
+}
+
 export interface FormaApiClient {
   archiveRequirement(productId: string, requirementId: string): Promise<ArchiveRequirementResult>;
   applyProductComponentOperations(
@@ -502,7 +552,12 @@ export interface FormaApiClient {
    * (mirrors `artifactBundleUrl` in core/artifact-urls.ts). Pass a clean, slash-separated
    * bundle-relative path as stored in the manifest; do not pre-encode it.
    */
-  getArtifactVersionBundleAssetUrl(productId: string, artifactId: string, version: number, relativePath: string): string;
+  getArtifactVersionBundleAssetUrl(
+    productId: string,
+    artifactId: string,
+    version: number,
+    relativePath: string,
+  ): string;
   getBaseline(productId: string): Promise<ProductBaseline>;
   getPageCopy(productId: string, pageId: string, requirementId?: string): Promise<PageCopyPayload>;
   getProduct(productId: string): Promise<Product>;
@@ -520,6 +575,10 @@ export interface FormaApiClient {
     pageId?: string,
   ): Promise<RequirementDesignHistoryEntry[]>;
   getStyle(name: string): Promise<BrandStyleContent>;
+  getMediaCatalogue(): Promise<MediaCatalogue>;
+  getMediaConfig(): Promise<MediaConfig>;
+  saveMediaConfig(input: MediaConfigInput): Promise<MediaConfig>;
+  testMediaConnection(): Promise<MediaTestResult>;
   listProductArtifacts(
     productId: string,
     kind?: string,
@@ -789,6 +848,19 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
     },
     getStyle: (name) =>
       apiRecord<BrandStyleContent>(`/api/styles/${encodeURIComponent(name)}`, requestOptions(fetcher)),
+    getMediaCatalogue: () => apiRecord<MediaCatalogue>("/api/media/models", requestOptions(fetcher)),
+    getMediaConfig: () => apiRecord<MediaConfig>("/api/media/config", requestOptions(fetcher)),
+    saveMediaConfig: (input) =>
+      apiRecord<MediaConfig>("/api/media/config", {
+        ...requestOptions(fetcher),
+        body: input,
+        method: "PUT",
+      }),
+    testMediaConnection: () =>
+      apiRecord<MediaTestResult>("/api/media/test", {
+        ...requestOptions(fetcher),
+        method: "POST",
+      }),
     listProductArtifacts: (productId, kind, include_superseded) => {
       const basePath = `/api/products/${encodeURIComponent(productId)}/artifacts`;
       const params = new URLSearchParams();

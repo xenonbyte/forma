@@ -286,7 +286,7 @@ function StyleLibraryRoute() {
 }
 
 function SettingsRoute() {
-  return <Settings />;
+  return <Settings client={apiClient} />;
 }
 
 function NotFoundPage() {
