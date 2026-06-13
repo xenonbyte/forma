@@ -179,25 +179,22 @@ describe("resolveFormaImageRef — rejects non-UUID tails before path constructi
   });
 });
 
-describe("resolveFormaImageRef — brand/ prefix", () => {
-  it("throws MEDIA_IMAGE_NOT_FOUND for a brand/ ref", async () => {
+describe("resolveFormaImageRef — brand/ prefix forwards to brand-assets (SPEC-BEHAVIOR-004)", () => {
+  // brand/ refs are now forwarded to resolveBrandImageRef. With no brand asset
+  // saved, every brand ref still resolves to MEDIA_IMAGE_NOT_FOUND — but via the
+  // brand-assets resolver, not the old reserved-slot stub.
+  it("throws MEDIA_IMAGE_NOT_FOUND for an unsupported brand/ ref (path-shaped)", async () => {
     const brandRef = "forma-image://brand/logo.png";
     await expect(resolveFormaImageRef(home, PRODUCT_ID, brandRef)).rejects.toSatisfy(
       (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
     );
   });
 
-  it("includes a brand_note in the error details", async () => {
-    const brandRef = "forma-image://brand/logo.png";
-    let caught: FormaError | undefined;
-    try {
-      await resolveFormaImageRef(home, PRODUCT_ID, brandRef);
-    } catch (err) {
-      if (err instanceof FormaError) caught = err;
-    }
-    expect(caught).toBeDefined();
-    expect(typeof caught?.details.brand_note).toBe("string");
-    expect((caught?.details.brand_note as string).length).toBeGreaterThan(0);
+  it("throws MEDIA_IMAGE_NOT_FOUND for brand/app-icon when no asset is saved", async () => {
+    const brandRef = "forma-image://brand/app-icon";
+    await expect(resolveFormaImageRef(home, PRODUCT_ID, brandRef)).rejects.toSatisfy(
+      (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
+    );
   });
 
   it("throws MEDIA_IMAGE_NOT_FOUND for bare 'brand' (no slash)", async () => {

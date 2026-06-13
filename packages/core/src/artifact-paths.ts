@@ -67,6 +67,25 @@ export function getOdProjectManifestPath(productsRoot: string, productId: string
   return safeArtifactPath(productsRoot, validateProductId(productId), "od-project", "manifest.json");
 }
 
+/** Brand-assets root: data/products/<productId>/od-project/brand-assets/. */
+export function getBrandAssetsDir(productsRoot: string, productId: string): string {
+  return safeArtifactPath(productsRoot, validateProductId(productId), "od-project", "brand-assets");
+}
+
+/** Brand-assets manifest: brand-assets/manifest.json. */
+export function getBrandAssetsManifestPath(productsRoot: string, productId: string): string {
+  return safeArtifactPath(productsRoot, validateProductId(productId), "od-project", "brand-assets", "manifest.json");
+}
+
+/**
+ * Directory for a single brand-asset kind under brand-assets/.
+ * `subdir` is a fixed, internally-chosen segment (never caller-supplied),
+ * e.g. "app-icon" | "store-shots" | "posters".
+ */
+export function getBrandAssetKindDir(productsRoot: string, productId: string, subdir: string): string {
+  return safeArtifactPath(productsRoot, validateProductId(productId), "od-project", "brand-assets", subdir);
+}
+
 function validateProductId(productId: string): string {
   if (!PRODUCT_ID_PATTERN.test(productId)) {
     throw new FormaError("ARTIFACT_INVALID_INPUT", "Invalid product id", { productId });

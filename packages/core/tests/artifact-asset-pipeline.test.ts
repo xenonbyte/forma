@@ -646,3 +646,61 @@ describe("forma-image:// resolution", () => {
     });
   });
 });
+
+// ─── PLAN-TASK-015: brand/ refs resolve through the real staging→brand chain ──
+
+describe("forma-image://brand/ resolution through the pipeline (SPEC-BEHAVIOR-015)", () => {
+  it("localizes a brand/app-icon ref via the staging→brand-assets forward", async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const {
+      saveBrandAsset,
+      putStagedImage,
+      resolveFormaImageRef,
+      getProductMutationLock,
+      runProductMutationWithWarnings,
+    } = await import("@xenonbyte/forma-core");
+
+    const home = await mkdtemp(join(tmpdir(), "forma-pipeline-brand-"));
+    const productId = "P-7e5701";
+
+    // Stage a 2048 master, then save it as the app-icon brand asset.
+    const masterPng = await sharp({ create: { width: 2048, height: 2048, channels: 4, background: "#3366cc" } })
+      .png()
+      .toBuffer();
+    const meta = await sharp(masterPng).metadata();
+    const staged = await putStagedImage(home, productId, masterPng, {
+      purpose: "app-icon",
+      prompt: "brand icon",
+      model: "stub",
+      width: meta.width ?? 0,
+      height: meta.height ?? 0,
+    });
+    const lock = getProductMutationLock(home);
+    await saveBrandAsset(
+      { home, runProductMutation: (i, f) => runProductMutationWithWarnings(lock, i, f, () => undefined) },
+      {
+        product_id: productId,
+        kind: "app-icon",
+        name: "primary",
+        brand_style: "ant",
+        source: { image_ref: staged.ref },
+        platform: "web",
+      },
+    );
+
+    // The pipeline resolver — exactly what design-save binds — forwards brand/
+    // through image-staging into brand-assets.
+    const resolveFormaImage = (ref: string): Promise<Buffer> => resolveFormaImageRef(home, productId, ref);
+    const html = `<img src="forma-image://brand/app-icon" alt="brand">`;
+    const result = await localizeArtifactAssets({ html, resolveFormaImage });
+
+    // Localized into a real asset: ref gone, srcset written, file present.
+    expect(result.html).not.toContain("forma-image://");
+    expect(result.html).toContain("srcset=");
+    expect(result.assets).toHaveLength(1);
+    expect(result.assets[0].role).toBe("image");
+    expect(result.files.size).toBeGreaterThan(0);
+  });
+});

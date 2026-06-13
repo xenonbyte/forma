@@ -5,6 +5,16 @@ import { saveDesignArtifact } from "./design-save.js";
 import { FormaError } from "./errors.js";
 import { generateImages, type GenerateImagesInput, type GenerateImagesResult } from "./media/image-generate.js";
 import {
+  exportBrandAssetsZip,
+  listBrandAssets,
+  resolveBrandImageRef,
+  saveBrandAsset,
+  type BrandAssetKind,
+  type BrandAssetRecord,
+  type SaveBrandAssetInput,
+  type SavedBrandAsset,
+} from "./brand-assets.js";
+import {
   readMediaConfig,
   writeMediaConfig,
   type MaskedMediaConfig,
@@ -87,6 +97,14 @@ export interface FormaStore {
     input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   generateProductImage(input: GenerateImagesInput): Promise<GenerateImagesResult>;
+  /** Persist a brand asset (app-icon path) under the product mutation lock. */
+  saveBrandAsset(input: SaveBrandAssetInput): Promise<SavedBrandAsset>;
+  /** List brand-asset records (optionally filtered by kind). */
+  listBrandAssets(productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]>;
+  /** Zip every brand-asset file for a product (never includes media-config.yaml). */
+  exportBrandAssetsZip(productId: string): Promise<Buffer>;
+  /** Resolve a forma-image://brand/... reference to raw bytes. */
+  resolveBrandImageRef(productId: string, ref: string): Promise<Buffer>;
   /** Masked read of the media-generation credentials (never returns the plaintext key). */
   readMediaConfig(): Promise<MaskedMediaConfig>;
   /** Persist media-generation credentials and return the masked view. */
@@ -280,6 +298,18 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   const generateProductImage = (input: GenerateImagesInput): Promise<GenerateImagesResult> =>
     generateImages(options.home, input);
 
+  // Brand assets — saveBrandAsset takes the per-product mutation lock via the
+  // shared runProductMutation; list/zip/resolve are home-bound, lock-free reads.
+  const brandAssetDeps = { home: options.home, runProductMutation };
+  const saveBrandAssetBound = (input: SaveBrandAssetInput): Promise<SavedBrandAsset> =>
+    saveBrandAsset(brandAssetDeps, input);
+  const listBrandAssetsBound = (productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]> =>
+    listBrandAssets(options.home, productId, kind);
+  const exportBrandAssetsZipBound = (productId: string): Promise<Buffer> =>
+    exportBrandAssetsZip(options.home, productId);
+  const resolveBrandImageRefBound = (productId: string, ref: string): Promise<Buffer> =>
+    resolveBrandImageRef(options.home, productId, ref);
+
   // Media credential read/write are home-bound, lock-free (the file is written
   // atomically with its own 0600 enforcement) and never mutate product state, so
   // they bypass runProductMutation like the rest of the home-scoped services.
@@ -297,6 +327,10 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     generateRequirementDesign,
     generateComponents,
     generateProductImage,
+    saveBrandAsset: saveBrandAssetBound,
+    listBrandAssets: listBrandAssetsBound,
+    exportBrandAssetsZip: exportBrandAssetsZipBound,
+    resolveBrandImageRef: resolveBrandImageRefBound,
     readMediaConfig: readMediaConfigBound,
     writeMediaConfig: writeMediaConfigBound,
     products,

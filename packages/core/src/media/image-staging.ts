@@ -10,8 +10,11 @@
 //
 // Namespace:
 //   forma-image://<uuid>      — staged image (this module)
-//   forma-image://brand/...   — brand assets (M3, not yet wired; returns
-//                               MEDIA_IMAGE_NOT_FOUND with brand-note details)
+//   forma-image://brand/...   — brand assets, forwarded to brand-assets.ts
+//                               (resolveBrandImageRef). The forward uses a late
+//                               dynamic import so the static import direction is
+//                               one-way (brand-assets → image-staging), avoiding
+//                               a module cycle.
 //
 // Path safety: the tail is validated against a strict UUID regex before any
 // path is constructed. Non-UUID tails (traversal, absolute injection, etc.)
@@ -266,13 +269,13 @@ export async function putStagedImage(
  *
  * Supported namespaces:
  *   - `forma-image://<uuid>`      — returns a Buffer copy of the staged PNG.
- *   - `forma-image://brand/...`   — reserved for M3 brand assets; currently
- *     throws MEDIA_IMAGE_NOT_FOUND with details.brand_note. The call site for
- *     M3 forwarding should be inserted where the TODO comment appears below.
+ *   - `forma-image://brand/...`   — forwarded to resolveBrandImageRef
+ *     (brand-assets.ts). Resolves brand/app-icon and brand/app-icon@<size>;
+ *     missing asset / unknown size → MEDIA_IMAGE_NOT_FOUND.
  *
  * Throws MEDIA_IMAGE_NOT_FOUND for:
  *   - Malformed or missing scheme prefix.
- *   - `brand/` prefix (M3 not yet wired).
+ *   - A `brand/` ref that does not resolve (missing asset, unknown size).
  *   - Path traversal attempts (uuid contains `../`, `..`, etc.).
  *   - Unknown uuid (file absent on disk).
  *
@@ -290,15 +293,12 @@ export async function resolveFormaImageRef(home: string, productId: string, ref:
 
   const tail = ref.slice(FORMA_IMAGE_SCHEME.length); // e.g. "<uuid>" or "brand/logo.png"
 
-  // ── 2. Brand namespace (M3 forwarding point) ──────────────────────────────
+  // ── 2. Brand namespace → forward to brand-assets (SPEC-BEHAVIOR-004) ───────
+  // Late dynamic import keeps the static import graph one-way (brand-assets
+  // imports this module, never the reverse) — no cycle.
   if (tail.startsWith("brand/") || tail === "brand") {
-    // TODO(M3): forward brand asset requests to the brand-assets service here.
-    throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand assets are not yet available", {
-      ref,
-      brand_note:
-        "forma-image://brand/ assets will be accessible once brand integration (M3) is wired. " +
-        "Until then, all brand/ references return MEDIA_IMAGE_NOT_FOUND.",
-    });
+    const { resolveBrandImageRef } = await import("../brand-assets.js");
+    return resolveBrandImageRef(home, productId, ref);
   }
 
   // ── 3. UUID shape validation ──────────────────────────────────────────────
