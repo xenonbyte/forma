@@ -22,6 +22,7 @@ import {
   normalizeKind,
   platforms,
   readAllCraftDocs,
+  searchIcons,
   type ArtifactManifest,
   type FormaStore,
 } from "@xenonbyte/forma-core";
@@ -62,6 +63,7 @@ export const formaToolNames = [
   "generate_requirement_design",
   "generate_components",
   "generate_image",
+  "search_icons",
   "get_design_context",
   "get_design_handoff",
   "get_page_ui",
@@ -325,6 +327,16 @@ const generateImageSchema = z
   })
   .strict();
 
+// limit cap of 50: comfortably above core's default of 10 without letting an
+// agent request the entire ~1,964-icon set in one call. Whitespace-only query
+// passes min(1) here and hits core searchIcons' INVALID_INPUT throw.
+const searchIconsSchema = z
+  .object({
+    query: z.string().min(1),
+    limit: z.int().min(1).max(50).optional(),
+  })
+  .strict();
+
 const getDesignContextSchema = z
   .object({
     product_id: z.string().min(1),
@@ -400,6 +412,7 @@ export const formaToolInputSchemas = {
   generate_requirement_design: generateRequirementDesignSchema,
   generate_components: generateComponentsSchema,
   generate_image: generateImageSchema,
+  search_icons: searchIconsSchema,
   get_design_context: getDesignContextSchema,
   get_design_handoff: mcpGetDesignHandoffSchema,
   get_page_ui: mcpGetPageUiSchema,
@@ -434,6 +447,8 @@ const descriptions = {
   generate_components: "Save an AI-generated static HTML component-library artifact.",
   generate_image:
     "Generate product images via the configured AI image provider. Returns images[].preview_path (absolute local path — use the Read tool to visually inspect each candidate) and images[].ref (forma-image://<uuid> — use this reference when embedding in design HTML or passing to save_brand_asset).",
+  search_icons:
+    "Search the bundled Lucide icon set by name or tag. Returns { icons: [{ name, tags, svg }] } ranked name-prefix → substring → tag (svg is inline-ready Lucide markup with currentColor inheritance). Use this instead of hand-drawing functional icons; no match returns an empty array.",
   get_design_context:
     "Read design context BEFORE generating: craft rules + selected brand/system style + the page spec + applicable rules. Call this before generate_requirement_design (separate from the save tools).",
   get_design_handoff:
@@ -571,6 +586,9 @@ export function createFormaTools(store: FormaStore): FormaTools {
         count: input.count,
       }),
     ),
+    // search_icons has no store dependency: it calls the core searchIcons
+    // function directly against the bundled Lucide set.
+    search_icons: tool("search_icons", async (input) => ({ icons: searchIcons(input.query, input.limit) })),
     get_design_context: tool("get_design_context", async (input) => {
       const ctx = await buildDesignContext(
         {

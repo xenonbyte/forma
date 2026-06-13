@@ -125,3 +125,30 @@ describe("palette design-read step present", () => {
     }
   }
 });
+
+describe("no-hand-drawn-functional-icons hard rule present (PLAN-TASK-014)", () => {
+  const iconCommands = ["fm-design", "fm-refine-components"] as const;
+  const platforms = ["claude", "codex", "gemini"] as const;
+
+  for (const cmd of iconCommands) {
+    for (const platform of platforms) {
+      it(`${cmd} on ${platform} contains the no-hand-drawn-functional-icons hard rule`, () => {
+        const body = readTemplate(platform, cmd);
+        expect(body, `${cmd}/${platform} must forbid hand-drawing functional icons`).toContain(
+          "never hand-draw functional icons"
+        );
+        expect(body, `${cmd}/${platform} must point at search_icons`).toContain("search_icons");
+      });
+    }
+  }
+
+  it("shared SKILL.md self-review checklist requires icon-library functional icons", () => {
+    const sharedSkill = readFileSync(join(templatesDir, "shared", "SKILL.md"), "utf8");
+    expect(sharedSkill, "shared SKILL.md must list the functional-icon self-review item").toContain(
+      "functional icons all come from the icon library"
+    );
+    expect(sharedSkill, "shared SKILL.md must reference search_icons in the self-review item").toContain(
+      "search_icons"
+    );
+  });
+});

@@ -38,6 +38,8 @@ Execution:
 
    **On-demand reuse (B5/B6):** When the page spec calls for a standard UI element, reuse the corresponding baseline component from `componentBaseline`/`componentLibrary` (same tokens, states, and interaction patterns) rather than inventing a one-off. When the page shows the product icon, reuse the product ICON SVG from `componentLibrary.productIcon`. Do NOT design-for-reuse (do not add extra components the page spec did not require); immersive or fully custom pages may omit or replace generic components. This guidance does NOT weaken the Scope fidelity hard rule above.
 
+   **Functional icons (hard rule):** never hand-draw functional icons. Call `search_icons` and inline the returned Lucide SVG (currentColor inheritance; stroke-width follows tokens). Decorative brand-specific glyphs defined by tokens are the only exception.
+
    **Mobile screen contract (when product platform is mobile):** output the screen content only — do NOT draw any device shell (no phone frame, bezel, notch chrome, or gesture bar; the outermost screen edges stay square, no rounded screen silhouette). DO draw the in-screen system status bar as the first element of every screen: time (9:41) on the left, signal/Wi-Fi/battery glyphs on the right, rendered flat as screen content (no notch or island cutout), with the app content starting below it.
 
    **Rule 1 (style/component changes are not retroactive):** `fm-change-style` and `fm-refine-components` do NOT retroactively regenerate already-produced design pages. Existing page versions remain immutable until the page is explicitly re-run via `fm-design`.

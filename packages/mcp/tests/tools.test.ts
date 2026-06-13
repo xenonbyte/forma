@@ -6144,3 +6144,76 @@ describe("generate_image tool (PLAN-TASK-010)", () => {
     }
   });
 });
+
+// ─── search_icons tool (PLAN-TASK-014) ───────────────────────────────────────
+
+describe("search_icons tool (PLAN-TASK-014)", () => {
+  // ─── Schema tests ───────────────────────────────────────────────────────────
+
+  it("schema: accepts a query with optional limit", () => {
+    expectSchemaSuccess("search_icons", { query: "arrow" });
+    expectSchemaSuccess("search_icons", { query: "arrow", limit: 5 });
+    expectSchemaSuccess("search_icons", { query: "arrow", limit: 50 });
+  });
+
+  it("schema: rejects empty query at the boundary", () => {
+    expectSchemaFailure("search_icons", { query: "" });
+  });
+
+  it("schema: rejects limit below 1 or above 50", () => {
+    expectSchemaFailure("search_icons", { query: "arrow", limit: 0 });
+    expectSchemaFailure("search_icons", { query: "arrow", limit: 51 });
+  });
+
+  it("schema: rejects unknown keys", () => {
+    expectSchemaFailure("search_icons", { query: "arrow", extra: true });
+  });
+
+  // ─── Handler tests (real core searchIcons, no store dependency) ──────────────
+
+  it("returns ranked Lucide hits with name/tags/svg for a matching query", async () => {
+    const tools = createFormaTools(fakeStore());
+
+    const result = await tools.search_icons({ query: "arrow" });
+
+    expect(result.isError).toBeUndefined();
+    const payload = textPayload(result);
+    expect(Array.isArray(payload.icons)).toBe(true);
+    expect(payload.icons.length).toBeGreaterThan(0);
+    // Name-prefix matches rank first.
+    expect(payload.icons.every((icon: { name: string }) => typeof icon.name === "string")).toBe(true);
+    expect(payload.icons.some((icon: { name: string }) => icon.name.startsWith("arrow"))).toBe(true);
+    const first = payload.icons[0];
+    expect(Array.isArray(first.tags)).toBe(true);
+    // svg is inline-ready Lucide markup (carries the ISC attribution comment before <svg>).
+    expect(first.svg).toContain("<svg");
+  });
+
+  it("honors the limit argument", async () => {
+    const tools = createFormaTools(fakeStore());
+
+    const result = await tools.search_icons({ query: "arrow", limit: 3 });
+
+    const payload = textPayload(result);
+    expect(payload.icons.length).toBeLessThanOrEqual(3);
+  });
+
+  it("returns an empty array (not an error) when nothing matches", async () => {
+    const tools = createFormaTools(fakeStore());
+
+    const result = await tools.search_icons({ query: "zzzznomatch" });
+
+    expect(result.isError).toBeUndefined();
+    expect(textPayload(result)).toEqual({ icons: [] });
+  });
+
+  it("maps a whitespace-only query to a FormaError(INVALID_INPUT) result", async () => {
+    const tools = createFormaTools(fakeStore());
+
+    const result = await tools.search_icons({ query: "   " });
+
+    expect(result.isError).toBe(true);
+    const payload = textPayload(result);
+    expect(payload.error_code).toBe("INVALID_INPUT");
+  });
+});
