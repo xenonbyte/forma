@@ -154,8 +154,22 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
     })),
     listBrandAssets: vi.fn(async () => []),
     exportBrandAssetsZip: vi.fn(async () => Buffer.from("PK".padEnd(22, "\0"), "latin1")),
-    readMediaConfig: vi.fn(async () => ({ configured: false as const, source: "none" as const })),
-    writeMediaConfig: vi.fn(async () => ({ configured: false as const, source: "none" as const })),
+    readMediaConfig: vi.fn(async () => ({
+      active_provider: null,
+      providers: {
+        volcengine: { configured: false as const, source: "none" as const },
+        openai: { configured: false as const, source: "none" as const },
+        gemini: { configured: false as const, source: "none" as const },
+      },
+    })),
+    writeMediaConfig: vi.fn(async () => ({
+      active_provider: null,
+      providers: {
+        volcengine: { configured: false as const, source: "none" as const },
+        openai: { configured: false as const, source: "none" as const },
+        gemini: { configured: false as const, source: "none" as const },
+      },
+    })),
     styles: {
       getStyle: vi.fn(async () => ({
         kind: "brand" as const,
@@ -2749,7 +2763,17 @@ describe("media routes (PLAN-TASK-011)", () => {
   }
 
   // Clear env so file-source assertions are deterministic regardless of host env.
-  const MEDIA_ENV_KEYS = ["FORMA_VOLCENGINE_API_KEY", "ARK_API_KEY", "VOLCENGINE_API_KEY"] as const;
+  // Covers every visible provider's env-key precedence list (MP2 multi-provider).
+  const MEDIA_ENV_KEYS = [
+    "FORMA_VOLCENGINE_API_KEY",
+    "ARK_API_KEY",
+    "VOLCENGINE_API_KEY",
+    "FORMA_OPENAI_API_KEY",
+    "OPENAI_API_KEY",
+    "FORMA_GEMINI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+  ] as const;
   const savedEnv: Record<string, string | undefined> = {};
   for (const name of MEDIA_ENV_KEYS) savedEnv[name] = process.env[name];
   afterEach(() => {
@@ -2769,6 +2793,9 @@ describe("media routes (PLAN-TASK-011)", () => {
     // visible volcengine provider present, carrying catalogue metadata
     const volc = body.providers.find((p: { id: string }) => p.id === "volcengine");
     expect(volc).toMatchObject({ defaultBaseUrl: expect.any(String), docsUrl: expect.any(String) });
+    // MP1 multi-provider catalogue: openai + gemini are visible too.
+    expect(body.providers.some((p: { id: string }) => p.id === "openai")).toBe(true);
+    expect(body.providers.some((p: { id: string }) => p.id === "gemini")).toBe(true);
     // hidden stub provider + model must NOT appear
     expect(body.providers.some((p: { id: string }) => p.id === "stub")).toBe(false);
     expect(body.models.some((m: { id: string }) => m.id === "stub-image-1")).toBe(false);
@@ -2779,53 +2806,114 @@ describe("media routes (PLAN-TASK-011)", () => {
     expect(JSON.stringify(body)).not.toContain('"hidden"');
   });
 
-  it("GET /api/media/config reports unconfigured on a fresh home", async () => {
+  it("GET /api/media/config reports a multi-provider unconfigured view on a fresh home", async () => {
     const { app } = await realStoreApp();
     for (const name of MEDIA_ENV_KEYS) delete process.env[name];
     const res = await app.inject({ method: "GET", url: "/api/media/config" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ configured: false, source: "none" });
+    const body = res.json();
+    expect(body.active_provider).toBeNull();
+    // every visible provider reports unconfigured; the hidden stub never appears.
+    expect(body.providers).toMatchObject({
+      volcengine: { configured: false, source: "none" },
+      openai: { configured: false, source: "none" },
+      gemini: { configured: false, source: "none" },
+    });
+    expect(Object.keys(body.providers).sort()).toEqual(["gemini", "openai", "volcengine"]);
+    expect(body.providers.stub).toBeUndefined();
   });
 
-  it("PUT /api/media/config writes a key and returns the masked view (file source has a tail)", async () => {
+  it("PUT /api/media/config writes a provider key and returns the masked multi view (file source has a tail)", async () => {
     const { app } = await realStoreApp();
     for (const name of MEDIA_ENV_KEYS) delete process.env[name];
     const res = await app.inject({
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: { api_key: FAKE_KEY, model: "doubao-seedream-5-0-260128" },
+      payload: { provider: "volcengine", api_key: FAKE_KEY, model: "doubao-seedream-5-0-260128" },
     });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body).toMatchObject({
+    expect(body.providers.volcengine).toMatchObject({
       configured: true,
       source: "file",
       api_key_tail: FAKE_KEY.slice(-4),
       model: "doubao-seedream-5-0-260128",
     });
+    // a provider-targeted write leaves the other providers untouched.
+    expect(body.providers.openai).toMatchObject({ configured: false, source: "none" });
+    expect(body.providers.gemini).toMatchObject({ configured: false, source: "none" });
     // the masked view must never echo the plaintext key
     expect(res.payload).not.toContain(FAKE_KEY);
     expect(res.payload).not.toContain("sk-test-1234");
   });
 
-  it("PUT /api/media/config preserves the key when preserve_api_key is set", async () => {
+  it("PUT /api/media/config targets a provider and make_active promotes it", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { provider: "openai", api_key: FAKE_KEY, make_active: true },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.active_provider).toBe("openai");
+    expect(body.providers.openai).toMatchObject({
+      configured: true,
+      source: "file",
+      api_key_tail: FAKE_KEY.slice(-4),
+    });
+    // only the targeted provider is written; volcengine/gemini stay unconfigured.
+    expect(body.providers.volcengine).toMatchObject({ configured: false, source: "none" });
+    expect(body.providers.gemini).toMatchObject({ configured: false, source: "none" });
+    expect(res.payload).not.toContain(FAKE_KEY);
+  });
+
+  it("PUT /api/media/config 400s when provider is missing", async () => {
+    const { app } = await realStoreApp();
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { api_key: FAKE_KEY },
+    });
+    expect(res.statusCode).toBe(400);
+    // the route rejects the missing required field before reaching core.
+    expect(res.payload).not.toContain(FAKE_KEY);
+  });
+
+  it("PUT /api/media/config 400s for an unknown/hidden provider (core MEDIA_INVALID_INPUT)", async () => {
+    const { app } = await realStoreApp();
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { provider: "stub", api_key: FAKE_KEY },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("MEDIA_INVALID_INPUT");
+    expect(res.payload).not.toContain(FAKE_KEY);
+  });
+
+  it("PUT /api/media/config preserves the provider key when preserve_api_key is set", async () => {
     const { app } = await realStoreApp();
     for (const name of MEDIA_ENV_KEYS) delete process.env[name];
     await app.inject({
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: { api_key: FAKE_KEY, model: "doubao-seedream-5-0-260128" },
+      payload: { provider: "volcengine", api_key: FAKE_KEY, model: "doubao-seedream-5-0-260128" },
     });
     const res = await app.inject({
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: { model: "doubao-seedream-4-5-251128", preserve_api_key: true },
+      payload: { provider: "volcengine", model: "doubao-seedream-4-5-251128", preserve_api_key: true },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toMatchObject({
+    expect(res.json().providers.volcengine).toMatchObject({
       configured: true,
       source: "file",
       api_key_tail: FAKE_KEY.slice(-4),
@@ -2840,18 +2928,19 @@ describe("media routes (PLAN-TASK-011)", () => {
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: { api_key: FAKE_KEY },
+      payload: { provider: "volcengine", api_key: FAKE_KEY },
     });
     const res = await app.inject({
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: {},
+      payload: { provider: "volcengine" },
     });
     expect(res.statusCode).toBe(409);
     const body = res.json();
     expect(body.error_code).toBe("MEDIA_NOT_CONFIGURED");
-    expect(body.details).toMatchObject({ requires_force: true });
+    // the per-provider wipe-guard names the provider it refused to clear.
+    expect(body.details).toMatchObject({ provider: "volcengine", requires_force: true });
     expect(res.payload).not.toContain(FAKE_KEY);
   });
 
@@ -2862,16 +2951,16 @@ describe("media routes (PLAN-TASK-011)", () => {
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: { api_key: FAKE_KEY },
+      payload: { provider: "volcengine", api_key: FAKE_KEY },
     });
     const res = await app.inject({
       method: "PUT",
       url: "/api/media/config",
       headers: { origin: "http://localhost:5173" },
-      payload: { force: true },
+      payload: { provider: "volcengine", force: true },
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ configured: false, source: "none" });
+    expect(res.json().providers.volcengine).toMatchObject({ configured: false, source: "none" });
   });
 
   it("POST /api/media/test generates one minimal image with the stub provider", async () => {
@@ -2908,14 +2997,16 @@ describe("media routes (PLAN-TASK-011)", () => {
     expect(res.json().error_code).toBe("MEDIA_NOT_CONFIGURED");
   });
 
-  it("env-sourced config reports source=env with NO api_key_tail", async () => {
+  it("env-sourced provider reports source=env with NO api_key_tail", async () => {
     const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
     process.env.FORMA_VOLCENGINE_API_KEY = FAKE_KEY;
     const res = await app.inject({ method: "GET", url: "/api/media/config" });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(body).toMatchObject({ configured: true, source: "env" });
-    expect(body.api_key_tail).toBeUndefined();
+    expect(body.providers.volcengine).toMatchObject({ configured: true, source: "env" });
+    // env-sourced keys never echo even the masked tail.
+    expect(body.providers.volcengine.api_key_tail).toBeUndefined();
     expect(res.payload).not.toContain(FAKE_KEY);
     expect(res.payload).not.toContain(FAKE_KEY.slice(-4));
   });
@@ -2983,7 +3074,7 @@ describe("media routes (PLAN-TASK-011)", () => {
       method: "PUT",
       url: `/api/media/config?base_url=${encodeURIComponent("https://secret-host.example")}`,
       headers: { origin: "http://localhost:5173" },
-      payload: { api_key: FAKE_KEY, base_url: "https://secret-host.example" },
+      payload: { provider: "volcengine", api_key: FAKE_KEY, base_url: "https://secret-host.example" },
     });
     const log = lines.join("\n");
     expect(log).not.toContain(FAKE_KEY);

@@ -833,15 +833,20 @@ export function registerRoutes(
   // Masked read of the current media credentials. Never returns the plaintext key.
   app.get("/api/media/config", async () => store.readMediaConfig());
 
-  // Write media credentials. Empty-wipe without `force` → MEDIA_NOT_CONFIGURED
-  // (409 via statusForError). The plaintext key never appears in the response.
+  // Write ONE provider's credentials (provider-targeted, MP2/MP4). `provider`
+  // is required and selects which `providers.<id>` entry to write; `make_active`
+  // additionally promotes it to the active provider. An unknown/hidden provider
+  // is rejected by core (MEDIA_INVALID_INPUT → 400); an empty-wipe without
+  // `force` → MEDIA_NOT_CONFIGURED (409 via statusForError), now per-provider.
+  // The plaintext key never appears in the response or error.
   app.put<{ Body: unknown }>("/api/media/config", async (request, reply) => {
     if (!checkMutationOrigin(request, reply)) return;
     const body = objectBody(request.body);
-    const payload: MediaConfigInput = {};
+    const payload: MediaConfigInput = { provider: requiredString(body, "provider") };
     if (body["api_key"] !== undefined) payload.api_key = optionalString(body, "api_key");
     if (body["base_url"] !== undefined) payload.base_url = optionalString(body, "base_url");
     if (body["model"] !== undefined) payload.model = optionalString(body, "model");
+    if (body["make_active"] !== undefined) payload.make_active = optionalBoolean(body, "make_active");
     return store.writeMediaConfig(payload, {
       preserveApiKey: optionalBoolean(body, "preserve_api_key"),
       force: optionalBoolean(body, "force"),
