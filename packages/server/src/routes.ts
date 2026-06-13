@@ -19,6 +19,7 @@ import {
   FormaError,
   makeExportArchiveAssetsDeps,
   loadDecodedHandoffContent,
+  BRAND_ASSET_KINDS,
   IMAGE_MODELS,
   IMAGE_PROVIDERS,
   type ArtifactManifest,
@@ -872,11 +873,18 @@ export function registerRoutes(
   // straight into the `brand-assets/files/*` URL; the on-disk layout never leaks.
   app.get<{ Params: { pid: string }; Querystring: { kind?: string } }>(
     "/api/products/:pid/brand-assets",
-    async (request) => {
+    async (request, reply) => {
       const { pid } = request.params;
+      const { kind } = request.query;
+      if (kind !== undefined && !(BRAND_ASSET_KINDS as readonly string[]).includes(kind)) {
+        reply
+          .status(400)
+          .send({ error_code: "BRAND_ASSET_INVALID_INPUT", message: "Unknown brand asset kind", details: { kind } });
+        return;
+      }
       const productsDir = getFormaPaths(store.home).productsDir;
       const brandRoot = resolve(getBrandAssetsDir(productsDir, pid));
-      const records = await store.listBrandAssets(pid);
+      const records = await store.listBrandAssets(pid, kind as BrandAssetKind | undefined);
       return { assets: records.map((record) => toBrandAssetView(record, brandRoot)) };
     },
   );

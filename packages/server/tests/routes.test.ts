@@ -3163,6 +3163,39 @@ describe("brand-assets routes (PLAN-TASK-018)", () => {
     // A valid (possibly empty) zip starts with the local-file/EOCD signature "PK".
     expect(res.rawPayload.subarray(0, 2).toString("latin1")).toBe("PK");
   });
+
+  it("GET .../brand-assets?kind=app-icon returns only app-icon records; ?kind=poster returns []", async () => {
+    const { app, home } = await brandStoreApp();
+    await seedAppIcon(home);
+
+    const resAppIcon = await app.inject({
+      method: "GET",
+      url: `/api/products/${PID}/brand-assets?kind=app-icon`,
+    });
+    expect(resAppIcon.statusCode).toBe(200);
+    const bodyAppIcon = resAppIcon.json();
+    expect(Array.isArray(bodyAppIcon.assets)).toBe(true);
+    expect(bodyAppIcon.assets).toHaveLength(1);
+    expect(bodyAppIcon.assets[0].kind).toBe("app-icon");
+
+    const resPoster = await app.inject({
+      method: "GET",
+      url: `/api/products/${PID}/brand-assets?kind=poster`,
+    });
+    expect(resPoster.statusCode).toBe(200);
+    expect(resPoster.json()).toEqual({ assets: [] });
+  });
+
+  it("GET .../brand-assets?kind=bogus → 400 BRAND_ASSET_INVALID_INPUT", async () => {
+    const { app } = await brandStoreApp();
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/products/${PID}/brand-assets?kind=bogus`,
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error_code).toBe("BRAND_ASSET_INVALID_INPUT");
+  });
 });
 
 describe("api bearer auth (non-loopback protection)", () => {
