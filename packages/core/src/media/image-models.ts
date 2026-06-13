@@ -54,6 +54,20 @@ export const IMAGE_PROVIDERS: ImageProvider[] = [
     docsUrl: "https://www.volcengine.com/docs/82379/1541523",
   },
   {
+    id: "openai",
+    label: "OpenAI",
+    hint: "OpenAI gpt-image-1 图片生成，需要 OpenAI API Key。",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    docsUrl: "https://platform.openai.com/docs/api-reference/images",
+  },
+  {
+    id: "gemini",
+    label: "Google Gemini",
+    hint: "Google Gemini 2.5 Flash Image（Nano Banana），OpenAI 兼容端点，需要 Gemini API Key。",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    docsUrl: "https://ai.google.dev/gemini-api/docs/image-generation",
+  },
+  {
     id: "stub",
     label: "Stub (test only)",
     hint: "Deterministic offline provider for tests; never shown in settings.",
@@ -94,6 +108,20 @@ export const IMAGE_MODELS: ImageModel[] = [
     provider: "volcengine",
   },
   {
+    id: "gpt-image-1",
+    label: "GPT Image 1",
+    hint: "OpenAI 旗舰图片生成模型；标准尺寸 1024 / 1536 三档。",
+    provider: "openai",
+    default: true,
+  },
+  {
+    id: "gemini-2.5-flash-image",
+    label: "Gemini 2.5 Flash Image (Nano Banana)",
+    hint: "Gemini 快速图片生成；OpenAI 兼容端点，默认约 1024px 方图。",
+    provider: "gemini",
+    default: true,
+  },
+  {
     id: "stub-image-1",
     label: "Stub image model",
     hint: "Deterministic offline model for tests; never shown in settings.",
@@ -131,6 +159,38 @@ const SEEDREAM_3_0_T2I_SIZES: SizeTable = {
   "3:4": { width: 864, height: 1152 },
 };
 
+/**
+ * OpenAI gpt-image-1 — exact allowed sizes (verified 2026-06-13 against the OpenAI
+ * images API reference: https://platform.openai.com/docs/api-reference/images).
+ * gpt-image-1 only accepts 1024x1024, 1536x1024, 1024x1536 (plus "auto"); our five
+ * aspects map to the nearest allowed size. OpenAI offers no native 4:3 / 3:4 pixel
+ * option, so 4:3 collapses onto the landscape pair and 3:4 onto the portrait pair.
+ */
+const GPT_IMAGE_1_SIZES: SizeTable = {
+  "1:1": { width: 1024, height: 1024 },
+  "16:9": { width: 1536, height: 1024 },
+  "9:16": { width: 1024, height: 1536 },
+  "4:3": { width: 1536, height: 1024 }, // nearest allowed landscape
+  "3:4": { width: 1024, height: 1536 }, // nearest allowed portrait
+};
+
+/**
+ * Gemini 2.5 Flash Image (Nano Banana) — NOMINAL / UNCONFIRMED.
+ *
+ * Gemini's OpenAI-compatible images endpoint size behavior is NOT verified: the
+ * official example omits `size`, and Nano Banana outputs ~1024px square by default.
+ * This table only mirrors the OpenAI sizes so resolveSize() does not throw — the MP3
+ * renderer will use the model default and read the ACTUAL dimensions from the returned
+ * PNG. These values are bookkeeping placeholders only, NOT a verified contract.
+ */
+const GEMINI_2_5_FLASH_IMAGE_SIZES: SizeTable = {
+  "1:1": { width: 1024, height: 1024 },
+  "16:9": { width: 1536, height: 1024 },
+  "9:16": { width: 1024, height: 1536 },
+  "4:3": { width: 1536, height: 1024 },
+  "3:4": { width: 1024, height: 1536 },
+};
+
 /** Maps each registered model id to its size table. */
 const MODEL_SIZE_TABLES: Record<string, SizeTable> = {
   "doubao-seedream-5-0-260128": SEEDREAM_2K_SIZES,
@@ -138,6 +198,9 @@ const MODEL_SIZE_TABLES: Record<string, SizeTable> = {
   "doubao-seedream-4-5-251128": SEEDREAM_2K_SIZES,
   "doubao-seedream-4-0-250828": SEEDREAM_2K_SIZES,
   "doubao-seedream-3-0-t2i-250415": SEEDREAM_3_0_T2I_SIZES,
+  "gpt-image-1": GPT_IMAGE_1_SIZES,
+  // gemini: NOMINAL/UNCONFIRMED placeholders (see GEMINI_2_5_FLASH_IMAGE_SIZES)
+  "gemini-2.5-flash-image": GEMINI_2_5_FLASH_IMAGE_SIZES,
   // stub: reuses the 2K profile for deterministic tests; not doc-derived
   "stub-image-1": SEEDREAM_2K_SIZES,
 };

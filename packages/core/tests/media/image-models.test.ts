@@ -43,6 +43,19 @@ import {
 //     3:4  864x1152
 //     16:9 1280x720
 //     9:16 720x1280
+//
+// MP1 additions — OpenAI + Gemini providers (verified 2026-06-13):
+//   OpenAI gpt-image-1 — images API reference (https://platform.openai.com/docs/api-reference/images).
+//     Standard sizes: 1024x1024, 1536x1024, 1024x1536 (+ auto). Our 5 aspects map
+//     to the nearest allowed size; 4:3/3:4 collapse onto the landscape/portrait pair:
+//       1:1  1024x1024
+//       16:9 1536x1024   4:3 1536x1024   (landscape)
+//       9:16 1024x1536   3:4 1024x1536   (portrait)
+//   Gemini gemini-2.5-flash-image (Nano Banana) — NOMINAL / UNCONFIRMED. The
+//     OpenAI-compat images endpoint's `size` handling is not verified (the official
+//     example omits size; output is ~1024px square by default). The table mirrors the
+//     OpenAI sizes only so resolveSize doesn't throw; MP3 reads ACTUAL dimensions from
+//     the returned PNG. These are bookkeeping placeholders, not a verified contract.
 // ---------------------------------------------------------------------------
 
 const EXPECTED_VOLCENGINE_MODEL_IDS = [
@@ -69,9 +82,31 @@ describe("IMAGE_PROVIDERS catalogue", () => {
     expect(stub?.hidden).toBe(true);
   });
 
-  it("only the stub provider is hidden; volcengine is visible", () => {
+  it("includes openai with the official base URL and a docs URL, not hidden", () => {
+    const openai = IMAGE_PROVIDERS.find((p) => p.id === "openai");
+    expect(openai).toBeDefined();
+    expect(openai?.defaultBaseUrl).toBe("https://api.openai.com/v1");
+    expect(openai?.docsUrl).toBe("https://platform.openai.com/docs/api-reference/images");
+    expect(openai?.hidden).toBeFalsy();
+    expect(openai?.label).toBeTruthy();
+    expect(openai?.hint).toBeTruthy();
+  });
+
+  it("includes gemini with the official OpenAI-compat base URL and a docs URL, not hidden", () => {
+    const gemini = IMAGE_PROVIDERS.find((p) => p.id === "gemini");
+    expect(gemini).toBeDefined();
+    expect(gemini?.defaultBaseUrl).toBe("https://generativelanguage.googleapis.com/v1beta/openai");
+    expect(gemini?.docsUrl).toBe("https://ai.google.dev/gemini-api/docs/image-generation");
+    expect(gemini?.hidden).toBeFalsy();
+    expect(gemini?.label).toBeTruthy();
+    expect(gemini?.hint).toBeTruthy();
+  });
+
+  it("only the stub provider is hidden; volcengine / openai / gemini are visible", () => {
     const visible = IMAGE_PROVIDERS.filter((p) => !p.hidden).map((p) => p.id);
     expect(visible).toContain("volcengine");
+    expect(visible).toContain("openai");
+    expect(visible).toContain("gemini");
     expect(visible).not.toContain("stub");
   });
 
@@ -87,10 +122,28 @@ describe("IMAGE_MODELS catalogue", () => {
     expect(volcengineIds.sort()).toEqual([...EXPECTED_VOLCENGINE_MODEL_IDS].sort());
   });
 
-  it("has exactly one default model and it is the verified primary id", () => {
-    const defaults = IMAGE_MODELS.filter((m) => m.default);
-    expect(defaults).toHaveLength(1);
-    expect(defaults[0]?.id).toBe("doubao-seedream-5-0-260128");
+  it("registers gpt-image-1 under openai as its default", () => {
+    const model = findImageModel("gpt-image-1");
+    expect(model).toBeDefined();
+    expect(model?.provider).toBe("openai");
+    expect(model?.default).toBe(true);
+  });
+
+  it("registers gemini-2.5-flash-image under gemini as its default", () => {
+    const model = findImageModel("gemini-2.5-flash-image");
+    expect(model).toBeDefined();
+    expect(model?.provider).toBe("gemini");
+    expect(model?.default).toBe(true);
+  });
+
+  it("has exactly one default model per visible provider, with the verified primary volcengine default", () => {
+    const visibleProviderIds = IMAGE_PROVIDERS.filter((p) => !p.hidden).map((p) => p.id);
+    for (const providerId of visibleProviderIds) {
+      const defaults = IMAGE_MODELS.filter((m) => m.provider === providerId && m.default);
+      expect(defaults, `provider ${providerId} should have exactly one default`).toHaveLength(1);
+    }
+    const volcengineDefault = IMAGE_MODELS.find((m) => m.provider === "volcengine" && m.default);
+    expect(volcengineDefault?.id).toBe("doubao-seedream-5-0-260128");
   });
 
   it("model ids are unique", () => {
@@ -142,6 +195,14 @@ describe("isModelOfProvider", () => {
   it("is false for an unregistered model id", () => {
     expect(isModelOfProvider("not-a-real-model", "volcengine")).toBe(false);
   });
+
+  it("matches openai / gemini models to their own provider and not across providers", () => {
+    expect(isModelOfProvider("gpt-image-1", "openai")).toBe(true);
+    expect(isModelOfProvider("gpt-image-1", "gemini")).toBe(false);
+    expect(isModelOfProvider("gpt-image-1", "volcengine")).toBe(false);
+    expect(isModelOfProvider("gemini-2.5-flash-image", "gemini")).toBe(true);
+    expect(isModelOfProvider("gemini-2.5-flash-image", "openai")).toBe(false);
+  });
 });
 
 describe("resolveSize — 4.x / 5.x family (2K class)", () => {
@@ -181,6 +242,38 @@ describe("resolveSize — 3.0 t2i family (1K class)", () => {
   for (const [aspect, expected] of cases) {
     it(`${aspect} -> ${expected.width}x${expected.height}`, () => {
       expect(resolveSize("doubao-seedream-3-0-t2i-250415", aspect)).toEqual(expected);
+    });
+  }
+});
+
+describe("resolveSize — openai gpt-image-1 (nearest-allowed sizes)", () => {
+  const cases: Array<[AspectRatio, { width: number; height: number }]> = [
+    ["1:1", { width: 1024, height: 1024 }],
+    ["16:9", { width: 1536, height: 1024 }],
+    ["9:16", { width: 1024, height: 1536 }],
+    ["4:3", { width: 1536, height: 1024 }],
+    ["3:4", { width: 1024, height: 1536 }],
+  ];
+
+  for (const [aspect, expected] of cases) {
+    it(`${aspect} -> ${expected.width}x${expected.height}`, () => {
+      expect(resolveSize("gpt-image-1", aspect)).toEqual(expected);
+    });
+  }
+});
+
+describe("resolveSize — gemini-2.5-flash-image (NOMINAL / UNCONFIRMED placeholders)", () => {
+  const cases: Array<[AspectRatio, { width: number; height: number }]> = [
+    ["1:1", { width: 1024, height: 1024 }],
+    ["16:9", { width: 1536, height: 1024 }],
+    ["9:16", { width: 1024, height: 1536 }],
+    ["4:3", { width: 1536, height: 1024 }],
+    ["3:4", { width: 1024, height: 1536 }],
+  ];
+
+  for (const [aspect, expected] of cases) {
+    it(`${aspect} -> ${expected.width}x${expected.height} (placeholder, not a verified contract)`, () => {
+      expect(resolveSize("gemini-2.5-flash-image", aspect)).toEqual(expected);
     });
   }
 });
