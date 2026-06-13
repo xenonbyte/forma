@@ -11,13 +11,15 @@ Use shared Forma guidance at ~/.forma/skills/forma/SKILL.md.
 
 Generate or refine a product's static-HTML component library. You write the HTML; Forma localizes assets, validates it is pure-static, stores a versioned bundle, renders a preview, and runs the deterministic craft lint. A component library is product-level — it has no requirement or page.
 
+A bare `fm-refine-components` rerun (no description) = FULL regeneration of the component library (initial-generation path, no `source_html` reuse). Before executing a bare rerun, double-confirm with the user that they want to fully regenerate the component library rather than refine the existing one.
+
 Preconditions (tier 1):
 - Tier 1: a product must exist and be selected. No requirement is needed for this command.
 If the core tool returns `REQUIREMENT_NOT_FOUND` or `REQUIREMENT_STATUS_INVALID` in an unexpected context, report the error faithfully.
 
 Execution:
-1. Require product_id from context or ask the user to run `$fm-list-product` first.
-2. **App-icon hard precondition (the icon unit is retired — D6):** the component library no longer produces a product ICON. Call `list_brand_assets(product_id, kind="app-icon")`. If the result contains no app-icon record (ideally one named `primary`), STOP before generating and guide the user: "No app icon exists yet — run `$fm-app-icon` to generate and persist the canonical brand app-icon first, then re-run `$fm-refine-components`." Do NOT hand-draw or embed a product mark to work around a missing app icon. If an app-icon exists, proceed.
+1. Require product_id from context or ask the user to run `fm-list-product` first.
+2. **App-icon hard precondition (the icon unit is retired — D6):** the component library no longer produces a product ICON. Call `list_brand_assets(product_id, kind="app-icon")`. If the result contains no app-icon record, STOP before generating and guide the user: "No app icon exists yet — run `fm-app-icon` to generate and persist the canonical brand app-icon first, then re-run `fm-refine-components`." Do NOT hand-draw or embed a product mark to work around a missing app icon. If an app-icon exists, proceed.
 3. Determine whether this is initial generation or refinement:
    - For refinement of an existing library: `list_product_artifacts(product_id, kind="component-library")`, choose the returned current library, `get_product_artifact(product_id, artifact_id)` to read its manifest, then `export_artifact(product_id, artifact_id, format="html")` and read the returned `output_path` as `source_html`. If the export response notes omitted assets, also call `export_artifact(product_id, artifact_id, format="zip")` and inspect the bundle so existing local assets can be preserved or inlined. Use only the current non-superseded component library as source; do not select legacy/superseded artifacts unless a separate adoption flow exists. A current library is a valid refinement source regardless of whether its manifest carries any legacy `forma.productIcon` metadata; preserve the exported `source_html` and never re-emit a product ICON unit. If no current component-library exists, ask whether to do initial generation instead; do not fabricate a "refined" library without source HTML.
    - For a clearly new component library: proceed without `source_html`.
@@ -27,7 +29,7 @@ Execution:
 7. Palette design-read (before defining brand tokens): read `craft_rules` from the `get_component_baseline` response. Apply the palette-rotation rule from ai-tells: do not default to warm beige/cream with brass/clay/oxblood unless brand_style tokens already lock that palette. Rotate real alternatives and record the chosen direction in one line.
 8. Generate or refine the component library as **shared CSS (`tokens_css`) plus an ordered list of units (`units`)**. Do NOT produce a single combined HTML document; instead produce:
    - **`tokens_css`** (a single CSS string): all design tokens, base styles, component classes, fonts, and `@font-face` declarations. Every class or CSS variable referenced by any `body_html` fragment must be defined here. No `<style>` tags go into `body_html`.
-   - **`units`** — emit exactly the following units IN THIS ORDER (NO icon unit — the app icon lives in brand assets via `$fm-app-icon`, not in the component library):
+   - **`units`** — emit exactly the following units IN THIS ORDER (NO icon unit — the app icon lives in brand assets via `fm-app-icon`, not in the component library):
      a. `{ id: "foundations", role: "foundations", title: "Foundations", body_html: <fragment> }` — token visualization for every category in `baseline.foundations` (color, typography, spacing, radius, elevation, motion, functionalIconStyle), derived from brand_style tokens.
      b. One `{ id: "<component-slug>", role: "component", title: <component name>, body_html: <fragment> }` per entry in `baseline.components`, covering all listed states and variants. The `id` slug MUST match `^[a-z0-9][a-z0-9-]{0,63}$`. Cover state-coverage (default/hover/focus/disabled/loading/empty/error as applicable per component). When `source_html` exists, derive per-component content from it, preserving existing states, content, and layout unless the user explicitly asked to change them.
    **Each `body_html` MUST be a pure markup fragment** — no `<html>`, `<head>`, `<body>`, or `<style>` tags. It must render correctly using ONLY the classes and CSS variables defined in `tokens_css`.
@@ -38,7 +40,7 @@ Execution:
    - `tokens_css`: the single CSS string containing all shared styles (tokens, component classes, fonts)
    - `units`: the ordered array of unit objects — `[ { id, role, title, body_html }, … ]` — as produced in step 8
    **Do NOT include a top-level `html` field** — the `tokens_css` + `units` fields replace it entirely.
-   Do NOT submit `product_icon` or icon SVG `supporting_files`: the icon unit is retired (D6) and the app icon is owned by `$fm-app-icon` / brand assets. (Old artifacts that still carry `manifest.forma.productIcon` remain valid; this command simply stops emitting it.)
+   Do NOT submit `product_icon` or icon SVG `supporting_files`: the icon unit is retired (D6) and the app icon is owned by `fm-app-icon` / brand assets. (Old artifacts that still carry `manifest.forma.productIcon` remain valid; this command simply stops emitting it.)
    The tool returns `artifact_id`, `version`, `preview_status`.
 10. Self-review (MANDATORY): run the **Self-review protocol** in shared SKILL.md. The save tool here is `generate_components`.
 11. Report `artifact_id`, the final `version`, `preview_status`, and a short craftChecks summary. Report stable error codes exactly as returned.
