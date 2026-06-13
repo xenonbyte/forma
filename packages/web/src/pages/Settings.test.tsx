@@ -204,6 +204,64 @@ describe("Settings — image model section", () => {
     expect(selectByName(container, "model").value).toBe("doubao-seedream-5-0-lite-260128");
   });
 
+  it("falls back to the catalogue default when config.model is not in the provider's model list", async () => {
+    const orphanConfig: MediaConfig = {
+      ...configFile,
+      model: "removed-old-model-id",
+    };
+    const saveSpy = vi.fn<(input: MediaConfigInput) => Promise<MediaConfig>>(async () => orphanConfig);
+    const { container } = await renderSettings(
+      fakeClient({ getMediaConfig: async () => orphanConfig, saveMediaConfig: saveSpy }),
+    );
+
+    // The rendered select must show the catalogue default, not the orphaned id.
+    const modelSelect = selectByName(container, "model");
+    expect(modelSelect.value).toBe("doubao-seedream-5-0-260128");
+    expect([...modelSelect.options].map((o) => o.value)).not.toContain("removed-old-model-id");
+
+    // A subsequent save must send the catalogue default, not the orphan.
+    await act(async () => {
+      buttonByTestId(container, "media-save").click();
+      await flushPromises();
+    });
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(saveSpy.mock.calls[0][0].model).toBe("doubao-seedream-5-0-260128");
+  });
+
+  it("disables the save button while save is in flight and re-enables after resolution", async () => {
+    let resolveSave!: (config: MediaConfig) => void;
+    const deferredSave = vi.fn<(input: MediaConfigInput) => Promise<MediaConfig>>(
+      () =>
+        new Promise<MediaConfig>((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    const { container } = await renderSettings(
+      fakeClient({ getMediaConfig: async () => configFile, saveMediaConfig: deferredSave }),
+    );
+
+    const saveBtn = buttonByTestId(container, "media-save");
+    expect(saveBtn.disabled).toBe(false);
+
+    // Click save — the promise is still pending.
+    await act(async () => {
+      saveBtn.click();
+    });
+
+    // Button must be disabled while the save is in flight.
+    expect(saveBtn.disabled).toBe(true);
+
+    // Resolve the deferred promise and flush.
+    await act(async () => {
+      resolveSave(configFile);
+      await flushPromises();
+    });
+
+    // Button must be re-enabled after the save completes.
+    expect(saveBtn.disabled).toBe(false);
+  });
+
   describe("masked key display", () => {
     it("file-source shows the masked tail and a configured note", async () => {
       const { container } = await renderSettings(fakeClient({ getMediaConfig: async () => configFile }));

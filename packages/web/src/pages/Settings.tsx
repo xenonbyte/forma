@@ -81,7 +81,9 @@ function ImageModelSection({ client }: SettingsProps) {
       const provider = catalogue.providers.find((p) => p.default) ?? catalogue.providers[0];
       const initialProvider = provider?.id ?? "";
       const providerModels = catalogue.models.filter((m) => m.provider === initialProvider);
-      const initialModel = config.model ?? providerModels.find((m) => m.default)?.id ?? providerModels[0]?.id ?? "";
+      const configuredModel =
+        config.model && providerModels.some((m) => m.id === config.model) ? config.model : undefined;
+      const initialModel = configuredModel ?? providerModels.find((m) => m.default)?.id ?? providerModels[0]?.id ?? "";
       const initialBaseUrl = config.base_url ?? provider?.defaultBaseUrl ?? "";
 
       setProviderId(initialProvider);
