@@ -8,12 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 pnpm install          # install workspace dependencies (pnpm 10.33.2, Node ≥22)
 pnpm build            # build all packages (CLI last, for asset bundling)
 pnpm test             # run full Vitest suite
-pnpm typecheck        # build then run per-package tsc checks
+pnpm typecheck        # build then run per-package tsc checks (+ scripts/)
+pnpm lint             # Biome 2.2.4 check (lint + format verify) across the repo
+pnpm lint:fix         # Biome check --write (auto-fix); pnpm format = format-only write
+pnpm lint:changed     # Biome ci on files changed since origin/main (used in CI)
+pnpm check:vzi-boundary  # assert @vzi-core/renderer + canvaskit-wasm stay out of the backend runtime
 pnpm dev:web          # Vite dev server for @xenonbyte/forma-web
 pnpm desktop:dev      # run the Electron desktop app against the dev build
 node bin/forma.js serve         # start Forma server from checkout
 node bin/forma.js status        # report Forma home, Pencil state, server state
 ```
+
+Biome (`biome.json`) is the linter + formatter (2-space indent, double quotes, 120-col). It does **not** scan `styles/`, `craft/`, `spikes/`, `design-version/`, or the vendored `packages/core/assets/lucide-icons.json`.
 
 Run a single test file:
 ```bash
@@ -77,10 +83,14 @@ $FORMA_HOME/                       (defaults to ~/.forma, override with FORMA_HO
 | `agent` | Command templates installed into Claude/Codex/Gemini platforms. |
 | `desktop` | Electron desktop app; renders artifact bundles via `viewer` over the HTTP API. |
 | `viewer` | Pure design-bundle rendering library (no data fetching of its own). |
+| `vzi-types`/`vzi-format`/`vzi-parser`/`vzi-transformer` | The `.vzi` design-interchange format, published as `@vzi-core/*`. Pure-TS; consumed by `core`/`mcp`/`server`/`web` for design-handoff capture/read (see **Design handoff**). |
+| `vzi-renderer` | `@vzi-core/renderer` (`private`, CanvasKit/WASM). Vendored for future web/desktop only; **must never be imported by the Node backend runtime** (`core`/`server`/`cli`/`mcp`) — enforced by `pnpm check:vzi-boundary`. |
 | `od-contracts` | Shared pure-TS contracts for the Open Design web/daemon boundary. |
 | `od-*` | Open Design renderer/plugin subsystem: `od-host` (renderer host bridge), `od-plugin-runtime` (pure-TS plugin runtime, no `node:fs`), `od-platform`, `od-sidecar`/`od-sidecar-proto` (sidecar + protocol), `od-diagnostics` (log export/redaction). |
 
 > **`od-*` status (in progress, not yet wired):** The `@xenonbyte/od-*` packages (version `0.0.1`) form a parallel subsystem that, as of now, is **imported only by each other** — no shipping entry point (`core`/`server`/`mcp`/`cli`/`web`/`desktop`/`viewer`) depends on them, and they are **not** in the npm publish set (`publish:npm`). They are still built and typechecked by the default `pnpm build`/`pnpm typecheck` (their tests resolve sibling packages through the built `dist`, e.g. `od-contracts/tests/package-runtime.test.ts`). Use `pnpm build:od` / `pnpm typecheck:od` to work on them in isolation. Treat them as work-in-progress until a shipping package imports them.
+
+> **Publish set (`publish:npm`):** only `@vzi-core/{types,format,parser,transformer}` + `@xenonbyte/forma-{core,mcp,server,cli}` are published to npm. `web`, `desktop`, `viewer`, `agent`, `od-*`, and `@vzi-core/renderer` are **not** published standalone — the Web admin assets and agent command templates are bundled **into the CLI** at build time (hence CLI builds last). End users install only `@xenonbyte/forma-cli`.
 
 ### Key patterns
 
