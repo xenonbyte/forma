@@ -1,17 +1,21 @@
 # Image generation prompts (per-purpose scaffolds)
 
-Prompt-craft for the five generated-image purposes. The agent commands
-(`fm-app-icon`, `fm-design` IMAGERY, `fm-brand-assets`) read this file to
-**construct** a prompt; Forma core passes that prompt through verbatim and
-never rewrites it (SPEC-BEHAVIOR-001). So every quality decision — palette
-lock, anti-slop discipline, composition — has to be encoded here, not in the
-generator.
+Prompt-craft for the five `generate_image` purposes plus two brand-asset-kind
+scaffolds (banner, poster). The agent commands (`fm-app-icon`, `fm-design`
+IMAGERY, `fm-brand-assets`) read this file to **construct** a prompt; Forma
+core passes that prompt through verbatim and never rewrites it
+(SPEC-BEHAVIOR-001). So every quality decision — palette lock, anti-slop
+discipline, composition — has to be encoded here, not in the generator.
 
 > Adapted from [taste-skill](https://github.com/Leonxlnx/taste-skill) (MIT)
 > anti-slop word lists, locked-palette discipline, and brandkit structure,
-> re-scoped to Forma's five `IMAGE_PURPOSES` and brand-token system.
+> re-scoped to Forma's five `generate_image` purposes (`IMAGE_PURPOSES`) and
+> brand-token system. The `banner` and `poster` sections below are
+> brand-asset-kind scaffolds (not `generate_image` purposes); they describe
+> the overall rendered composition and name which `generate_image` purpose
+> to use for their optional background material.
 
-The five purposes and their default aspect (matching core's
+The five `generate_image` purposes and their default aspect (matching core's
 `PURPOSE_DEFAULT_ASPECT`):
 
 | Purpose | Default aspect | One-line intent |
@@ -138,6 +142,9 @@ legible scaled down to ~24px; the brand's primary accent doing the heavy lifting
 
 ## `banner` — plan-driven target
 
+> **Brand-asset-kind scaffold** (not a `generate_image` purpose). This describes the
+> rendered HTML→PNG composition; for the optional generated background, use `purpose="hero"`.
+
 Marketing banner / feature-graphic composition (e.g. Play feature graphic, app-store
 promo banner). Rendered HTML→PNG at the plan entry's exact `{width,height}`; this
 scaffold drives any optional generated background material.
@@ -156,6 +163,9 @@ scaffold drives any optional generated background material.
   if it bakes in headline text.
 
 ## `poster` — plan-driven target (portrait / landscape / square)
+
+> **Brand-asset-kind scaffold** (not a `generate_image` purpose). This describes the
+> rendered HTML→PNG composition; for the optional generated background, use `purpose="poster-bg"` or `purpose="illustration"`.
 
 Standalone marketing poster, rendered HTML→PNG at the plan entry's exact
 `{width,height}`. The plan emits one entry per enabled orientation; the entry's

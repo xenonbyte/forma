@@ -54,13 +54,30 @@ describe("image-prompts scaffolds (T10 — plan-driven brand assets)", () => {
   it("each new scaffold carries a per-purpose veto block", async () => {
     const { content } = await svc().readCraftDoc("image-prompts");
     // Every scaffold section must extend the shared veto checklist with its own
-    // per-purpose veto (the Read-inspection criteria). Count must cover all five.
+    // per-purpose veto (the Read-inspection criteria). Assert the total count is
+    // at least as large as the number of scaffolds overall (new + pre-existing).
     const vetoCount = (content.match(/\*\*Per-purpose veto \(extra\):\*\*/g) ?? []).length;
     expect(
       vetoCount,
-      "every per-purpose scaffold (incl. the 5 new ones) must carry a per-purpose veto",
-    ).toBeGreaterThanOrEqual(newSections.length);
+      "image-prompts.md must carry per-purpose veto blocks for all scaffolds",
+    ).toBeGreaterThanOrEqual(9);
     // The retired preset/primary vocabulary must be gone from the scaffolds.
     expect(content, "no residual store-shot preset language").not.toContain("store-shot preset");
+  });
+
+  it("each new T10 scaffold section individually carries a per-purpose veto block", async () => {
+    const { content } = await svc().readCraftDoc("image-prompts");
+    // For each new scaffold, confirm the veto block appears in the text between
+    // this section heading and the next ## section heading.
+    for (const [heading, why] of newSections) {
+      const sectionStart = content.indexOf(heading);
+      expect(sectionStart, `image-prompts.md must contain the ${why}`).toBeGreaterThan(-1);
+      // Find the next ## heading after this section (or end of file)
+      const nextSection = content.indexOf("\n## ", sectionStart + heading.length);
+      const sectionBody = nextSection === -1 ? content.slice(sectionStart) : content.slice(sectionStart, nextSection);
+      expect(sectionBody, `${why} must carry a **Per-purpose veto (extra):** block`).toContain(
+        "**Per-purpose veto (extra):**",
+      );
+    }
   });
 });
