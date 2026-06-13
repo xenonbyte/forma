@@ -33,6 +33,8 @@ vi.mock("@xenonbyte/forma-core", () => {
     formaCoreVersion: "0.0.0-test",
     languages: ["en", "zh-CN"],
     platforms: ["web", "mobile"],
+    IMAGE_PURPOSES: ["app-icon", "illustration", "hero", "poster-bg", "store-shot-bg"],
+    ASPECT_RATIOS: ["1:1", "16:9", "9:16", "4:3", "3:4"],
   };
 });
 
