@@ -51,9 +51,11 @@ function loadTable(): { table: IconTable; names: string[] } {
 
   const jsonPath = candidatePaths.find((candidate) => existsSync(candidate));
   if (!jsonPath) {
-    throw new FormaError("INVALID_INPUT", "Vendored lucide-icons.json was not found", {
-      searched: candidatePaths,
-    });
+    throw new FormaError(
+      "ARTIFACT_NOT_FOUND",
+      "Bundled asset lucide-icons.json is missing — this is a packaging/installation defect, not a query error. Run the core build (pnpm --filter @xenonbyte/forma-core build) or reinstall the package.",
+      { searched: candidatePaths },
+    );
   }
 
   const table = JSON.parse(readFileSync(jsonPath, "utf8")) as IconTable;

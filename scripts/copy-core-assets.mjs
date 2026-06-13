@@ -11,7 +11,7 @@
  * Run automatically by `pnpm --filter @xenonbyte/forma-core build`.
  */
 
-import { cp, mkdir, readdir } from "node:fs/promises";
+import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -27,6 +27,8 @@ async function main() {
     throw new Error(`core assets dir is empty (${assetsDir}); did vendor-lucide.mjs run?`);
   }
 
+  // Clear stale target first so dist/assets/ is a clean mirror of source.
+  await rm(distAssetsDir, { recursive: true, force: true });
   await mkdir(distAssetsDir, { recursive: true });
   await cp(assetsDir, distAssetsDir, { recursive: true });
   console.log(`copied core assets: ${assetsDir} -> ${distAssetsDir}`);

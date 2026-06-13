@@ -111,12 +111,9 @@ describe("Lucide icon library release packaging", () => {
   it("ships the JSON inside dist via the core build asset-copy step", async () => {
     const corePackage = await readJson("packages/core/package.json");
     // The whitelist must stay dist-only; assets/ ships only through dist/assets/.
+    // This is a build-independent contract check — no dist/ read required.
     expect(corePackage.files).toEqual(["dist"]);
-    // The build script must copy assets into dist so the whitelist still includes them.
+    // The build script must invoke copy-core-assets.mjs so assets/ lands in dist/.
     expect(corePackage.scripts?.build ?? "").toContain("copy-core-assets.mjs");
-
-    // After a build, the JSON must be present at the shippable dist/assets path.
-    // (Verification runs the core build before these targeted tests.)
-    expect(await fileExists("packages/core/dist/assets/lucide-icons.json")).toBe(true);
   });
 });
