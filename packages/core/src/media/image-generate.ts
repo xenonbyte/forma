@@ -20,6 +20,10 @@
 // Generation deliberately does NOT take the product-mutation lock: staging
 // writes are isolated per-image under a UUID and never mutate product state.
 //
+// Mid-batch failure semantics: a failure on image N of a multi-count batch
+// propagates immediately (fail loud), leaving images 1..N-1 staged on disk;
+// the staging TTL sweep reclaims them.
+//
 // Renderers (provider id → fn):
 //   volcengine  POST {baseUrl}/images/generations, Bearer auth, b64_json.
 //               Ported from the open-design daemon's renderVolcengineImage.
@@ -340,9 +344,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Produce a minimal but valid solid-colour PNG with the requested width/height
  * encoded into the IHDR chunk. Fully deterministic and offline — used by tests
- * so the whole scheduler chain runs without a network or sharp. We hand-encode
- * IHDR + a single zlib-deflated IDAT (one solid colour) + IEND rather than pull
- * in an image library for a test-only fixture.
+ * so the whole scheduler chain runs without a network. We hand-encode IHDR +
+ * a single zlib-deflated IDAT (one solid colour) + IEND for two reasons:
+ * (1) sharp IS a core dependency but its compressed output is not byte-stable
+ * across versions, so fixture assertions would break on sharp upgrades; (2) the
+ * stub renderer must never invoke a native addon — hand-encoding avoids that
+ * entirely and keeps the path pure-JS.
  */
 async function renderStubImage(input: RenderInput): Promise<RenderedImage> {
   return { bytes: makeSolidPng(input.width, input.height) };

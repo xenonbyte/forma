@@ -354,6 +354,92 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     });
   });
 
+  it("env-key-wins: FORMA_VOLCENGINE_API_KEY selects volcengine even when only stub is in the file", async () => {
+    // File contains only stub; env key must override and select volcengine.
+    await writeStubConfig(home);
+    process.env.FORMA_VOLCENGINE_API_KEY = "sk-env-key-wins";
+
+    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const b64 = tinyPng.toString("base64");
+    let capturedUrl = "";
+    let capturedAuth = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        capturedUrl = url;
+        capturedAuth = (init?.headers as Record<string, string>).authorization ?? "";
+        return new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+
+    const result = await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    expect(result.images).toHaveLength(1);
+    // fetch must have been called — volcengine renderer was selected, not stub.
+    expect(capturedUrl).toBe("https://ark.cn-beijing.volces.com/api/v3/images/generations");
+    expect(capturedAuth).toBe("Bearer sk-env-key-wins");
+  });
+
+  it("both-file-providers: volcengine in file wins over stub when both present", async () => {
+    // media-config.yaml has both providers; volcengine should be selected (probe order).
+    await writeFile(
+      join(home, "media-config.yaml"),
+      `${[
+        "providers:",
+        "  volcengine:",
+        "    api_key: sk-file-key",
+        "    model: doubao-seedream-5-0-260128",
+        "  stub:",
+        "    model: stub-image-1",
+      ].join("\n")}\n`,
+      "utf8",
+    );
+
+    const tinyPng = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const b64 = tinyPng.toString("base64");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data: [{ b64_json: b64 }] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    expect(result.images).toHaveLength(1);
+    // volcengine renderer was selected — fetch called exactly once.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers.authorization).toBe("Bearer sk-file-key");
+  });
+
+  it("non-JSON 2xx body throws MEDIA_PROVIDER_ERROR with status 200 and truncated body", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("not json", { status: 200, headers: { "content-type": "text/plain" } })),
+    );
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    const err = caught as FormaError;
+    expect(err.code).toBe("MEDIA_PROVIDER_ERROR");
+    const details = err.details as { status?: number; body?: string };
+    expect(details.status).toBe(200);
+    // Body should be present and not exceed the 500-char limit.
+    expect(typeof details.body).toBe("string");
+    expect((details.body ?? "").length).toBeLessThanOrEqual(500);
+  });
+
   it("fetches the url when the response carries url instead of b64_json", async () => {
     await writeVolcengineConfig(home, "sk-secret-123");
     const imgBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x99, 0x88]);
