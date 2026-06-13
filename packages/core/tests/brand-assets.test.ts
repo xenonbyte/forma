@@ -158,8 +158,8 @@ describe("saveBrandAsset — under-2048 master", () => {
     });
     expect(saved.warnings.some((w) => /upscale|2048|smaller/i.test(w))).toBe(true);
     const master = saved.files.find((f) => f.width === 2048);
-    expect(master).toBeDefined();
-    const buf = await readFile(master!.path);
+    if (!master) throw new Error("master file not found in saved.files");
+    const buf = await readFile(master.path);
     const meta = await sharp(buf).metadata();
     expect(meta.width).toBe(2048);
   });

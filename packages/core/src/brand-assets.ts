@@ -18,8 +18,10 @@
  *   forma-image://brand/app-icon@<size> → the matching derivative (must exist)
  * image-staging.ts forwards its brand/ prefix here (replacing the M1 slot).
  *
- * IMPORT DIRECTION (no cycle): image-staging.ts imports resolveBrandImageRef
- * from THIS module; this module never imports image-staging.ts.
+ * IMPORT DIRECTION: this module statically imports resolveFormaImageRef from
+ * image-staging.ts (to read the staged source for app-icon). image-staging.ts
+ * dynamically imports resolveBrandImageRef from THIS module to forward brand/
+ * refs — the one dynamic import breaks what would otherwise be a static cycle.
  *
  * All persistence runs inside runProductMutation (per-product lock). Reads
  * (list / resolve / zip export) are lock-free and home-bound.
@@ -33,6 +35,7 @@ import sharp from "sharp";
 import { z } from "zod";
 import { getBrandAssetKindDir, getBrandAssetsDir, getBrandAssetsManifestPath } from "./artifact-paths.js";
 import { FormaError } from "./errors.js";
+import { resolveFormaImageRef } from "./media/image-staging.js";
 import { getFormaPaths } from "./paths.js";
 import { isSameOrChildPath } from "./path-boundary.js";
 
@@ -60,6 +63,7 @@ const FAVICON_SIZES = [32, 16] as const;
 const MASTER_SIZE = 2048;
 
 /** sharp decode ceiling — rejects raster decompression bombs. */
+// ~64 MP — keep in sync with artifact-asset-pipeline.ts / artifact-icon-extraction.ts
 const SHARP_PIXEL_LIMIT = 64_000_000;
 
 /** Subdirectory per kind (internal, fixed — never caller-supplied). */
@@ -340,8 +344,6 @@ export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsset
 
   // ── app-icon path ──────────────────────────────────────────────────────────
   // Resolve the staged source OUTSIDE the lock (it is a read; no product state).
-  // Late import avoids any chance of a load-order cycle with image-staging.
-  const { resolveFormaImageRef } = await import("./media/image-staging.js");
   // assertValidSource guarantees a non-empty image_ref for app-icon above.
   const imageRef = input.source.image_ref ?? "";
   const sourceBytes = await resolveFormaImageRef(deps.home, input.product_id, imageRef);
