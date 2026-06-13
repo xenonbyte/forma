@@ -28,6 +28,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { FormaError } from "../errors.js";
 import { isSameOrChildPath } from "../path-boundary.js";
+import { productIdSchema } from "../product.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -78,8 +79,22 @@ export type StagedImage = {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Reject a productId that is not the canonical `P-<6 hex>` shape before it is
+ * joined into a staging path (Finding 3a). This guards the agent-facing
+ * generate_image input, whose MCP schema only enforces a non-empty string;
+ * without it a value like "../../evil" would write outside the staging tree.
+ * Mirrors the shared product-id shape used by artifact-paths/product-mutation-lock.
+ */
+function assertValidProductId(productId: string): void {
+  if (!productIdSchema.safeParse(productId).success) {
+    throw new FormaError("MEDIA_INVALID_INPUT", "Invalid product id", { product_id: productId });
+  }
+}
+
 /** Returns the staging directory for a product: data/<productId>/image-staging/. */
 function stagingDir(home: string, productId: string): string {
+  assertValidProductId(productId);
   return join(home, "data", productId, "image-staging");
 }
 

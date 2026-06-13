@@ -21,7 +21,7 @@ import { FormaError, generateImages } from "@xenonbyte/forma-core";
 // ---------------------------------------------------------------------------
 
 const ENV_VARS = ["FORMA_VOLCENGINE_API_KEY", "ARK_API_KEY", "VOLCENGINE_API_KEY"];
-const PRODUCT_ID = "P-test01";
+const PRODUCT_ID = "P-7e5701";
 
 let savedEnv: Record<string, string | undefined>;
 let home: string;
@@ -458,5 +458,217 @@ describe("generateImages — volcengine provider (mocked fetch)", () => {
     const staged = await readFile(result.images[0].preview_path);
     expect(staged).toEqual(imgBytes);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 4a (SSRF) — provider-controlled url second-fetch must be guarded.
+//
+// The volcengine renderer requests b64_json but tolerates a provider that
+// returns data[0].url and second-fetches it. That url is fully provider-
+// controlled, so it must be screened (scheme + literal private/loopback IPs +
+// no redirects + size cap) before the second fetch is allowed to run.
+// ---------------------------------------------------------------------------
+
+describe("generateImages — SSRF guard on the url second-fetch", () => {
+  /** Build a fetch mock whose FIRST call returns a provider url, then delegates. */
+  function urlResponse(url: string) {
+    return new Response(JSON.stringify({ data: [{ url }] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  it("rejects a cloud-metadata IP (169.254.169.254) and never second-fetches it", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const metadataUrl = "http://169.254.169.254/latest/meta-data/iam/security-credentials/";
+    let secondFetched = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === metadataUrl) {
+        secondFetched = true;
+        return new Response(Buffer.from("STOLEN-CREDS"), { status: 200 });
+      }
+      return urlResponse(metadataUrl);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+    // The internal host must never be fetched.
+    expect(secondFetched).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a loopback url (http://127.0.0.1:9200/...)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const loopback = "http://127.0.0.1:9200/_cat/indices";
+    let secondFetched = false;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === loopback) {
+        secondFetched = true;
+        return new Response(Buffer.from("LOCAL"), { status: 200 });
+      }
+      return urlResponse(loopback);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+    expect(secondFetched).toBe(false);
+  });
+
+  it("rejects a localhost hostname", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const fetchMock = vi.fn(async () => urlResponse("http://localhost:8080/admin"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a private-range IP (10.x / 192.168.x / 172.16.x)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    for (const ip of ["http://10.0.0.5/x", "http://192.168.1.1/x", "http://172.16.0.1/x"]) {
+      const fetchMock = vi.fn(async () => urlResponse(ip));
+      vi.stubGlobal("fetch", fetchMock);
+      await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject(
+        { code: "MEDIA_PROVIDER_ERROR" },
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("rejects a non-http(s) scheme (file:///etc/passwd)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const fetchMock = vi.fn(async () => urlResponse("file:///etc/passwd"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("never leaks the api key in the SSRF rejection error", async () => {
+    await writeVolcengineConfig(home, "sk-super-secret-key-XYZ");
+    const fetchMock = vi.fn(async () => urlResponse("http://169.254.169.254/x"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    let caught: unknown;
+    try {
+      await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(FormaError);
+    const serialized = JSON.stringify((caught as FormaError).toJSON());
+    expect(serialized).not.toContain("sk-super-secret-key-XYZ");
+    expect(serialized.toLowerCase()).not.toContain("bearer");
+  });
+
+  it("rejects a second-fetch that responds with a redirect (redirect: error)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const safeUrl = "https://cdn.example.com/out.png";
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === safeUrl) {
+        // Simulate the fetch refusing to follow a redirect (redirect: "error").
+        expect(init?.redirect).toBe("error");
+        throw new TypeError("Failed to fetch: unexpected redirect");
+      }
+      return urlResponse(safeUrl);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+  });
+
+  it("rejects an oversized response (Content-Length over the cap)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const safeUrl = "https://cdn.example.com/huge.png";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === safeUrl) {
+        return new Response(Buffer.from("small"), {
+          status: 200,
+          headers: { "content-length": String(128 * 1024 * 1024) },
+        });
+      }
+      return urlResponse(safeUrl);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+  });
+
+  it("rejects a response whose streamed bytes exceed the cap (no/under-reported Content-Length)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const safeUrl = "https://cdn.example.com/sneaky.png";
+    // Stream chunks summing to > 64 MiB while reporting no Content-Length.
+    const chunk = new Uint8Array(8 * 1024 * 1024); // 8 MiB
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < 9; i++) controller.enqueue(chunk); // 72 MiB total
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === safeUrl) {
+        return new Response(stream, { status: 200 });
+      }
+      return urlResponse(safeUrl);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+      code: "MEDIA_PROVIDER_ERROR",
+    });
+  });
+
+  it("still works for a normal public https url (regression)", async () => {
+    await writeVolcengineConfig(home, "sk-secret-123");
+    const safeUrl = "https://cdn.example.com/ok.png";
+    const imgBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x10, 0x20]);
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === safeUrl) return new Response(imgBytes, { status: 200 });
+      return urlResponse(safeUrl);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await generateImages(home, { productId: PRODUCT_ID, purpose: "hero", prompt: "x" });
+    const staged = await readFile(result.images[0].preview_path);
+    expect(staged).toEqual(imgBytes);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 3a — productId is joined into the staging path; validate it.
+// ---------------------------------------------------------------------------
+
+describe("generateImages — productId validation (path-traversal guard)", () => {
+  const BAD_IDS = ["../../evil", "a/b", "", "/etc/passwd", "P-test01 ", "P-XYZ", "not-a-product"];
+
+  for (const bad of BAD_IDS) {
+    it(`rejects productId ${JSON.stringify(bad)} before any provider call`, async () => {
+      await writeStubConfig(home);
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+      await expect(generateImages(home, { productId: bad, purpose: "hero", prompt: "x" })).rejects.toMatchObject({
+        code: "MEDIA_INVALID_INPUT",
+      });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+  }
+
+  it("accepts a well-formed productId (regression)", async () => {
+    await writeStubConfig(home);
+    const result = await generateImages(home, { productId: "P-abc123", purpose: "hero", prompt: "x" });
+    expect(result.images).toHaveLength(1);
   });
 });

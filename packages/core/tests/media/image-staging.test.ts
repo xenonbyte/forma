@@ -1,4 +1,4 @@
-import { mkdir, readdir, utimes, writeFile } from "node:fs/promises";
+import { access, mkdir, readdir, utimes, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +24,7 @@ import {
 //   TTL sweep — expired pairs deleted, fresh entries kept
 // ---------------------------------------------------------------------------
 
-const PRODUCT_ID = "P-test01";
+const PRODUCT_ID = "P-7e5701";
 const SAMPLE_META: StagedImageMeta = {
   purpose: "page-hero",
   prompt: "A scenic mountain landscape at dawn",
@@ -205,6 +205,52 @@ describe("resolveFormaImageRef — brand/ prefix", () => {
     await expect(resolveFormaImageRef(home, PRODUCT_ID, brandRef)).rejects.toSatisfy(
       (err: unknown) => err instanceof FormaError && err.code === "MEDIA_IMAGE_NOT_FOUND",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finding 3a — putStagedImage must validate productId before joining a path.
+//
+// productId is joined into data/<productId>/image-staging. A malformed id
+// (traversal, separators, absolute, NUL, wrong shape) must be rejected before
+// any directory is created, so nothing escapes the staging tree.
+// ---------------------------------------------------------------------------
+
+describe("putStagedImage — productId validation (path-traversal guard)", () => {
+  const BAD_IDS: Array<[string, string]> = [
+    ["dot-dot traversal", "../../evil"],
+    ["separator", "a/b"],
+    ["empty string", ""],
+    ["absolute path", "/etc/passwd"],
+    ["NUL byte", "P-abc1 2"],
+    ["wrong shape (non-hex)", "P-XYZ123"],
+    ["wrong shape (too long)", "P-abc1234"],
+    ["arbitrary name", "not-a-product"],
+  ];
+
+  for (const [label, bad] of BAD_IDS) {
+    it(`rejects ${label} (${JSON.stringify(bad)}) with MEDIA_INVALID_INPUT and creates nothing`, async () => {
+      let caught: FormaError | undefined;
+      try {
+        await putStagedImage(home, bad, SAMPLE_BYTES, SAMPLE_META);
+      } catch (err) {
+        if (err instanceof FormaError) caught = err;
+      }
+      expect(caught).toBeDefined();
+      expect(caught?.code).toBe("MEDIA_INVALID_INPUT");
+
+      // No staging directory escaped the data dir, and no traversal target was made.
+      const dataDir = join(home, "data");
+      await expect(access(join(dataDir, "evil"))).rejects.toBeDefined();
+      // The bad id itself must not have produced a directory under data/.
+      const dataEntries = await readdir(dataDir).catch(() => [] as string[]);
+      expect(dataEntries).not.toContain("..");
+    });
+  }
+
+  it("accepts a well-formed productId (regression)", async () => {
+    const result = await putStagedImage(home, "P-abc123", SAMPLE_BYTES, SAMPLE_META);
+    expect(result.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });
 

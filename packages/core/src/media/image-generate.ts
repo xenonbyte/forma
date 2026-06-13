@@ -38,6 +38,7 @@
 
 import { deflateSync } from "node:zlib";
 import { FormaError } from "../errors.js";
+import { productIdSchema } from "../product.js";
 import { resolveActiveImageConfig, type ResolvedImageConfig } from "./image-config.js";
 import { ASPECT_RATIOS, type AspectRatio, findImageModel, resolveSize } from "./image-models.js";
 import { putStagedImage } from "./image-staging.js";
@@ -152,6 +153,13 @@ const RENDERERS: Record<string, ImageRenderer> = {
  * full sequence and the model-validation ordering rationale.
  */
 export async function generateImages(home: string, input: GenerateImagesInput): Promise<GenerateImagesResult> {
+  // 0. Validate the agent-facing productId BEFORE any I/O or provider call.
+  //    productId is joined into the per-product staging path, so a malformed
+  //    value (traversal / separators / absolute / NUL / wrong shape) must be
+  //    rejected up front (Finding 3a). Mirrors the shared product-id shape used
+  //    by artifact-paths/product-mutation-lock.
+  validateProductId(input.productId);
+
   // 1. Resolve the active config (provider + model + creds). Unconfigured →
   //    MEDIA_NOT_CONFIGURED (raised inside resolveActiveImageConfig).
   const config = await resolveActiveImageConfig(home);
@@ -205,6 +213,17 @@ export async function generateImages(home: string, input: GenerateImagesInput): 
 // ---------------------------------------------------------------------------
 // Validation helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Reject a productId that is not the canonical `P-<6 hex>` shape before it is
+ * joined into a filesystem path. This guards the agent-facing generate_image
+ * input (the MCP schema only enforces a non-empty string). See Finding 3a.
+ */
+function validateProductId(productId: string): void {
+  if (!productIdSchema.safeParse(productId).success) {
+    throw new FormaError("MEDIA_INVALID_INPUT", "Invalid product id", { product_id: productId });
+  }
+}
 
 /** Ensure the configured model is in the catalogue and matches its provider. */
 function validateConfiguredModel(config: ResolvedImageConfig): void {
@@ -314,13 +333,175 @@ async function renderVolcengineImage(input: RenderInput, cfg: ProviderConfig): P
     return { bytes: Buffer.from(entry.b64_json, "base64") };
   }
   if (typeof entry.url === "string" && entry.url) {
-    const imgResp = await fetch(entry.url);
-    if (!imgResp.ok) {
-      throw providerError(imgResp.status, "", "Volcengine image url fetch failed");
-    }
-    return { bytes: Buffer.from(await imgResp.arrayBuffer()) };
+    // The url is fully provider-controlled, so this second fetch is an SSRF
+    // sink: screen it (scheme + literal private/loopback IPs + no redirects +
+    // size cap) before the request is allowed to run. See Finding 4a and
+    // assertSafeFetchUrl below.
+    return { bytes: await fetchImageBytesGuarded(entry.url) };
   }
   throw providerError(resp.status, text, "Volcengine image response missing b64_json/url");
+}
+
+// ---------------------------------------------------------------------------
+// SSRF guard for the provider-controlled url second-fetch (Finding 4a)
+// ---------------------------------------------------------------------------
+
+/** Hard ceiling on a downloaded provider image: 64 MiB. */
+const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Validate `rawUrl` before it is fetched.
+ *
+ * Rejects:
+ *   - any scheme other than http:/https: (no file:, data:, ftp:, gopher:, …);
+ *   - literal IPs in private / loopback / link-local / unique-local / unspecified
+ *     ranges (IPv4 + IPv6, including IPv4-mapped IPv6 forms);
+ *   - the hostnames localhost / *.localhost / metadata / metadata.google.internal.
+ *
+ * Residual risk: a hostname that DNS-resolves to a private IP (DNS rebinding)
+ * is NOT caught here — we do not resolve+pin synchronously. This is an accepted
+ * v1 limitation; the literal-IP and known-hostname blocks close the cheap,
+ * common SSRF vectors (cloud metadata, loopback services, RFC1918 hosts).
+ *
+ * Throws MEDIA_PROVIDER_ERROR (never the api key) on rejection.
+ */
+function assertSafeFetchUrl(rawUrl: string): URL {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw providerError(0, "", "Volcengine image url is not a valid URL");
+  }
+
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw providerError(0, "", `Volcengine image url scheme not allowed: ${url.protocol}`);
+  }
+
+  // URL.hostname strips the brackets from IPv6 literals and lowercases the host.
+  const host = url.hostname.toLowerCase();
+
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host === "metadata" ||
+    host === "metadata.google.internal"
+  ) {
+    throw providerError(0, "", "Volcengine image url targets a blocked host");
+  }
+
+  if (isBlockedLiteralIp(host)) {
+    throw providerError(0, "", "Volcengine image url targets a private/loopback address");
+  }
+
+  return url;
+}
+
+/** True if `host` is a literal IP in a private/loopback/link-local/etc. range. */
+function isBlockedLiteralIp(host: string): boolean {
+  // IPv4 dotted quad.
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (v4) {
+    const octets = v4.slice(1, 5).map(Number);
+    if (octets.some((o) => o > 255)) return true; // malformed → reject
+    return isBlockedIpv4(octets as [number, number, number, number]);
+  }
+
+  // IPv6 literal (already de-bracketed by URL.hostname).
+  if (host.includes(":")) {
+    // IPv4-mapped / -embedded IPv6 (e.g. ::ffff:127.0.0.1, ::ffff:169.254.0.1).
+    const mapped = /(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.exec(host);
+    const embedded = mapped?.[1];
+    if (embedded) {
+      const octets = embedded.split(".").map(Number);
+      if (octets.length === 4 && octets.every((o) => o <= 255)) {
+        return isBlockedIpv4(octets as [number, number, number, number]);
+      }
+    }
+    const h = host.replace(/%.*$/, ""); // strip zone id
+    if (h === "::1" || h === "::") return true; // loopback / unspecified
+    if (h.startsWith("fe8") || h.startsWith("fe9") || h.startsWith("fea") || h.startsWith("feb")) {
+      return true; // fe80::/10 link-local
+    }
+    if (h.startsWith("fc") || h.startsWith("fd")) return true; // fc00::/7 unique-local
+    return false;
+  }
+
+  return false;
+}
+
+/** True if the IPv4 octets fall in a blocked range. */
+function isBlockedIpv4(o: [number, number, number, number]): boolean {
+  const [a, b] = o;
+  if (a === 127) return true; // 127.0.0.0/8 loopback
+  if (a === 10) return true; // 10.0.0.0/8 private
+  if (a === 0) return true; // 0.0.0.0/8 "this network"
+  if (a === 169 && b === 254) return true; // 169.254.0.0/16 link-local (cloud metadata)
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16 private
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 private
+  return false;
+}
+
+/**
+ * Fetch image bytes from a provider-controlled url after SSRF screening, with
+ * redirects disabled and a hard size cap. Throws MEDIA_PROVIDER_ERROR on any
+ * failure (bad scheme/host, redirect, non-2xx, oversize) — never the api key.
+ */
+async function fetchImageBytesGuarded(rawUrl: string): Promise<Buffer> {
+  assertSafeFetchUrl(rawUrl);
+
+  let imgResp: Response;
+  try {
+    // redirect: "error" — a redirect could send us to a host the guard never
+    // saw (e.g. a 302 from a public CDN to http://169.254.169.254/...).
+    // Pass the original raw string (URL.toString() can re-encode the path).
+    imgResp = await fetch(rawUrl, { redirect: "error" });
+  } catch (err) {
+    throw providerError(0, "", `Volcengine image url fetch failed: ${err instanceof Error ? err.message : "error"}`);
+  }
+
+  if (!imgResp.ok) {
+    throw providerError(imgResp.status, "", "Volcengine image url fetch failed");
+  }
+
+  // Reject up front if the server advertises an oversized payload.
+  const declared = Number(imgResp.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_IMAGE_BYTES) {
+    throw providerError(imgResp.status, "", `Volcengine image exceeds ${MAX_IMAGE_BYTES} byte cap`);
+  }
+
+  return await readCapped(imgResp, MAX_IMAGE_BYTES);
+}
+
+/**
+ * Read a response body into a Buffer, aborting (throwing MEDIA_PROVIDER_ERROR)
+ * if the streamed total exceeds `cap`. Falls back to arrayBuffer() with a
+ * post-read length check when the body is not a readable stream.
+ */
+async function readCapped(resp: Response, cap: number): Promise<Buffer> {
+  const body = resp.body;
+  if (!body || typeof body.getReader !== "function") {
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length > cap) {
+      throw providerError(resp.status, "", `Volcengine image exceeds ${cap} byte cap`);
+    }
+    return buf;
+  }
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel().catch(() => undefined);
+      throw providerError(resp.status, "", `Volcengine image exceeds ${cap} byte cap`);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks.map((c) => Buffer.from(c.buffer, c.byteOffset, c.byteLength)));
 }
 
 /**
