@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { redactJsonText, redactJsonValue, redactText } from "../src/redaction.js";
+import { isSensitiveConfigFile, redactJsonText, redactJsonValue, redactText } from "../src/redaction.js";
 
 describe("redactJsonValue", () => {
   it("masks sensitive string values by key name", () => {
@@ -100,6 +100,45 @@ describe("redactText", () => {
   it("handles short or empty username safely", () => {
     expect(redactText("/Users/a/x", { username: "" })).toContain("/Users/a/x");
     expect(redactText("/Users/a/x", { username: "a" })).toContain("/Users/a/x");
+  });
+});
+
+describe("media credential red lines (PLAN-TASK-011)", () => {
+  it("masks an api_key json value by key name", () => {
+    const out = redactJsonValue({ api_key: "sk-test-1234abcd", base_url: "https://x" }) as Record<string, unknown>;
+    expect(out.api_key).toBe("[REDACTED]");
+    // base_url is config, not a secret — preserved so diagnostics keep context.
+    expect(out.base_url).toBe("https://x");
+  });
+
+  it("masks an authorization json value by key name", () => {
+    const out = redactJsonValue({ authorization: "Bearer sk-test-1234abcd" }) as Record<string, unknown>;
+    expect(out.authorization).toBe("[REDACTED]");
+  });
+
+  it("masks YAML api_key lines (media-config.yaml content) in text", () => {
+    const yaml = ["providers:", "  volcengine:", '    api_key: "sk-test-1234abcd"', "    base_url: https://x"].join(
+      "\n",
+    );
+    const out = redactText(yaml);
+    expect(out).not.toContain("sk-test-1234abcd");
+    expect(out).toContain("[REDACTED]");
+    // Non-secret config lines survive.
+    expect(out).toContain("base_url: https://x");
+  });
+
+  it("masks an unquoted YAML api_key value", () => {
+    const out = redactText("    api_key: sk-test-1234abcd");
+    expect(out).not.toContain("sk-test-1234abcd");
+    expect(out).toContain("[REDACTED]");
+  });
+
+  it("flags media-config.yaml as a sensitive config file regardless of path depth", () => {
+    expect(isSensitiveConfigFile("media-config.yaml")).toBe(true);
+    expect(isSensitiveConfigFile("forma/media-config.yaml")).toBe(true);
+    expect(isSensitiveConfigFile("/Users/x/.forma/media-config.yaml")).toBe(true);
+    expect(isSensitiveConfigFile("logs/daemon/latest.log")).toBe(false);
+    expect(isSensitiveConfigFile("media-config.yaml.bak")).toBe(false);
   });
 });
 

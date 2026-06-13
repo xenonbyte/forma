@@ -46,6 +46,49 @@ describe("buildDiagnosticsZip", () => {
     expect(typeof machine.platform).toBe("string");
   });
 
+  it("excludes media-config.yaml content from the export, keeping only masked metadata", async () => {
+    // A media-config.yaml-shaped fixture carrying a distinctive fake key.
+    const mediaConfigPath = join(tempDir, "media-config.yaml");
+    await writeFile(
+      mediaConfigPath,
+      ["providers:", "  volcengine:", '    api_key: "sk-test-1234abcd"', "    base_url: https://x"].join("\n"),
+      "utf8",
+    );
+    // A normal log that incidentally references the same key value, to prove
+    // line-level redaction still applies to NON-excluded files.
+    const logPath = join(tempDir, "daemon.log");
+    await writeFile(logPath, "loaded provider with api_key=sk-test-1234abcd ok\n", "utf8");
+
+    const result = await buildDiagnosticsZip({
+      context: { app: { name: "forma" }, source: "test" },
+      sources: [
+        { name: "config/media-config.yaml", absolutePath: mediaConfigPath, kind: "text" },
+        { name: "logs/daemon/latest.log", absolutePath: logPath, kind: "text" },
+      ],
+    });
+
+    const zip = await JSZip.loadAsync(result.zip);
+
+    // The raw config file is replaced by an excluded-placeholder, never its bytes.
+    const configEntry = zip.file("config/media-config.yaml");
+    expect(configEntry).not.toBeNull();
+    const configContent = await configEntry!.async("string");
+    expect(configContent).not.toContain("sk-test-1234abcd");
+    expect(configContent.toLowerCase()).toContain("excluded");
+
+    // The whole zip — across every entry — must not contain the raw key string.
+    for (const name of Object.keys(zip.files)) {
+      if (zip.files[name].dir) continue;
+      const content = await zip.file(name)!.async("string");
+      expect(content).not.toContain("sk-test-1234abcd");
+    }
+
+    // The ordinary log is still present but with the key redacted in-line.
+    const log = await zip.file("logs/daemon/latest.log")!.async("string");
+    expect(log).toContain("api_key=[REDACTED]");
+    expect(log).not.toContain("sk-test-1234abcd");
+  });
+
   it("records a warning placeholder when a file cannot be read", async () => {
     const result = await buildDiagnosticsZip({
       context: {

@@ -1,6 +1,6 @@
 import JSZip from "jszip";
 
-import { redactJsonValue, type RedactionOptions } from "./redaction.js";
+import { isSensitiveConfigFile, redactJsonValue, type RedactionOptions } from "./redaction.js";
 import {
   buildManifest,
   buildMachineInfo,
@@ -17,6 +17,11 @@ import {
 } from "./sources.js";
 
 const PLACEHOLDER_PREFIX = "; file unavailable: ";
+
+// Marker written in place of a credential file's bytes. The raw content (e.g.
+// media-config.yaml provider api_key) is never read into the zip — only this
+// masked-metadata placeholder appears. SCOPE-IN-008 red line.
+const EXCLUDED_PLACEHOLDER = "; file excluded: contains credentials, content omitted from diagnostics\n";
 
 export interface DiagnosticsExportInput {
   context: DiagnosticsContext;
@@ -45,7 +50,22 @@ export async function buildDiagnosticsZip(input: DiagnosticsExportInput): Promis
     sources.push(...crashes);
   }
 
-  const collected = await collectLogSources(sources, redaction);
+  // Partition off credential files (e.g. media-config.yaml). Their bytes are
+  // NEVER read or redacted — they are replaced wholesale with a placeholder so
+  // no provider api_key can leak even through a redaction miss.
+  const safeSources = sources.filter((source) => !isSensitiveConfigFile(source.name));
+  const excludedSources = sources.filter((source) => isSensitiveConfigFile(source.name));
+
+  const safeCollected = await collectLogSources(safeSources, redaction);
+  const collected: CollectedFile[] = [
+    ...safeCollected,
+    ...excludedSources.map((source) => ({
+      name: source.name,
+      absolutePath: source.absolutePath,
+      content: EXCLUDED_PLACEHOLDER,
+      bytes: 0,
+    })),
+  ];
   const manifest = buildManifest(input.context, collected);
   const machineInfo = buildMachineInfo(redaction.username);
 

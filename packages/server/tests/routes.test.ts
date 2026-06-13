@@ -144,6 +144,13 @@ function fakeStore(overrides: Partial<FormaServerStore> = {}): FormaServerStore 
       }),
     ),
     recoverPendingProductDeletes: vi.fn(async () => ({ recovered: 0, cleaned: 0, warnings: [] })),
+    generateProductImage: vi.fn(async () => ({
+      images: [],
+      provider_note: "stub/stub-image-1",
+      warnings: [],
+    })),
+    readMediaConfig: vi.fn(async () => ({ configured: false as const, source: "none" as const })),
+    writeMediaConfig: vi.fn(async () => ({ configured: false as const, source: "none" as const })),
     styles: {
       getStyle: vi.fn(async () => ({
         kind: "brand" as const,
@@ -2720,6 +2727,262 @@ describe("annotation handoff routes", () => {
     // artifact id containing '!' fails ARTIFACT_ID_PATTERN validation in getArtifactVziPath → 400
     const res = await app.inject({ method: "GET", url: `/api/products/${PID}/artifacts/A-home%21/vzi/content` });
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe("media routes (PLAN-TASK-011)", () => {
+  // A distinctive fake key so any leak assertion is meaningful.
+  const FAKE_KEY = "sk-test-1234abcd";
+
+  async function realStoreApp(): Promise<{ app: FormaServer; home: string }> {
+    const home = await mkdtemp(join(tmpdir(), "forma-media-"));
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+    const app = await buildServer({ store });
+    apps.push(app);
+    await app.ready();
+    return { app, home };
+  }
+
+  // Clear env so file-source assertions are deterministic regardless of host env.
+  const MEDIA_ENV_KEYS = ["FORMA_VOLCENGINE_API_KEY", "ARK_API_KEY", "VOLCENGINE_API_KEY"] as const;
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const name of MEDIA_ENV_KEYS) savedEnv[name] = process.env[name];
+  afterEach(() => {
+    for (const name of MEDIA_ENV_KEYS) {
+      if (savedEnv[name] === undefined) delete process.env[name];
+      else process.env[name] = savedEnv[name];
+    }
+  });
+
+  it("GET /api/media/models returns visible providers/models and hides the stub", async () => {
+    const { app } = await realStoreApp();
+    const res = await app.inject({ method: "GET", url: "/api/media/models" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(Array.isArray(body.providers)).toBe(true);
+    expect(Array.isArray(body.models)).toBe(true);
+    // visible volcengine provider present, carrying catalogue metadata
+    const volc = body.providers.find((p: { id: string }) => p.id === "volcengine");
+    expect(volc).toMatchObject({ defaultBaseUrl: expect.any(String), docsUrl: expect.any(String) });
+    // hidden stub provider + model must NOT appear
+    expect(body.providers.some((p: { id: string }) => p.id === "stub")).toBe(false);
+    expect(body.models.some((m: { id: string }) => m.id === "stub-image-1")).toBe(false);
+    expect(body.models.some((m: { provider: string }) => m.provider === "stub")).toBe(false);
+    // a default model is flagged for the settings page
+    expect(body.models.some((m: { default?: boolean }) => m.default === true)).toBe(true);
+    // no `hidden` flag leaks into the response shape
+    expect(JSON.stringify(body)).not.toContain('"hidden"');
+  });
+
+  it("GET /api/media/config reports unconfigured on a fresh home", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    const res = await app.inject({ method: "GET", url: "/api/media/config" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ configured: false, source: "none" });
+  });
+
+  it("PUT /api/media/config writes a key and returns the masked view (file source has a tail)", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { api_key: FAKE_KEY, model: "doubao-seedream-5-0-260128" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({
+      configured: true,
+      source: "file",
+      api_key_tail: FAKE_KEY.slice(-4),
+      model: "doubao-seedream-5-0-260128",
+    });
+    // the masked view must never echo the plaintext key
+    expect(res.payload).not.toContain(FAKE_KEY);
+    expect(res.payload).not.toContain("sk-test-1234");
+  });
+
+  it("PUT /api/media/config preserves the key when preserve_api_key is set", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { api_key: FAKE_KEY, model: "doubao-seedream-5-0-260128" },
+    });
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { model: "doubao-seedream-4-5-251128", preserve_api_key: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      configured: true,
+      source: "file",
+      api_key_tail: FAKE_KEY.slice(-4),
+      model: "doubao-seedream-4-5-251128",
+    });
+  });
+
+  it("PUT /api/media/config 409s on an empty wipe without force, never leaking the key", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { api_key: FAKE_KEY },
+    });
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(409);
+    const body = res.json();
+    expect(body.error_code).toBe("MEDIA_NOT_CONFIGURED");
+    expect(body.details).toMatchObject({ requires_force: true });
+    expect(res.payload).not.toContain(FAKE_KEY);
+  });
+
+  it("PUT /api/media/config clears credentials when force is set", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { api_key: FAKE_KEY },
+    });
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/media/config",
+      headers: { origin: "http://localhost:5173" },
+      payload: { force: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ configured: false, source: "none" });
+  });
+
+  it("POST /api/media/test generates one minimal image with the stub provider", async () => {
+    const { app, home } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    // Configure the offline stub provider directly on disk (the route resolves
+    // whatever is active; the stub keeps the test network-free).
+    await writeFile(
+      join(home, "media-config.yaml"),
+      ["providers:", "  stub:", "    model: stub-image-1"].join("\n"),
+      "utf8",
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/media/test",
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.ok).toBe(true);
+    expect(typeof body.provider_note).toBe("string");
+    expect(body.provider_note).toContain("stub");
+  });
+
+  it("POST /api/media/test 409s (MEDIA_NOT_CONFIGURED) when nothing is configured", async () => {
+    const { app } = await realStoreApp();
+    for (const name of MEDIA_ENV_KEYS) delete process.env[name];
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/media/test",
+      headers: { origin: "http://localhost:5173" },
+    });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error_code).toBe("MEDIA_NOT_CONFIGURED");
+  });
+
+  it("env-sourced config reports source=env with NO api_key_tail", async () => {
+    const { app } = await realStoreApp();
+    process.env.FORMA_VOLCENGINE_API_KEY = FAKE_KEY;
+    const res = await app.inject({ method: "GET", url: "/api/media/config" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body).toMatchObject({ configured: true, source: "env" });
+    expect(body.api_key_tail).toBeUndefined();
+    expect(res.payload).not.toContain(FAKE_KEY);
+    expect(res.payload).not.toContain(FAKE_KEY.slice(-4));
+  });
+
+  it("credential exclusion: static serving cannot fetch media-config.yaml", async () => {
+    const { app, home } = await realStoreApp();
+    await writeFile(
+      join(home, "media-config.yaml"),
+      ["providers:", "  volcengine:", `    api_key: "${FAKE_KEY}"`].join("\n"),
+      "utf8",
+    );
+    const webAssets = await webAssetsDir();
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+    const staticApp = await buildServer({ store, webAssetsDir: webAssets });
+    apps.push(staticApp);
+    await staticApp.ready();
+    for (const url of [
+      "/media-config.yaml",
+      "/../media-config.yaml",
+      "/..%2Fmedia-config.yaml",
+      "/data/../media-config.yaml",
+      "/assets/../../media-config.yaml",
+    ]) {
+      const res = await staticApp.inject({ method: "GET", url });
+      expect(res.payload).not.toContain(FAKE_KEY);
+    }
+    void app;
+  });
+
+  it("credential exclusion: artifact export bundle namelist has no media-config.yaml", async () => {
+    const { home } = await realStoreApp();
+    // media-config.yaml lives at FORMA_HOME root; artifact bundles come from the
+    // products tree. Assert the served bundle directory never resolves the root file.
+    await writeFile(
+      join(home, "media-config.yaml"),
+      ["providers:", "  volcengine:", `    api_key: "${FAKE_KEY}"`].join("\n"),
+      "utf8",
+    );
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+    const app = await buildServer({ store });
+    apps.push(app);
+    await app.ready();
+    // Attempt to traverse out of a bundle path back to the root config file.
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/products/P-1/artifacts/A-1/versions/1/bundle/..%2F..%2F..%2F..%2F..%2Fmedia-config.yaml",
+    });
+    expect(res.statusCode).toBeGreaterThanOrEqual(400);
+    expect(res.payload).not.toContain(FAKE_KEY);
+  });
+
+  it("request logging does not record the api key, base_url, or PUT payload", async () => {
+    const home = await mkdtemp(join(tmpdir(), "forma-media-log-"));
+    const store = await createFormaStore({ home, bundledStylesDir: resolve("styles") });
+    const lines: string[] = [];
+    // Capture everything the Fastify logger emits during the request.
+    const app = await buildServer({
+      store,
+      logger: { level: "trace", stream: { write: (chunk: string) => lines.push(chunk) } },
+    });
+    apps.push(app);
+    await app.ready();
+    lines.length = 0;
+    await app.inject({
+      method: "PUT",
+      url: `/api/media/config?base_url=${encodeURIComponent("https://secret-host.example")}`,
+      headers: { origin: "http://localhost:5173" },
+      payload: { api_key: FAKE_KEY, base_url: "https://secret-host.example" },
+    });
+    const log = lines.join("\n");
+    expect(log).not.toContain(FAKE_KEY);
+    expect(log).not.toContain("secret-host.example");
   });
 });
 

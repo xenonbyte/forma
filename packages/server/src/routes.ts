@@ -18,11 +18,17 @@ import {
   FormaError,
   makeExportArchiveAssetsDeps,
   loadDecodedHandoffContent,
+  IMAGE_MODELS,
+  IMAGE_PROVIDERS,
   type ArtifactManifest,
   type BrandStyleContent,
   type DesignPointer,
   type ExportArchiveAssetsResult,
+  type GenerateImagesInput,
+  type GenerateImagesResult,
   type Language,
+  type MaskedMediaConfig,
+  type MediaConfigInput,
   type Platform,
 } from "@xenonbyte/forma-core";
 
@@ -85,6 +91,12 @@ export interface FormaRoutesStore {
     ): Promise<Array<{ page_id: string; entries?: unknown[]; [key: string]: unknown }>>;
   };
   deleteProduct(input: { product_id: string; confirm_product_id: string }): Promise<unknown>;
+  generateProductImage(input: GenerateImagesInput): Promise<GenerateImagesResult>;
+  readMediaConfig(): Promise<MaskedMediaConfig>;
+  writeMediaConfig(
+    payload: MediaConfigInput,
+    opts: { preserveApiKey?: boolean; force?: boolean },
+  ): Promise<MaskedMediaConfig>;
   /**
    * Optional injectable for archive-time asset generation (icons + VZI).
    * When provided (e.g. in tests), it is used directly. When absent, the route
@@ -799,7 +811,60 @@ export function registerRoutes(
   );
 
   app.get("/api/system-styles", async () => store.styles.listSystemStyles());
+
+  // ─── Media routes (SPEC-BEHAVIOR-003 / SPEC-BEHAVIOR-001) ──────────────────
+
+  // Catalogue for the Settings page. Hidden entries (the deterministic test
+  // `stub` provider/model) are filtered out and the internal `hidden` flag is
+  // dropped from the response shape.
+  app.get("/api/media/models", async () => ({
+    providers: IMAGE_PROVIDERS.filter((provider) => provider.hidden !== true).map(
+      ({ hidden: _hidden, ...provider }) => provider,
+    ),
+    models: IMAGE_MODELS.filter((model) => model.hidden !== true).map(({ hidden: _hidden, ...model }) => model),
+  }));
+
+  // Masked read of the current media credentials. Never returns the plaintext key.
+  app.get("/api/media/config", async () => store.readMediaConfig());
+
+  // Write media credentials. Empty-wipe without `force` → MEDIA_NOT_CONFIGURED
+  // (409 via statusForError). The plaintext key never appears in the response.
+  app.put<{ Body: unknown }>("/api/media/config", async (request, reply) => {
+    if (!checkMutationOrigin(request, reply)) return;
+    const body = objectBody(request.body);
+    const payload: MediaConfigInput = {};
+    if (body["api_key"] !== undefined) payload.api_key = optionalString(body, "api_key");
+    if (body["base_url"] !== undefined) payload.base_url = optionalString(body, "base_url");
+    if (body["model"] !== undefined) payload.model = optionalString(body, "model");
+    return store.writeMediaConfig(payload, {
+      preserveApiKey: optionalBoolean(body, "preserve_api_key"),
+      force: optionalBoolean(body, "force"),
+    });
+  });
+
+  // Smoke-test the active config by generating ONE minimal image. We use the
+  // "app-icon" purpose (1:1 — the smallest reasonable footprint; the actual
+  // pixel size still comes from the configured model's verified size table) and
+  // a reserved sentinel productId for staging. The staging TTL sweep reclaims
+  // the throwaway image; no real product is touched. A FormaError (e.g.
+  // MEDIA_NOT_CONFIGURED → 409, MEDIA_PROVIDER_ERROR → 502) propagates through
+  // the normal error mapping and never carries the api key.
+  app.post("/api/media/test", async (request, reply) => {
+    if (!checkMutationOrigin(request, reply)) return;
+    const result = await store.generateProductImage({
+      productId: MEDIA_CONFIG_TEST_PRODUCT_ID,
+      purpose: "app-icon",
+      prompt: "Forma media configuration smoke test.",
+      count: 1,
+    });
+    return { ok: true, provider_note: result.provider_note };
+  });
 }
+
+// Reserved staging id for the POST /api/media/test smoke check. generateImages
+// requires a productId for the per-product staging dir; this sentinel keeps the
+// throwaway image out of any real product's tree (the staging TTL reclaims it).
+const MEDIA_CONFIG_TEST_PRODUCT_ID = "media-config-test";
 
 // ─── Private helpers ───────────────────────────────────────────────────────────
 
@@ -814,6 +879,23 @@ function requiredString(input: UnknownRecord, field: string): string {
   const value = input[field];
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new RouteInputError(`Missing required field: ${field}`, { field });
+  }
+  return value;
+}
+
+function optionalString(input: UnknownRecord, field: string): string {
+  const value = input[field];
+  if (typeof value !== "string") {
+    throw new RouteInputError(`Field must be a string: ${field}`, { field });
+  }
+  return value;
+}
+
+function optionalBoolean(input: UnknownRecord, field: string): boolean {
+  const value = input[field];
+  if (value === undefined) return false;
+  if (typeof value !== "boolean") {
+    throw new RouteInputError(`Field must be a boolean: ${field}`, { field });
   }
   return value;
 }

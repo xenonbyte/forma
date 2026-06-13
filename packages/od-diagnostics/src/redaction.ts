@@ -21,7 +21,31 @@ const BARE_SECRET_RE =
 // previously left tokens like `Bearer abcd~efgh` partially exposed.
 const HTTP_AUTH_SCHEME_RE = /\b(Bearer|Token|Basic)\s+([A-Za-z0-9._~\-+/=:]{4,})/gi;
 
+// YAML credential lines: `  api_key: "…"` / `authorization: …`. media-config.yaml
+// stores the provider key as a YAML mapping value, so the JSON-only paths above
+// never reach it — this catches the raw YAML form too. The value (quoted or
+// bare) is replaced, the indentation + key are preserved so the surrounding
+// config stays legible. Anchored to line start so it cannot match mid-line.
+const YAML_SECRET_LINE_RE =
+  /^(\s*)(api[_-]?key|authorization|secret|password|token)(\s*:\s*)("[^"]*"|'[^']*'|[^\s#].*)$/gim;
+
 const REDACTED = "[REDACTED]";
+
+// Files whose ENTIRE content is credential material and must never be bundled
+// raw into a diagnostics export. media-config.yaml holds the provider api_key
+// (SCOPE-IN-008 red line). Matched by basename so any path depth is covered.
+const SENSITIVE_CONFIG_BASENAMES = new Set(["media-config.yaml"]);
+
+/**
+ * True when a zip entry / source name refers to a file whose whole content is
+ * credential material (currently media-config.yaml). Diagnostics collectors use
+ * this to exclude such files from the export entirely rather than relying on
+ * line-level redaction alone.
+ */
+export function isSensitiveConfigFile(name: string): boolean {
+  const base = name.split(/[\\/]/).pop() ?? name;
+  return SENSITIVE_CONFIG_BASENAMES.has(base);
+}
 
 export interface RedactionOptions {
   username?: string | undefined;
@@ -50,6 +74,10 @@ export function redactText(text: string, opts: RedactionOptions = {}): string {
   // the `Authorization: Bearer` prefix and stops at the space.
   let out = text.replace(HTTP_AUTH_SCHEME_RE, (_match, scheme) => `${scheme} ${REDACTED}`);
   out = out.replace(URL_QUERY_SECRET_RE, (_match, sep, name, eq) => `${sep}${name}${eq}${REDACTED}`);
+  // YAML credential lines before BARE: BARE_SECRET_RE only matches `key=value`
+  // / `key: value` with no leading whitespace boundary inside a line, so the
+  // indented YAML form (`    api_key: "…"`) would otherwise slip through.
+  out = out.replace(YAML_SECRET_LINE_RE, (_match, indent, name, sep) => `${indent}${name}${sep}${REDACTED}`);
   out = out.replace(BARE_SECRET_RE, (_match, lead, name, sep) => `${lead}${name}${sep}${REDACTED}`);
   const username = opts.username;
   if (username && username.length > 1) {

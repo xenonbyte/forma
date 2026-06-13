@@ -5,6 +5,12 @@ import { saveDesignArtifact } from "./design-save.js";
 import { FormaError } from "./errors.js";
 import { generateImages, type GenerateImagesInput, type GenerateImagesResult } from "./media/image-generate.js";
 import {
+  readMediaConfig,
+  writeMediaConfig,
+  type MaskedMediaConfig,
+  type MediaConfigInput,
+} from "./media/image-config.js";
+import {
   deleteProductLocked,
   recoverPendingProductDeletesLocked,
   validateDeleteProductInput,
@@ -81,6 +87,13 @@ export interface FormaStore {
     input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   generateProductImage(input: GenerateImagesInput): Promise<GenerateImagesResult>;
+  /** Masked read of the media-generation credentials (never returns the plaintext key). */
+  readMediaConfig(): Promise<MaskedMediaConfig>;
+  /** Persist media-generation credentials and return the masked view. */
+  writeMediaConfig(
+    payload: MediaConfigInput,
+    opts: { preserveApiKey?: boolean; force?: boolean },
+  ): Promise<MaskedMediaConfig>;
   products: ProductService;
   recoverPendingProductDeletes(): Promise<ProductDeletionRecoveryResult>;
   requirements: RequirementService;
@@ -267,6 +280,15 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
   const generateProductImage = (input: GenerateImagesInput): Promise<GenerateImagesResult> =>
     generateImages(options.home, input);
 
+  // Media credential read/write are home-bound, lock-free (the file is written
+  // atomically with its own 0600 enforcement) and never mutate product state, so
+  // they bypass runProductMutation like the rest of the home-scoped services.
+  const readMediaConfigBound = (): Promise<MaskedMediaConfig> => readMediaConfig(options.home);
+  const writeMediaConfigBound = (
+    payload: MediaConfigInput,
+    opts: { preserveApiKey?: boolean; force?: boolean },
+  ): Promise<MaskedMediaConfig> => writeMediaConfig(options.home, payload, opts);
+
   return {
     home: options.home,
     artifacts,
@@ -275,6 +297,8 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     generateRequirementDesign,
     generateComponents,
     generateProductImage,
+    readMediaConfig: readMediaConfigBound,
+    writeMediaConfig: writeMediaConfigBound,
     products,
     recoverPendingProductDeletes,
     requirements,
