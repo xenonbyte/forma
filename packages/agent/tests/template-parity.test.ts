@@ -106,3 +106,22 @@ describe("three-platform deshelled parity", () => {
     });
   }
 });
+
+describe("palette design-read step present", () => {
+  const paletteCommands = ["fm-refine-components", "fm-change-style"] as const;
+  const platforms = ["claude", "codex", "gemini"] as const;
+
+  for (const cmd of paletteCommands) {
+    for (const platform of platforms) {
+      it(`${cmd} on ${platform} contains palette design-read step`, () => {
+        const body = readTemplate(platform, cmd);
+        expect(body, `${cmd}/${platform} must contain "Palette design-read"`).toContain(
+          "Palette design-read"
+        );
+        expect(body, `${cmd}/${platform} must mention brass/clay/oxblood palette guard`).toContain(
+          "brass/clay/oxblood"
+        );
+      });
+    }
+  }
+});

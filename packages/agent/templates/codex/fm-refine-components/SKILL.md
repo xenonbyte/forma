@@ -23,29 +23,30 @@ Execution:
 3. Confirm the `brand_style` and optional `system_style` (read product config / `list_styles`); confirm with the user when not already chosen.
 4. Fetch the style knowledge BEFORE generating: `get_style(brand_style)` returns DESIGN.md (design principles), tokens.css (design tokens), components.html (reference components). If a `system_style` is set, `get_style(system_style)` too. Component libraries have no requirement, so requirement page context does not apply here.
 5. Call `get_component_baseline(product_id)` to obtain the authoritative spec: `{ platform, baseline: { foundations, productIcon, components } }`. Use this as the sole source of WHAT to produce — the foundations category list, the productIcon spec, and the platform's component list with states/variants. Do NOT transcribe or hardcode the component list from any other source; use the tool's return value.
-6. Generate or refine the component library as **shared CSS (`tokens_css`) plus an ordered list of units (`units`)**. Do NOT produce a single combined HTML document; instead produce:
+6. Palette design-read (before defining brand tokens): read `craft_rules` from the `get_component_baseline` response. Apply the palette-rotation rule from ai-tells: do not default to warm beige/cream with brass/clay/oxblood unless brand_style tokens already lock that palette. Rotate real alternatives and record the chosen direction in one line.
+7. Generate or refine the component library as **shared CSS (`tokens_css`) plus an ordered list of units (`units`)**. Do NOT produce a single combined HTML document; instead produce:
    - **`tokens_css`** (a single CSS string): all design tokens, base styles, component classes, fonts, and `@font-face` declarations. Every class or CSS variable referenced by any `body_html` fragment must be defined here. No `<style>` tags go into `body_html`.
    - **`units`** — emit exactly the following units IN THIS ORDER:
      a. `{ id: "foundations", role: "foundations", title: "Foundations", body_html: <fragment> }` — token visualization for every category in `baseline.foundations` (color, typography, spacing, radius, elevation, motion, functionalIconStyle), derived from brand_style tokens.
-     b. `{ id: "icon", role: "icon", title: "<Product> Icon", body_html: <fragment> }` — product-icon showcase (primary full-color + monochrome). The actual SVG files STILL go through `product_icon` + `supporting_files` in step 7 (unchanged). ICON rules:
+     b. `{ id: "icon", role: "icon", title: "<Product> Icon", body_html: <fragment> }` — product-icon showcase (primary full-color + monochrome). The actual SVG files STILL go through `product_icon` + `supporting_files` in step 8 (unchanged). ICON rules:
         - Do NOT generate a generic functional icon library, wordmark, or full brand VI.
         - Favicon is derived from the ICON; do not create a separate favicon design.
         - For REFINEMENT with existing metadata: read `manifest.forma.productIcon.shape` (already fetched in step 2) to recover the existing persisted `shape` (`shapeId` + `geometry` + `sourceVersion`). Reuse that geometry exactly and only recolor per new brand tokens. Keep `shapeId` stable. When saving with `generate_components`, convert the persisted camelCase fields to the tool's snake_case input fields. Do NOT redraw the mark from scratch on a re-skin.
         - For INITIAL generation, or for REFINEMENT when `manifest.forma.productIcon` or `manifest.forma.productIcon.shape` is missing: treat only the ICON as initial icon creation, create a new SVG mark, and assign a stable `shape_id` (a short slug, e.g. `<productName>-mark`). Preserve the existing unit content for other units when `source_html` exists.
-        - Prepare both variants as separate SVG files for `supporting_files` (see step 7).
+        - Prepare both variants as separate SVG files for `supporting_files` (see step 8).
      c. One `{ id: "<component-slug>", role: "component", title: <component name>, body_html: <fragment> }` per entry in `baseline.components`, covering all listed states and variants. The `id` slug MUST match `^[a-z0-9][a-z0-9-]{0,63}$`. Cover state-coverage (default/hover/focus/disabled/loading/empty/error as applicable per component). When `source_html` exists, derive per-component content from it, preserving existing states, content, and layout unless the user explicitly asked to change them.
    **Each `body_html` MUST be a pure markup fragment** — no `<html>`, `<head>`, `<body>`, or `<style>` tags. It must render correctly using ONLY the classes and CSS variables defined in `tokens_css`.
    Follow the style tokens and these craft principles: avoid generic AI-slop; clear type hierarchy on a small type scale; restrained color with accent reserved for primary actions; WCAG AA contrast; accessible form controls; purposeful motion; honor core UX laws. Follow the **Pure-static contract** in shared SKILL.md.
-7. Save the component library with `generate_components`, passing:
+8. Save the component library with `generate_components`, passing:
    - `product_id`, `title`, `brand_style`, `system_style` (as before)
    - `tokens_css`: the single CSS string containing all shared styles (tokens, component classes, fonts)
-   - `units`: the ordered array of unit objects — `[ { id, role, title, body_html }, … ]` — as produced in step 6
+   - `units`: the ordered array of unit objects — `[ { id, role, title, body_html }, … ]` — as produced in step 7
    - `product_icon`: `{ primary: "assets/icon.svg", monochrome: "assets/icon-mono.svg", shape: { shape_id: <stable-id>, geometry: <reusable SVG inner markup / path-data string>, source_version: <string> } }`
    - `supporting_files`: `[ { path: "assets/icon.svg", content_type: "image/svg+xml", content_base64: <base64 of primary SVG> }, { path: "assets/icon-mono.svg", content_type: "image/svg+xml", content_base64: <base64 of monochrome SVG> } ]`
    **Do NOT include a top-level `html` field** — the `tokens_css` + `units` fields replace it entirely.
    The `primary` and `monochrome` paths in `product_icon` MUST appear in `supporting_files`. These persist into the bundle AND into manifest `forma.productIcon` (role: icon) — the ICON is NOT merely embedded in a unit; it is submitted as real SVG files plus structured metadata. Path rules: relative bundle paths only (e.g. `assets/icon.svg`); no absolute paths, no `..` traversal; content_type must be `image/svg+xml`; ≤256KB each.
    The tool returns `artifact_id`, `version`, `preview_status`.
-8. Self-review (MANDATORY): run the **Self-review protocol** in shared SKILL.md. The save tool here is `generate_components`.
-9. Report `artifact_id`, the final `version`, `preview_status`, and a short craftChecks summary. Report stable error codes exactly as returned.
+9. Self-review (MANDATORY): run the **Self-review protocol** in shared SKILL.md. The save tool here is `generate_components`.
+10. Report `artifact_id`, the final `version`, `preview_status`, and a short craftChecks summary. Report stable error codes exactly as returned.
 
 The component save tool is `generate_components`.
