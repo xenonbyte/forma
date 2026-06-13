@@ -294,6 +294,13 @@ describe("fm-design IMAGERY judgment + explicit model-downgrade (PLAN-TASK-023)"
       expect(body, `fm-design/${platform} must use the staging uuid ref for generated illustrations`).toContain(
         "forma-image://<uuid>",
       );
+      // Pin the literal distinction clause: the template must explicitly call out that
+      // the staging uuid ref is NOT the brand app-icon ref — presence of both refs is
+      // not enough; the instruction must spell out the distinction (T022).
+      expect(
+        body,
+        `fm-design/${platform} must contain the explicit distinction clause "(NOT the brand \`forma-image://brand/app-icon\` ref)"`,
+      ).toContain("(NOT the brand `forma-image://brand/app-icon` ref)");
     });
   }
 
