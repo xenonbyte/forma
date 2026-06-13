@@ -250,3 +250,60 @@ describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
     });
   }
 });
+
+describe("fm-design IMAGERY judgment + explicit model-downgrade (PLAN-TASK-023)", () => {
+  const platforms = ["claude", "codex", "gemini"] as const;
+
+  // Each entry is a substring that MUST appear in every platform's fm-design
+  // template. These pin the IMAGERY judgment folded into the Design read step
+  // and the explicit downgrade-not-stop contract.
+  const required: ReadonlyArray<readonly [string, string]> = [
+    ["IMAGERY", "the imagery judgment label folded into the Design read step"],
+    ["empty state", "the illustration trigger (empty state / onboarding / hero)"],
+    ["generate_image(", "the image generation call for illustrations/heroes"],
+    ['purpose="illustration"', "the spot/empty-state illustration purpose"],
+    ['purpose="hero"', "the marketing hero purpose"],
+    ["forma-image://<uuid>", "the staging ref returned by generate_image, referenced in page HTML"],
+    ["veto", "the Read-inspection veto step against image-prompts.md"],
+    ["craft/image-prompts.md", "the illustration/hero prompt scaffold source"],
+    ["MEDIA_NOT_CONFIGURED", "the model-not-configured downgrade trigger"],
+    ["CSS/SVG", "the downgrade decorative route"],
+    ["not configured", "the explicit-downgrade wording"],
+  ];
+
+  for (const platform of platforms) {
+    for (const [needle, why] of required) {
+      it(`fm-design on ${platform} contains ${JSON.stringify(needle)} (${why})`, () => {
+        const body = readTemplate(platform, "fm-design");
+        expect(body, `fm-design/${platform} must contain ${JSON.stringify(needle)} — ${why}`).toContain(needle);
+      });
+    }
+
+    it(`fm-design on ${platform} states the downgrade in the report (downgrade-not-stop)`, () => {
+      const body = readTemplate(platform, "fm-design");
+      // The downgrade must be reported explicitly, not silently skipped.
+      expect(body, `fm-design/${platform} must require stating the downgrade in the report`).toMatch(
+        /state the downgrade[\s\S]*report|in the (?:output )?report/i,
+      );
+    });
+
+    it(`fm-design on ${platform} references the staging uuid ref, NOT the brand app-icon ref, for illustrations`, () => {
+      const body = readTemplate(platform, "fm-design");
+      // The illustration/hero ref is the per-page staging ref forma-image://<uuid>,
+      // distinct from the brand ref forma-image://brand/app-icon (T022).
+      expect(body, `fm-design/${platform} must use the staging uuid ref for generated illustrations`).toContain(
+        "forma-image://<uuid>",
+      );
+    });
+  }
+
+  it("shared SKILL.md self-review checklist requires Read-inspected, on-palette illustrations", () => {
+    const sharedSkill = readFileSync(join(templatesDir, "shared", "SKILL.md"), "utf8");
+    expect(sharedSkill, "shared SKILL.md must list the generated-illustration self-review item").toContain(
+      "generated illustrations were each Read-inspected",
+    );
+    expect(sharedSkill, "shared SKILL.md illustration item must require on-palette consistency").toContain(
+      "on-palette",
+    );
+  });
+});
