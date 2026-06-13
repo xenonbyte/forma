@@ -45,6 +45,7 @@ export * from "./media/image-staging.js";
 export * from "./media/image-generate.js";
 export * from "./brand-assets.js";
 export * from "./brand-asset-render.js";
+export * from "./brand-asset-plan.js";
 export * from "./artifact-urls.js";
 export * from "./requirement-handoff-content.js";
 export * from "./doctor.js";
