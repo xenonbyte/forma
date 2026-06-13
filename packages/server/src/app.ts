@@ -250,6 +250,12 @@ function statusForError(error: unknown): number {
     if (error.code === "PRODUCT_MUTATION_LOCKED" || error.code === "PRODUCT_DELETION_RECOVERY_FAILED") {
       return 409;
     }
+    if (error.code === "MEDIA_NOT_CONFIGURED") {
+      return 409;
+    }
+    if (error.code === "MEDIA_PROVIDER_ERROR") {
+      return 502;
+    }
     if (error.code === "FORMA_LOCK_TIMEOUT") {
       return 503;
     }

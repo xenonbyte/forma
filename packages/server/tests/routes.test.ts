@@ -420,6 +420,78 @@ describe("Fastify API routes", () => {
     expect(response.json()).toMatchObject({ error_code: "PRODUCT_DELETION_RECOVERY_FAILED" });
   });
 
+  it("maps MEDIA_NOT_CONFIGURED to 409", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("MEDIA_NOT_CONFIGURED", "No API key configured for selected media provider");
+      }),
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" },
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error_code: "MEDIA_NOT_CONFIGURED" });
+  });
+
+  it("maps MEDIA_PROVIDER_ERROR to 502", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("MEDIA_PROVIDER_ERROR", "Media provider returned non-2xx response");
+      }),
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" },
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({ error_code: "MEDIA_PROVIDER_ERROR" });
+  });
+
+  it("maps MEDIA_IMAGE_NOT_FOUND to 404 via _NOT_FOUND suffix rule", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "forma-image:// reference does not exist");
+      }),
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" },
+    });
+
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toMatchObject({ error_code: "MEDIA_IMAGE_NOT_FOUND" });
+  });
+
+  it("maps MEDIA_INVALID_INPUT to 400 via default rule", async () => {
+    const store = fakeStore({
+      deleteProduct: vi.fn(async () => {
+        throw new FormaError("MEDIA_INVALID_INPUT", "Unregistered model or invalid aspect/count");
+      }),
+    });
+    const app = await appWith(store);
+
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/api/products/P-123abc",
+      payload: { confirm_product_id: "P-123abc" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error_code: "MEDIA_INVALID_INPUT" });
+  });
+
   it("initializes product config with brand_style name, platform, languages, and default language", async () => {
     const store = fakeStore();
     const app = await appWith(store);
