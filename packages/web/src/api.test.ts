@@ -723,3 +723,47 @@ describe("apiRequest", () => {
     });
   });
 });
+
+describe("updateBrandAssetSettings", () => {
+  it("issues PUT to the correct URL with the patch payload and returns the updated product", async () => {
+    const updatedProduct = {
+      id: "P-123abc",
+      name: "App",
+      description: "Demo",
+      platform: "mobile",
+      brand_style: "linear-app",
+      languages: ["en"],
+      default_language: "en",
+      brand_assets: {
+        store_shot_count: 5,
+        banner: true,
+        poster_portrait: true,
+        poster_landscape: true,
+        poster_square: false,
+      },
+    };
+    const requests: Array<{ body?: unknown; input: RequestInfo | URL; method?: string }> = [];
+    const client = createApiClient(async (input, init) => {
+      requests.push({
+        body: init?.body ? JSON.parse(init.body.toString()) : undefined,
+        input,
+        method: init?.method,
+      });
+      return jsonResponse(updatedProduct);
+    });
+
+    const result = await client.updateBrandAssetSettings("P-123abc", {
+      store_shot_count: 5,
+      banner: true,
+      poster_square: false,
+    });
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      input: "/api/products/P-123abc/brand-asset-settings",
+      method: "PUT",
+      body: { store_shot_count: 5, banner: true, poster_square: false },
+    });
+    expect(result).toMatchObject({ id: "P-123abc", brand_assets: { store_shot_count: 5, banner: true } });
+  });
+});

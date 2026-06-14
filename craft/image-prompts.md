@@ -1,17 +1,21 @@
 # Image generation prompts (per-purpose scaffolds)
 
-Prompt-craft for the five generated-image purposes. The agent commands
-(`fm-app-icon`, `fm-design` IMAGERY, `fm-brand-assets`) read this file to
-**construct** a prompt; Forma core passes that prompt through verbatim and
-never rewrites it (SPEC-BEHAVIOR-001). So every quality decision — palette
-lock, anti-slop discipline, composition — has to be encoded here, not in the
-generator.
+Prompt-craft for the five `generate_image` purposes plus two brand-asset-kind
+scaffolds (banner, poster). The agent commands (`fm-app-icon`, `fm-design`
+IMAGERY, `fm-brand-assets`) read this file to **construct** a prompt; Forma
+core passes that prompt through verbatim and never rewrites it
+(SPEC-BEHAVIOR-001). So every quality decision — palette lock, anti-slop
+discipline, composition — has to be encoded here, not in the generator.
 
 > Adapted from [taste-skill](https://github.com/Leonxlnx/taste-skill) (MIT)
 > anti-slop word lists, locked-palette discipline, and brandkit structure,
-> re-scoped to Forma's five `IMAGE_PURPOSES` and brand-token system.
+> re-scoped to Forma's five `generate_image` purposes (`IMAGE_PURPOSES`) and
+> brand-token system. The `banner` and `poster` sections below are
+> brand-asset-kind scaffolds (not `generate_image` purposes); they describe
+> the overall rendered composition and name which `generate_image` purpose
+> to use for their optional background material.
 
-The five purposes and their default aspect (matching core's
+The five `generate_image` purposes and their default aspect (matching core's
 `PURPOSE_DEFAULT_ASPECT`):
 
 | Purpose | Default aspect | One-line intent |
@@ -86,21 +90,103 @@ for that purpose. The veto items are inspection criteria, not prompt text.
 
 ## `app-icon` — default `1:1`
 
-The launcher mark `fm-app-icon` stages as the master icon. This is the most
+The launcher mark `fm-app-icon` stages a small set of MASTER images, not
+per-size icons: Forma core derives the entire per-platform/surface variant set
+locally (sharp) from those masters. Mobile/tablet → 3 masters (a/b/c);
+web/desktop → 2 masters (a/b). All use `purpose="app-icon"`. This is the most
 constrained purpose; get it right.
 
-- **Intent:** one memorable, brand-color-forward symbol that reads instantly.
-- **Composition:** single clear subject, centered, generous even padding so it
-  survives platform mask/rounding. Must stay legible scaled down to ~24px.
-- **Include:** flat, or at most a single soft depth cue (no gloss, gel, or
-  chrome — see the anti-slop bans); the brand's primary accent doing the
-  heavy lifting.
-- **Avoid:** **no text or letterforms**, no mockup/device frame, no
-  app-store-listing chrome, no multiple competing subjects, no fine detail
-  that dissolves at small sizes, no realistic photography.
-- **Per-purpose veto (extra):** reject if it contains *any* text, shows a phone
-  or device frame, has more than one focal subject, or loses its silhouette
-  when imagined at 24px.
+Shared app-icon rules (apply to every master): one memorable, brand-color-forward
+symbol; single clear subject, centered; **no text or letterforms**, no
+mockup/device frame, no app-store-listing chrome, no multiple competing subjects,
+no fine detail that dissolves at small sizes, no realistic photography; must stay
+legible scaled down to ~24px; the brand's primary accent doing the heavy lifting.
+
+### `app-icon-logo` — master a (transparent logo)
+
+- **Intent:** the brand mark itself, ready to composite over any base tile.
+- **Composition:** single centered subject on a fully TRANSPARENT background
+  (PNG with alpha), generous even padding so platform mask/rounding never clips
+  it.
+- **Include:** flat, or at most a single soft depth cue (no gloss, gel, chrome).
+- **Avoid:** any background fill or surface, any text, any device frame.
+- **Per-purpose veto (extra):** reject if the background is not transparent, it
+  contains any text, or it has more than one focal subject.
+
+### `app-icon-bg` — master b (opaque background)
+
+- **Intent:** the base tile color/texture the logo sits on — the opaque icon
+  background, no logo on it.
+- **Composition:** an OPAQUE branded fill spanning the whole square, NO alpha;
+  flat brand color or a restrained on-brand texture/gradient cue.
+- **Include:** the brand's surface/primary tones; just enough interest to not
+  read as a flat swatch.
+- **Avoid:** any transparency/alpha, any logo or subject, any text, any device
+  frame.
+- **Per-purpose veto (extra):** reject if it carries alpha, shows the logo or a
+  focal subject, or contains any text.
+
+### `app-icon-safe` — master c (666² safe-area logo, mobile/tablet only)
+
+- **Intent:** the adaptive-icon foreground — the logo placed so platform masking
+  never clips it.
+- **Composition:** the logo centered inside the 666×666 adaptive safe area on a
+  1080×1080 TRANSPARENT canvas; nothing of the mark extends outside the 666²
+  safe area.
+- **Include:** the same mark as master a, scaled to live entirely within the
+  safe area.
+- **Avoid:** any content outside the 666² safe area, any opaque background, any
+  text, any device frame.
+- **Per-purpose veto (extra):** reject if the logo bleeds outside the 666² safe
+  area, the canvas is not transparent, or it contains any text.
+
+## `banner` — plan-driven target
+
+> **Brand-asset-kind scaffold** (not a `generate_image` purpose). This describes the
+> rendered HTML→PNG composition; for the optional generated background, use `purpose="hero"`.
+
+Marketing banner / feature-graphic composition (e.g. Play feature graphic, app-store
+promo banner). Rendered HTML→PNG at the plan entry's exact `{width,height}`; this
+scaffold drives any optional generated background material.
+
+- **Intent:** a wide, calm, on-brand backdrop that frames a short marketing line
+  + the product mark.
+- **Composition:** strong horizontal rhythm with a clear text-safe region (one
+  side or a band) for an overlaid headline; focal interest off-center, opposite
+  the copy.
+- **Include:** restrained on-brand color blocking; room for the brand app-icon
+  and a short headline.
+- **Avoid:** no baked-in marketing copy, no edge-to-edge busyness that buries the
+  headline, no off-brand accents, no device frame (that is composited in the HTML).
+- **Per-purpose veto (extra):** reject if there is no usable text-safe region, if
+  contrast under the intended copy is too low/noisy for legible overlaid type, or
+  if it bakes in headline text.
+
+## `poster` — plan-driven target (portrait / landscape / square)
+
+> **Brand-asset-kind scaffold** (not a `generate_image` purpose). This describes the
+> rendered HTML→PNG composition; for the optional generated background, use `purpose="poster-bg"` or `purpose="illustration"`.
+
+Standalone marketing poster, rendered HTML→PNG at the plan entry's exact
+`{width,height}`. The plan emits one entry per enabled orientation; the entry's
+`variant` is the orientation. This scaffold drives any optional generated
+background/illustration material.
+
+- **Intent:** a confident, on-brand poster composition with a clear focal point.
+- **Composition (per orientation):**
+  - **portrait (1080×1920):** vertical rhythm top→bottom; text-safe bands at top
+    and/or bottom for an overlaid title + footer.
+  - **landscape (1920×1080):** horizontal layout; text-safe region to one side,
+    focal interest opposite.
+  - **square (1080×1080):** balanced centered composition with a calm corner/edge
+    region reserved for an overlaid title.
+- **Include:** bold on-brand color blocking; the brand app-icon where the layout
+  calls for the product mark.
+- **Avoid:** no baked-in poster/title text, no edge-to-edge busyness that leaves
+  nowhere for the title, no off-brand accent colors.
+- **Per-purpose veto (extra):** reject if the text-safe regions are unusable (too
+  noisy/low-contrast for overlaid type), if it bakes in title text, or if the
+  composition does not suit the orientation.
 
 ## `illustration` — default `4:3`
 

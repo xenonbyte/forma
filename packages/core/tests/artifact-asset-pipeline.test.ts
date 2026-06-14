@@ -665,28 +665,38 @@ describe("forma-image://brand/ resolution through the pipeline (SPEC-BEHAVIOR-01
     const home = await mkdtemp(join(tmpdir(), "forma-pipeline-brand-"));
     const productId = "P-7e5701";
 
-    // Stage a 2048 master, then save it as the app-icon brand asset.
-    const masterPng = await sharp({ create: { width: 2048, height: 2048, channels: 4, background: "#3366cc" } })
+    // Stage the two app-icon masters (logo + background), then derive the icon set.
+    const stage = async (png: Buffer): Promise<string> => {
+      const meta = await sharp(png).metadata();
+      const staged = await putStagedImage(home, productId, png, {
+        purpose: "app-icon",
+        prompt: "brand icon",
+        model: "stub",
+        width: meta.width ?? 0,
+        height: meta.height ?? 0,
+      });
+      return staged.ref;
+    };
+    const logoPng = await sharp(
+      Buffer.from('<svg width="1024" height="1024"><circle cx="512" cy="512" r="300" fill="#cc3366"/></svg>'),
+    )
       .png()
       .toBuffer();
-    const meta = await sharp(masterPng).metadata();
-    const staged = await putStagedImage(home, productId, masterPng, {
-      purpose: "app-icon",
-      prompt: "brand icon",
-      model: "stub",
-      width: meta.width ?? 0,
-      height: meta.height ?? 0,
-    });
+    const bgPng = await sharp({ create: { width: 1024, height: 1024, channels: 4, background: "#3366cc" } })
+      .png()
+      .toBuffer();
+    const logoRef = await stage(logoPng);
+    const bgRef = await stage(bgPng);
     const lock = getProductMutationLock(home);
     await saveBrandAsset(
       { home, runProductMutation: (i, f) => runProductMutationWithWarnings(lock, i, f, () => undefined) },
       {
         product_id: productId,
         kind: "app-icon",
-        name: "primary",
         brand_style: "ant",
-        source: { image_ref: staged.ref },
         platform: "web",
+        logo_ref: logoRef,
+        bg_ref: bgRef,
       },
     );
 

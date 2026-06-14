@@ -58,6 +58,18 @@ export interface ProductIndexEntry {
   description: string;
 }
 
+/**
+ * Per-product brand-asset generation settings (SPEC-DATA-002 / SPEC-BEHAVIOR-008).
+ * Mirrors core BrandAssetsSettings.
+ */
+export interface BrandAssetsSettings {
+  store_shot_count: number;
+  banner: boolean;
+  poster_portrait: boolean;
+  poster_landscape: boolean;
+  poster_square: boolean;
+}
+
 export interface Product extends ProductIndexEntry {
   default_language?: Language;
   languages?: Language[];
@@ -66,6 +78,8 @@ export interface Product extends ProductIndexEntry {
   system_style?: string;
   /** BC3: current component-library artifact pointer (SPEC-BEHAVIOR-015). */
   designSystemArtifactId?: string;
+  /** SPEC-BEHAVIOR-008: per-product brand-asset generation settings. */
+  brand_assets?: BrandAssetsSettings;
 }
 
 export interface DeleteProductResult {
@@ -520,12 +534,23 @@ export interface BrandAssetFileView {
 
 /** Client view of a brand-asset manifest record (mirrors server toBrandAssetView). */
 export interface BrandAssetView {
-  /** Manifest kind — drives dynamic grouping (app-icon now; store-shot/poster in M5). */
+  /** Manifest kind — drives dynamic grouping (app-icon / store-shot / banner / poster). */
   kind: string;
   name: string;
   brand_style: string;
   model?: string;
   generated_at: string;
+  /**
+   * Platform surface this asset targets ("android" | "ios"). Present for
+   * mobile/tablet app-icon, store-shot, and banner records; absent for
+   * web/desktop (single surface) and for poster (platform-agnostic).
+   */
+  surface?: "android" | "ios";
+  /**
+   * Optional variant discriminator (icon layer name, poster style, etc.).
+   * Absent when not applicable.
+   */
+  variant?: string;
   files: BrandAssetFileView[];
 }
 
@@ -622,6 +647,8 @@ export interface FormaApiClient {
   getStyle(name: string): Promise<BrandStyleContent>;
   /** SPEC-BEHAVIOR-008: list a product's generated brand assets, grouped client-side by kind. */
   getBrandAssets(productId: string): Promise<BrandAssetsList>;
+  /** SPEC-BEHAVIOR-008: update per-product brand-asset generation settings. */
+  updateBrandAssetSettings(productId: string, patch: Partial<BrandAssetsSettings>): Promise<Product>;
   /** Pure URL builder for a served brand-asset file (GET .../brand-assets/files/<relative-path>). */
   getBrandAssetFileUrl(productId: string, relativePath: string): string;
   /** Pure URL builder for the brand-assets zip export download (GET .../brand-assets/export). */
@@ -904,6 +931,12 @@ export function createApiClient(fetcher?: Fetcher): FormaApiClient {
         `/api/products/${encodeURIComponent(productId)}/brand-assets`,
         requestOptions(fetcher),
       ),
+    updateBrandAssetSettings: (productId, patch) =>
+      apiRecord<Product>(`/api/products/${encodeURIComponent(productId)}/brand-asset-settings`, {
+        ...requestOptions(fetcher),
+        body: patch,
+        method: "PUT",
+      }),
     getBrandAssetFileUrl: (productId, relativePath) =>
       `/api/products/${encodeURIComponent(productId)}/brand-assets/files/${relativePath
         .split("/")

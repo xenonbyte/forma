@@ -209,18 +209,26 @@ describe("fm-app-icon load-bearing pieces present (PLAN-TASK-021)", () => {
   const platforms = ["claude", "codex", "gemini"] as const;
 
   // Each entry is a substring that MUST appear in every platform's fm-app-icon
-  // template. These pin the load-bearing conventions tying T015↔T021↔T022.
+  // template. These pin the load-bearing conventions of the master-image flow:
+  // generate 2-3 masters, ONE discriminated-union save, local derivation, the
+  // bare-command full-regeneration semantics, and the brand ref resolution.
   const required: ReadonlyArray<readonly [string, string]> = [
-    ['name="primary"', "the canonical app-icon name the brand/ ref resolves to"],
     ['purpose="app-icon"', "the generate_image purpose for the launcher mark"],
+    ['kind="app-icon"', "the discriminated-union save kind"],
+    ["logo_ref", "the transparent-logo master ref (image a)"],
+    ["bg_ref", "the opaque-background master ref (image b)"],
+    ["safe_logo_ref", "the 666² safe-area master ref (image c, mobile/tablet)"],
+    ["get_brand_asset_plan", "the plan reader that reports how many masters to produce"],
     ["save_brand_asset", "the brand-asset persist tool"],
     ["generate_image", "the image generation tool"],
     ["MEDIA_NOT_CONFIGURED", "the image-model precondition error surfaced from generate_image"],
     ["Settings", "the web Settings guidance for the missing image model"],
     ["veto", "the Read-inspection veto step"],
-    ["craft/image-prompts.md", "the app-icon prompt scaffold source"],
-    ["forma-image://brand/app-icon", "the brand ref that resolves to the primary record"],
+    ["craft/image-prompts.md", "the app-icon master prompt scaffold source"],
+    ["forma-image://brand/app-icon", "the brand ref that resolves to the largest standard variant"],
     ["count=3", "the three-candidate generation"],
+    ["regeneration", "the bare-command full-regeneration semantics"],
+    ["double-confirm", "the execute-time double-confirmation on a bare rerun"],
     ["overwrite", "the existing-icon overwrite semantics"],
     ["/products/<product_id>/brand-assets", "the brand-assets canvas URL"],
   ];
@@ -329,22 +337,27 @@ describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
   const platforms = ["claude", "codex", "gemini"] as const;
 
   // Substrings that MUST appear in every platform's fm-brand-assets template.
-  // These pin the marketing-assets contract: the preset query, the no-hardcode
-  // red line, both asset kinds, and the full 5.2 precondition matrix.
+  // These pin the plan-driven marketing-assets contract: read the plan first,
+  // the no-hardcode red line, every asset kind, the discriminated-union save,
+  // and the full precondition matrix.
   const required: ReadonlyArray<readonly [string, string]> = [
-    ["list_store_shot_presets", "the preset query tool"],
+    ["get_brand_asset_plan", "the desired-state plan reader (sizes/surfaces/counts)"],
     ["save_brand_asset", "the brand-asset persist tool"],
     ["generate_image", "the background/illustration image generator"],
-    ['kind="store-shot"', "the store-shot asset kind"],
-    ['kind="poster"', "the poster asset kind"],
-    ["do not hardcode preset names", "the USER RED LINE against hardcoded preset ids"],
+    ["kind=<entry.kind>", "the discriminated-union save keyed off each plan entry's kind"],
+    ["store-shot", "the store-shot asset kind"],
+    ["banner", "the banner asset kind"],
+    ["poster", "the poster asset kind"],
+    ["do not hardcode sizes/counts/surfaces", "the USER RED LINE against hardcoded plan values"],
     ["MEDIA_NOT_CONFIGURED", "the image-model HARD precondition surfaced from generate_image"],
     ["Settings", "the web Settings guidance for the missing image model"],
     ['list_brand_assets(product_id, kind="app-icon")', "the app-icon HARD precondition lookup"],
     ["list_product_artifacts", "the store-shot design-preview HARD precondition lookup"],
     ["veto", "the Read-inspection veto step for generated material"],
     ["craft/image-prompts.md", "the bg/illustration prompt scaffold source"],
-    ["1080×1920", "the poster spec dimensions (explicit target, not a preset)"],
+    ["target={ width: entry.width, height: entry.height }", "the plan-entry-driven render target"],
+    ["regeneration", "the bare-command full-regeneration semantics"],
+    ["double-confirm", "the execute-time double-confirmation on a bare rerun"],
     ["/products/<product_id>/brand-assets", "the brand-assets canvas URL"],
   ];
   const forbiddenHashBrandAssetsUrl = "#/products/<product_id>/brand-assets";
@@ -364,18 +377,17 @@ describe("fm-brand-assets load-bearing pieces present (PLAN-TASK-025)", () => {
       );
     });
 
-    it(`fm-brand-assets on ${platform} calls list_store_shot_presets BEFORE save_brand_asset`, () => {
+    it(`fm-brand-assets on ${platform} reads get_brand_asset_plan BEFORE save_brand_asset`, () => {
       const body = readTemplate(platform, "fm-brand-assets");
-      // The first mention of the preset query must precede the first save — the
-      // returned preset id is what feeds save_brand_asset(target={preset}).
-      const queryAt = body.indexOf("list_store_shot_presets");
+      // The first mention of the plan reader must precede the first save — the
+      // plan's per-entry {width,height}/surface/variant is what feeds each save.
+      const planAt = body.indexOf("get_brand_asset_plan");
       const saveAt = body.indexOf("save_brand_asset");
-      expect(queryAt, `fm-brand-assets/${platform} must mention list_store_shot_presets`).toBeGreaterThan(-1);
+      expect(planAt, `fm-brand-assets/${platform} must mention get_brand_asset_plan`).toBeGreaterThan(-1);
       expect(saveAt, `fm-brand-assets/${platform} must mention save_brand_asset`).toBeGreaterThan(-1);
-      expect(
-        queryAt,
-        `fm-brand-assets/${platform} must call list_store_shot_presets before save_brand_asset`,
-      ).toBeLessThan(saveAt);
+      expect(planAt, `fm-brand-assets/${platform} must call get_brand_asset_plan before save_brand_asset`).toBeLessThan(
+        saveAt,
+      );
     });
 
     it(`fm-brand-assets on ${platform} guides to fm-app-icon when the app icon is missing`, () => {

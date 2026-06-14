@@ -4,22 +4,28 @@
  * Persists per-product brand assets under the DESIGN tree:
  *   $FORMA_HOME/data/products/<productId>/od-project/brand-assets/
  *     ├── manifest.json
- *     ├── app-icon/      (master + per-platform derivatives + favicon)
- *     ├── store-shots/   (task 016 — html render path)
- *     └── posters/       (task 016 — html render path)
+ *     ├── app-icon/      (per-surface variant matrix; atomically replaced)
+ *     ├── store-shots/   (html render path)
+ *     ├── banners/       (html render path)
+ *     └── posters/       (html render path)
  *
- * This task implements the `app-icon` / `image_ref` path of SPEC-BEHAVIOR-006:
- * a staged 2048×2048 PNG master is sharp-derived into the per-platform size set
- * + favicon. The html → render path for store-shot/poster is task 016; the
- * `renderHtml` dependency seam below is where it plugs in (see RENDER SEAM).
+ * saveBrandAsset is a discriminated union on `kind` (SPEC-DATA-006):
+ *   - app-icon: master refs (logo/bg/safe-logo) are resolved locally and
+ *     sharp-derived into the full per-surface variant set (deriveAppIconVariants,
+ *     Task 3); the product's ENTIRE app-icon set is then atomically replaced
+ *     (one record per (surface, variant)). Returns { kind, assets }.
+ *   - store-shot/banner/poster: the author HTML is rendered to one PNG at the
+ *     caller-supplied target through the renderHtml sandbox seam. Returns
+ *     { kind, asset }.
  *
- * resolveBrandImageRef (SPEC-BEHAVIOR-004) resolves the brand/ namespace:
- *   forma-image://brand/app-icon        → the 2048 master bytes
- *   forma-image://brand/app-icon@<size> → the matching derivative (must exist)
- * image-staging.ts forwards its brand/ prefix here (replacing the M1 slot).
+ * resolveBrandImageRef (SPEC-DATA-008) resolves the brand/ namespace, considering
+ * only STANDARD-variant app-icon files:
+ *   forma-image://brand/app-icon        → the largest standard-variant file
+ *   forma-image://brand/app-icon@<size> → the standard-variant file whose width === size
+ * image-staging.ts forwards its brand/ prefix here.
  *
  * IMPORT DIRECTION: this module statically imports resolveFormaImageRef from
- * image-staging.ts (to read the staged source for app-icon). image-staging.ts
+ * image-staging.ts (to read the staged masters for app-icon). image-staging.ts
  * dynamically imports resolveBrandImageRef from THIS module to forward brand/
  * refs — the one dynamic import breaks what would otherwise be a static cycle.
  *
@@ -27,121 +33,42 @@
  * (list / resolve / zip export) are lock-free and home-bound.
  */
 
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, rmdir, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { join, relative, sep } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import AdmZip from "adm-zip";
-import sharp from "sharp";
 import { z } from "zod";
 import { getBrandAssetKindDir, getBrandAssetsDir, getBrandAssetsManifestPath } from "./artifact-paths.js";
+import { deriveAppIconVariants, type DerivedIconVariant } from "./brand-icon-derive.js";
 import { FormaError } from "./errors.js";
 import { resolveFormaImageRef } from "./media/image-staging.js";
 import { getFormaPaths } from "./paths.js";
 import { isSameOrChildPath } from "./path-boundary.js";
 import { getProductMutationLock } from "./product-mutation-lock.js";
-import type { Platform } from "./schemas.js";
+import { brandSurfaces, brandSurfacesForPlatform } from "./schemas.js";
+import type { BrandSurface, Platform } from "./schemas.js";
 
 // ─── Public constants ──────────────────────────────────────────────────────────
 
 /**
- * Per-platform app-icon size sets (square px). The 2048 master is always stored
- * in addition to these; favicon = the two smallest web sizes (16/32) re-emitted
- * under a `favicon-<size>.png` name (PNG, not multi-res .ico — sufficient for v1).
- *
- * Platform → set mapping (driven by the input `platform`):
- *   "mobile"            → ios + android  (+ web favicon for PWA)
- *   "web"/anything else → web            (web set already includes 32/16)
+ * Standard app-icon variant names — the "primary" square icon for each surface.
+ * resolveBrandImageRef (bare `forma-image://brand/app-icon` and `@<size>`) only
+ * considers files belonging to these variants, so it never returns a foreground/
+ * background/monochrome layer.
  */
-export const APP_ICON_SIZES = {
-  ios: [1024, 180, 120],
-  android: [512, 192, 144, 96, 72, 48],
-  web: [512, 192, 32, 16],
-} as const satisfies Record<string, readonly number[]>;
-
-/** Favicon sizes (PNG). These are a subset of the web set, re-emitted by name. */
-const FAVICON_SIZES = [32, 16] as const;
-
-/**
- * Store-shot / sharing-image presets — official platform sizes (PLAN-TASK-024).
- *
- * Every pixel value here was verified against the platform's own documentation
- * on the date in `verifiedAt`. NO placeholder values: each entry records the
- * `source` URL it was read from so the provenance is auditable. We keep the
- * PRIMARY 1-2 sizes per platform (not an exhaustive device matrix).
- *
- * Verified 2026-06-13:
- *   - ios-6.9       1320×2868  App Store Connect "Screenshot specifications":
- *                              the 6.9" display is the current required class;
- *                              1320×2868 is its newest/largest accepted portrait
- *                              resolution (iPhone 17 Pro Max / iPhone Air).
- *   - android-phone 1080×1920  Google Play Console "Add preview assets": phone
- *                              screenshots use 9:16 portrait, recommended 1080px
- *                              short edge → 1080×1920 is the recommended primary.
- *   - web-og        1200×630   Open Graph protocol (og:image, 1.91:1); the
- *                              1200×630 figure is the platform-recommended size
- *                              (Facebook sharing-image guidance corroborates).
- *
- * Each preset is tagged with the `platform`s it applies to so
- * listStoreShotPresets() can filter (see PLATFORM_PRESET_MAP for the mapping).
- */
-export const STORE_SHOT_PRESETS = {
-  "ios-6.9": {
-    id: "ios-6.9",
-    width: 1320,
-    height: 2868,
-    source: "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/",
-    verifiedAt: "2026-06-13",
-  },
-  "android-phone": {
-    id: "android-phone",
-    width: 1080,
-    height: 1920,
-    source: "https://support.google.com/googleplay/android-developer/answer/9866151",
-    verifiedAt: "2026-06-13",
-  },
-  "web-og": {
-    id: "web-og",
-    width: 1200,
-    height: 630,
-    source: "https://ogp.me/",
-    verifiedAt: "2026-06-13",
-  },
-} as const satisfies Record<string, StoreShotPreset>;
-
-/**
- * Product platform → applicable store-shot preset ids.
- *
- *   mobile  → iOS + Android phone store screenshots
- *   web     → web Open Graph sharing image
- *   desktop → web Open Graph sharing image (desktop apps share via the web/OG)
- *   tablet  → web Open Graph sharing image — NO tablet-specific size was
- *             verified for v1, so tablet maps to the web/OG preset rather than
- *             guessing an iPad/tablet screenshot size.
- */
-const PLATFORM_PRESET_MAP = {
-  mobile: ["ios-6.9", "android-phone"],
-  web: ["web-og"],
-  desktop: ["web-og"],
-  tablet: ["web-og"],
-} as const satisfies Record<Platform, readonly (keyof typeof STORE_SHOT_PRESETS)[]>;
-
-/** The master edge length (square). */
-const MASTER_SIZE = 2048;
-
-/** sharp decode ceiling — rejects raster decompression bombs. */
-// ~64 MP — keep in sync with artifact-asset-pipeline.ts / artifact-icon-extraction.ts
-const SHARP_PIXEL_LIMIT = 64_000_000;
+const STANDARD_APP_ICON_VARIANTS = new Set(["standard", "android-standard", "ios-standard"]);
 
 /** Subdirectory per kind (internal, fixed — never caller-supplied). */
 const KIND_SUBDIR = {
   "app-icon": "app-icon",
   "store-shot": "store-shots",
+  banner: "banners",
   poster: "posters",
-} as const;
+} as const satisfies Record<BrandAssetKind, string>;
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
-export const BRAND_ASSET_KINDS = ["app-icon", "store-shot", "poster"] as const;
+export const BRAND_ASSET_KINDS = ["app-icon", "store-shot", "banner", "poster"] as const;
 export type BrandAssetKind = (typeof BRAND_ASSET_KINDS)[number];
 
 /** A single emitted brand-asset file (bundle-relative path + pixel dims). */
@@ -161,59 +88,86 @@ export interface BrandAssetRecord {
   brand_style: string;
   model?: string;
   generated_at: string;
+  /**
+   * The platform surface this asset targets. Omitted for web/desktop (single
+   * surface) and for poster (platform-agnostic). Present for mobile/tablet
+   * app-icon, store-shot, and banner records.
+   */
+  surface?: BrandSurface;
+  /**
+   * Optional variant discriminator: icon layer name, poster style, etc.
+   * Omitted when not applicable.
+   */
+  variant?: string;
 }
-
-/** Source for a brand asset — EXACTLY ONE of image_ref / html. */
-export interface BrandAssetSource {
-  /** forma-image://<uuid> staged image — app-icon only. */
-  image_ref?: string;
-  /** HTML to render — store-shot / poster only (task 016). */
-  html?: string;
-}
-
-/** Optional render target — ignored for app-icon (sizes are platform-derived). */
-export type BrandAssetTarget = { width: number; height: number } | { preset: string };
 
 /**
- * A verified store-shot / sharing-image preset (PLAN-TASK-024). `source` is the
- * official documentation URL the dimensions were read from; `verifiedAt` is the
- * ISO date (YYYY-MM-DD) the value was confirmed against that source.
+ * app-icon save: the master image refs are resolved locally and sharp-derived
+ * into the full per-surface variant set (Task 3 `deriveAppIconVariants`); the
+ * product's entire app-icon set is then atomically replaced. Optional colour
+ * overrides flow through to monochrome / tinted / dark variants.
  */
-export interface StoreShotPreset {
-  /** Stable preset id, e.g. "ios-6.9" / "android-phone" / "web-og". */
-  id: string;
-  /** Exact render width in px. */
-  width: number;
-  /** Exact render height in px. */
-  height: number;
-  /** Official documentation URL the dimensions were verified against. */
-  source: string;
-  /** ISO date (YYYY-MM-DD) the dimensions were verified on. */
-  verifiedAt: string;
+export interface SaveAppIconInput {
+  product_id: string;
+  kind: "app-icon";
+  brand_style: string;
+  /** Product platform — drives the surface set (mobile/tablet → android+ios). */
+  platform: Platform;
+  /** Master image a — transparent-background logo. */
+  logo_ref: string;
+  /** Master image b — opaque background. */
+  bg_ref: string;
+  /** Master image c — safe-area logo (required for mobile/tablet surfaces). */
+  safe_logo_ref?: string;
+  /** Optional colour overrides for tinted / monochrome variants. */
+  colors?: { mono?: string; tint?: string; dark_bg?: string };
+  /** The generation model id, recorded in every emitted record when present. */
+  model?: string;
 }
 
-export interface SaveBrandAssetInput {
+/**
+ * store-shot / banner / poster save: the author HTML is rendered to a single
+ * PNG at the caller-supplied target via the injected sandbox renderer.
+ */
+export interface SaveMediaBrandAssetInput {
   product_id: string;
-  kind: BrandAssetKind;
+  kind: "store-shot" | "banner" | "poster";
   name: string;
   brand_style: string;
-  source: BrandAssetSource;
-  /** Product platform — drives the app-icon size set (mobile → ios+android). */
-  platform?: string;
+  source: { html: string };
+  /** The platform surface this asset targets (omit for single-surface/poster). */
+  surface?: BrandSurface;
+  /** Optional variant discriminator (e.g. poster orientation). */
+  variant?: string;
+  /** Exact render dimensions (the agent supplies plan sizes). */
+  target: { width: number; height: number };
   /** The generation model id, recorded in the manifest when present. */
   model?: string;
-  /** Render target for store-shot/poster (task 016); app-icon ignores it. */
-  target?: BrandAssetTarget;
 }
+
+export type SaveBrandAssetInput = SaveAppIconInput | SaveMediaBrandAssetInput;
 
 export interface SavedBrandAsset {
   kind: BrandAssetKind;
   name: string;
   files: BrandAssetFile[];
   generated_at: string;
-  /** Non-fatal advisories (e.g. master upscaled from < 2048). */
+  /** The platform surface this asset targets (omitted for single-surface). */
+  surface?: BrandSurface;
+  /** Optional variant discriminator. */
+  variant?: string;
+  /** Non-fatal advisories. */
   warnings: string[];
 }
+
+/**
+ * Discriminated result of saveBrandAsset:
+ *   - app-icon: the full freshly-derived set of records (atomic replacement).
+ *   - media kinds: the single rendered asset.
+ */
+export type SaveBrandAssetResult =
+  | { kind: "app-icon"; assets: BrandAssetRecord[] }
+  | { kind: "store-shot" | "banner" | "poster"; asset: SavedBrandAsset };
 
 /** Minimal mutation-lock surface the store provides (mirrors runProductMutation). */
 export type RunProductMutation = <T>(
@@ -250,6 +204,8 @@ const brandAssetRecordSchema = z
     brand_style: z.string().min(1),
     model: z.string().min(1).optional(),
     generated_at: z.string().refine((v) => Number.isFinite(Date.parse(v))),
+    surface: z.enum(brandSurfaces).optional(),
+    variant: z.string().min(1).optional(),
   })
   .strict();
 
@@ -298,84 +254,6 @@ function assertValidKind(kind: string): asserts kind is BrandAssetKind {
   if (!(BRAND_ASSET_KINDS as readonly string[]).includes(kind)) {
     throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Unknown brand asset kind", { kind });
   }
-}
-
-/** SPEC-BEHAVIOR-006: EXACTLY ONE of image_ref/html; app-icon image_ref only. */
-function assertValidSource(kind: BrandAssetKind, source: BrandAssetSource): void {
-  const hasRef = typeof source.image_ref === "string" && source.image_ref.length > 0;
-  const hasHtml = typeof source.html === "string" && source.html.length > 0;
-  if (hasRef === hasHtml) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "source must carry exactly one of image_ref or html", {
-      kind,
-      has_image_ref: hasRef,
-      has_html: hasHtml,
-    });
-  }
-  if (kind === "app-icon" && !hasRef) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "app-icon source must be an image_ref", { kind });
-  }
-  if (kind !== "app-icon" && !hasHtml) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${kind} source must be html`, { kind });
-  }
-}
-
-// ─── sharp helpers ───────────────────────────────────────────────────────────
-
-async function readSquareMaster(bytes: Buffer): Promise<{ master: Buffer; warnings: string[] }> {
-  const warnings: string[] = [];
-  let meta: import("sharp").Metadata;
-  try {
-    meta = await sharp(bytes, { limitInputPixels: SHARP_PIXEL_LIMIT }).metadata();
-  } catch (err) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Source image is not a readable raster", {
-      cause: String(err),
-    });
-  }
-  const srcWidth = meta.width ?? 0;
-  const srcHeight = meta.height ?? 0;
-  if (srcWidth < 1 || srcHeight < 1) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Source image has no dimensions", {
-      width: srcWidth,
-      height: srcHeight,
-    });
-  }
-  if (srcWidth < MASTER_SIZE || srcHeight < MASTER_SIZE) {
-    warnings.push(
-      `brand-asset app-icon source is smaller than ${MASTER_SIZE}px (${srcWidth}x${srcHeight}); upscaling to the ${MASTER_SIZE} master.`,
-    );
-  }
-  // Always normalize the master to a square MASTER_SIZE PNG (cover-fit centred).
-  const master = await resizeSquare(bytes, MASTER_SIZE);
-  return { master, warnings };
-}
-
-async function resizeSquare(source: Buffer, size: number): Promise<Buffer> {
-  try {
-    return await sharp(source, { limitInputPixels: SHARP_PIXEL_LIMIT })
-      .resize({ width: size, height: size, fit: "cover", position: "centre" })
-      .png()
-      .toBuffer();
-  } catch (err) {
-    throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset image processing failed", {
-      size,
-      cause: String(err),
-    });
-  }
-}
-
-/** Platform → app-icon size set + favicon emission plan. */
-function planAppIconSizes(platform: string | undefined): { sizes: number[]; faviconSizes: number[] } {
-  const sizeSet = new Set<number>([MASTER_SIZE]);
-  if (platform === "mobile") {
-    for (const w of APP_ICON_SIZES.ios) sizeSet.add(w);
-    for (const w of APP_ICON_SIZES.android) sizeSet.add(w);
-    // PWA favicon for native apps that also ship a web presence.
-    for (const w of FAVICON_SIZES) sizeSet.add(w);
-  } else {
-    for (const w of APP_ICON_SIZES.web) sizeSet.add(w);
-  }
-  // Largest first → master derivation reuses the bigger source where possible.
-  return { sizes: [...sizeSet].sort((a, b) => b - a), faviconSizes: [...FAVICON_SIZES] };
 }
 
 // ─── Durable generation write ──────────────────────────────────────────────────
@@ -466,46 +344,10 @@ async function writeManifest(home: string, productId: string, manifest: BrandMan
   await rename(tmp, manifestPath);
 }
 
-// ─── store-shot / poster render target resolution ─────────────────────────────
+// ─── store-shot / banner / poster render target validation ────────────────────
 
-/**
- * Resolves the render target to explicit pixel dimensions.
- *
- * Two forms are supported:
- *   - `{ width, height }` — explicit positive-integer pixels.
- *   - `{ preset }`        — a named preset id resolved through STORE_SHOT_PRESETS
- *                           (PLAN-TASK-024). Unknown preset ids fail loud with
- *                           BRAND_ASSET_INVALID_INPUT rather than guessing a size.
- */
-function resolveRenderTarget(
-  kind: BrandAssetKind,
-  target: BrandAssetTarget | undefined,
-): {
-  width: number;
-  height: number;
-} {
-  if (!target) {
-    throw new FormaError(
-      "BRAND_ASSET_INVALID_INPUT",
-      `${kind} save requires a render target {width,height} or {preset}`,
-      {
-        kind,
-        reason: "missing_target",
-      },
-    );
-  }
-  if ("preset" in target) {
-    const preset = (STORE_SHOT_PRESETS as Record<string, StoreShotPreset>)[target.preset];
-    if (!preset) {
-      throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Unknown render preset", {
-        kind,
-        reason: "unknown_preset",
-        preset: target.preset,
-        available: Object.keys(STORE_SHOT_PRESETS),
-      });
-    }
-    return { width: preset.width, height: preset.height };
-  }
+/** Validates an explicit `{ width, height }` render target. */
+function assertRenderTarget(kind: BrandAssetKind, target: { width: number; height: number }): void {
   const { width, height } = target;
   if (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1) {
     throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Render target width/height must be positive integers", {
@@ -514,26 +356,33 @@ function resolveRenderTarget(
       height,
     });
   }
-  return { width, height };
 }
 
 /**
- * store-shot / poster save: render the author HTML to a single PNG through the
- * injected sandbox renderer (brand-asset-render.ts), then persist + record it
- * exactly like the app-icon path. Render happens OUTSIDE the lock (it touches
- * only the staging/brand read tree, never product state); only the file write +
- * manifest update run under the per-product mutation lock.
+ * store-shot / banner / poster save: render the author HTML to a single PNG
+ * through the injected sandbox renderer (brand-asset-render.ts), then persist +
+ * record it. Render happens OUTSIDE the lock (it touches only the staging/brand
+ * read tree, never product state); only the file write + manifest update run
+ * under the per-product mutation lock. Same kind+name replaces the prior record.
  */
-async function saveRenderedBrandAsset(deps: BrandAssetDeps, input: SaveBrandAssetInput): Promise<SavedBrandAsset> {
+async function saveRenderedBrandAsset(
+  deps: BrandAssetDeps,
+  input: SaveMediaBrandAssetInput,
+): Promise<SaveBrandAssetResult> {
   if (!deps.renderHtml) {
     throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${input.kind} rendering is not available`, {
       kind: input.kind,
       reason: "no_html_renderer",
     });
   }
-  // assertValidSource guaranteed a non-empty html for store-shot/poster.
-  const html = input.source.html ?? "";
-  const { width, height } = resolveRenderTarget(input.kind, input.target);
+  const html = input.source.html;
+  if (typeof html !== "string" || html.length === 0) {
+    throw new FormaError("BRAND_ASSET_INVALID_INPUT", `${input.kind} source must be non-empty html`, {
+      kind: input.kind,
+    });
+  }
+  assertRenderTarget(input.kind, input.target);
+  const { width, height } = input.target;
 
   const png = await deps.renderHtml({ html, width, height, productId: input.product_id });
 
@@ -562,6 +411,8 @@ async function saveRenderedBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsse
       brand_style: input.brand_style,
       ...(input.model !== undefined ? { model: input.model } : {}),
       generated_at: generatedAt,
+      ...(input.surface !== undefined ? { surface: input.surface } : {}),
+      ...(input.variant !== undefined ? { variant: input.variant } : {}),
     };
 
     const manifest = await readManifest(deps.home, input.product_id);
@@ -570,52 +421,57 @@ async function saveRenderedBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsse
     await writeManifest(deps.home, input.product_id, { assets: next });
     await warnOnPruneFailure(context, assetDir, assetWriteDir);
 
-    return {
+    const asset: SavedBrandAsset = {
       kind: record.kind,
       name: record.name,
       files: record.files,
       generated_at: record.generated_at,
+      ...(record.surface !== undefined ? { surface: record.surface } : {}),
+      ...(record.variant !== undefined ? { variant: record.variant } : {}),
       warnings: [...context.warnings],
-    } satisfies SavedBrandAsset;
+    };
+    return { kind: input.kind, asset };
   });
 }
 
-// ─── saveBrandAsset ──────────────────────────────────────────────────────────
+// ─── app-icon derivation + atomic replacement ──────────────────────────────────
 
-export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAssetInput): Promise<SavedBrandAsset> {
-  assertValidKind(input.kind);
-  assertValidName(input.name);
-  assertValidSource(input.kind, input.source);
+/**
+ * Resolves the app-icon master refs, derives the full per-surface variant set
+ * (Task 3 deriveAppIconVariants), and ATOMICALLY REPLACES the product's entire
+ * app-icon set: all prior app-icon records + their files are removed and the new
+ * set written under the per-product mutation lock.
+ *
+ * One BrandAssetRecord is produced per (surface, variant). Multi-size variants
+ * (e.g. ios-standard) collapse into one record with multiple files.
+ */
+async function saveAppIcon(deps: BrandAssetDeps, input: SaveAppIconInput): Promise<SaveBrandAssetResult> {
+  // Resolve the staged master refs OUTSIDE the lock (reads; no product state).
+  const logo = await resolveFormaImageRef(deps.home, input.product_id, input.logo_ref);
+  const background = await resolveFormaImageRef(deps.home, input.product_id, input.bg_ref);
+  const safeLogo =
+    input.safe_logo_ref !== undefined
+      ? await resolveFormaImageRef(deps.home, input.product_id, input.safe_logo_ref)
+      : undefined;
 
-  if (input.kind !== "app-icon") {
-    return saveRenderedBrandAsset(deps, input);
-  }
+  // Derive per surface. web/desktop have no surfaces → derive once (surface undefined).
+  const surfaces = brandSurfacesForPlatform(input.platform);
+  const surfaceList: (BrandSurface | undefined)[] = surfaces.length > 0 ? surfaces : [undefined];
 
-  // ── app-icon path ──────────────────────────────────────────────────────────
-  // Resolve the staged source OUTSIDE the lock (it is a read; no product state).
-  // assertValidSource guarantees a non-empty image_ref for app-icon above.
-  const imageRef = input.source.image_ref ?? "";
-  const sourceBytes = await resolveFormaImageRef(deps.home, input.product_id, imageRef);
-
-  const { master, warnings } = await readSquareMaster(sourceBytes);
-  const { sizes, faviconSizes } = planAppIconSizes(input.platform);
-
-  // Derive every size from the normalized master.
-  const fileBytes = new Map<string, Buffer>();
-  const fileDims: Array<{ relName: string; size: number }> = [];
-  for (const size of sizes) {
-    const buf = size === MASTER_SIZE ? master : await resizeSquare(master, size);
-    const relName = size === MASTER_SIZE ? "master.png" : `icon-${size}.png`;
-    fileBytes.set(relName, buf);
-    fileDims.push({ relName, size });
-  }
-  // Favicons re-use the already-derived bytes under a favicon-<size>.png name.
-  for (const size of faviconSizes) {
-    const src = fileBytes.get(`icon-${size}.png`);
-    const buf = src ?? (await resizeSquare(master, size));
-    const relName = `favicon-${size}.png`;
-    fileBytes.set(relName, buf);
-    fileDims.push({ relName, size });
+  type SurfacedVariant = DerivedIconVariant & { surface?: BrandSurface };
+  const derived: SurfacedVariant[] = [];
+  for (const surface of surfaceList) {
+    const variants = await deriveAppIconVariants({
+      ...(surface !== undefined ? { surface } : {}),
+      platform: input.platform,
+      logo,
+      background,
+      ...(safeLogo !== undefined ? { safeLogo } : {}),
+      ...(input.colors !== undefined ? { colors: input.colors } : {}),
+    });
+    for (const v of variants) {
+      derived.push(surface !== undefined ? { ...v, surface } : v);
+    }
   }
 
   const generatedAt = new Date().toISOString();
@@ -623,45 +479,175 @@ export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAsset
   return deps.runProductMutation({ operation: "save_brand_asset", product_id: input.product_id }, async (context) => {
     const productsRoot = getFormaPaths(deps.home).productsDir;
     const kindDir = getBrandAssetKindDir(productsRoot, input.product_id, KIND_SUBDIR["app-icon"]);
-    const assetDir = join(kindDir, input.name);
-    // Defense-in-depth: the joined per-name dir must stay under the kind dir.
-    if (!isSameOrChildPath(kindDir, assetDir)) {
-      throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset name escapes its kind directory", {
-        name: input.name,
+
+    // Group derived variants into one record per (surface, variant).
+    type Group = { surface?: BrandSurface; variant: string; entries: SurfacedVariant[] };
+    const groups = new Map<string, Group>();
+    for (const v of derived) {
+      const surface = v.surface;
+      const key = `${surface ?? ""}::${v.variant}`;
+      let group = groups.get(key);
+      if (!group) {
+        group = { ...(surface !== undefined ? { surface } : {}), variant: v.variant, entries: [] };
+        groups.set(key, group);
+      }
+      group.entries.push(v);
+    }
+
+    // Write all PNGs into one immutable generation dir under the kind dir, then
+    // atomically replace the whole app-icon set (remove every prior file + dir).
+    const fileBytes = new Map<string, Buffer>();
+    type PendingRecord = {
+      surface?: BrandSurface;
+      variant: string;
+      files: Array<{ relName: string; width: number; height: number }>;
+    };
+    const pending: PendingRecord[] = [];
+    for (const group of groups.values()) {
+      const files: PendingRecord["files"] = [];
+      group.entries.forEach((entry, i) => {
+        const relName = `${group.surface ? `${group.surface}-` : ""}${group.variant}-${entry.width}x${entry.height}-${i}.png`;
+        fileBytes.set(relName, entry.png);
+        files.push({ relName, width: entry.width, height: entry.height });
+      });
+      pending.push({
+        ...(group.surface !== undefined ? { surface: group.surface } : {}),
+        variant: group.variant,
+        files,
       });
     }
 
-    const assetWriteDir = await writeAssetDirAtomic(assetDir, fileBytes);
+    const generationDir = await writeAssetDirAtomic(kindDir, fileBytes);
 
-    const files: BrandAssetFile[] = fileDims.map(({ relName, size }) => ({
-      path: join(assetWriteDir, relName),
-      width: size,
-      height: size,
-    }));
-
-    const record: BrandAssetRecord = {
+    const records: BrandAssetRecord[] = pending.map((p) => ({
       kind: "app-icon",
-      name: input.name,
-      files,
+      name: p.variant,
+      files: p.files.map((f) => ({ path: join(generationDir, f.relName), width: f.width, height: f.height })),
       brand_style: input.brand_style,
       ...(input.model !== undefined ? { model: input.model } : {}),
       generated_at: generatedAt,
-    };
+      ...(p.surface !== undefined ? { surface: p.surface } : {}),
+      variant: p.variant,
+    }));
 
-    // Overwrite semantics: same kind+name replaces the prior record.
+    // Atomic replacement: drop ALL prior app-icon records, then add the new set.
     const manifest = await readManifest(deps.home, input.product_id);
-    const next = manifest.assets.filter((a) => !(a.kind === record.kind && a.name === record.name));
-    next.push(record);
+    const next = manifest.assets.filter((a) => a.kind !== "app-icon");
+    next.push(...records);
     await writeManifest(deps.home, input.product_id, { assets: next });
-    await warnOnPruneFailure(context, assetDir, assetWriteDir);
+    // Prune every prior generation under the kind dir except the one just written.
+    await warnOnPruneFailure(context, kindDir, generationDir);
 
-    return {
-      kind: record.kind,
-      name: record.name,
-      files: record.files,
-      generated_at: record.generated_at,
-      warnings: [...warnings, ...context.warnings],
-    } satisfies SavedBrandAsset;
+    return { kind: "app-icon", assets: records };
+  });
+}
+
+// ─── saveBrandAsset ──────────────────────────────────────────────────────────
+
+export async function saveBrandAsset(deps: BrandAssetDeps, input: SaveBrandAssetInput): Promise<SaveBrandAssetResult> {
+  assertValidKind(input.kind);
+
+  if (input.kind === "app-icon") {
+    return saveAppIcon(deps, input);
+  }
+
+  assertValidName(input.name);
+  return saveRenderedBrandAsset(deps, input);
+}
+
+// ─── deleteBrandAsset (SPEC-BEHAVIOR-006) ──────────────────────────────────────
+
+/**
+ * Removes one brand-asset record (by kind+name) and its on-disk files.
+ *
+ * Every file path must resolve under the product's brand-assets kind dir; an
+ * absolute / `..` / out-of-boundary path is rejected with BRAND_ASSET_INVALID_INPUT
+ * rather than deleted. A record that does not exist fails loud (not a silent
+ * no-op). Runs under the per-product mutation lock.
+ */
+export async function deleteBrandAsset(
+  deps: BrandAssetDeps,
+  input: { product_id: string; kind: BrandAssetKind; name: string },
+): Promise<{ deleted: boolean }> {
+  assertValidKind(input.kind);
+
+  return deps.runProductMutation({ operation: "delete_brand_asset", product_id: input.product_id }, async () => {
+    const productsRoot = getFormaPaths(deps.home).productsDir;
+    const kindDir = getBrandAssetKindDir(productsRoot, input.product_id, KIND_SUBDIR[input.kind]);
+
+    const manifest = await readManifest(deps.home, input.product_id);
+    const record = manifest.assets.find((a) => a.kind === input.kind && a.name === input.name);
+    if (!record) {
+      throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset not found", {
+        product_id: input.product_id,
+        kind: input.kind,
+        name: input.name,
+        reason: "not_found",
+      });
+    }
+
+    // Boundary check every recorded file before removing anything.
+    // isSameOrChildPath is a lexical check — intentional here because brand-asset
+    // file paths are always machine-written into the manifest (trusted provenance).
+    // The symlink-hardened realpath check lives at the server file-serving boundary.
+    for (const file of record.files) {
+      if (!isSameOrChildPath(kindDir, file.path)) {
+        throw new FormaError("BRAND_ASSET_INVALID_INPUT", "Brand asset file path escapes its kind directory", {
+          product_id: input.product_id,
+          kind: input.kind,
+          name: input.name,
+          reason: "path_traversal",
+        });
+      }
+    }
+
+    // Drop the manifest record first, then delete the files. The remaining
+    // manifest never references the deleted files.
+    const next = manifest.assets.filter((a) => !(a.kind === input.kind && a.name === input.name));
+    await writeManifest(deps.home, input.product_id, { assets: next });
+
+    // Collect the immediate containing directories before deleting so we can
+    // best-effort walk up the ancestor chain after the files are gone.
+    const startDirs = new Set(record.files.map((f) => dirname(f.path)));
+
+    for (const file of record.files) {
+      await rm(file.path, { force: true });
+    }
+
+    // Best-effort empty-dir cleanup: for each file's containing dir, attempt
+    // rmdir and then walk up ancestor dirs toward (but never including) kindDir.
+    // isSameOrChildPath is a lexical check — intentional here because brand-asset
+    // file paths are always machine-written into the manifest (trusted provenance).
+    // The symlink-hardened realpath check lives at the server file-serving boundary.
+    //
+    // Per-dir walk rules:
+    //   - Stop before reaching or exceeding kindDir (never rmdir kindDir itself).
+    //   - Stop if dir is the filesystem root (dirname(dir) === dir guard).
+    //   - ENOTEMPTY → stop walking this chain (siblings still present in parent).
+    //   - ENOENT    → continue to parent (dir may have been concurrently removed).
+    //   - Any other error → rethrow (unexpected; don't silently swallow).
+    for (const startDir of startDirs) {
+      let dir = startDir;
+      while (true) {
+        // Hard stop conditions.
+        if (dir === kindDir) break;
+        if (!isSameOrChildPath(kindDir, dir)) break;
+        const parent = dirname(dir);
+        if (parent === dir) break; // filesystem root guard
+
+        try {
+          await rmdir(dir);
+        } catch (err: unknown) {
+          const code = (err as NodeJS.ErrnoException).code;
+          if (code === "ENOTEMPTY") break; // siblings present — parent chain is non-empty too
+          if (code !== "ENOENT") throw err; // unexpected error propagates
+          // ENOENT: already gone — continue walking up (parent may now be empty)
+        }
+        dir = parent;
+      }
+    }
+
+    return { deleted: true };
   });
 }
 
@@ -679,21 +665,6 @@ export async function listBrandAssets(
   });
 }
 
-// ─── listStoreShotPresets ──────────────────────────────────────────────────────
-
-/**
- * Returns the verified store-shot presets applicable to a product platform
- * (PLAN-TASK-024). The returned array is a fresh copy of fresh objects, so
- * callers can never mutate the static STORE_SHOT_PRESETS table.
- *
- * Mapping (see PLATFORM_PRESET_MAP): mobile → iOS + Android phone; web/desktop/
- * tablet → web Open Graph (no tablet-specific size verified for v1).
- */
-export function listStoreShotPresets(platform: Platform): StoreShotPreset[] {
-  const ids = PLATFORM_PRESET_MAP[platform] ?? [];
-  return ids.map((id) => ({ ...STORE_SHOT_PRESETS[id] }));
-}
-
 // ─── resolveBrandImageRef (SPEC-BEHAVIOR-004) ──────────────────────────────────
 
 const BRAND_SCHEME = "forma-image://brand/";
@@ -701,11 +672,13 @@ const BRAND_SCHEME = "forma-image://brand/";
 /**
  * Resolves a `forma-image://brand/...` reference to raw image bytes.
  *
- *   forma-image://brand/app-icon        → the 2048 master
- *   forma-image://brand/app-icon@<size> → the matching derivative
+ *   forma-image://brand/app-icon        → the largest STANDARD-variant icon file
+ *   forma-image://brand/app-icon@<size> → the STANDARD-variant file whose width === size
  *
- * Missing asset, unknown kind, or unknown size → MEDIA_IMAGE_NOT_FOUND.
- * The on-disk path is path-boundary checked before any read.
+ * Only files belonging to a standard variant (standard / android-standard /
+ * ios-standard) are considered, so a foreground/background/monochrome layer is
+ * never returned. Missing asset, unknown kind, or unknown size →
+ * MEDIA_IMAGE_NOT_FOUND. The on-disk path is path-boundary checked before any read.
  */
 export async function resolveBrandImageRef(home: string, productId: string, ref: string): Promise<Buffer> {
   if (!ref.startsWith(BRAND_SCHEME)) {
@@ -734,23 +707,30 @@ export async function resolveBrandImageRef(home: string, productId: string, ref:
   }
 
   return getProductMutationLock(home).run({ operation: "resolve_brand_asset", product_id: productId }, async () => {
-    // Locate the primary app-icon record. v1 resolves the asset named "primary"
-    // when present, else the first/most-recent app-icon record.
+    // Consider only STANDARD-variant app-icon files (the primary square icon).
     const manifest = await readManifest(home, productId);
-    const records = manifest.assets.filter((a) => a.kind === "app-icon");
-    const record = records.find((r) => r.name === "primary") ?? records.at(-1);
-    if (!record) {
-      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "No app-icon brand asset", { ref, reason: "not_found" });
+    const standardFiles = manifest.assets
+      .filter((a) => a.kind === "app-icon" && a.variant !== undefined && STANDARD_APP_ICON_VARIANTS.has(a.variant))
+      .flatMap((a) => a.files);
+    if (standardFiles.length === 0) {
+      throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "No standard app-icon brand asset", { ref, reason: "not_found" });
     }
 
-    // Choose the file: master (no size) or the matching derivative.
-    const wantWidth = size ?? MASTER_SIZE;
-    const file = record.files.find((f) => f.width === wantWidth);
+    // Bare ref → largest width (stable on ties by record/file order).
+    // @size  → the file whose width === size.
+    let file: BrandAssetFile | undefined;
+    if (size === undefined) {
+      for (const candidate of standardFiles) {
+        if (file === undefined || candidate.width > file.width) file = candidate;
+      }
+    } else {
+      file = standardFiles.find((f) => f.width === size);
+    }
     if (!file) {
       throw new FormaError("MEDIA_IMAGE_NOT_FOUND", "Brand asset size not in set", {
         ref,
         reason: "size_not_in_set",
-        available: record.files.map((f) => f.width).sort((a, b) => a - b),
+        available: [...new Set(standardFiles.map((f) => f.width))].sort((a, b) => a - b),
       });
     }
 

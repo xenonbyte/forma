@@ -25,6 +25,7 @@ import {
   type ArtifactManifest,
   type BrandAssetKind,
   type BrandAssetRecord,
+  type BrandAssetsSettings,
   type BrandStyleContent,
   type DesignPointer,
   type ExportArchiveAssetsResult,
@@ -121,6 +122,10 @@ export interface FormaRoutesStore {
     initProductConfig(productId: string, config: unknown): Promise<unknown>;
     listProducts(): Promise<Array<{ id: string; [key: string]: unknown }>>;
     listDesignPointers(productId: string): Promise<DesignPointer[]>;
+    updateBrandAssetSettings(
+      productId: string,
+      patch: Partial<BrandAssetsSettings>,
+    ): Promise<{ id: string; [key: string]: unknown }>;
   };
   requirements: {
     archiveRequirement(requirementId: string): Promise<{ id: string; [key: string]: unknown }>;
@@ -871,6 +876,41 @@ export function registerRoutes(
     return { ok: true, provider_note: result.provider_note };
   });
 
+  // ─── Brand-asset settings route (SPEC-BEHAVIOR-008) ──────────────────────────
+
+  // Update per-product brand-asset generation settings.
+  // Body is a partial patch of the brandAssetsSettings schema fields.
+  // Unknown keys and out-of-range values are rejected (400-class).
+  app.put<{ Params: { pid: string }; Body: unknown }>(
+    "/api/products/:pid/brand-asset-settings",
+    async (request, reply) => {
+      if (!checkMutationOrigin(request, reply)) return;
+      const body = objectBody(request.body);
+      requireOnlyFields(body, ["store_shot_count", "banner", "poster_portrait", "poster_landscape", "poster_square"]);
+      const patch: Partial<BrandAssetsSettings> = {};
+      if (body["store_shot_count"] !== undefined) {
+        const v = body["store_shot_count"];
+        if (typeof v !== "number" || !Number.isInteger(v) || v < 3 || v > 8) {
+          throw new RouteInputError("store_shot_count must be an integer between 3 and 8", {
+            field: "store_shot_count",
+          });
+        }
+        patch.store_shot_count = v;
+      }
+      // Boolean fields are validated inline (not via optionalBoolean) because this is a PATCH:
+      // undefined must mean "leave unchanged", whereas optionalBoolean collapses undefined→false.
+      for (const boolField of ["banner", "poster_portrait", "poster_landscape", "poster_square"] as const) {
+        if (body[boolField] !== undefined) {
+          if (typeof body[boolField] !== "boolean") {
+            throw new RouteInputError(`Field must be a boolean: ${boolField}`, { field: boolField });
+          }
+          patch[boolField] = body[boolField] as boolean;
+        }
+      }
+      return store.products.updateBrandAssetSettings(request.params.pid, patch);
+    },
+  );
+
   // ─── Brand-asset routes (SPEC-BEHAVIOR-008 / SPEC-BEHAVIOR-006) ─────────────
 
   // List the product's brand assets (empty list when none). Each file path is
@@ -1275,6 +1315,8 @@ function toBrandAssetView(record: BrandAssetRecord, brandRoot: string) {
     brand_style: record.brand_style,
     ...(record.model !== undefined ? { model: record.model } : {}),
     generated_at: record.generated_at,
+    ...(record.surface !== undefined ? { surface: record.surface } : {}),
+    ...(record.variant !== undefined ? { variant: record.variant } : {}),
     files: record.files.map((file) => ({
       path: brandRelativePath(brandRoot, file.path),
       width: file.width,

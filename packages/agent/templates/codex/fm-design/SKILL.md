@@ -19,11 +19,11 @@ If the core tool returns `REQUIREMENT_NOT_FOUND`: no un-archived requirement is 
 If the core tool returns `REQUIREMENT_STATUS_INVALID`: the requirement is archived and cannot be used for design — report the error faithfully.
 
 Modes:
-- Full (no change description given): three steps — (1) plan the pages from the requirement, (2) generate each page, (3) self-review.
+- Full (no change description given): three steps — (1) plan the pages from the requirement, (2) generate each page, (3) self-review. A bare `fm-design` rerun (no description) = FULL regeneration of the requirement's design pages; before executing a bare rerun, double-confirm with the user that they want to regenerate.
 - Described (a change description argument given): a single pass — locate the affected page, regenerate only that page, self-review. Scope is the changed page; do not weaken self-review.
 
 Execution:
-1. Require product_id from context or ask the user to run `$fm-list-product` first.
+1. Require product_id from context or ask the user to run `fm-list-product` first.
 2. Call `get_requirement` for the requirement, its `pages[]` and each `page_id`. If `ui_affected=false`, stop — there is no design to produce.
 3. Confirm the `brand_style` and optional `system_style` (read product config / `list_styles`); confirm with the user when not already chosen.
 4. Fetch design context BEFORE generating (recency matters): `get_design_context(product_id, requirement_id, page_id, brand_style, system_style)` returns craft rules + the selected brand/system style (tokens, components) + the page spec + applicable rules. Never call this after saving.
@@ -42,9 +42,9 @@ Execution:
 
    **On-demand reuse (B5/B6):** When the page spec calls for a standard UI element, reuse the corresponding baseline component from `componentBaseline`/`componentLibrary` (same tokens, states, and interaction patterns) rather than inventing a one-off. Do NOT design-for-reuse (do not add extra components the page spec did not require); immersive or fully custom pages may omit or replace generic components. This guidance does NOT weaken the Scope fidelity hard rule above.
 
-   **App-icon reference (D6 — the icon mark lives in brand assets, never hand-drawn):** when a page displays the product/app icon (e.g. a splash mark, login brand lockup, or a nav brand slot), reference the canonical brand app-icon in the HTML via `forma-image://brand/app-icon` (resolves to the 2048-px master square PNG; size it with CSS); Forma resolves these refs through the asset pipeline. If you need an exact-pixel variant, use `forma-image://brand/app-icon@<size>` where `<size>` MUST be a width value from `list_brand_assets(product_id, kind="app-icon")` → `files[].width` — an unavailable size throws MEDIA_IMAGE_NOT_FOUND and fails the entire save. When unsure, use the bare `forma-image://brand/app-icon` and size it with CSS. Do NOT inline a hand-drawn SVG mark or reuse any legacy `componentLibrary.productIcon`. Conditional precondition: call `list_brand_assets(product_id, kind="app-icon")`.
-   - If the page spec involves ICON display (splash / login brand / nav brand slot) and NO app-icon exists, STOP — do NOT fabricate a mark — and guide the user: "This page shows the app icon but none exists yet — run `$fm-app-icon` first, then re-run `$fm-design`."
-   - If the page does NOT depend on the icon, remind the user once that no app icon exists (referencing `$fm-app-icon`) and proceed.
+   **App-icon reference (D6 — the icon mark lives in brand assets, never hand-drawn):** when a page displays the product/app icon (e.g. a splash mark, login brand lockup, or a nav brand slot), reference the canonical brand app-icon in the HTML via `forma-image://brand/app-icon` (resolves to the largest STANDARD-variant icon file; size it with CSS); Forma resolves these refs through the asset pipeline. If you need an exact-pixel variant, use `forma-image://brand/app-icon@<size>` where `<size>` MUST be a width value from `list_brand_assets(product_id, kind="app-icon")` → `files[].width` — an unavailable size throws MEDIA_IMAGE_NOT_FOUND and fails the entire save. When unsure, use the bare `forma-image://brand/app-icon` and size it with CSS. Do NOT inline a hand-drawn SVG mark or reuse any legacy `componentLibrary.productIcon`. Conditional precondition: call `list_brand_assets(product_id, kind="app-icon")`.
+   - If the page spec involves ICON display (splash / login brand / nav brand slot) and NO app-icon exists, STOP — do NOT fabricate a mark — and guide the user: "This page shows the app icon but none exists yet — run `fm-app-icon` first, then re-run `fm-design`."
+   - If the page does NOT depend on the icon, remind the user once that no app icon exists (referencing `fm-app-icon`) and proceed.
 
    **Functional icons (hard rule):** never hand-draw functional icons. Call `search_icons` and inline the returned Lucide SVG (currentColor inheritance; stroke-width follows tokens). Decorative brand-specific glyphs defined by tokens are the only exception.
 

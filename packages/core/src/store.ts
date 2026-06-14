@@ -6,18 +6,16 @@ import { FormaError } from "./errors.js";
 import { generateImages, type GenerateImagesInput, type GenerateImagesResult } from "./media/image-generate.js";
 import { renderBrandAssetHtml } from "./brand-asset-render.js";
 import {
+  deleteBrandAsset,
   exportBrandAssetsZip,
   listBrandAssets,
-  listStoreShotPresets,
   resolveBrandImageRef,
   saveBrandAsset,
   type BrandAssetKind,
   type BrandAssetRecord,
   type SaveBrandAssetInput,
-  type SavedBrandAsset,
-  type StoreShotPreset,
+  type SaveBrandAssetResult,
 } from "./brand-assets.js";
-import type { Platform } from "./schemas.js";
 import { resolveFormaImageRef } from "./media/image-staging.js";
 import {
   readMediaConfig,
@@ -102,12 +100,12 @@ export interface FormaStore {
     input: GenerateComponentsInput,
   ): Promise<{ artifact_id: string; version: number; preview_status: string }>;
   generateProductImage(input: GenerateImagesInput): Promise<GenerateImagesResult>;
-  /** Persist a brand asset (app-icon path) under the product mutation lock. */
-  saveBrandAsset(input: SaveBrandAssetInput): Promise<SavedBrandAsset>;
+  /** Persist a brand asset under the product mutation lock (discriminated by kind). */
+  saveBrandAsset(input: SaveBrandAssetInput): Promise<SaveBrandAssetResult>;
+  /** Delete one brand-asset record (by kind+name) + its files under the product mutation lock. */
+  deleteBrandAsset(input: { product_id: string; kind: BrandAssetKind; name: string }): Promise<{ deleted: boolean }>;
   /** List brand-asset records (optionally filtered by kind). */
   listBrandAssets(productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]>;
-  /** Verified store-shot presets applicable to a product platform (static data). */
-  listStoreShotPresets(platform: Platform): StoreShotPreset[];
   /** Zip every brand-asset file for a product (never includes media-config.yaml). */
   exportBrandAssetsZip(productId: string): Promise<Buffer>;
   /** Resolve a forma-image://brand/... reference to raw bytes. */
@@ -319,8 +317,13 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
         input,
       ),
   };
-  const saveBrandAssetBound = (input: SaveBrandAssetInput): Promise<SavedBrandAsset> =>
+  const saveBrandAssetBound = (input: SaveBrandAssetInput): Promise<SaveBrandAssetResult> =>
     saveBrandAsset(brandAssetDeps, input);
+  const deleteBrandAssetBound = (input: {
+    product_id: string;
+    kind: BrandAssetKind;
+    name: string;
+  }): Promise<{ deleted: boolean }> => deleteBrandAsset(brandAssetDeps, input);
   const listBrandAssetsBound = (productId: string, kind?: BrandAssetKind): Promise<BrandAssetRecord[]> =>
     listBrandAssets(options.home, productId, kind);
   const exportBrandAssetsZipBound = (productId: string): Promise<Buffer> =>
@@ -346,8 +349,8 @@ export function createStrictFormaStore(options: FormaStoreOptions): FormaStore {
     generateComponents,
     generateProductImage,
     saveBrandAsset: saveBrandAssetBound,
+    deleteBrandAsset: deleteBrandAssetBound,
     listBrandAssets: listBrandAssetsBound,
-    listStoreShotPresets,
     exportBrandAssetsZip: exportBrandAssetsZipBound,
     resolveBrandImageRef: resolveBrandImageRefBound,
     readMediaConfig: readMediaConfigBound,

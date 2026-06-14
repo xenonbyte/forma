@@ -39,7 +39,7 @@ const ENV_VARS = [
 const VOLCENGINE_DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 const VOLCENGINE_DEFAULT_MODEL = "doubao-seedream-5-0-260128";
 const OPENAI_DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const OPENAI_DEFAULT_MODEL = "gpt-image-1";
+const OPENAI_DEFAULT_MODEL = "gpt-image-1.5";
 const GEMINI_DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai";
 const GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-image";
 const isWin = process.platform === "win32";

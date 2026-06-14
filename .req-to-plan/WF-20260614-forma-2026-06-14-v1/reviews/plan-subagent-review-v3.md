@@ -1,0 +1,16 @@
+# PLAN Subagent Review — v3 (verification of applied fixes)
+Reviewer: read-only subagent · Date: 2026-06-14
+
+## Verdict
+APPROVE — all three required changes from v2 landed correctly, every SPEC id is still consumed, task numbering is contiguous/unique, ordering stays forward-only, and all T8 modify-target file refs exist on disk.
+
+## Fix Verification
+- **BLOCKING-1 server route: applied.** T8 (`PLAN-TASK-008`, now titled "后台产品页品牌资产设置 UI + 服务端路由 + i18n") `Files:` block (07-plan.md:208-212) lists `packages/server/src/routes.ts` + `packages/server/tests/routes.test.ts` (both verified present on disk). Skeleton (:215) adds `PUT /api/products/:pid/brand-asset-settings → store.updateBrandAssetSettings(pid, body)` with auth/validation/FormaError→HTTP reuse + zod body validation. Step (:223) registers the route wired to `updateBrandAssetSettings` plus a route test ("AC-008 持久化所需"). Verification (:226) runs `packages/server/tests/routes.test.ts`. The endpoint between T1's core method and T8's web client now has an owner.
+- **ADVISORY-1 filename: applied/consistent.** T3 (`PLAN-TASK-003`) `Files:` (:90-91) names `packages/core/src/brand-icon-derive.ts` + `brand-icon-derive.test.ts`; skeleton comment (:94) pins it canonically: "规范文件名以本任务为准：brand-icon-derive.ts（上游 design/spec 散见的 'icon-derive.ts' 旧称以此为正名）"; verification (:112) runs `brand-icon-derive.test.ts`. SPEC-DATA-005 (:407-419) is consistent. The divergent `icon-derive.ts` appendix/§8 prose flagged in v2 is not present in the task-definition body of this PLAN. Both files correctly absent on disk (create task).
+- **Minor root grep: applied.** T11 (`PLAN-TASK-011`) step (:289) now greps "全仓（含根 CLAUDE.md）" for the removal residue set incl `name="primary"`; verification command (:291) is `grep -rn "list_store_shot_presets\|STORE_SHOT_PRESETS" . --include=*.md --include=*.ts | grep -v dist | grep -v .req-to-plan` — repo-root scope, not just `packages/`, so the root `CLAUDE.md` doc lines are now caught.
+
+## Regression Check
+- **task numbering contiguous/unique: ok.** PLAN-TASK-001..011, each appearing exactly once; Trace table (:297-307) mirrors all 11 with no gap or duplicate.
+- **SPEC coverage intact (T8 edit dropped nothing): ok.** All 17 ids still consumed by a task's Spec References — BEHAVIOR-001→T6, 002→T1, 003→T2, 004→T3, 005→T4, 006→T4, 007→T5(+T11), 008→T8 & T9, 009→T10; DATA-001/002→T1, 003/004→T2, 005→T3, 006→T4, 007→T7, 008→T5. T8 retains `SPEC-BEHAVIOR-008` (:204) after adding the server files — no id removed. None orphaned.
+- **T8 file paths all exist: ok.** Verified on disk: `packages/server/src/routes.ts`, `packages/server/tests/routes.test.ts`, `packages/web/src/pages/ProductDetail.tsx`, `packages/web/src/pages/ProductDetail.test.tsx`, `packages/web/src/i18n.ts` — all present (T8 Change Type = modify, so all refs must pre-exist; they do).
+- **ordering: ok.** No new backward dependency. T8 consumes T1's `updateBrandAssetSettings` (forward, T1→T8). The added server route only wires the already-existing T1 core method to a route also owned by T8 — self-contained within T8, no new cross-task edge. T11 grep widening is a verification-only change with no dependency impact. Topological order remains valid (T1→T2/T3/T4/T8/T9, T3→T4, T2/T4/T6→T7, T1→T8/T9, T10/T11 last).

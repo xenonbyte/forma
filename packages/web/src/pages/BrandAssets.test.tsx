@@ -4,7 +4,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { setLocale } from "../i18n.js";
+import { setLocale, messages } from "../i18n.js";
+import { LocaleProvider } from "../LocaleContext.js";
 import { BrandAssets, type BrandAssetsClient } from "./BrandAssets.js";
 import type { BrandAssetsList, Product } from "../api.js";
 
@@ -86,6 +87,77 @@ const multiKindList: BrandAssetsList = {
   ],
 };
 
+// Mobile product: store-shot assets with android + ios surfaces → surface sub-groups.
+const mobileSurfaceList: BrandAssetsList = {
+  assets: [
+    {
+      kind: "store-shot",
+      name: "home-android",
+      brand_style: "aurora",
+      surface: "android",
+      generated_at: "2026-06-14T00:00:00.000Z",
+      files: [{ path: "store-shots/home-android/shot.png", width: 1080, height: 1920 }],
+    },
+    {
+      kind: "store-shot",
+      name: "home-ios",
+      brand_style: "aurora",
+      surface: "ios",
+      generated_at: "2026-06-14T00:00:00.000Z",
+      files: [{ path: "store-shots/home-ios/shot.png", width: 1290, height: 2796 }],
+    },
+  ],
+};
+
+// Banner kind with android + ios surfaces.
+const bannerList: BrandAssetsList = {
+  assets: [
+    {
+      kind: "banner",
+      name: "promo-android",
+      brand_style: "aurora",
+      surface: "android",
+      generated_at: "2026-06-14T00:00:00.000Z",
+      files: [{ path: "banners/promo-android/banner.png", width: 1024, height: 500 }],
+    },
+    {
+      kind: "banner",
+      name: "promo-ios",
+      brand_style: "aurora",
+      surface: "ios",
+      generated_at: "2026-06-14T00:00:00.000Z",
+      files: [{ path: "banners/promo-ios/banner.png", width: 1024, height: 500 }],
+    },
+  ],
+};
+
+// Web product: store-shot without surface → single group, no surface sub-label.
+const webNoSurfaceList: BrandAssetsList = {
+  assets: [
+    {
+      kind: "store-shot",
+      name: "web-shot",
+      brand_style: "aurora",
+      generated_at: "2026-06-14T00:00:00.000Z",
+      files: [{ path: "store-shots/web-shot/shot.png", width: 1440, height: 900 }],
+    },
+  ],
+};
+
+// Poster with no surface (platform-agnostic).
+const posterList: BrandAssetsList = {
+  assets: [
+    {
+      kind: "poster",
+      name: "promo-portrait",
+      brand_style: "aurora",
+      variant: "portrait",
+      generated_at: "2026-06-14T00:00:00.000Z",
+      files: [{ path: "posters/promo-portrait/poster.png", width: 1080, height: 1920 }],
+    },
+  ],
+};
+
 function fakeClient(overrides: Partial<BrandAssetsClient> = {}): BrandAssetsClient {
   return {
     getProduct: async () => product,
@@ -114,10 +186,15 @@ async function flushPromises() {
   await Promise.resolve();
 }
 
-async function renderPage(client: BrandAssetsClient) {
+async function renderPage(client: BrandAssetsClient, locale?: "en" | "zh") {
+  if (locale) setLocale(locale);
   const { container, root } = createTestRoot();
   await act(async () => {
-    root.render(<BrandAssets client={client} params={{ productId: PRODUCT_ID }} />);
+    root.render(
+      <LocaleProvider>
+        <BrandAssets client={client} params={{ productId: PRODUCT_ID }} />
+      </LocaleProvider>,
+    );
     await flushPromises();
   });
   return { container, root };
@@ -172,8 +249,8 @@ describe("BrandAssets", () => {
 
     const exportLink = container.querySelector("[data-testid='brand-assets-export']") as HTMLAnchorElement | null;
     expect(exportLink).not.toBeNull();
-    expect(exportLink!.getAttribute("href")).toBe("/api/products/prod-1/brand-assets/export");
-    expect(exportLink!.textContent).toContain("Export all");
+    expect(exportLink?.getAttribute("href")).toBe("/api/products/prod-1/brand-assets/export");
+    expect(exportLink?.textContent).toContain("Export all");
   });
 
   it("triggers a file download when a tile download button is clicked", async () => {
@@ -215,6 +292,142 @@ describe("BrandAssets", () => {
     const { container } = await renderPage(client);
     expect(container.querySelector("[data-testid='asset-tile']")).toBeNull();
     expect(container.textContent).toContain("network error");
+  });
+
+  // ── T9: surface sub-grouping (SPEC-BEHAVIOR-008 canvas half) ─────────────────
+
+  it("mobile/tablet: store-shot assets with surface render Android + iOS sub-groups (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => mobileSurfaceList }));
+
+    // Both composed labels present.
+    expect(container.textContent).toContain("Android Store screenshots");
+    expect(container.textContent).toContain("iOS Store screenshots");
+
+    // The kind group is present.
+    const groups = container.querySelectorAll("[data-testid='asset-group']");
+    expect(groups.length).toBe(1);
+
+    // Two surface sub-groups within the kind group.
+    const surfaceGroups = container.querySelectorAll("[data-testid='asset-surface-group']");
+    expect(surfaceGroups.length).toBe(2);
+    expect(surfaceGroups[0].getAttribute("data-surface")).toBe("android");
+    expect(surfaceGroups[1].getAttribute("data-surface")).toBe("ios");
+  });
+
+  it("web/desktop: store-shot assets WITHOUT surface render a single group with no surface sub-label (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => webNoSurfaceList }));
+
+    // Plain kind label present.
+    expect(container.textContent).toContain("Store screenshots");
+
+    // No Android/iOS prefix in the heading.
+    expect(container.textContent).not.toContain("Android Store screenshots");
+    expect(container.textContent).not.toContain("iOS Store screenshots");
+
+    // No surface sub-groups rendered.
+    const surfaceGroups = container.querySelectorAll("[data-testid='asset-surface-group']");
+    expect(surfaceGroups.length).toBe(0);
+  });
+
+  it("banner kind renders as its own group (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => bannerList }));
+
+    // Banner group heading present (localized).
+    expect(container.textContent).toContain("Banners");
+
+    const groups = container.querySelectorAll("[data-testid='asset-group']");
+    expect(groups.length).toBe(1);
+    expect(groups[0].getAttribute("data-kind")).toBe("banner");
+
+    // Android + iOS sub-groups within the banner kind.
+    const surfaceGroups = container.querySelectorAll("[data-testid='asset-surface-group']");
+    expect(surfaceGroups.length).toBe(2);
+    expect(container.textContent).toContain("Android Banners");
+    expect(container.textContent).toContain("iOS Banners");
+  });
+
+  it("poster kind renders with kind label only, no surface sub-group (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => posterList }));
+
+    expect(container.textContent).toContain("Posters");
+
+    // No surface sub-groups for poster.
+    const surfaceGroups = container.querySelectorAll("[data-testid='asset-surface-group']");
+    expect(surfaceGroups.length).toBe(0);
+  });
+
+  it("stale badge still shows when brand_style differs (T9 regression guard)", async () => {
+    // Use a stale mobile surface asset to confirm stale detection survives sub-grouping.
+    const staleMobileList: BrandAssetsList = {
+      assets: [
+        {
+          kind: "store-shot",
+          name: "home-android",
+          brand_style: "legacy", // differs from product.brand_style = "aurora"
+          surface: "android",
+          generated_at: "2026-06-14T00:00:00.000Z",
+          files: [{ path: "store-shots/home-android/shot.png", width: 1080, height: 1920 }],
+        },
+      ],
+    };
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => staleMobileList }));
+    expect(container.querySelector("[data-testid='asset-tile-stale']")).not.toBeNull();
+  });
+
+  it("i18n keys resolve in zh locale — no missing-key fallback (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => mobileSurfaceList }), "zh");
+
+    // zh kind label from messages.zh["brandAssets.kind.store-shot"] = "商店截图"
+    // zh surface labels: "Android" stays "Android", "iOS" stays "iOS"
+    expect(container.textContent).toContain("Android 商店截图");
+    expect(container.textContent).toContain("iOS 商店截图");
+
+    // Raw key must NOT appear in the DOM (would indicate a missing translation).
+    expect(container.textContent).not.toContain("brandAssets.kind.");
+    expect(container.textContent).not.toContain("brandAssets.surface.");
+  });
+
+  it("i18n keys resolve in en locale — no missing-key fallback (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => bannerList }), "en");
+
+    expect(container.textContent).toContain("Android Banners");
+    expect(container.textContent).toContain("iOS Banners");
+
+    expect(container.textContent).not.toContain("brandAssets.kind.");
+    expect(container.textContent).not.toContain("brandAssets.surface.");
+  });
+
+  it("i18n: all T9 keys exist in both en and zh messages (T9)", () => {
+    const keys = [
+      "brandAssets.kind.app-icon",
+      "brandAssets.kind.store-shot",
+      "brandAssets.kind.banner",
+      "brandAssets.kind.poster",
+      "brandAssets.surface.android",
+      "brandAssets.surface.ios",
+    ];
+    for (const key of keys) {
+      expect(messages.en[key], `en missing key: ${key}`).toBeDefined();
+      expect(messages.zh[key], `zh missing key: ${key}`).toBeDefined();
+    }
+  });
+
+  it("a11y: surface-grouped section carries aria-label with the kind label (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => mobileSurfaceList }));
+
+    // The outer <section data-kind="store-shot"> must have aria-label = localized kind label.
+    const section = container.querySelector("[data-testid='asset-group'][data-kind='store-shot']");
+    expect(section).not.toBeNull();
+    expect(section?.getAttribute("aria-label")).toBe("Store screenshots");
+  });
+
+  it("a11y: non-surface section has NO aria-label (already has visible h3) (T9)", async () => {
+    const { container } = await renderPage(fakeClient({ getBrandAssets: async () => webNoSurfaceList }));
+
+    const section = container.querySelector("[data-testid='asset-group'][data-kind='store-shot']");
+    expect(section).not.toBeNull();
+    // Non-surface path: visible h3 is present so aria-label is not added.
+    expect(section?.getAttribute("aria-label")).toBeNull();
   });
 
   it("reports the product name via onBreadcrumbLabel", async () => {

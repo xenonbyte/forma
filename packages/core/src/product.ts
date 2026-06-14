@@ -50,6 +50,22 @@ const productRequirementPointerSchema = z
   })
   .strict();
 
+/**
+ * Per-product brand-asset generation settings (SPEC-DATA-002).
+ * All fields have safe defaults so existing products read back cleanly.
+ */
+const brandAssetsSettingsSchema = z
+  .object({
+    store_shot_count: z.number().int().min(3).max(8).default(3),
+    banner: z.boolean().default(false),
+    poster_portrait: z.boolean().default(true),
+    poster_landscape: z.boolean().default(true),
+    poster_square: z.boolean().default(true),
+  })
+  .strict();
+
+export type BrandAssetsSettings = z.infer<typeof brandAssetsSettingsSchema>;
+
 const productSchema = productIndexEntrySchema
   .extend({
     platform: z.enum(platforms).optional(),
@@ -60,6 +76,7 @@ const productSchema = productIndexEntrySchema
     requirements: z.record(z.string(), productRequirementPointerSchema).optional(),
     designSystemArtifactId: z.string().optional(),
     designPointers: z.array(designPointerSchema).optional(),
+    brand_assets: brandAssetsSettingsSchema.optional(),
   })
   .strict()
   .superRefine((product, context) => {
@@ -118,6 +135,7 @@ const productConfigSchema = z
     system_style: z.string().min(1).optional(),
     languages: z.array(z.enum(languages)).min(1),
     default_language: z.enum(languages),
+    brand_assets: brandAssetsSettingsSchema.optional(),
   })
   .strict()
   .superRefine((config, context) => {
@@ -227,6 +245,26 @@ export class ProductService {
     return next;
   }
 
+  async updateBrandAssetSettings(productId: string, patch: Partial<BrandAssetsSettings>): Promise<Product> {
+    return this.runProductMutation({ operation: "update_brand_asset_settings", product_id: productId }, async () =>
+      this.updateBrandAssetSettingsLocked(productId, patch),
+    );
+  }
+
+  private async updateBrandAssetSettingsLocked(
+    productId: string,
+    patch: Partial<BrandAssetsSettings>,
+  ): Promise<Product> {
+    const product = await this.getProduct(productId);
+    // Parse with defaults so absent brand_assets gets safe initial values,
+    // then merge the patch on top.
+    const current = brandAssetsSettingsSchema.parse(product.brand_assets ?? {});
+    const merged = brandAssetsSettingsSchema.parse({ ...current, ...patch });
+    const next = productSchema.parse({ ...product, brand_assets: merged });
+    await writeYamlAtomic(this.productFile(next.id), next);
+    return next;
+  }
+
   componentLibraryFile(productId: string): string {
     return join(this.home, "library", `${this.parseProductId(productId)}.lib.pen`);
   }
@@ -283,13 +321,20 @@ export class ProductService {
     await writeYamlAtomic(this.productFile(updated.id), updated);
   }
 
-  async removeDesignPointerLocked(productId: string, requirementId: string, pageId: string, variant: string): Promise<void> {
+  async removeDesignPointerLocked(
+    productId: string,
+    requirementId: string,
+    pageId: string,
+    variant: string,
+  ): Promise<void> {
     const product = await this.getProduct(productId);
     const rest = (product.designPointers ?? []).filter(
       (p) => !(p.requirementId === requirementId && p.pageId === pageId && p.variant === variant),
     );
     const { designPointers: _removed, ...productWithoutPointers } = product;
-    const updated = productSchema.parse(rest.length > 0 ? { ...product, designPointers: rest } : productWithoutPointers);
+    const updated = productSchema.parse(
+      rest.length > 0 ? { ...product, designPointers: rest } : productWithoutPointers,
+    );
     await writeYamlAtomic(this.productFile(updated.id), updated);
   }
 
