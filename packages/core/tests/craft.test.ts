@@ -57,10 +57,9 @@ describe("image-prompts scaffolds (T10 — plan-driven brand assets)", () => {
     // per-purpose veto (the Read-inspection criteria). Assert the total count is
     // at least as large as the number of scaffolds overall (new + pre-existing).
     const vetoCount = (content.match(/\*\*Per-purpose veto \(extra\):\*\*/g) ?? []).length;
-    expect(
-      vetoCount,
-      "image-prompts.md must carry per-purpose veto blocks for all scaffolds",
-    ).toBeGreaterThanOrEqual(9);
+    expect(vetoCount, "image-prompts.md must carry per-purpose veto blocks for all scaffolds").toBeGreaterThanOrEqual(
+      9,
+    );
     // The retired preset/primary vocabulary must be gone from the scaffolds.
     expect(content, "no residual store-shot preset language").not.toContain("store-shot preset");
   });
