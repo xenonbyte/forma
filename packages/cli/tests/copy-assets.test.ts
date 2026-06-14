@@ -46,7 +46,7 @@ const codexSkillDescriptions = {
   "fm-app-icon":
     "Generate a product's app icon by AI image generation, veto by checklist, and persist as the canonical brand app-icon.",
   "fm-brand-assets":
-    "Generate a product's marketing brand assets — app-store screenshots and posters — as rendered HTML compositions, veto generated material by checklist, and persist them as brand assets.",
+    "Generate a product's marketing brand assets — app-store screenshots, an optional banner, and posters — as rendered HTML compositions, veto generated material by checklist, and persist them as brand assets.",
 } as const;
 
 type AgentPlatform = "claude" | "codex" | "gemini";
